@@ -11,13 +11,16 @@ export const DEFAULTS = Object.freeze({
   log: { level: 'notice' },
 });
 
+/** A raw config's values without the undefined ones, so a flag nobody gave cannot erase a default. */
+const given = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
+
 export function normalizeConfig(raw = {}) {
   const c = {
     ...DEFAULTS,
-    ...raw,
-    engine: { ...DEFAULTS.engine, ...(raw.engine || {}) },
-    sending: { ...DEFAULTS.sending, ...(raw.sending || {}) },
-    log: { ...DEFAULTS.log, ...(raw.log || {}) },
+    ...given(raw),
+    engine: { ...DEFAULTS.engine, ...given(raw.engine) },
+    sending: { ...DEFAULTS.sending, ...given(raw.sending) },
+    log: { ...DEFAULTS.log, ...given(raw.log) },
   };
   const problems = [];
   if (!Number.isInteger(c.port) || c.port < 0 || c.port > 65535) problems.push('port must be a whole number from 0 to 65535');
