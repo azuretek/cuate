@@ -6,6 +6,10 @@
     "tooling": ["read", "search", "export", "metrics"],
     "admin": ["read", "send", "search", "export", "metrics", "admin"]
   },
+  "paging": {
+    "chats": { "default": 200, "max": 500 },
+    "messages": { "default": 50, "max": 200 }
+  },
   "routes": [
     { "id": "health", "method": "GET", "path": "/healthz", "scope": "none", "returns": "Health" },
     { "id": "info", "method": "GET", "path": "/api/v1/info", "scope": "any", "returns": "Info" },

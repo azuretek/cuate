@@ -85,6 +85,7 @@ test('the API spec is complete and consistent', () => {
     if (r.body) assert.ok(known.has(r.body), r.id + ' takes an unknown body');
   }
   for (const t of Object.values(api.events)) assert.ok(known.has(t), t);
+  for (const [name, p] of Object.entries(api.paging)) assert.ok(Number.isInteger(p.default) && Number.isInteger(p.max) && p.default >= 1 && p.default <= p.max, 'paging for ' + name);
   for (const [name, fields] of Object.entries(api.models)) for (const t of Object.values(fields)) assert.ok(known.has(base(t)), name + ' uses ' + t);
 });
 
