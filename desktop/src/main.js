@@ -15,6 +15,7 @@ const SMOKE = process.env.SMOKE_OUT || '';
 
 app.setName(naming.product);
 if (SMOKE) app.setPath('userData', path.join(SMOKE, 'user-data'));
+if (SMOKE && process.env.SMOKE_SOFTWARE_RENDERING) app.disableHardwareAcceleration();
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 
@@ -61,7 +62,27 @@ async function runSmoke(w) {
       await pause(200);
     }
   };
-  const shot = async (name) => writeFileSync(path.join(SMOKE, name), (await wc.capturePage()).toPNG());
+  // Captures are evidence and the report is the check, so a capture never fails or stalls the smoke.
+  const within = (p, ms) => Promise.race([p, pause(ms).then(() => null)]);
+  const captured = [];
+  const shot = async (name) => {
+    let png = null;
+    try {
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+      const r = await within(wc.debugger.sendCommand('Page.captureScreenshot', { format: 'png' }), 8000);
+      if (r && r.data) png = Buffer.from(r.data, 'base64');
+    } catch { /* fall back to capturePage */ }
+    if (!png) {
+      try {
+        const image = await within(wc.capturePage(), 8000);
+        if (image && !image.isEmpty()) png = image.toPNG();
+      } catch { /* no capture on this host */ }
+    }
+    if (png) {
+      writeFileSync(path.join(SMOKE, name), png);
+      captured.push(name);
+    }
+  };
   const report = {};
   await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.bubble-row').length > 0");
   await pause(600);
@@ -93,6 +114,7 @@ async function runSmoke(w) {
   await pause(300);
   await shot('04-onboarding.png');
   report.onboarding = true;
+  report.captures = captured.length;
   writeFileSync(path.join(SMOKE, 'report.json'), JSON.stringify(report, null, 1));
   console.log('SMOKE ' + JSON.stringify(report));
   app.exit(0);

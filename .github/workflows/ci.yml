@@ -70,7 +70,10 @@ jobs:
           printf 'ci' | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null
           printf 'ci' | gnome-keyring-daemon --start --components=secrets >/dev/null
           echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
+      # The virtual display has no GPU, so the app renders in software here.
       - name: Boot the app against a server over the fake engine
+        env:
+          SMOKE_SOFTWARE_RENDERING: '1'
         run: xvfb-run -a -s "-screen 0 1280x800x24" node desktop/scripts/smoke.mjs
       - name: Keep the captures
         if: always()
