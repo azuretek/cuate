@@ -51,6 +51,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const routes = compile(apiSpec.routes);
   const send = createSender({ engine, store, config, log });
   const previews = new Map();
+  const paging = apiSpec.paging;
+  const LIST_TTL_MS = 5 * 60 * 1000;
   const events = [];
   const clients = new Set();
   let seq = 0;
@@ -64,13 +66,13 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     for (const c of clients) if (c.authed && c.ws.readyState === 1) c.ws.send(frame);
   };
   engine.on((name, data) => {
-    if (name === 'message.new') {
-      const m = data.message;
-      previews.set(m.chatId, { text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length });
-    }
+    if (name === 'message.new') noteMessage(data.message);
     publish(name, data);
   });
-  engine.onState((s) => publish('server.state', { engine: s.ready ? 'ready' : 'down', sending: config.sending.enabled }));
+  engine.onState((s) => {
+    publish('server.state', { engine: s.ready ? 'ready' : 'down', sending: config.sending.enabled });
+    if (s.ready) warm();
+  });
 
   const json = (res, status, body) => {
     const s = JSON.stringify(body);
@@ -94,6 +96,63 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
   const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length });
+  // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
+  // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
+  let held = null;
+  let listing = null;
+  const readChats = (limit) => {
+    if (!listing) {
+      listing = engine.chats({ limit })
+        .then((chats) => { held = { chats, limit, at: Date.now() }; })
+        .finally(() => { listing = null; });
+    }
+    return listing;
+  };
+  const chatList = async (limit) => {
+    while (!held || held.limit < limit) await readChats(Math.max(limit, held ? held.limit : 0));
+    if (Date.now() - held.at > LIST_TTL_MS) readChats(held.limit).catch(() => {});
+    return held.chats.slice(0, limit);
+  };
+  const noteMessage = (m) => {
+    const id = String(m.chatId);
+    const current = previews.get(id);
+    if (!current || !(current.sentAt > m.sentAt)) previews.set(id, preview(m));
+    if (!held) return;
+    const at = held.chats.findIndex((c) => String(c.id) === id);
+    if (at < 0) {
+      readChats(held.limit).catch(() => {});
+      return;
+    }
+    const chat = held.chats[at];
+    if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
+    held.chats.splice(at, 1);
+    held.chats.unshift({ ...chat, lastMessageAt: m.sentAt });
+  };
+  // One history read per chat at a time. A live message that lands during the read is newer, so it is kept.
+  const loading = new Map();
+  const loadPreview = (id) => {
+    const key = String(id);
+    if (previews.has(key)) return Promise.resolve();
+    if (!loading.has(key)) {
+      const read = engine.messages(id, { limit: 1 })
+        .then(({ messages }) => {
+          if (messages.length && !previews.has(key)) previews.set(key, preview(messages[messages.length - 1]));
+        })
+        .catch(() => { /* the chat still lists, without a preview */ })
+        .finally(() => loading.delete(key));
+      loading.set(key, read);
+    }
+    return loading.get(key);
+  };
+  // The list and its previews are read before the first client asks, and again whenever the engine comes back.
+  const warm = async () => {
+    try {
+      const list = await chatList(paging.chats.default);
+      await mapLimit(list.slice(0, config.previews), 4, (c) => loadPreview(c.id));
+    } catch {
+      // The first chat list reads them instead.
+    }
+  };
 
   const handlers = {
     async health({ res }) {
@@ -103,22 +162,15 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       json(res, 200, { product: naming.product, apiVersion: apiSpec.version, serverVersion, epoch, engine: engine.info(), sending: config.sending.enabled });
     },
     async chats({ res, url }) {
-      const limit = intParam(url, 'limit', 1, 500, 200);
-      const list = await engine.chats({ limit });
-      const missing = list.slice(0, config.previews).filter((c) => !previews.has(c.id));
-      await mapLimit(missing, 4, async (c) => {
-        try {
-          const { messages } = await engine.messages(c.id, { limit: 1 });
-          if (messages.length) previews.set(c.id, preview(messages[messages.length - 1]));
-        } catch {
-          // The chat still lists, without a preview.
-        }
-      });
-      json(res, 200, { chats: list.map((c) => ({ ...c, lastMessage: previews.get(c.id) || null })) });
+      const limit = intParam(url, 'limit', 1, paging.chats.max, paging.chats.default);
+      const list = await chatList(limit);
+      const missing = list.slice(0, config.previews).filter((c) => !previews.has(String(c.id)));
+      await mapLimit(missing, 4, (c) => loadPreview(c.id));
+      json(res, 200, { chats: list.map((c) => ({ ...c, lastMessage: previews.get(String(c.id)) || null })) });
     },
     async messages({ res, url, params }) {
       if (!chatIdOk(params.chatId)) throw badRequest('bad_chat', 'Unknown chat id.');
-      const limit = intParam(url, 'limit', 1, 200, 50);
+      const limit = intParam(url, 'limit', 1, paging.messages.max, paging.messages.default);
       const before = url.searchParams.get('before');
       if (before !== null && !Number.isFinite(Date.parse(before))) throw badRequest('bad_before', 'before must be an ISO 8601 time');
       json(res, 200, await engine.messages(params.chatId, { limit, before: before ? new Date(Date.parse(before)).toISOString() : null }));
@@ -293,9 +345,11 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   });
   const addr = server.address();
   log.emit('server.ready', { port: addr.port, host: addr.address });
+  const warmed = engine.info().ready ? warm() : Promise.resolve();
 
   return {
     port: addr.port,
+    warmed,
     address: addr.address,
     epoch,
     publish,

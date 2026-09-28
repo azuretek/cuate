@@ -5,6 +5,7 @@ What works today, and the test that proves each. Planned work is at the end.
 ## The server
 
 - Chats, newest first, each with a preview of its last message: `server/test/api.test.js`, "chats list newest first".
+- The chat list and its previews held in memory from the start and kept current by live messages, so a chat list never waits on the engine: "the chat list and its previews are held from the start", "a live message moves its chat to the top".
 - A chat's history, paged from newest to oldest: "history pages from newest to oldest".
 - Attachments by id, only from inside the Messages attachments folder: "attachments are served by id".
 - Sending text, off until switched on, rate limited, once per client key, with uncertain outcomes never retried: the five send tests.

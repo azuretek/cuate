@@ -73,7 +73,7 @@ class AppRoot extends KitElement {
     try {
       const info = await client.info();
       if (info.apiVersion !== API_VERSION) throw new Error(connectionSentence('version-mismatch'));
-      const { chats } = await client.chats({ limit: 200 });
+      const { chats } = await client.chats();
       this.client = client;
       this.sending = Boolean(info.sending);
       this.chats = orderChats(chats);
@@ -161,7 +161,7 @@ class AppRoot extends KitElement {
   async reload() {
     if (!this.client) return;
     try {
-      const { chats } = await this.client.chats({ limit: 200 });
+      const { chats } = await this.client.chats();
       this.chats = orderChats(chats);
       if (this.openChatId) await this.open(this.openChatId);
     } catch (e) {

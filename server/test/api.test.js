@@ -48,6 +48,58 @@ test('chats list newest first, each with a preview', async () => {
   assert.ok(b.chats.every((c) => c.lastMessage && typeof c.lastMessage.text === 'string'));
 });
 
+// Counts every read the server makes of the engine's chat list and history.
+const countReads = (engine) => {
+  const n = { reads: 0 };
+  for (const name of ['chats', 'messages']) {
+    const real = engine[name];
+    engine[name] = (...args) => {
+      n.reads += 1;
+      return real(...args);
+    };
+  }
+  return n;
+};
+
+test('the chat list and its previews are held from the start, so a chat list reads nothing from the engine', async () => {
+  const t = await boot();
+  try {
+    await t.srv.warmed;
+    const n = countReads(t.engine);
+    const r = await t.get('/api/v1/chats', t.tokens.device);
+    assert.equal(r.status, 200);
+    const { chats } = await r.json();
+    assert.ok(chats.length >= 3);
+    assert.ok(chats.every((c) => c.lastMessage), 'every chat carries its preview');
+    assert.equal(n.reads, 0, 'the chat list read nothing from the engine');
+    await t.get('/api/v1/chats?limit=500', t.tokens.device);
+    assert.equal(n.reads, 1, 'asking for more chats than are held reads the list once');
+  } finally {
+    await t.close();
+  }
+});
+
+test('a live message moves its chat to the top of the held list without a read', async () => {
+  const t = await boot();
+  try {
+    await t.srv.warmed;
+    const list = async () => (await (await t.get('/api/v1/chats', t.tokens.device)).json()).chats;
+    const oldest = (await list()).at(-1);
+    const n = countReads(t.engine);
+    t.world.incoming(Number(oldest.id), 'Synthetic bump');
+    let top = null;
+    for (let i = 0; i < 100 && (!top || top.id !== oldest.id); i += 1) {
+      await new Promise((r) => setTimeout(r, 20));
+      top = (await list())[0];
+    }
+    assert.equal(top.id, oldest.id);
+    assert.equal(top.lastMessage.text, 'Synthetic bump');
+    assert.equal(n.reads, 0, 'nothing was read from the engine');
+  } finally {
+    await t.close();
+  }
+});
+
 test('history pages from newest to oldest', async () => {
   const first = await (await s.get(route(1) + '?limit=3', s.tokens.device)).json();
   conforms(first, 'MessageList');
