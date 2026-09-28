@@ -5,9 +5,22 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULTS } from '../src/config.js';
 
 const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
 const run = (dir, ...args) => execFileSync(process.execPath, [cli, ...args, '--data', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+test('init without --port keeps the default port and leaves sending off', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'srv-cli-'));
+  try {
+    assert.match(run(dir, 'init', '--engine', 'fake'), new RegExp('port ' + DEFAULTS.port + ', sending off'));
+    const cfg = JSON.parse(readFileSync(path.join(dir, 'config.json'), 'utf8'));
+    assert.equal(cfg.port, DEFAULTS.port);
+    assert.equal(cfg.sending.enabled, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('init, tokens, the send switch and doctor work from the command line', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'srv-cli-'));
