@@ -68,6 +68,8 @@ async function runSmoke(w) {
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
+  nativeTheme.themeSource = 'light';
+  await pause(400);
   await shot('01-conversation-light.png');
   nativeTheme.themeSource = 'dark';
   await pause(400);
