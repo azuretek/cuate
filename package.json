@@ -1,0 +1,27 @@
+{
+  "name": "cuate",
+  "version": "0.1.0",
+  "description": "A cross-platform iMessage client and the headless server it talks to on the Mac. One shared core draws every screen; thin shells host it.",
+  "private": true,
+  "type": "module",
+  "author": "Abi Renhart",
+  "license": "MIT",
+  "packageManager": "pnpm@12.4.0",
+  "repository": { "type": "git", "url": "git+https://github.com/azuretek/cuate.git" },
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test --test-concurrency=1 \"core/test/*.test.js\" \"server/test/*.test.js\" \"desktop/test/*.test.js\"",
+    "build": "node scripts/gen-tokens.mjs --check",
+    "tokens": "node scripts/gen-tokens.mjs",
+    "server": "node server/src/main.js",
+    "desktop": "pnpm --filter desktop start",
+    "smoke": "node desktop/scripts/smoke.mjs",
+    "hooks:install": "git config core.hooksPath .githooks && echo \"hooks installed: core.hooksPath -> .githooks\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0"
+  }
+}

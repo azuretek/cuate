@@ -1,0 +1,12 @@
+{
+  "description": "Every command a page may call on the shell that hosts it, as window.bridge.call(name, args). Each shell implements exactly these and refuses anything else (desktop/test/bridge.test.js). A platform difference is data here, never a branch in core.",
+  "commands": {
+    "storage.get": { "args": { "key": "string" }, "returns": "string?" },
+    "storage.set": { "args": { "key": "string", "value": "string" }, "returns": "boolean" },
+    "storage.delete": { "args": { "key": "string" }, "returns": "boolean" },
+    "app.info": { "args": {}, "returns": "AppInfo" },
+    "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
+    "open.external": { "args": { "url": "string" }, "returns": "boolean" }
+  },
+  "events": {}
+}

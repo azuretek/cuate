@@ -1,0 +1,50 @@
+{
+  "description": "The one owner of the contract between the clients and the server: every route, scope, event and payload. The server's routes and the client's calls are both tested against it (server/test/api.test.js). A payload key not declared here fails the test.",
+  "version": 1,
+  "scopes": {
+    "device": ["read", "send"],
+    "tooling": ["read", "search", "export", "metrics"],
+    "admin": ["read", "send", "search", "export", "metrics", "admin"]
+  },
+  "routes": [
+    { "id": "health", "method": "GET", "path": "/healthz", "scope": "none", "returns": "Health" },
+    { "id": "info", "method": "GET", "path": "/api/v1/info", "scope": "any", "returns": "Info" },
+    { "id": "chats", "method": "GET", "path": "/api/v1/chats", "scope": "read", "query": ["limit"], "returns": "ChatList" },
+    { "id": "messages", "method": "GET", "path": "/api/v1/chats/:chatId/messages", "scope": "read", "query": ["limit", "before"], "returns": "MessageList" },
+    { "id": "send", "method": "POST", "path": "/api/v1/chats/:chatId/messages", "scope": "send", "body": "SendRequest", "returns": "SendResult" },
+    { "id": "attachment", "method": "GET", "path": "/api/v1/attachments/:attachmentId", "scope": "read", "query": ["format"], "returns": "binary" }
+  ],
+  "websocket": {
+    "path": "/api/v1/events",
+    "scope": "read",
+    "clientFrames": { "auth": { "token": "string", "resume": "Resume?" } },
+    "serverFrames": { "hello": "Hello", "event": "EventFrame" }
+  },
+  "events": {
+    "message.new": "MessageEvent",
+    "reaction": "ReactionEvent",
+    "server.state": "ServerState"
+  },
+  "models": {
+    "Health": { "ok": "boolean" },
+    "Info": { "product": "string", "apiVersion": "number", "serverVersion": "string", "epoch": "string", "engine": "EngineInfo", "sending": "boolean" },
+    "EngineInfo": { "kind": "string", "version": "string?", "ready": "boolean" },
+    "ChatList": { "chats": "Chat[]" },
+    "Chat": { "id": "string", "name": "string", "isGroup": "boolean", "service": "string", "participants": "string[]", "unread": "number", "lastMessageAt": "string?", "lastMessage": "Preview?" },
+    "Preview": { "text": "string", "fromMe": "boolean", "sentAt": "string", "attachments": "number" },
+    "MessageList": { "messages": "Message[]", "hasMore": "boolean" },
+    "Message": { "id": "string", "chatId": "string", "fromMe": "boolean", "sender": "string?", "senderName": "string?", "text": "string", "sentAt": "string", "replyTo": "string?", "read": "boolean?", "attachments": "Attachment[]", "reactions": "Reaction[]" },
+    "Attachment": { "id": "string", "name": "string", "mime": "string", "bytes": "number", "sticker": "boolean", "missing": "boolean" },
+    "Reaction": { "type": "string", "emoji": "string?", "fromMe": "boolean", "sender": "string?" },
+    "SendRequest": { "text": "string", "clientKey": "string" },
+    "SendResult": { "status": "string", "clientKey": "string", "messageId": "string?", "duplicate": "boolean?" },
+    "Resume": { "epoch": "string", "seq": "number" },
+    "Hello": { "type": "string", "epoch": "string", "seq": "number", "apiVersion": "number", "resumed": "boolean" },
+    "EventFrame": { "type": "string", "seq": "number", "name": "string", "data": "object" },
+    "MessageEvent": { "message": "Message" },
+    "ReactionEvent": { "chatId": "string", "targetId": "string", "type": "string", "emoji": "string?", "add": "boolean", "fromMe": "boolean", "sender": "string?" },
+    "ServerState": { "engine": "string", "sending": "boolean" },
+    "Error": { "error": "ErrorBody" },
+    "ErrorBody": { "code": "string", "message": "string" }
+  }
+}

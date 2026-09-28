@@ -1,0 +1,13 @@
+{
+  "description": "The one owner of the product's names and permanent ids. Code never carries the name: it reads this file, and core/test/guards.test.js asserts the few files that must carry it.",
+  "product": "Cuate",
+  "storeName": "Cuate Chat",
+  "slug": "cuate",
+  "repo": "azuretek/cuate",
+  "ids": {
+    "ios": "com.azuretek.cuate",
+    "android": "com.azuretek.cuate",
+    "desktop": "com.azuretek.cuate.desktop",
+    "server": "com.azuretek.cuate.server"
+  }
+}

@@ -1,0 +1,5 @@
+#!/bin/sh
+# The suites and the build check before every push.
+set -e
+pnpm run --silent test
+pnpm run --silent build

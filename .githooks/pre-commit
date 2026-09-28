@@ -1,0 +1,4 @@
+#!/bin/sh
+# Lint before every commit. pnpm run hooks:install points git here.
+set -e
+pnpm run --silent lint

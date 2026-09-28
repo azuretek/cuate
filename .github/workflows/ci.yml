@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: pnpm run lint
+      - run: pnpm run test
+      - run: pnpm run build
+
+  desktop:
+    name: desktop smoke (Linux, xvfb)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Ensure Electron is usable
+        working-directory: desktop
+        run: |
+          usable() { node -e "const fs=require('fs'),p=require('electron');if(!fs.existsSync(p))process.exit(1)"; }
+          usable || node node_modules/electron/install.js
+          usable && echo "electron loads"
+      # A virtual display, emoji fonts, the namespace restriction lifted so Chromium's sandbox starts, and a session
+      # bus with an unlocked keyring so safeStorage encrypts the token as it does on a desktop.
+      - name: A display and a keyring for Electron
+        run: |
+          set -eo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb dbus-x11 gnome-keyring libsecret-1-0 fonts-noto-color-emoji >/dev/null
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          eval "$(dbus-launch --sh-syntax)"
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+          echo "XDG_CURRENT_DESKTOP=GNOME" >> "$GITHUB_ENV"
+          mkdir -p ~/.local/share/keyrings
+          printf 'ci' | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null
+          printf 'ci' | gnome-keyring-daemon --start --components=secrets >/dev/null
+          echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
+      # The virtual display has no GPU, so the app renders in software here.
+      - name: Boot the app against a server over the fake engine
+        env:
+          SMOKE_SOFTWARE_RENDERING: '1'
+        run: xvfb-run -a -s "-screen 0 1280x800x24" node desktop/scripts/smoke.mjs
+      - name: Keep the captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-smoke
+          path: ${{ env.SHOTS }}
+          if-no-files-found: warn
+
+  gate:
+    name: gate
+    needs: [test, desktop]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every leg passed
+        run: |
+          test "${{ needs.test.result }}" = success
+          test "${{ needs.desktop.result }}" = success
