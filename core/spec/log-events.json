@@ -1,0 +1,28 @@
+{
+  "description": "The allowlist of every structured log event and its fields, for the server and every client. A line is one JSON object; an undeclared event or field never reaches a sink (core/kit/log.js). Fields are ids, counts, durations and states; the only free text is an error, scrubbed by core/kit/rules/scrub.js. Success paths log at debug only: they belong to traces and metrics.",
+  "levels": ["debug", "info", "notice", "warn", "error", "fatal"],
+  "common": ["ts", "level", "event", "msg", "app", "component", "run", "pid", "version", "trace_id", "span_id"],
+  "events": {
+    "server.start": { "level": "notice", "msg": "server starting", "fields": { "port": "number", "engine": "string", "sending": "boolean" } },
+    "server.ready": { "level": "notice", "msg": "server ready", "fields": { "port": "number", "host": "string" } },
+    "server.stop": { "level": "notice", "msg": "server stopping", "fields": { "reason": "string" } },
+    "server.crash": { "level": "fatal", "msg": "server crashed", "fields": { "error": "string", "record": "string?" } },
+    "config.problem": { "level": "warn", "msg": "config problem", "fields": { "problem": "string" } },
+    "engine.start": { "level": "notice", "msg": "engine started", "fields": { "kind": "string", "version": "string?", "ready": "boolean" } },
+    "engine.exit": { "level": "warn", "msg": "engine exited; restarting", "fields": { "code": "number?", "signal": "string?", "restart_ms": "number" } },
+    "engine.error": { "level": "error", "msg": "engine request failed", "fields": { "method": "string", "code": "number?", "error": "string" } },
+    "engine.stderr": { "level": "debug", "msg": "engine diagnostic", "fields": { "line": "string" } },
+    "engine.overflow": { "level": "warn", "msg": "engine watch overflowed; resubscribing", "fields": { "resume_after": "number" } },
+    "http.request": { "level": "debug", "msg": "request", "fields": { "route": "string", "status": "number", "ms": "number" } },
+    "http.error": { "level": "error", "msg": "request failed", "fields": { "route": "string", "status": "number", "code": "string", "error": "string?" } },
+    "auth.refused": { "level": "notice", "msg": "request refused", "fields": { "route": "string", "reason": "string" } },
+    "send.refused": { "level": "notice", "msg": "send refused", "fields": { "reason": "string", "chat": "string" } },
+    "send.failed": { "level": "error", "msg": "send failed", "fields": { "chat": "string", "code": "string", "error": "string?" } },
+    "send.uncertain": { "level": "warn", "msg": "send outcome uncertain; not retried", "fields": { "chat": "string", "code": "string" } },
+    "ws.refused": { "level": "notice", "msg": "event stream refused", "fields": { "reason": "string" } },
+    "ws.error": { "level": "error", "msg": "event stream error", "fields": { "error": "string" } },
+    "ui.state": { "level": "notice", "msg": "connection state", "fields": { "state": "string" } },
+    "ui.error": { "level": "error", "msg": "ui error", "fields": { "where": "string", "error": "string" } },
+    "log.undeclared": { "level": "warn", "msg": "undeclared log event dropped", "fields": { "name": "string" } }
+  }
+}

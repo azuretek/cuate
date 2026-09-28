@@ -1,0 +1,82 @@
+/* The app's styles. Every colour, size, spacing, radius and duration comes from tokens.css (core/spec/tokens.json);
+   core/test/guards.test.js fails on a literal. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); color: var(--color-fg); background: var(--color-bg); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+code { font-family: var(--font-mono); font-size: var(--font-size-sm); }
+app-root { display: block; height: 100%; }
+.muted { color: var(--color-fg-muted); }
+.small { font-size: var(--font-size-sm); }
+.title { font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); margin: 0; }
+
+.splash { height: 100%; display: grid; place-items: center; }
+.spinner { width: var(--size-spinner); height: var(--size-spinner); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-border); border-top-color: var(--color-accent); animation: spin var(--motion-spin) linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
+.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; height: var(--size-header); padding: 0 var(--space-4); flex: none; }
+.text-button { background: none; border: 0; color: var(--color-accent); cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.text-button:hover { background: var(--color-bg-sunken); }
+.banner { margin: 0 var(--space-3) var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-banner); font-size: var(--font-size-sm); }
+.banner.problem { color: var(--color-danger); }
+
+app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
+.chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); }
+.chat-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; outline: none; transition: background var(--motion-fast) var(--motion-ease); }
+.chat-row:hover { background: var(--color-bg-sunken); }
+.chat-row:focus-visible { box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
+.chat-row.selected { background: var(--color-selection); }
+.avatar { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); display: grid; place-items: center; background: var(--color-bg-sunken); color: var(--color-fg-muted); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); }
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
+.chat-name { font-weight: var(--font-weight-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-row.unread .chat-name { font-weight: var(--font-weight-bold); }
+.chat-time { flex: none; font-size: var(--font-size-xs); color: var(--color-fg-muted); }
+.chat-preview { font-size: var(--font-size-sm); color: var(--color-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unread-dot { flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--color-unread); }
+
+.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.empty { margin: auto; color: var(--color-fg-muted); }
+app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.conv-head { display: flex; align-items: center; gap: var(--space-3); height: var(--size-header); padding: 0 var(--space-4); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
+.conv-title { min-width: 0; }
+.messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; }
+.load-older { align-self: center; margin-bottom: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
+.separator { align-self: center; margin: var(--space-4) 0 var(--space-2); font-size: var(--font-size-xs); color: var(--color-fg-muted); }
+.bubble-row { display: flex; flex-direction: column; align-items: flex-start; margin-top: var(--space-1); }
+.bubble-row.first { margin-top: var(--space-3); }
+.bubble-row.mine { align-items: flex-end; }
+.sender { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: 0 var(--space-3) var(--space-1); }
+.bubble { max-width: var(--size-bubble-max); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble.them { background: var(--color-bubble-them); color: var(--color-bubble-them-fg); }
+.bubble.me { background: var(--color-bubble-me); color: var(--color-bubble-me-fg); }
+.bubble.sms { background: var(--color-bubble-sms); color: var(--color-bubble-sms-fg); }
+.bubble.state-sending { opacity: 0.7; }
+.bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }
+.reactions { display: flex; gap: var(--space-1); margin: var(--space-1) var(--space-2) 0; font-size: var(--font-size-sm); }
+.reaction { background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: 0 var(--space-2); }
+.delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+app-attachment { display: block; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); }
+.attachment-image { display: block; max-width: 100%; max-height: var(--size-image-max); border-radius: var(--radius-lg); }
+.attachment-image.placeholder { width: var(--size-image-placeholder); height: var(--size-image-placeholder); background: var(--color-bg-sunken); }
+.attachment-image.sticker { border-radius: 0; }
+.attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
+
+app-composer { display: block; flex: none; border-top: var(--size-border) solid var(--color-border); }
+.composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
+.composer textarea { flex: 1; resize: none; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); outline: none; }
+.composer textarea:focus { border-color: var(--color-accent); }
+.send { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-lg); cursor: pointer; }
+.send:disabled { opacity: 0.4; cursor: default; }
+
+.onboarding-wrap { height: 100%; display: grid; place-items: center; padding: var(--space-5); }
+.onboarding { width: 100%; max-width: var(--size-onboarding); display: flex; flex-direction: column; gap: var(--space-4); }
+.field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); color: var(--color-fg-muted); }
+.field input { font-size: var(--font-size-md); color: var(--color-fg); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); }
+.field input:focus { outline: none; border-color: var(--color-accent); }
+.problem { color: var(--color-danger); margin: 0; }
+.button { border: 0; border-radius: var(--radius-md); padding: var(--space-2) var(--space-4); cursor: pointer; font-weight: var(--font-weight-medium); }
+.button.primary { background: var(--color-accent); color: var(--color-accent-fg); }
+.button:disabled { opacity: 0.6; cursor: default; }
