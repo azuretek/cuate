@@ -76,7 +76,6 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
-      SHOTS: ${{ runner.temp }}/packaged-smoke
     steps:
       - name: Refuse untrusted signing request
         if: ${{ inputs.signed && !(github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
@@ -123,10 +122,13 @@ jobs:
       - name: Packaged Linux boot smoke
         if: runner.os == 'Linux'
         env:
+          SHOTS: ${{ runner.temp }}/packaged-smoke
           SMOKE_SOFTWARE_RENDERING: "1"
         run: xvfb-run -a node desktop/scripts/smoke-packed.mjs
       - name: Packaged Windows and macOS boot smoke
         if: runner.os != 'Linux'
+        env:
+          SHOTS: ${{ runner.temp }}/packaged-smoke
         run: node desktop/scripts/smoke-packed.mjs
       - uses: actions/upload-artifact@v4
         with:
@@ -144,5 +146,5 @@ jobs:
         with:
           name: smoke-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            ${{ env.SHOTS }}/*.png
-            ${{ env.SHOTS }}/report.json
+            ${{ runner.temp }}/packaged-smoke/*.png
+            ${{ runner.temp }}/packaged-smoke/report.json

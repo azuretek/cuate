@@ -52,6 +52,15 @@ test('PR verification runs all native builds, has no secrets and reaches the sol
   for (const step of pack.jobs.build.steps) if (JSON.stringify(step.env || {}).includes('secrets.')) assert.equal(step, signing);
   assert.ok(pack.jobs.build.steps.filter((step) => step.uses === 'actions/checkout@v4').every((step) => step.with['persist-credentials'] === false));
 });
+test('runner-dependent capture paths are evaluated only in step contexts', () => {
+  const pack = workflow('package');
+  assert.doesNotMatch(JSON.stringify(pack.jobs.build.env), /runner\./);
+  const smoke = pack.jobs.build.steps.filter((step) => step.run?.includes('smoke-packed.mjs'));
+  assert.equal(smoke.length, 2);
+  for (const step of smoke) assert.equal(step.env.SHOTS, '${{ runner.temp }}/packaged-smoke');
+  const captures = pack.jobs.build.steps.find((step) => step.with?.name === 'smoke-${{ matrix.platform }}-${{ matrix.arch }}');
+  assert.equal(captures.with.path, '${{ runner.temp }}/packaged-smoke/*.png\n${{ runner.temp }}/packaged-smoke/report.json\n');
+});
 test('publisher CLI refuses an untrusted apply before reading files or reaching GitHub', () => {
   for (const [event, ref] of [['pull_request', 'refs/heads/main'], ['workflow_dispatch', 'refs/heads/topic']]) {
     const result = spawnSync(process.execPath, ['scripts/release/release.mjs', 'does-not-exist', 'invalid', 'invalid', '--apply'], { encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: event, GITHUB_REF: ref } });
