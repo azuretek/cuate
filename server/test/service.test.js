@@ -12,14 +12,14 @@ import { boot } from './helpers.js';
 const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
 const run = (args, opts = {}) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', ...opts });
 // Asynchronous, for a test whose server runs in this process: a synchronous child would block it.
-const runAsync = (args, input) => new Promise((resolve) => {
+const runAsync = (args, input, delayMs = 0) => new Promise((resolve) => {
   const c = spawn(process.execPath, [cli, ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   c.stdout.on('data', (d) => (stdout += d));
   c.stderr.on('data', (d) => (stderr += d));
   c.on('close', (status) => resolve({ status, stdout, stderr }));
-  c.stdin.end(input);
+  setTimeout(() => c.stdin.end(input), delayMs);
 });
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), 'srv-svc-'));
 
@@ -148,6 +148,17 @@ test('check reads a token on stdin and proves a server answers and reads', async
     const bad = await runAsync(['check', '--url', s.base], 'tok_not-a-real-token-at-all-000000000000000000\n');
     assert.equal(bad.status, 1);
     assert.match(bad.stdout, /^fail +info answered 401$/m);
+  } finally {
+    await s.close();
+  }
+});
+
+test('check waits for a token that arrives late, as one piped from a password manager does', async () => {
+  const s = await boot();
+  try {
+    const late = await runAsync(['check', '--url', s.base], s.tokens.tooling + '\n', 700);
+    assert.equal(late.status, 0, late.stdout + late.stderr);
+    assert.match(late.stdout, /^ok +chats: \d+ returned$/m);
   } finally {
     await s.close();
   }
