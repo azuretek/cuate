@@ -4,6 +4,7 @@
 
 - `pnpm install`, then `pnpm run hooks:install` once, so lint runs before each commit and the tests before each push.
 - `pnpm run lint`, `pnpm run test` and `pnpm run build` must pass. `pnpm run smoke` boots the desktop app against a fake server; it needs a display.
+- `pnpm run build` also checks that the generated PNG and ICO match the placeholder SVG. Regenerate them with `pnpm --filter desktop icons`. [Release instructions](release.md) cover packaged smoke tests.
 - Every change lands as a pull request and merges when CI is green. Commits follow Conventional Commits, and the message says why.
 
 ## The rules, and the test that holds each

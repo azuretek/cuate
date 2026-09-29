@@ -5,12 +5,14 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import updaterPackage from 'electron-updater';
+import { startUpdates } from './updates.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const CORE = path.resolve(here, '../../core');
+const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
 const naming = JSON.parse(readFileSync(path.join(CORE, 'spec/naming.json'), 'utf8'));
 const bridgeSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/host-bridge.json'), 'utf8'));
-const version = JSON.parse(readFileSync(path.join(here, '../package.json'), 'utf8')).version;
+const version = app.getVersion();
 const SMOKE = process.env.SMOKE_OUT || '';
 
 app.setName(naming.product);
@@ -83,7 +85,7 @@ async function runSmoke(w) {
       captured.push(name);
     }
   };
-  const report = {};
+  const report = { info: await js("window.bridge.call('app.info')"), packaged: app.isPackaged };
   await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.bubble-row').length > 0");
   await pause(600);
   report.chats = await js("document.querySelectorAll('.chat-row').length");
@@ -127,6 +129,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: naming.product,
+    icon: path.join(here, '../build/icon.png'),
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -149,6 +152,10 @@ app.whenReady().then(() => {
     secure.set('server.token', process.env.SMOKE_TOKEN || '');
   }
   createWindow();
+  if (app.isPackaged && !SMOKE) {
+    const stop = startUpdates({ updater: updaterPackage.autoUpdater, version, notify: (title, body) => handlers.notify({ title, body }), logError: (message) => console.error(message) });
+    app.once('before-quit', stop);
+  }
   app.on('activate', () => { if (!win) createWindow(); });
 });
 

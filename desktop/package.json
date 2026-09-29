@@ -6,9 +6,19 @@
   "main": "src/main.js",
   "license": "MIT",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "icons": "node scripts/icons.mjs",
+    "package": "electron-builder --config electron-builder.mjs --publish never"
   },
   "devDependencies": {
-    "electron": "^44.4.5"
+    "electron": "^44.4.5",
+    "electron-builder": "26.15.3",
+    "sharp": "0.34.5",
+    "png-to-ico": "3.0.1"
+  },
+  "description": "A shared-core desktop messaging client",
+  "author": "Abi Renhart",
+  "dependencies": {
+    "electron-updater": "6.8.9"
   }
 }

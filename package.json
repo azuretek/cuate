@@ -7,12 +7,17 @@
   "author": "Abi Renhart",
   "license": "MIT",
   "packageManager": "pnpm@12.4.0",
-  "repository": { "type": "git", "url": "git+https://github.com/azuretek/cuate.git" },
-  "engines": { "node": ">=22.13" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/azuretek/cuate.git"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "lint": "eslint .",
     "test": "node --test --test-concurrency=1 \"core/test/*.test.js\" \"server/test/*.test.js\" \"desktop/test/*.test.js\"",
-    "build": "node scripts/gen-tokens.mjs --check",
+    "build": "node scripts/gen-tokens.mjs --check && node desktop/scripts/icons.mjs --check",
     "tokens": "node scripts/gen-tokens.mjs",
     "server": "node server/src/main.js",
     "desktop": "pnpm --filter desktop start",
@@ -22,6 +27,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.11.0",
-    "globals": "^17.12.0"
+    "globals": "^17.12.0",
+    "yaml": "2.8.2"
   }
 }
