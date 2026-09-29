@@ -116,11 +116,12 @@ test('a remote digest mismatch withdraws the draft, never publishes', (t) => {
 });
 test('all six native packaging legs and their tests gate the sole publisher', () => {
   const workflow = parse(readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8'));
-  assert.equal(workflow.jobs.build.strategy.matrix.include.length, 6);
+  const packaging = parse(readFileSync(new URL('../../.github/workflows/package.yml', import.meta.url), 'utf8'));
+  assert.equal(packaging.jobs.build.strategy.matrix.include.length, 6);
   assert.deepEqual(workflow.jobs.release.needs, ['prepare', 'build']);
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
   assert.deepEqual(workflow.on.push.branches, ['main']);
   assert.equal(workflow.on.push.paths, undefined);
-  assert.ok(workflow.jobs.build.steps.some((step) => step.run === 'pnpm run test'));
-  assert.ok(workflow.jobs.build.steps.some((step) => step.run?.includes('smoke-packed.mjs')));
+  assert.ok(packaging.jobs.build.steps.some((step) => step.run === 'pnpm run test'));
+  assert.ok(packaging.jobs.build.steps.some((step) => step.run?.includes('smoke-packed.mjs')));
 });

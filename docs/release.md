@@ -17,7 +17,9 @@ Full releases will select an exact snapshot through a separately designed proces
 - Linux x86_64 and arm64: AppImage, with the differential blockmap embedded in the image.
 - dev.yml, dev-mac.yml, dev-linux.yml and dev-linux-arm64.yml: update metadata. macOS and Windows feeds merge both native architectures rather than overwriting one leg with the other.
 
-All six native legs run lint, unit tests, build checks and the packaged smoke before uploading. The publisher first verifies every expected asset and each feed's SHA-512, creates a draft, attaches the complete set, verifies GitHub's asset sizes and SHA-256 digests, then publishes. A failed partial draft is withdrawn. Published dev builds are pruned to the newest ten; stable releases are untouched. Builds never publish through electron-builder.
+Every pull request runs all six native legs through the read-only reusable package workflow, regardless of changed paths. CI calls it without secrets, uses unsigned macOS builds and requires the packaging and merged-asset verdict in the existing sole gate check. It neither signs nor publishes. The same workflow builds signed macOS apps only for main-branch push/manual release events; a manual dispatch on any other ref is refused before building or receiving secrets. Checkout credentials are not persisted in packaging jobs.
+
+All six native legs run lint, unit tests, build checks and the packaged smoke before uploading. PR verification also merges all six legs and checks feed completeness and hashes. The publisher independently verifies every expected asset and each feed's SHA-512, creates a draft, attaches the complete set, verifies GitHub's asset sizes and SHA-256 digests, then publishes. A failed partial draft is withdrawn. Published dev builds are pruned to the newest ten; stable releases are untouched. Builds never publish through electron-builder.
 
 ## Install
 

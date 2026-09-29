@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { verifyAssets } from './assets.mjs';
+import { assertPublicationAllowed } from './policy.mjs';
 const naming = JSON.parse(readFileSync(new URL('../../core/spec/naming.json', import.meta.url)));
 export function publish({ dir, version, sha, apply = false, gh = (args) => execFileSync('gh', args, { encoding: 'utf8', timeout: 120000 }) }) {
   if (!/^\d+\.\d+\.\d+-dev\.\d+\.[a-f0-9]{10}$/.test(version) || !/^[a-f0-9]{40}$/.test(sha) || !version.endsWith(sha.slice(0, 10))) throw new Error('Invalid snapshot identity');
@@ -40,4 +41,7 @@ export function publish({ dir, version, sha, apply = false, gh = (args) => execF
   const older = releases.filter((release) => release.prerelease && !release.draft && /^v\d+\.\d+\.\d+-dev\./.test(release.tag_name)).sort((a, b) => b.published_at.localeCompare(a.published_at));
   for (const release of older.slice(9)) gh(['release', 'delete', release.tag_name, ...repo, '--yes']);
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) publish({ dir: process.argv[2], version: process.argv[3], sha: process.argv[4], apply: process.argv.includes('--apply') });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes('--apply')) assertPublicationAllowed();
+  publish({ dir: process.argv[2], version: process.argv[3], sha: process.argv[4], apply: process.argv.includes('--apply') });
+}

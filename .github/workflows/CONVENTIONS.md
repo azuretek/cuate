@@ -3,6 +3,8 @@
 Adapted from Chela's desktop pipeline.
 
 - No workflow path filters. scripts/release/changes.mjs owns whether a change ships; it never exempts a platform.
+- CI calls package.yml on every PR without secrets, using unsigned macOS packages. Its six native smoke legs and merged-asset completeness job must pass the existing gate check. No second job is named gate.
+- release.yml signs and publishes only on main push/manual events; non-main dispatches and PR events cannot publish. The publisher CLI separately rejects an untrusted apply.
 - Every existing desktop platform and architecture must pass before publication. iOS and Android join this gate when implemented. No TestFlight claim is made by a desktop-only test release.
 - One immutable event SHA and one computed version per run. No stable releases from this workflow.
 - Package with --publish never. Only the final job gets contents: write and a publishing token.
