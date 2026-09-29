@@ -74,8 +74,6 @@ jobs:
     env:
       BUILD_VERSION: ${{ inputs.version }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
-      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     steps:
       - name: Refuse untrusted signing request
         if: ${{ inputs.signed && !(github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
@@ -91,8 +89,15 @@ jobs:
           cache: pnpm
       - uses: actions/cache@v4
         with:
-          path: .cache
-          key: packaging-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: ${{ runner.temp }}/packaging-cache
+          key: packaging-v2-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Set packaging cache outside application module scope
+        shell: bash
+        env:
+          PACKAGING_CACHE: ${{ runner.temp }}/packaging-cache
+        run: |
+          echo "ELECTRON_CACHE=$PACKAGING_CACHE/electron" >> "$GITHUB_ENV"
+          echo "ELECTRON_BUILDER_CACHE=$PACKAGING_CACHE/electron-builder" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
       - run: pnpm run test

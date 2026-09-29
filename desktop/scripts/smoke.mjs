@@ -56,7 +56,10 @@ const killer = setTimeout(() => appProc.kill('SIGKILL'), 120000);
 const code = await new Promise((resolve) => { appProc.on('exit', resolve); appProc.on('error', (error) => { console.error(error.message); resolve(-1); }); });
 try { report = JSON.parse(readFileSync(path.join(out, 'report.json'), 'utf8')); } catch { /* absence fails below */ }
 clearTimeout(killer);
-server.kill('SIGTERM');
+await new Promise((resolve) => {
+  server.once('close', resolve);
+  server.kill('SIGTERM');
+});
 rmSync(data, { recursive: true, force: true });
 rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
 const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.live && report.sent && report.onboarding;
