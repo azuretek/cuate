@@ -131,14 +131,17 @@ jobs:
         id: version
         run: |
           set -eo pipefail
-          count="$(git rev-list --count HEAD)"
-          marketing="$(node -p "require('../package.json').version")"
-          version="$marketing-dev.$count.$(git rev-parse --short=10 HEAD)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "the release APK names itself $version"
+          # The one owner of the base and of both derivations, so the APK cannot
+          # name itself something the desktop and iOS builds do not.
+          node ../scripts/release/version.mjs > /dev/null
+          echo "the release APK names itself $(node ../scripts/release/version.mjs)"
 
       - name: Build the signed APK
-        run: ./gradlew --no-daemon :app:assembleRelease
+        run: |
+          set -eo pipefail
+          ./gradlew --no-daemon :app:assembleRelease \
+            -PversionName="${{ steps.version.outputs.version }}" \
+            -PversionCode="${{ steps.version.outputs.count }}"
 
       - name: Keep the signed APK
         uses: actions/upload-artifact@v4

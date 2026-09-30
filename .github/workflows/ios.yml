@@ -195,15 +195,17 @@ jobs:
         id: version
         run: |
           set -eo pipefail
-          count="$(git rev-list --count HEAD)"
-          marketing="$(node -p "require('../package.json').version")"
+          # The base in package.json is the last released version, and this script
+          # owns both derivations, so the desktop, iOS and Android paths cannot
+          # disagree about which version this commit is. It writes version,
+          # marketing and count to GITHUB_OUTPUT itself.
+          marketing="$(node ../scripts/release/version.mjs --marketing)"
           if ! printf '%s' "$marketing" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::$marketing is not three dot separated integers, so Apple would reject it"
             exit 1
           fi
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          echo "marketing=$marketing" >> "$GITHUB_OUTPUT"
-          echo "version=$marketing-dev.$count.$(git rev-parse --short=10 HEAD)" >> "$GITHUB_OUTPUT"
+          node ../scripts/release/version.mjs > /dev/null
+          echo "the build names itself $(node ../scripts/release/version.mjs)"
 
       - name: Install the App Store Connect key
         env:
