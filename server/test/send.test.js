@@ -40,7 +40,7 @@ test('a send is refused while the switch is off, and never reaches the engine or
   const s = sender({ sending: false });
   t.after(() => s.close());
   await s.start();
-  const r = await s.send('1', 'Synthetic off', 'key-off-000001');
+  const r = await s.send('1', { text: 'Synthetic off' }, 'key-off-000001');
   assert.equal(r.http, 403);
   assert.equal(r.error[0], 'sending_off');
   assert.equal(s.world.sends.length, 0);
@@ -52,13 +52,13 @@ test('a burst past the rate limit is refused, and the window frees again', async
   const s = sender({ perMinute: 2, now: () => clock });
   t.after(() => s.close());
   await s.start();
-  assert.equal((await s.send('1', 'Synthetic rate one', 'key-rate-00001')).http, 201);
-  assert.equal((await s.send('1', 'Synthetic rate two', 'key-rate-00002')).http, 201);
-  const refused = await s.send('1', 'Synthetic rate three', 'key-rate-00003');
+  assert.equal((await s.send('1', { text: 'Synthetic rate one' }, 'key-rate-00001')).http, 201);
+  assert.equal((await s.send('1', { text: 'Synthetic rate two' }, 'key-rate-00002')).http, 201);
+  const refused = await s.send('1', { text: 'Synthetic rate three' }, 'key-rate-00003');
   assert.equal(refused.http, 429);
   assert.equal(refused.error[0], 'rate_limited');
   clock += 61000;
-  assert.equal((await s.send('1', 'Synthetic rate four', 'key-rate-00004')).http, 201);
+  assert.equal((await s.send('1', { text: 'Synthetic rate four' }, 'key-rate-00004')).http, 201);
   assert.equal(s.world.sends.length, 3, 'the refused send stayed out of the engine');
 });
 
@@ -66,18 +66,18 @@ test('a repeated client key is answered once, and a copy still in flight is answ
   const s = sender({ sendTimeoutMs: 5000 });
   t.after(() => s.close());
   await s.start();
-  const first = await s.send('1', 'Synthetic once', 'key-once-00001');
+  const first = await s.send('1', { text: 'Synthetic once' }, 'key-once-00001');
   assert.equal(first.http, 201);
   assert.ok(first.body.messageId);
-  const again = await s.send('1', 'Synthetic once', 'key-once-00001');
+  const again = await s.send('1', { text: 'Synthetic once' }, 'key-once-00001');
   assert.equal(again.http, 200);
   assert.equal(again.body.duplicate, true);
   assert.equal(again.body.messageId, first.body.messageId);
   assert.equal(s.world.sends.length, 1, 'the repeat was answered, not sent again');
   // while the first copy is still with the engine, a second copy is answered as a duplicate, never sent twice
   s.world.behavior.send = 'hang';
-  const held = s.send('1', 'Synthetic concurrent', 'key-race-00001');
-  const copy = await s.send('1', 'Synthetic concurrent', 'key-race-00001');
+  const held = s.send('1', { text: 'Synthetic concurrent' }, 'key-race-00001');
+  const copy = await s.send('1', { text: 'Synthetic concurrent' }, 'key-race-00001');
   assert.equal(copy.http, 200);
   assert.equal(copy.body.duplicate, true);
   assert.equal(s.world.sends.length, 1, 'the copy never reached the engine');
@@ -93,11 +93,11 @@ test('a definite failure is reported and recorded, and a repeat is never sent', 
   t.after(() => s.close());
   await s.start();
   s.world.behavior.send = 'fail';
-  const r = await s.send('2', 'Synthetic refused', 'key-fail-00001');
+  const r = await s.send('2', { text: 'Synthetic refused' }, 'key-fail-00001');
   assert.equal(r.http, 502);
   assert.equal(r.error[0], 'send_failed');
   assert.equal(s.store.getSend('key-fail-00001').status, 'failed');
-  const again = await s.send('2', 'Synthetic refused', 'key-fail-00001');
+  const again = await s.send('2', { text: 'Synthetic refused' }, 'key-fail-00001');
   assert.equal(again.body.duplicate, true);
   assert.equal(s.world.attempts, 1);
 });
@@ -107,11 +107,11 @@ test('an uncertain engine answer is reported uncertain and never retried', async
   t.after(() => s.close());
   await s.start();
   s.world.behavior.send = 'uncertain';
-  const r = await s.send('2', 'Synthetic unsure', 'key-unsure-001');
+  const r = await s.send('2', { text: 'Synthetic unsure' }, 'key-unsure-001');
   assert.equal(r.http, 202);
   assert.equal(r.body.status, 'uncertain');
   assert.equal(s.store.getSend('key-unsure-001').status, 'uncertain');
-  const again = await s.send('2', 'Synthetic unsure', 'key-unsure-001');
+  const again = await s.send('2', { text: 'Synthetic unsure' }, 'key-unsure-001');
   assert.equal(again.body.duplicate, true);
   assert.equal(s.world.attempts, 1);
 });
@@ -121,7 +121,7 @@ test('a send the engine never answers is uncertain, not a failure', async (t) =>
   t.after(() => s.close());
   await s.start();
   s.world.behavior.send = 'hang';
-  const r = await s.send('2', 'Synthetic silent', 'key-hang-00001');
+  const r = await s.send('2', { text: 'Synthetic silent' }, 'key-hang-00001');
   assert.equal(r.http, 202);
   assert.equal(r.body.status, 'uncertain');
   assert.equal(s.world.attempts, 1);
@@ -132,7 +132,7 @@ test('a send whose engine dies before it answers is uncertain, and is never retr
   t.after(() => s.close());
   await s.start();
   s.world.behavior.send = 'hang';
-  const pending = s.send('2', 'Synthetic mid-send death', 'key-die-00001');
+  const pending = s.send('2', { text: 'Synthetic mid-send death' }, 'key-die-00001');
   await tick();
   s.world.crashAll();
   const r = await pending;
@@ -157,4 +157,78 @@ test('closing the engine transport stops the engine and the children it started'
   await t.close();
   await tick(200);
   assert.equal(alive(), false, 'the engine group, and the child it started, are gone');
+});
+
+// Phase 2c's other half: a send can carry a file. imsg stages one file per send, so one send is still one message one
+// client key answers for, and the same switch, window, idempotency and uncertainty rules apply to it.
+test('a file send hands the engine the file path, not the text, and is recorded once', async (t) => {
+  const s = sender();
+  t.after(() => s.close());
+  await s.start();
+  const { messages } = await s.engine.messages('1');
+  const file = messages.flatMap((m) => m.attachments)[0];
+  assert.ok(file, 'the fixture carries one attachment to send back');
+  const r = await s.send('1', { file: file.id }, 'key-file-00001');
+  assert.equal(r.http, 201);
+  assert.equal(r.body.status, 'sent');
+  assert.equal(s.world.sends.length, 1);
+  assert.equal(s.world.sends[0].file, s.store.getAttachment(file.id).path, 'the engine got the path the id stands for');
+  assert.equal(s.world.sends[0].text, '', 'a file on its own is not sent as empty text');
+  const again = await s.send('1', { file: file.id }, 'key-file-00001');
+  assert.equal(again.http, 200);
+  assert.equal(again.body.duplicate, true);
+  assert.equal(s.world.sends.length, 1, 'the repeat was answered, not sent again');
+});
+
+test('a file send can carry a caption, and an unknown file is refused before the engine sees it', async (t) => {
+  const s = sender();
+  t.after(() => s.close());
+  await s.start();
+  const { messages } = await s.engine.messages('1');
+  const file = messages.flatMap((m) => m.attachments)[0];
+  const r = await s.send('1', { file: file.id, text: 'Synthetic caption' }, 'key-file-00002');
+  assert.equal(r.http, 201);
+  assert.equal(s.world.sends[0].text, 'Synthetic caption');
+  assert.equal(s.world.sends[0].file, s.store.getAttachment(file.id).path);
+  const bad = await s.send('1', { file: 'unknownunknown01' }, 'key-file-00003');
+  assert.equal(bad.http, 404);
+  assert.equal(bad.error[0], 'attachment_unknown');
+  assert.equal(s.store.getSend('key-file-00003'), null, 'a send we could not make is not recorded, so it is never replayed');
+  assert.equal(s.world.sends.length, 1, 'the unknown file never reached the engine');
+});
+
+test('a send with neither text nor a file is refused', async (t) => {
+  const s = sender();
+  t.after(() => s.close());
+  await s.start();
+  const r = await s.send('1', {}, 'key-empty-00001');
+  assert.equal(r.http, 400);
+  assert.equal(r.error[0], 'bad_text');
+  assert.equal(s.world.sends.length, 0);
+});
+
+test('a file send is refused while the switch is off, and one whose engine dies is uncertain', async (t) => {
+  const off = sender({ sending: false });
+  t.after(() => off.close());
+  await off.start();
+  const { messages } = await off.engine.messages('1');
+  const file = messages.flatMap((m) => m.attachments)[0];
+  const refused = await off.send('1', { file: file.id }, 'key-file-00004');
+  assert.equal(refused.http, 403);
+  assert.equal(off.world.sends.length, 0);
+
+  const s = sender({ sendTimeoutMs: 5000 });
+  t.after(() => s.close());
+  await s.start();
+  const held = await s.engine.messages('1');
+  const one = held.messages.flatMap((m) => m.attachments)[0];
+  s.world.behavior.send = 'hang';
+  const pending = s.send('1', { file: one.id }, 'key-file-00005');
+  await tick();
+  s.world.crashAll();
+  const r = await pending;
+  assert.equal(r.http, 202);
+  assert.equal(r.body.status, 'uncertain');
+  assert.equal(s.store.getSend('key-file-00005').status, 'uncertain');
+  assert.equal(s.world.attempts, 1, 'the file send was attempted once and never retried');
 });
