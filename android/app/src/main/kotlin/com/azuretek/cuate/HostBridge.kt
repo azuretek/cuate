@@ -33,8 +33,8 @@ class HostBridge(
         const val INTERFACE_NAME = "cuateNative"
 
         /** Storage keys are lower-case words joined by dots, the same shape the desktop enforces. */
-        private val KEY = Regex("^[a-z][a-z0-9.]{0,63}$")
         private const val CHANNEL_ID = "cuate.default"
+        private const val REQUEST_NOTIFICATIONS = 6601
 
         /** The command names the bundled spec declares. */
         fun commandNames(assets: android.content.res.AssetManager): Set<String> = try {
@@ -141,8 +141,4 @@ class HostBridge(
     private fun success(value: Any): JSONObject = JSONObject().put("ok", true).put("value", value)
 
     private fun failure(value: Any): JSONObject = JSONObject().put("ok", false).put("value", value)
-
-    private companion object {
-        const val REQUEST_NOTIFICATIONS = 6601
-    }
 }
