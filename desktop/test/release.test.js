@@ -118,7 +118,10 @@ test('all six native packaging legs and their tests gate the sole publisher', ()
   const workflow = parse(readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8'));
   const packaging = parse(readFileSync(new URL('../../.github/workflows/package.yml', import.meta.url), 'utf8'));
   assert.equal(packaging.jobs.build.strategy.matrix.include.length, 6);
-  assert.deepEqual(workflow.jobs.release.needs, ['prepare', 'build']);
+  // The publisher needs the platforms gate beside the build: a test build may not
+  // publish from a run whose phone or desktop leg was red.
+  assert.deepEqual(workflow.jobs.release.needs, ['prepare', 'platforms', 'build']);
+  assert.match(workflow.jobs.release.if, /needs\.platforms\.result == 'success'/);
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
   assert.deepEqual(workflow.on.push.branches, ['main']);
   assert.equal(workflow.on.push.paths, undefined);

@@ -8,7 +8,10 @@ const workflow = (name) => parse(readFileSync(new URL('../../.github/workflows/'
 // Evaluate only the repository-owned expressions, not event data or arbitrary input.
 const condition = (source, github, inputs = {}, runner = { os: 'macOS' }) => {
   const expression = source.replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '');
-  return Boolean(Function('github', 'inputs', 'runner', 'needs', 'return (' + expression + ')')(github, inputs, runner, { prepare: { outputs: { release: 'true' } } }));
+  // The release job's condition now also waits on the platforms gate, so the stub
+  // carries that result: the test evaluates the repository's own expressions, and
+  // a need it does not supply is a condition it cannot evaluate.
+  return Boolean(Function('github', 'inputs', 'runner', 'needs', 'return (' + expression + ')')(github, inputs, runner, { prepare: { outputs: { release: 'true' } }, platforms: { result: 'success' } }));
 };
 test('publication allows only main push/manual, independent of a shipped-path verdict', () => {
   const release = workflow('release');

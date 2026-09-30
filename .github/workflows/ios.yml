@@ -151,7 +151,10 @@ jobs:
     needs: [build-and-boot]
     if: github.event_name != 'pull_request' && needs.build-and-boot.result == 'success'
     runs-on: macos-26
-    timeout-minutes: 60
+    # The archive, the export, the upload and the wait for Apple to finish
+    # processing: the last has its own 45 minute budget, so this has to outlive
+    # all four or a job killed by its own timeout is a refusal nobody can read.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: ios
@@ -352,6 +355,20 @@ jobs:
             --file build/export/Cuate.ipa \
             --apiKey "${{ secrets.ASC_KEY_ID }}" \
             --apiIssuer "${{ secrets.ASC_ISSUER_ID }}"
+
+      # The build is installable only once Apple has processed it, and the upload
+      # command's exit code says only that the bytes were accepted. The platforms
+      # gate reads this job's whole list, so green here has to mean the phone can
+      # be handed the build, not that a file was delivered. Bounded, so a build
+      # that never finishes processing fails the run clearly rather than
+      # publishing something no one can install.
+      - name: Wait until the build is installable
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          BUILD_NUMBER: ${{ steps.version.outputs.count }}
+          WAIT_SECONDS: "2700"
+        run: python3 scripts/asc.py wait
 
       # The key and the keychain are removed whatever happened above, so no
       # credential outlives the job.

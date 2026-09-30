@@ -6,6 +6,9 @@ on:
   workflow_dispatch: null
 permissions:
   contents: read
+  # The platforms gate reads the other pipelines' runs and jobs, and a reusable
+  # workflow can only be granted what its caller has. Nothing here writes.
+  actions: read
 concurrency:
   group: desktop-test-release
   cancel-in-progress: false
@@ -31,6 +34,27 @@ jobs:
       - id: version
         run: node scripts/release/version.mjs
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+  # The platforms gate. A test build publishes only once every pipeline that
+  # builds a platform on this commit has, as a whole, concluded success, and the
+  # iOS half is the archive, the TestFlight upload and its wait for the build to
+  # reach VALID, so a desktop-only test build can no longer go out ahead of the
+  # phone. The pipelines are named here, and desktop/test/gate.test.js fails when
+  # a workflow that builds a platform is not named by a gate call, so a new
+  # platform joins the gate by failing a test rather than by publishing silently.
+  # Named platforms, not gate: ci.yml owns the one job called gate, and a second
+  # one would mean two answers to what the required gate is. desktop/test/release-policy.test.js
+  # fails when the release path grows its own.
+  platforms:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.release == 'true' }}
+    uses: ./.github/workflows/platforms-gate.yml
+    with:
+      platforms: ci, ios, android
+      purpose: publish
+      sha: ${{ github.sha }}
+      ref_name: ${{ github.ref_name }}
+      window: 150
+
   build:
     needs: prepare
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
@@ -47,8 +71,9 @@ jobs:
   release:
     needs:
       - prepare
+      - platforms
       - build
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' && needs.platforms.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

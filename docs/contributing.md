@@ -6,6 +6,7 @@
 - `pnpm run lint`, `pnpm run test` and `pnpm run build` must pass. `pnpm run smoke` boots the desktop app against a fake server; it needs a display.
 - `pnpm run build` also checks that the generated PNG and ICO match the placeholder SVG. Regenerate them with `pnpm --filter desktop icons`. [Release instructions](release.md) cover packaged smoke tests.
 - Every change lands as a pull request and merges when CI is green. Commits follow Conventional Commits, and the message says why.
+- The platforms gate decides what publishes: a test build goes out only when every pipeline that builds a platform on the commit is green, the iOS build reaching VALID in TestFlight included, and a missing or skipped leg refuses. The rule lives in `scripts/release/gate.mjs` and `desktop/test/gate.test.js` holds it, so a new platform pipeline fails a test until it joins the gate rather than publishing silently.
 
 ## The rules, and the test that holds each
 
