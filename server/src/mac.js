@@ -9,7 +9,7 @@ import { execFile, spawn } from 'node:child_process';
 // when nothing else is named as managing it.
 export const MAC_DEFAULTS = Object.freeze({
   awake: true,
-  lock: { enabled: false, method: 'displaySleep' },
+  lock: { enabled: false, method: 'displaySleep', command: null, args: [] },
   messages: { manage: true, app: 'Messages', managedBy: null },
 });
 
@@ -138,6 +138,7 @@ export function createMac({
 }) {
   const mac = macConfig(settings);
   let hold = null;
+  let locked = false;
 
   const refused = (what, r) => {
     log.emit('mac.refused', { what, reason: r });
@@ -148,16 +149,38 @@ export function createMac({
     settings: mac,
     readSettings: () => readMacSettings({ exec, platform }),
 
+    /** The Mac care state as it now stands, for the status route and the events. */
+    state() {
+      return {
+        awake: Boolean(hold),
+        locked,
+        lockEnabled: mac.lock.enabled,
+        lockMethod: mac.lock.method,
+        managedBy: mac.messages.managedBy,
+      };
+    },
+
     /** Starts the sleep hold once. It is idempotent, so a second call is not a second caffeinate. */
     async holdAwake() {
       if (hold) return { held: true };
       if (!mac.awake) return refused('awake', 'the awake setting is off');
       if (platform !== 'darwin') return refused('awake', 'not macOS');
+      let started = null;
       try {
-        hold = spawnChild('caffeinate', ['-i', '-s', '-w', String(pid)], { stdio: 'ignore' });
+        started = spawnChild('caffeinate', ['-i', '-s', '-w', String(pid)], { stdio: 'ignore' });
       } catch (e) {
-        hold = null;
         return refused('awake', 'caffeinate did not start: ' + (e && e.message ? e.message : String(e)));
+      }
+      hold = started;
+      // caffeinate holds the assertion until the process it waits on exits. If it dies while this server still
+      // runs, that is not a hold, so it is reported rather than assumed: a silent dead hold would let the Mac
+      // sleep while the status says awake. An intentional release clears hold first, so it is not reported here.
+      if (started && typeof started.once === 'function') {
+        started.once('exit', () => {
+          if (hold !== started) return;
+          hold = null;
+          log.emit('mac.refused', { what: 'awake', reason: 'caffeinate exited while the server was still running' });
+        });
       }
       log.emit('mac.awake', { on: true });
       return { held: true };
@@ -185,11 +208,13 @@ export function createMac({
         if (!mac.lock.command) return refused('lock', 'the login-framework method has no helper configured');
         const r = await exec(mac.lock.command, mac.lock.args);
         if (!r || r.code !== 0) return refused('lock', 'the login-framework helper failed');
+        locked = true;
         log.emit('mac.lock', { method: 'loginFramework', locked: true });
         return { locked: true };
       }
       const r = await exec('pmset', ['displaysleepnow']);
       if (!r || r.code !== 0) return refused('lock', 'pmset displaysleepnow failed');
+      locked = true;
       log.emit('mac.lock', { method: 'displaySleep', locked: true });
       return { locked: true };
     },

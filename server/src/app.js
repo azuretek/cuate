@@ -47,7 +47,7 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null }) {
   const routes = compile(apiSpec.routes);
   const send = createSender({ engine, store, config, log });
   const previews = new Map();
@@ -160,6 +160,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),
+    mac,
+    restarts,
   };
   const handlers = await loadRoutes(apiSpec.routes);
   for (const r of apiSpec.routes) if (!handlers.has(r.id)) throw new Error('no handler for route ' + r.id);

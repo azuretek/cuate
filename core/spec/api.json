@@ -20,7 +20,9 @@
     { "id": "attachment", "method": "GET", "path": "/api/v1/attachments/:attachmentId", "scope": "read", "query": ["format"], "returns": "binary" },
     { "id": "search", "method": "GET", "path": "/api/v1/search", "scope": "search", "query": ["q", "limit", "chatId"], "returns": "SearchResults" },
     { "id": "settings", "method": "GET", "path": "/api/v1/settings", "scope": "read", "returns": "Settings" },
-    { "id": "settings-write", "method": "PUT", "path": "/api/v1/settings", "scope": "settings", "body": "SettingsPatch", "returns": "Settings" }
+    { "id": "settings-write", "method": "PUT", "path": "/api/v1/settings", "scope": "settings", "body": "SettingsPatch", "returns": "Settings" },
+    { "id": "mac", "method": "GET", "path": "/api/v1/mac", "scope": "read", "returns": "MacState" },
+    { "id": "mac-restart", "method": "POST", "path": "/api/v1/mac/restart", "scope": "admin", "body": "MacRestartRequest", "returns": "MacRestartResult" }
   ],
   "websocket": {
     "path": "/api/v1/events",
@@ -32,7 +34,8 @@
     "message.new": "MessageEvent",
     "reaction": "ReactionEvent",
     "server.state": "ServerState",
-    "settings.changed": "SettingsEvent"
+    "settings.changed": "SettingsEvent",
+    "mac.state": "MacEvent"
   },
   "models": {
     "Health": { "ok": "boolean" },
@@ -52,6 +55,10 @@
     "Settings": { "values": "object" },
     "SettingsPatch": { "values": "object" },
     "SettingsEvent": { "values": "object" },
+    "MacState": { "awake": "boolean", "locked": "boolean", "lockEnabled": "boolean", "lockMethod": "string", "messagesRunning": "boolean", "managedBy": "string?" },
+    "MacRestartRequest": { "what": "string" },
+    "MacRestartResult": { "what": "string", "restarted": "boolean", "reason": "string?" },
+    "MacEvent": { "name": "string", "what": "string?", "on": "boolean?", "locked": "boolean?", "reason": "string?" },
     "Resume": { "epoch": "string", "seq": "number" },
     "Hello": { "type": "string", "epoch": "string", "seq": "number", "apiVersion": "number", "resumed": "boolean" },
     "EventFrame": { "type": "string", "seq": "number", "name": "string", "data": "object" },

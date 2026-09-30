@@ -144,6 +144,20 @@ test('the sleep hold runs caffeinate on the server pid and ends when it is relea
   assert.deepEqual(lines.filter((l) => l.event === 'mac.awake').map((l) => l.on), [true, false]);
 });
 
+test('a sleep hold whose caffeinate dies is reported, not claimed', async () => {
+  const { lines, log } = logger();
+  let exitCb = null;
+  const mac = createMac({
+    log, settings: {}, platform: 'darwin', pid: 4242,
+    spawnChild: () => ({ kill: () => {}, once: (event, cb) => { if (event === 'exit') exitCb = cb; } }),
+  });
+  assert.deepEqual(await mac.holdAwake(), { held: true });
+  assert.equal(mac.state().awake, true);
+  exitCb(1, null);
+  assert.equal(mac.state().awake, false, 'a dead caffeinate is not a live hold');
+  assert.ok(lines.some((l) => l.event === 'mac.refused' && l.what === 'awake'), 'the dead hold is reported');
+});
+
 test('the sleep hold is refused off a Mac and when the setting is off', async () => {
   const off = logger();
   let spawns = 0;
