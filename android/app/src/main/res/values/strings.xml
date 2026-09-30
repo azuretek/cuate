@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher label. core/spec/naming.json owns the name, and a parity test in
+  androidTest asserts this value is the spec's, the way the iOS Info.plist is
+  held to it.
+-->
+<resources>
+    <string name="app_name">Cuate</string>
+</resources>
