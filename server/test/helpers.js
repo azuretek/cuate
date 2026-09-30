@@ -32,6 +32,7 @@ export async function boot({ sending = true, perMinute = 20, sendTimeoutMs = 400
     base, srv, world, store, engine, lines, tokens, config, dir, root,
     get: (p, token) => fetch(base + p, { headers: token ? { authorization: 'Bearer ' + token } : {} }),
     post: (p, token, body) => fetch(base + p, { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    put: (p, token, body) => fetch(base + p, { method: 'PUT', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify(body) }),
     async close() {
       await srv.close();
       await engine.stop();

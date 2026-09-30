@@ -1,15 +1,15 @@
 // The HTTP and WebSocket API declared in core/spec/api.json. Loopback only; every route but health needs a token
-// in the Authorization header whose scope covers it.
+// in the Authorization header whose scope covers it. The routes themselves live one per module in ./routes, mounted
+// here by the id they declare in the spec.
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
-import { createReadStream } from 'node:fs';
-import { realpath, stat, mkdir, access } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion } from './paths.js';
 import { createSender } from './send.js';
+import { createAttachments } from './attachments.js';
+import { createSearch } from './search.js';
+import { createSettings } from './settings.js';
+import { loadRoutes } from './routes/index.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
 const badRequest = (code, message, status = 400) => Object.assign(new Error(message), { status, code });
@@ -154,82 +154,22 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     }
   };
 
-  const handlers = {
-    async health({ res }) {
-      json(res, 200, { ok: true });
-    },
-    async info({ res }) {
-      json(res, 200, { product: naming.product, apiVersion: apiSpec.version, serverVersion, epoch, engine: engine.info(), sending: config.sending.enabled });
-    },
-    async chats({ res, url }) {
-      const limit = intParam(url, 'limit', 1, paging.chats.max, paging.chats.default);
-      const list = await chatList(limit);
-      const missing = list.slice(0, config.previews).filter((c) => !previews.has(String(c.id)));
-      await mapLimit(missing, 4, (c) => loadPreview(c.id));
-      json(res, 200, { chats: list.map((c) => ({ ...c, lastMessage: previews.get(String(c.id)) || null })) });
-    },
-    async messages({ res, url, params }) {
-      if (!chatIdOk(params.chatId)) throw badRequest('bad_chat', 'Unknown chat id.');
-      const limit = intParam(url, 'limit', 1, paging.messages.max, paging.messages.default);
-      const before = url.searchParams.get('before');
-      if (before !== null && !Number.isFinite(Date.parse(before))) throw badRequest('bad_before', 'before must be an ISO 8601 time');
-      json(res, 200, await engine.messages(params.chatId, { limit, before: before ? new Date(Date.parse(before)).toISOString() : null }));
-    },
-    async send({ req, res, params }) {
-      if (!chatIdOk(params.chatId)) throw badRequest('bad_chat', 'Unknown chat id.');
-      const body = await readJson(req, 65536);
-      for (const k of Object.keys(body)) if (k !== 'text' && k !== 'clientKey') throw badRequest('bad_body', 'Unknown field ' + k + '.');
-      const text = typeof body.text === 'string' ? body.text : '';
-      const clientKey = typeof body.clientKey === 'string' ? body.clientKey : '';
-      if (!text.trim() || text.length > 10000) throw badRequest('bad_text', 'text must be 1 to 10,000 characters');
-      if (!/^[A-Za-z0-9_-]{8,100}$/.test(clientKey)) throw badRequest('bad_client_key', 'clientKey must be 8 to 100 letters, digits, dashes or underscores');
-      const r = await send(params.chatId, text, clientKey);
-      if (r.error) return fail(res, r.http, r.error[0], r.error[1], 'send');
-      return json(res, r.http, r.body);
-    },
-    async attachment({ res, url, params }) {
-      const id = params.attachmentId;
-      if (!/^[A-Za-z0-9_-]{10,64}$/.test(id)) throw badRequest('bad_attachment', 'Unknown attachment id.');
-      const rec = store.getAttachment(id);
-      if (!rec) return fail(res, 404, 'attachment_unknown', 'The server does not know that attachment. Reload the conversation.');
-      const root = await realpath(attachmentsRoot).catch(() => null);
-      const expanded = rec.path.startsWith('~/') ? path.join(os.homedir(), rec.path.slice(2)) : rec.path;
-      const real = await realpath(expanded).catch(() => null);
-      if (!root || !real || !(real === root || real.startsWith(root + path.sep))) return fail(res, 404, 'attachment_missing', 'That attachment is not on the Mac.');
-      let file = real;
-      let mime = rec.mime;
-      if (url.searchParams.get('format') === 'jpeg' && /heic|heif/i.test(rec.mime) && platform === 'darwin') {
-        file = await toJpeg(real, id);
-        mime = 'image/jpeg';
-      }
-      const st = await stat(file);
-      res.writeHead(200, { 'content-type': mime, 'content-length': st.size, 'cache-control': 'private, max-age=86400', 'content-disposition': 'inline' });
-      createReadStream(file).on('error', () => res.destroy()).pipe(res);
-      return undefined;
-    },
+  const ctx = {
+    json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, epoch, platform,
+    send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, publish, warm,
+    attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
+    search: createSearch({ engine, paging }),
+    settings: createSettings({ store }),
   };
-  for (const r of routes) if (!handlers[r.id]) throw new Error('no handler for route ' + r.id);
-
-  async function toJpeg(src, id) {
-    const dir = path.join(dataDir, 'cache');
-    await mkdir(dir, { recursive: true });
-    const out = path.join(dir, id + '.jpg');
-    try {
-      await access(out);
-      return out;
-    } catch {
-      // Not converted yet.
-    }
-    await new Promise((resolve, reject) => execFile('sips', ['-s', 'format', 'jpeg', src, '--out', out], { timeout: 30000 }, (err) => (err ? reject(err) : resolve())));
-    return out;
-  }
+  const handlers = await loadRoutes(apiSpec.routes);
+  for (const r of apiSpec.routes) if (!handlers.has(r.id)) throw new Error('no handler for route ' + r.id);
 
   async function handle(req, res) {
     const t0 = performance.now();
     const url = new URL(req.url, 'http://127.0.0.1');
     res.setHeader('access-control-allow-origin', '*');
     res.setHeader('access-control-allow-headers', 'authorization, content-type, traceparent');
-    res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+    res.setHeader('access-control-allow-methods', 'GET, POST, PUT, OPTIONS');
     res.setHeader('access-control-max-age', '600');
     if (req.method === 'OPTIONS') {
       res.setHeader('access-control-allow-private-network', 'true');
@@ -267,7 +207,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       }
     }
     try {
-      await handlers[route.id]({ req, res, url, params, principal });
+      await handlers.get(route.id)({ ...ctx, req, res, url, params, principal });
     } catch (e) {
       if (res.headersSent) { res.destroy(); return undefined; }
       if (e.status) return fail(res, e.status, e.code, e.message, route.id);
