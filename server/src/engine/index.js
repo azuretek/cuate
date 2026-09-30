@@ -112,9 +112,11 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return { messages: list.slice(0, limit).reverse(), hasMore: list.length > limit };
   }
 
-  async function sendText(chatId, text) {
+  // One imsg `send` call, for text, a file, or a file with a caption. Whatever comes back, an outcome the engine
+  // cannot vouch for is uncertain, and the sender above never retries it.
+  async function sendOut(params) {
     try {
-      const r = await request('send', { chat_id: Number(chatId), text }, sendTimeoutMs);
+      const r = await request('send', params, sendTimeoutMs);
       return { ok: true, messageId: r && r.guid ? String(r.guid) : null };
     } catch (e) {
       const disposition = e.data && e.data.disposition;
@@ -124,6 +126,12 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return { ok: false, uncertain: false, code: String(e.code ?? 'error'), error: e.message };
     }
   }
+
+  const sendText = (chatId, text) => sendOut({ chat_id: Number(chatId), text });
+
+  // imsg stages one file per send under the Messages attachments folder before dispatch. An empty caption is left
+  // out, so a file on its own is not a text send carrying nothing.
+  const sendFile = (chatId, file, text = '') => sendOut(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file });
 
   function stop() {
     stopping = true;
@@ -140,6 +148,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     chats,
     messages,
     sendText,
+    sendFile,
     info: () => ({ kind: state.kind, version: state.version, ready: state.ready }),
     on: (cb) => listeners.add(cb),
     onState: (cb) => stateListeners.add(cb),

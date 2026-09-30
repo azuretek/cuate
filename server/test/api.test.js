@@ -167,6 +167,27 @@ test('bad send bodies are refused', async () => {
   }
 });
 
+test('a file send goes out once, and an unknown or malformed file is refused', async () => {
+  const b = await (await s.get(route(1) + '?limit=50', s.tokens.device)).json();
+  const file = b.messages.flatMap((m) => m.attachments)[0];
+  assert.ok(file, 'the fixture carries one attachment to send back');
+  const count = s.world.sends.length;
+  const r1 = await s.post(route(1), s.tokens.device, { file: file.id, clientKey: 'key-file-0001' });
+  assert.equal(r1.status, 201);
+  conforms(await r1.json(), 'SendResult');
+  assert.equal(s.world.sends.length, count + 1);
+  assert.equal(s.world.sends.at(-1).file, s.store.getAttachment(file.id).path);
+  const r2 = await s.post(route(1), s.tokens.device, { file: file.id, clientKey: 'key-file-0001' });
+  assert.equal(r2.status, 200);
+  assert.equal((await r2.json()).duplicate, true);
+  assert.equal(s.world.sends.length, count + 1);
+  assert.equal((await s.post(route(1), s.tokens.device, { file: 'short', clientKey: 'key-file-0002' })).status, 400);
+  const unknown = await s.post(route(1), s.tokens.device, { file: 'unknownunknown01', clientKey: 'key-file-0003' });
+  assert.equal(unknown.status, 404);
+  assert.equal((await unknown.json()).error.code, 'attachment_unknown');
+  assert.equal((await s.post(route(1), s.tokens.device, { clientKey: 'key-file-0004' })).status, 400);
+});
+
 test('an uncertain send is reported as uncertain and never retried', async () => {
   for (const [mode, key] of [['uncertain', 'key-unsure-001'], ['hang', 'key-hang-00001']]) {
     const attempts = s.world.attempts;

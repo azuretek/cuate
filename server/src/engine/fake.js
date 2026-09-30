@@ -95,8 +95,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (behavior.send === 'hang') return undefined;
             if (behavior.send === 'uncertain') return fail(req.id, -32001, 'The send may have completed.', { retry_safe: false, disposition: 'may_have_completed', transport: 'applescript', operation: 'send', detail: '' });
             if (behavior.send === 'fail') return fail(req.id, -32603, 'Messages refused the send.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
-            const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text });
-            sends.push({ chatId: p.chat_id, text: p.text });
+            if (!p.text && !p.file) return fail(req.id, -32602, 'send needs text or a file.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
+            const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
+            const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file });
+            sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null });
             reply(req.id, { ok: true, id: m.id, guid: m.guid });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
