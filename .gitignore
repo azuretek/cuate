@@ -7,3 +7,11 @@ coverage/
 .cache/
 release-assets/
 artifacts/
+
+# The generated Xcode project and the simulator build output: both are produced
+# by xcodegen and xcodebuild, so neither is source.
+ios/build/
+ios/Cuate.xcodeproj/
+ios/proof/
+ios/*.xcuserdata/
+ios/SourcePackages/

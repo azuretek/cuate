@@ -1,0 +1,289 @@
+name: ios
+
+# The iOS shell's pipeline. A pull request generates the project, builds the app
+# for the simulator, boots it and captures a screenshot as the proof the phase
+# asks for, then runs the unit tests. A push to main (or a manual run)
+# additionally archives, signs and uploads a TestFlight build.
+#
+# Adapted from the sibling app's mobile pipeline, not extracted from it: the
+# framework is still being built and the drift between the two files is
+# deliberate.
+#
+# iOS builds run on GitHub's macOS runners, never on another host.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The compile-and-boot half. Credential-free by design: nothing here needs the
+  # Apple account and nothing here signs anything, which is what keeps it
+  # runnable on a pull request.
+  build-and-boot:
+    name: build and boot (simulator)
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      # Which Xcode is used is chosen here rather than left to the image's
+      # default, and the newest installed bundle wins. It is not pinned by name,
+      # because pinning a version the image does not carry fails every run and
+      # pinning one it does carry fails the day the image rolls forward. The one
+      # requirement that is true is a floor of Xcode 16, read from each bundle's
+      # version plist rather than by spawning the toolchain per bundle.
+      - name: Select the newest Xcode
+        run: |
+          set -eo pipefail
+          chosen_line="$(
+            for bundle in /Applications/Xcode*.app; do
+              [ -d "$bundle" ] || continue
+              version="$(plutil -extract CFBundleShortVersionString raw -o - "$bundle/Contents/version.plist" 2>/dev/null || true)"
+              if [ -z "$version" ]; then
+                version="$(DEVELOPER_DIR="$bundle/Contents/Developer" xcodebuild -version 2>/dev/null | head -1 | sed 's/^Xcode //' || true)"
+              fi
+              [ -n "$version" ] || continue
+              printf '%s %s\n' "$version" "$bundle"
+            done | sort -V | tail -1
+          )"
+          if [ -z "$chosen_line" ]; then
+            echo "::error::no usable Xcode found under /Applications"
+            exit 1
+          fi
+          version="${chosen_line%% *}"
+          bundle="${chosen_line#* }"
+          if [ "${version%%.*}" -lt 16 ]; then
+            echo "::error::newest Xcode is $version, and this project needs the Xcode 16 toolchain or newer"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$bundle/Contents/Developer" >> "$GITHUB_ENV"
+          echo "using $bundle (Xcode $version)"
+          "$bundle/Contents/Developer/usr/bin/xcodebuild" -version
+
+      # The project is generated output, not source, and the checkout has no
+      # Cuate.xcodeproj in it at all.
+      - name: Install xcodegen
+        run: |
+          set -eo pipefail
+          if ! command -v xcodegen >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # Build for testing once, so the app and the test bundle are one product
+      # and the test step below runs exactly what compiled.
+      - name: Build for the simulator
+        run: |
+          set -eo pipefail
+          xcodebuild \
+            -project Cuate.xcodeproj \
+            -scheme Cuate \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing
+
+      # The simulator is resolved from the runner's own list rather than named:
+      # the image's set differs from any development machine's, so a hardcoded
+      # name is the classic way this job fails. The resolver script owns the
+      # choice (newest iOS runtime, iPhone only).
+      - name: Resolve an available iPhone simulator
+        run: |
+          set -eo pipefail
+          sim="$(python3 scripts/resolve-simulator.py)"
+          if [ -z "$sim" ]; then
+            echo "::error::no available iPhone simulator on this runner"
+            xcrun simctl list runtimes || true
+            exit 1
+          fi
+          echo "SIMULATOR_UDID=$sim" >> "$GITHUB_ENV"
+          echo "resolved simulator for the newest iOS runtime: $sim"
+
+      # The acceptance the phase is judged by: a shell that only compiles is not
+      # a shell that runs.
+      - name: Boot the app in the simulator and capture the proof
+        run: bash scripts/boot-proof.sh
+
+      - name: Run the unit tests
+        run: |
+          set -eo pipefail
+          xcodebuild \
+            -project Cuate.xcodeproj \
+            -scheme Cuate \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            test-without-building
+
+      - name: Keep the boot proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-boot-proof
+          path: ios/proof
+          if-no-files-found: warn
+
+  # The publish half: the iOS client, archived for a real device, signed with
+  # the account's distribution certificate and uploaded to TestFlight.
+  #
+  # A pull request ships nothing, so this job does not run there; a push to main
+  # or a manual run does, and it is the one path that needs the Apple
+  # credentials. Until they are set it fails loudly, naming what is missing,
+  # rather than publishing nothing in silence.
+  release:
+    name: release to TestFlight
+    needs: [build-and-boot]
+    if: github.event_name != 'pull_request' && needs.build-and-boot.result == 'success'
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select the newest Xcode
+        run: |
+          set -eo pipefail
+          chosen_line="$(
+            for bundle in /Applications/Xcode*.app; do
+              [ -d "$bundle" ] || continue
+              version="$(plutil -extract CFBundleShortVersionString raw -o - "$bundle/Contents/version.plist" 2>/dev/null || true)"
+              [ -n "$version" ] || continue
+              printf '%s %s\n' "$version" "$bundle"
+            done | sort -V | tail -1
+          )"
+          if [ -z "$chosen_line" ]; then
+            echo "::error::no usable Xcode found under /Applications"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=${chosen_line#* }/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Install xcodegen
+        run: |
+          set -eo pipefail
+          if ! command -v xcodegen >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          fi
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # The version the archive carries: the repository's, so the phone and the
+      # desktop cannot disagree about what the next build is called. The commit
+      # count is the monotonically increasing integer Apple accepts as
+      # CFBundleVersion.
+      - name: Decide the version
+        id: version
+        run: |
+          set -eo pipefail
+          count="$(git rev-list --count HEAD)"
+          marketing="$(node -p "require('../package.json').version")"
+          if ! printf '%s' "$marketing" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::$marketing is not three dot separated integers, so Apple would reject it"
+            exit 1
+          fi
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "marketing=$marketing" >> "$GITHUB_OUTPUT"
+          echo "version=$marketing-dev.$count.$(git rev-parse --short=10 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the App Store Connect key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -eo pipefail
+          if [ -z "$ASC_KEY_P8" ]; then
+            echo "::error::ASC_KEY_P8 is not set. The release path needs ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 as repository secrets."
+            exit 1
+          fi
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ASC_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "ASC_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: Import the signing certificate
+        env:
+          P12_BASE64: ${{ secrets.CUATE_DIST_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.CUATE_DIST_P12_PASSWORD }}
+        run: |
+          set -eo pipefail
+          if [ -z "$P12_BASE64" ] || [ -z "$P12_PASSWORD" ]; then
+            echo "::error::CUATE_DIST_P12_BASE64 or CUATE_DIST_P12_PASSWORD is not set. The Apple Distribution certificate and its password sign the build; export the certificate from Xcode as a .p12 and set both as repository secrets."
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/cuate-signing.keychain-db"
+          security create-keychain -p "" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "" "$keychain"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" "$(security default-keychain -d user | tr -d '"')"
+          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Archive
+        run: |
+          set -eo pipefail
+          xcodebuild \
+            -project Cuate.xcodeproj \
+            -scheme Cuate \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Cuate.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" \
+            MARKETING_VERSION="${{ steps.version.outputs.marketing }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.count }}" \
+            CUATE_BUILD_VERSION="${{ steps.version.outputs.version }}" \
+            archive
+
+      - name: Export the .ipa
+        run: |
+          set -eo pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/Cuate.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist scripts/export-options.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}"
+
+      - name: Upload to TestFlight
+        run: |
+          set -eo pipefail
+          xcrun altool --upload-app \
+            --type ios \
+            --file build/export/Cuate.ipa \
+            --apiKey "${{ secrets.ASC_KEY_ID }}" \
+            --apiIssuer "${{ secrets.ASC_ISSUER_ID }}"
+
+      # The key and the keychain are removed whatever happened above, so no
+      # credential outlives the job.
+      - name: Clean up the credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/dist.p12" "$RUNNER_TEMP/AuthKey.p8" 2>/dev/null || true
+          if [ -n "${SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$SIGNING_KEYCHAIN" 2>/dev/null || true
+          fi

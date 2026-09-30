@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Keychain group the device token and cache key are stored in. The
+	     prefix is the team's AppIdentifierPrefix, which only signing knows, so
+	     the group is written against the app id from core/spec/naming.json
+	     (ids.ios) rather than a literal. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.azuretek.cuate</string>
+	</array>
+</dict>
+</plist>
