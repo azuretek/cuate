@@ -143,6 +143,38 @@ jobs:
             -PversionName="${{ steps.version.outputs.version }}" \
             -PversionCode="${{ steps.version.outputs.count }}"
 
+      # A release APK whose signing is assumed is not a verified APK. This reads the
+      # signer certificate back out of the file and fails the job when it is not
+      # the one the keystore holds, so green means signed by the release identity
+      # rather than merely produced.
+      - name: Verify the signature
+        run: |
+          set -eo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          apksigner="$(find "$sdk/build-tools" -name apksigner -type f | sort | tail -1)"
+          if [ -z "$apksigner" ]; then
+            echo "::error::apksigner was not found in the Android SDK build-tools"
+            exit 1
+          fi
+          apk="$(find app/build/outputs/apk/release -name '*.apk' | head -1)"
+          if [ -z "$apk" ]; then
+            echo "::error::no release APK was produced"
+            exit 1
+          fi
+          "$apksigner" verify --print-certs "$apk" | tee "$RUNNER_TEMP/apk-signature.txt"
+          digest() { printf '%s' "$1" | tr -d ':' | tr 'A-Z' 'a-z'; }
+          from_apk="$(grep -i 'certificate SHA-256 digest' "$RUNNER_TEMP/apk-signature.txt" | head -1 | awk '{print $NF}')"
+          from_store="$(keytool -list -v -keystore "$CUATE_ANDROID_KEYSTORE" -storepass "$CUATE_ANDROID_KEYSTORE_PASSWORD" -alias "$CUATE_ANDROID_KEY_ALIAS" | grep -i 'SHA256:' | head -1 | awk '{print $2}')"
+          if [ -z "$from_apk" ] || [ -z "$from_store" ]; then
+            echo "::error::could not read the signing certificate from the APK or from the keystore"
+            exit 1
+          fi
+          if [ "$(digest "$from_apk")" != "$(digest "$from_store")" ]; then
+            echo "::error::the APK is signed by a different certificate than the keystore holds: APK $from_apk, keystore $from_store"
+            exit 1
+          fi
+          echo "the APK is signed by the keystore certificate $from_store"
+
       - name: Keep the signed APK
         uses: actions/upload-artifact@v4
         with:
