@@ -241,6 +241,23 @@ jobs:
           security list-keychains -d user -s "$keychain" "$(security default-keychain -d user | tr -d '"')"
           echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
 
+      # The profile is installed rather than fetched at signing time, because the
+      # keychain here holds one distribution certificate and the portal's own
+      # automatic signing would try to mint development credentials the team has
+      # no room for. It is the App Store profile for this bundle id.
+      - name: Install the provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.CUATE_PROFILE_BASE64 }}
+          PROFILE_UUID: ${{ vars.CUATE_PROFILE_UUID }}
+        run: |
+          set -eo pipefail
+          if [ -z "$PROFILE_BASE64" ] || [ -z "$PROFILE_UUID" ]; then
+            echo "::error::CUATE_PROFILE_BASE64 (secret) and CUATE_PROFILE_UUID (variable) must both be set. They are the App Store distribution profile for this bundle id, generated once and kept in the vault."
+            exit 1
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          printf '%s' "$PROFILE_BASE64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
       - name: Archive
         env:
           # The one owner of the team id is the repository variable, so the
@@ -268,7 +285,42 @@ jobs:
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.count }}" \
             CUATE_BUILD_VERSION="${{ steps.version.outputs.version }}" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ vars.CUATE_PROFILE_NAME }}" \
             archive
+
+      # The bundle id comes from the one owner of the ids rather than being typed
+      # again here, and the profile is named by the same variable the archive used.
+      - name: Write the export options
+        env:
+          PROFILE_NAME: ${{ vars.CUATE_PROFILE_NAME }}
+        run: |
+          set -eo pipefail
+          if [ -z "$PROFILE_NAME" ]; then
+            echo "::error::vars.CUATE_PROFILE_NAME is not set. The export names the App Store profile it signs with."
+            exit 1
+          fi
+          bundle="$(node -p "require('../core/spec/naming.json').ids.ios")"
+          cat > scripts/export-options.generated.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$bundle</key>
+              <string>$PROFILE_NAME</string>
+            </dict>
+          </dict>
+          </plist>
+          PLIST
 
       - name: Export the .ipa
         env:
@@ -278,7 +330,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath build/Cuate.xcarchive \
             -exportPath build/export \
-            -exportOptionsPlist scripts/export-options.plist \
+            -exportOptionsPlist scripts/export-options.generated.plist \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
