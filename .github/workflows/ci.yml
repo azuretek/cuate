@@ -7,6 +7,9 @@ on:
 
 permissions:
   contents: read
+  # The platforms gate reads the other pipelines' runs and jobs, and a reusable
+  # workflow can only be granted what its caller has. Nothing here writes.
+  actions: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -106,9 +109,28 @@ jobs:
       - id: version
         run: node scripts/release/version.mjs
 
+  # ★ The platforms gate. A job cannot need a job in another workflow, so the
+  # iOS leg is read through platforms-gate.yml, which requires that pipeline's
+  # WHOLE job list. This is the one gate a pull request passes and the test build
+  # passes, so a pull request that breaks any platform's leg fails it, and no
+  # commit publishes from a run whose other platform was red. A pull request
+  # exempts the TestFlight upload job, which cannot run there (it is skipped by
+  # design and a skipped job is a refusal); a push to main requires it, so the
+  # gate waits for the upload and for the build to reach VALID.
+  platforms:
+    name: platforms gate
+    uses: ./.github/workflows/platforms-gate.yml
+    with:
+      platforms: ios
+      purpose: merge
+      sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      ref_name: ${{ github.head_ref || github.ref_name }}
+      exempt: ${{ github.event_name == 'pull_request' && 'release to TestFlight' || '' }}
+      window: 120
+
   gate:
     name: gate
-    needs: [test, desktop, packaging]
+    needs: [test, desktop, packaging, platforms]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -117,3 +139,4 @@ jobs:
           test "${{ needs.test.result }}" = success
           test "${{ needs.desktop.result }}" = success
           test "${{ needs.packaging.result }}" = success
+          test "${{ needs.platforms.result }}" = success

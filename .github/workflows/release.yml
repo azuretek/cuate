@@ -6,6 +6,9 @@ on:
   workflow_dispatch: null
 permissions:
   contents: read
+  # The platforms gate reads the other pipelines' runs and jobs, and a reusable
+  # workflow can only be granted what its caller has. Nothing here writes.
+  actions: read
 concurrency:
   group: desktop-test-release
   cancel-in-progress: false
@@ -31,6 +34,24 @@ jobs:
       - id: version
         run: node scripts/release/version.mjs
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+  # The platforms gate. A test build publishes only once every pipeline that
+  # builds a platform on this commit has, as a whole, concluded success, and the
+  # iOS half is the archive, the TestFlight upload and its wait for the build to
+  # reach VALID, so a desktop-only test build can no longer go out ahead of the
+  # phone. The pipelines are named here, and desktop/test/gate.test.js fails when
+  # a workflow that builds a platform is not named by a gate call, so a new
+  # platform joins the gate by failing a test rather than by publishing silently.
+  gate:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.release == 'true' }}
+    uses: ./.github/workflows/platforms-gate.yml
+    with:
+      platforms: ci, ios
+      purpose: publish
+      sha: ${{ github.sha }}
+      ref_name: ${{ github.ref_name }}
+      window: 150
+
   build:
     needs: prepare
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
@@ -47,8 +68,9 @@ jobs:
   release:
     needs:
       - prepare
+      - gate
       - build
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' && needs.gate.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

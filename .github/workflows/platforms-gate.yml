@@ -1,0 +1,121 @@
+name: platforms gate
+
+# The gate every test build passes through: nothing publishes from a commit until
+# EVERY pipeline that builds a platform on it has, as a whole, concluded success.
+#
+# Adapted from the sibling app's (chela) platforms gate, which keeps this rule in
+# a shell block in the workflow. The rule is the same and the shape is this
+# repository's: the decision lives in scripts/release/gate.mjs, which a test can
+# call, so "a job that never ran is not evidence" is checked by a test rather
+# than trusted to a shell expression nobody can exercise without a live run.
+#
+# WHAT PASSES, WHAT WAITS, WHAT REFUSES (the shapes are the rules in gate.mjs):
+#
+#   every listed job success  pass.   Every job the other run lists, minus the
+#                                     exempt ones, concluded success.
+#   a job still running       wait,  bounded by window. A run's job list is
+#                                     written as the run GOES, so a job that has
+#                                     not registered yet is a reason to wait,
+#                                     never a reason to pass.
+#   no run at all             refuse. Both pipelines trigger on every path and
+#                                     which commits publish is decided in one
+#                                     place, scripts/release/changes.mjs, so a
+#                                     commit that reaches this gate always has a
+#                                     run of the other pipeline.
+#   skipped / cancelled /
+#   timed_out                 refuse. A job that never ran is not evidence that
+#                                     its platform built. The iOS release job is
+#                                     the case that matters: it uploads to
+#                                     TestFlight and waits for the build to reach
+#                                     VALID, so a skipped one means no installable
+#                                     iOS build exists.
+#   superseded                stand down (exit 0) only when EVERY red leg was
+#                                     cancelled AND a newer run of the same
+#                                     workflow exists on the same branch: a branch
+#                                     that moved on, not a platform that broke.
+#
+# A refusal names the platform, the jobs that were not green and the run to look
+# at, in the gate job's own name, an annotation and the step summary. A release
+# that silently does not happen is its own bug.
+
+on:
+  workflow_call:
+    inputs:
+      platforms:
+        description: Comma-separated workflow names whose whole job list must be green on the commit for this call site. The guard test desktop/test/gate.test.js fails when a pipeline that builds a platform is not named by a gate call, so a new platform joins the gate by failing a test rather than by publishing silently.
+        required: true
+        type: string
+      purpose:
+        description: What a refusal refuses, in its own error line. The release path refuses to publish.
+        required: false
+        type: string
+        default: publish
+      sha:
+        description: The commit whose runs are judged. Empty means github.sha, which is right for a push; a pull request passes its HEAD commit, because github.sha there is the merge commit and the other pipeline's run is recorded against the head.
+        required: false
+        type: string
+        default: ''
+      ref_name:
+        description: The branch name the runs are recorded against. Empty means github.ref_name; a pull request passes github.head_ref, because on a pull request the ref is refs/pull/N/merge, which no run carries as its branch.
+        required: false
+        type: string
+        default: ''
+      exempt:
+        description: A grep -E alternation naming jobs in those pipelines which cannot conclude before this pipeline publishes, meaning its own publish job and its own call of this gate. Every other job listed is required, and an empty value requires all of them.
+        required: false
+        type: string
+        default: ''
+      window:
+        description: Minutes each listed pipeline's whole job list may take before the gate refuses to publish.
+        required: false
+        type: number
+        default: 120
+
+# One gate call at a time per commit: a second call judges the same commit and
+# only one answer matters. Unlike the publishing runs it does not cancel a
+# meaningful run, so cancel-in-progress stays false.
+concurrency:
+  group: platforms-gate-${{ github.repository }}-${{ github.event_name }}-${{ inputs.sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  platforms:
+    # Named after what it waits for, so a blocked run says what it is blocked on
+    # without anyone opening a log.
+    name: every platform must be green
+    runs-on: ubuntu-latest
+    # A gate that waits for the iOS release job (archive, upload, and the wait for
+    # the build to reach VALID) outlives the default window, and a job killed by
+    # its own timeout is a refusal nobody can read.
+    timeout-minutes: 240
+    permissions:
+      # Reading the other pipelines' runs and jobs is the whole job. actions: read
+      # has to be asked for: a job that sets permissions at all, as the release
+      # jobs do, gets none of the scopes it does not name.
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Every listed platform's whole job list must pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ inputs.sha || github.sha }}
+          REF_NAME: ${{ inputs.ref_name || github.ref_name }}
+          PURPOSE: ${{ inputs.purpose }}
+          PLATFORMS: ${{ inputs.platforms }}
+          EXEMPT: ${{ inputs.exempt }}
+          WINDOW_MINUTES: ${{ inputs.window }}
+        run: |
+          # This gate's own failures are refusals: a missing run, a window that
+          # runs out and a job list that lists nothing all exit non-zero, so no
+          # path out of here publishes without saying why.
+          set -eo pipefail
+          node scripts/release/gate.mjs
