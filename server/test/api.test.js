@@ -312,3 +312,48 @@ test('sends past the rate limit are refused', async () => {
     await t.close();
   }
 });
+
+
+test('search finds messages through the fixture engine, newest first, and needs a search scope', async () => {
+  const r = await s.get('/api/v1/search?q=' + encodeURIComponent('I will'), s.tokens.tooling);
+  assert.equal(r.status, 200);
+  const b = await r.json();
+  conforms(b, 'SearchResults');
+  assert.ok(b.results.length >= 2, 'the fixture holds two messages saying I will');
+  assert.ok(b.results.every((x) => x.message.text.toLowerCase().includes('i will')));
+  const times = b.results.map((x) => x.message.sentAt);
+  assert.deepEqual(times, [...times].sort().reverse(), 'newest first');
+  const one = await (await s.get('/api/v1/search?q=' + encodeURIComponent('I will') + '&chatId=2', s.tokens.tooling)).json();
+  assert.ok(one.results.length >= 1);
+  assert.ok(one.results.every((x) => x.chatId === '2'));
+  assert.equal((await s.get('/api/v1/search?q=lake', s.tokens.device)).status, 403, 'a device token cannot search');
+  assert.equal((await s.get('/api/v1/search', s.tokens.tooling)).status, 400);
+  assert.equal((await s.get('/api/v1/search?q=%20', s.tokens.tooling)).status, 400);
+  assert.equal((await s.get('/api/v1/search?q=lake&chatId=abc', s.tokens.tooling)).status, 400);
+});
+
+test('a setting written by one device is read back by another', async () => {
+  const a = s.store.createToken('device', 'settings device a').token;
+  const b = s.store.createToken('device', 'settings device b').token;
+  conforms(await (await s.get('/api/v1/settings', a)).json(), 'Settings');
+  const w = await s.put('/api/v1/settings', a, { values: { 'appearance.skin': 'dark', 'appearance.textSize': 15 } });
+  assert.equal(w.status, 200);
+  conforms(await w.json(), 'Settings');
+  const read = await (await s.get('/api/v1/settings', b)).json();
+  assert.equal(read.values['appearance.skin'], 'dark', 'the second device reads the same value');
+  assert.equal(read.values['appearance.textSize'], 15);
+  assert.equal((await s.put('/api/v1/settings', a, { values: { 'Bad Key': 1 } })).status, 400);
+  assert.equal((await s.put('/api/v1/settings', s.tokens.tooling, { values: { 'appearance.skin': 'light' } })).status, 403, 'a tooling token cannot change settings');
+});
+
+test('a settings change is broadcast over the event stream', async () => {
+  const a = await openSocket(s.base);
+  a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
+  await waitFor(() => a.frames.some((f) => f.type === 'hello'));
+  await s.put('/api/v1/settings', s.tokens.device, { values: { 'appearance.density': 'compact' } });
+  await waitFor(() => a.frames.some((f) => f.type === 'event' && f.name === 'settings.changed'));
+  const ev = a.frames.find((f) => f.type === 'event' && f.name === 'settings.changed');
+  conforms(ev.data, 'SettingsEvent');
+  assert.equal(ev.data.values['appearance.density'], 'compact');
+  a.ws.close();
+});
