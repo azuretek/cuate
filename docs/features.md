@@ -7,6 +7,8 @@ What works today, and the test that proves each. Planned work is at the end.
 - Chats, newest first, each with a preview of its last message: `server/test/api.test.js`, "chats list newest first".
 - The chat list and its previews held in memory from the start and kept current by live messages, so a chat list never waits on the engine: "the chat list and its previews are held from the start", "a live message moves its chat to the top".
 - A chat's history, paged from newest to oldest: "history pages from newest to oldest".
+- Message search through the engine's own history, newest first, narrowed to one chat when asked: "search finds messages through the fixture engine".
+- Settings kept on the server, so a value written by one device is read back by the next device token, and a change streams to every connected client: "a setting written by one device is read back by another", "a settings change is broadcast".
 - Attachments by id, only from inside the Messages attachments folder: "attachments are served by id".
 - Sending text, off until switched on, rate limited, once per client key, with uncertain outcomes never retried: the five send tests.
 - Live events over one WebSocket (new messages and tapbacks), resumed after a reconnect: "live messages stream", "tapbacks stream".
@@ -24,4 +26,4 @@ What works today, and the test that proves each. Planned work is at the end.
 
 ## Planned
 
-iPhone and Android apps; settings kept on the server; webhooks; export and backup; message search; scheduled messages; the server looking after the Mac; metrics and tracing; the emoji engine and skins; rich content; replies, edits, unsend and typing where the engine offers them.
+iPhone and Android apps; webhooks; export and backup; scheduled messages; the server looking after the Mac; metrics and tracing; the emoji engine and skins; rich content; replies, edits, unsend and typing where the engine offers them.

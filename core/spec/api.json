@@ -2,13 +2,14 @@
   "description": "The one owner of the contract between the clients and the server: every route, scope, event and payload. The server's routes and the client's calls are both tested against it (server/test/api.test.js). A payload key not declared here fails the test.",
   "version": 1,
   "scopes": {
-    "device": ["read", "send"],
+    "device": ["read", "send", "settings"],
     "tooling": ["read", "search", "export", "metrics"],
-    "admin": ["read", "send", "search", "export", "metrics", "admin"]
+    "admin": ["read", "send", "search", "export", "metrics", "admin", "settings"]
   },
   "paging": {
     "chats": { "default": 200, "max": 500 },
-    "messages": { "default": 50, "max": 200 }
+    "messages": { "default": 50, "max": 200 },
+    "search": { "default": 50, "max": 200 }
   },
   "routes": [
     { "id": "health", "method": "GET", "path": "/healthz", "scope": "none", "returns": "Health" },
@@ -16,7 +17,10 @@
     { "id": "chats", "method": "GET", "path": "/api/v1/chats", "scope": "read", "query": ["limit"], "returns": "ChatList" },
     { "id": "messages", "method": "GET", "path": "/api/v1/chats/:chatId/messages", "scope": "read", "query": ["limit", "before"], "returns": "MessageList" },
     { "id": "send", "method": "POST", "path": "/api/v1/chats/:chatId/messages", "scope": "send", "body": "SendRequest", "returns": "SendResult" },
-    { "id": "attachment", "method": "GET", "path": "/api/v1/attachments/:attachmentId", "scope": "read", "query": ["format"], "returns": "binary" }
+    { "id": "attachment", "method": "GET", "path": "/api/v1/attachments/:attachmentId", "scope": "read", "query": ["format"], "returns": "binary" },
+    { "id": "search", "method": "GET", "path": "/api/v1/search", "scope": "search", "query": ["q", "limit", "chatId"], "returns": "SearchResults" },
+    { "id": "settings", "method": "GET", "path": "/api/v1/settings", "scope": "read", "returns": "Settings" },
+    { "id": "settings-write", "method": "PUT", "path": "/api/v1/settings", "scope": "settings", "body": "SettingsPatch", "returns": "Settings" }
   ],
   "websocket": {
     "path": "/api/v1/events",
@@ -27,7 +31,8 @@
   "events": {
     "message.new": "MessageEvent",
     "reaction": "ReactionEvent",
-    "server.state": "ServerState"
+    "server.state": "ServerState",
+    "settings.changed": "SettingsEvent"
   },
   "models": {
     "Health": { "ok": "boolean" },
@@ -42,6 +47,11 @@
     "Reaction": { "type": "string", "emoji": "string?", "fromMe": "boolean", "sender": "string?" },
     "SendRequest": { "text": "string", "clientKey": "string" },
     "SendResult": { "status": "string", "clientKey": "string", "messageId": "string?", "duplicate": "boolean?" },
+    "SearchResults": { "query": "string", "results": "SearchResult[]" },
+    "SearchResult": { "chatId": "string", "chatName": "string", "message": "Message" },
+    "Settings": { "values": "object" },
+    "SettingsPatch": { "values": "object" },
+    "SettingsEvent": { "values": "object" },
     "Resume": { "epoch": "string", "seq": "number" },
     "Hello": { "type": "string", "epoch": "string", "seq": "number", "apiVersion": "number", "resumed": "boolean" },
     "EventFrame": { "type": "string", "seq": "number", "name": "string", "data": "object" },
