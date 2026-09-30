@@ -1,0 +1,50 @@
+{
+  "description": "The one owner of the export format: the message data the server hands to tooling, in full or since the last export. server/src/export.js builds a document against these models, and server/test/export.test.js holds both sides to core/kit/rules/schema.js, the same validator the API contract uses.",
+  "version": 1,
+  "models": {
+    "Export": {
+      "specVersion": "number",
+      "exportedAt": "string",
+      "mode": "string",
+      "since": "string?",
+      "serverVersion": "string",
+      "chats": "ExportedChat[]",
+      "messages": "ExportedMessage[]",
+      "attachments": "ExportedAttachment[]"
+    },
+    "ExportedChat": {
+      "id": "string",
+      "name": "string",
+      "isGroup": "boolean",
+      "service": "string",
+      "participants": "string[]",
+      "lastMessageAt": "string?"
+    },
+    "ExportedMessage": {
+      "id": "string",
+      "chatId": "string",
+      "fromMe": "boolean",
+      "sender": "string?",
+      "senderName": "string?",
+      "text": "string",
+      "sentAt": "string",
+      "replyTo": "string?",
+      "read": "boolean?",
+      "attachments": "string[]",
+      "reactions": "ExportedReaction[]"
+    },
+    "ExportedAttachment": {
+      "id": "string",
+      "name": "string",
+      "mime": "string",
+      "bytes": "number",
+      "missing": "boolean"
+    },
+    "ExportedReaction": {
+      "type": "string",
+      "emoji": "string?",
+      "fromMe": "boolean",
+      "sender": "string?"
+    }
+  }
+}
