@@ -23,6 +23,11 @@
     "ws.error": { "level": "error", "msg": "event stream error", "fields": { "error": "string" } },
     "ui.state": { "level": "notice", "msg": "connection state", "fields": { "state": "string" } },
     "ui.error": { "level": "error", "msg": "ui error", "fields": { "where": "string", "error": "string" } },
+    "mac.awake": { "level": "notice", "msg": "sleep hold changed", "fields": { "on": "boolean" } },
+    "mac.lock": { "level": "notice", "msg": "screen locked", "fields": { "method": "string", "locked": "boolean" } },
+    "mac.relaunch": { "level": "notice", "msg": "Messages relaunched", "fields": { "reason": "string" } },
+    "mac.restart": { "level": "notice", "msg": "restart requested", "fields": { "what": "string" } },
+    "mac.refused": { "level": "warn", "msg": "Mac care not applied", "fields": { "what": "string", "reason": "string" } },
     "log.undeclared": { "level": "warn", "msg": "undeclared log event dropped", "fields": { "name": "string" } }
   }
 }
