@@ -1,0 +1,122 @@
+# The Xcode project, described once and generated.
+#
+# Cuate.xcodeproj is build output, not source. This file is the single source of
+# truth for the project's shape: xcodegen renders the project from it, and the
+# rendered copy is gitignored, so there is exactly one owner. A committed
+# project file would drift the first time someone changed a setting in the Xcode
+# UI, and the drift would not show up in review, because a pbxproj diff is
+# unreadable in either direction.
+#
+# Adapted from the sibling app's mobile tree (chela): the framework is still
+# being built and the drift between the two copies is deliberate.
+#
+# Regenerate after anything that changes the project's shape, meaning this file
+# or the layout of the sources:
+#
+#     cd ios && xcodegen generate
+
+name: Cuate
+
+options:
+  bundleIdPrefix: com.azuretek
+  # The floor follows the CI matrix: the deployment target names the oldest
+  # version we actually build and test against, so the support we declare and
+  # the support we verify are the same claim rather than two numbers that drift
+  # apart. The ios workflow currently resolves an iOS 26 simulator.
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    # Swift 5 language mode. The sibling shell is on 6.0; this one stays on 5
+    # until the shell has more than one delegate surface, so the strict-concurrency
+    # rules are a deliberate later step rather than a first-file obstacle.
+    SWIFT_VERSION: "5.0"
+
+targets:
+  Cuate:
+    type: application
+    platform: iOS
+    sources:
+      - path: Cuate
+        excludes:
+          - Info.plist
+          - Cuate.entitlements
+      # The whole of core is copied in beside the app, not a subset of it. The
+      # page is core/app's own index.html and its modules import across app/,
+      # kit/ and the rules beside them, so the bundle mirrors core's layout and
+      # one scheme handler serves it. test/ is deliberately not copied: it is
+      # not code a shell runs.
+      - path: ../core/app
+        type: folder
+        buildPhase: resources
+      - path: ../core/kit
+        type: folder
+        buildPhase: resources
+      - path: ../core/spec
+        type: folder
+        buildPhase: resources
+      - path: ../core/build
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.cuate
+        # Blank on purpose: Xcode fills this from the Apple ID that signs in, so
+        # a team id committed here would be a second place to keep in step with
+        # the account. The release job supplies it on the command line.
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Cuate/Cuate.entitlements
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: "0.1.0"
+        # The plist is a file in the repo rather than generated, so the
+        # entitlement-adjacent keys are a reviewable diff rather than a build
+        # setting.
+        INFOPLIST_FILE: Cuate/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # iPhone only. Claiming a tablet would mean supporting one.
+        TARGETED_DEVICE_FAMILY: "1"
+        # The app's own identity, which is a different thing from a version a
+        # bundle may carry: X.Y.Z-dev.<count>.<sha> is what the client knows
+        # itself as, and it cannot be CFBundleShortVersionString because App
+        # Store Connect accepts only three dot separated integers there. A local
+        # build reports its marketing version; the release workflow overrides
+        # this setting with the version it derived from the commit.
+        CUATE_BUILD_VERSION: "$(MARKETING_VERSION)"
+
+  CuateTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CuateTests
+    dependencies:
+      - target: Cuate
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.cuate.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Cuate:
+    build:
+      targets:
+        Cuate: all
+        CuateTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - CuateTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The home-screen label and the name TestFlight shows. It is the product
+	     name, which is Cuate, and the naming spec owns it; this key restates it
+	     because a plist cannot import anything, and a parity test asserts it
+	     against core/spec/naming.json. -->
+	<key>CFBundleDisplayName</key>
+	<string>Cuate</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<!-- The icon set the asset catalog provides. Declared here so the key exists
+	     in the source rather than appearing as a side effect of the catalog, and
+	     read from the build setting so renaming the set in project.yml moves it
+	     too. -->
+	<key>CFBundleIconName</key>
+	<string>$(ASSETCATALOG_COMPILER_APPICON_NAME)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Cuate</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- The app's own identity, X.Y.Z-dev.<count>.<sha> on a dev build and X.Y.Z
+	     on a release. CFBundleShortVersionString cannot hold it: App Store
+	     Connect accepts only three dot separated integers there. -->
+	<key>CuateBuildVersion</key>
+	<string>$(CUATE_BUILD_VERSION)</string>
+	<!-- Export compliance, answered here so a build does not sit in TestFlight
+	     asking for it. The only cryptography in the app is what WebKit and the
+	     operating system provide for HTTPS and the Keychain. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<!-- An empty launch screen is a real one. Without the key, iOS assumes the
+	     app cannot size itself to the display and letterboxes it. -->
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleDefault</string>
+</dict>
+</plist>
