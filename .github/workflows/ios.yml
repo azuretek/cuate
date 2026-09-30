@@ -240,8 +240,18 @@ jobs:
           echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
 
       - name: Archive
+        env:
+          # The one owner of the team id is the repository variable, so the
+          # project file stays blank for a local build and the release job names
+          # it once here. Missing, the archive fails at signing with Xcode's
+          # own message, so it is checked rather than assumed.
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -eo pipefail
+          if [ -z "$APPLE_TEAM_ID" ]; then
+            echo "::error::vars.APPLE_TEAM_ID is not set. The release path signs with it: set the repository variable to the Apple team id the distribution certificate belongs to (its OU)."
+            exit 1
+          fi
           xcodebuild \
             -project Cuate.xcodeproj \
             -scheme Cuate \
@@ -255,9 +265,13 @@ jobs:
             MARKETING_VERSION="${{ steps.version.outputs.marketing }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.count }}" \
             CUATE_BUILD_VERSION="${{ steps.version.outputs.version }}" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             archive
 
       - name: Export the .ipa
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -eo pipefail
           xcodebuild -exportArchive \
