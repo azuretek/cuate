@@ -1,7 +1,15 @@
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { LOCK_METHODS, MAC_DEFAULTS } from './mac.js';
 
 const LEVELS = ['debug', 'info', 'notice', 'warn', 'error', 'fatal'];
+
+/** The Mac-care section, copied so a caller can never change the defaults underneath a config. */
+const macDefaults = () => ({
+  awake: MAC_DEFAULTS.awake,
+  lock: { ...MAC_DEFAULTS.lock, args: [...MAC_DEFAULTS.lock.args] },
+  messages: { ...MAC_DEFAULTS.messages },
+});
 export const DEFAULTS = Object.freeze({
   port: 7447,
   engine: { kind: 'imsg', bin: 'imsg', db: null, live: null },
@@ -9,6 +17,7 @@ export const DEFAULTS = Object.freeze({
   sending: { enabled: false, perMinute: 20 },
   previews: 40,
   log: { level: 'notice' },
+  mac: macDefaults(),
 });
 
 /** A raw config's values without the undefined ones, so a flag nobody gave cannot erase a default. */
@@ -21,6 +30,12 @@ export function normalizeConfig(raw = {}) {
     engine: { ...DEFAULTS.engine, ...given(raw.engine) },
     sending: { ...DEFAULTS.sending, ...given(raw.sending) },
     log: { ...DEFAULTS.log, ...given(raw.log) },
+    mac: {
+      ...DEFAULTS.mac,
+      ...given(raw.mac),
+      lock: { ...DEFAULTS.mac.lock, ...given(raw.mac && raw.mac.lock) },
+      messages: { ...DEFAULTS.mac.messages, ...given(raw.mac && raw.mac.messages) },
+    },
   };
   const problems = [];
   if (!Number.isInteger(c.port) || c.port < 0 || c.port > 65535) problems.push('port must be a whole number from 0 to 65535');
@@ -33,6 +48,16 @@ export function normalizeConfig(raw = {}) {
   if (!Number.isInteger(c.sending.perMinute) || c.sending.perMinute < 1 || c.sending.perMinute > 600) problems.push('sending.perMinute must be from 1 to 600');
   if (!Number.isInteger(c.previews) || c.previews < 0 || c.previews > 500) problems.push('previews must be from 0 to 500');
   if (!LEVELS.includes(c.log.level)) problems.push('log.level must be one of ' + LEVELS.join(', '));
+  // The Mac care: the server stands between the Mac and idle sleep, so a half-written setting is refused here
+  // rather than half applied at runtime.
+  if (typeof c.mac.awake !== 'boolean') problems.push('mac.awake must be true or false');
+  if (typeof c.mac.lock.enabled !== 'boolean') problems.push('mac.lock.enabled must be true or false');
+  if (!LOCK_METHODS.includes(c.mac.lock.method)) problems.push('mac.lock.method must be one of ' + LOCK_METHODS.join(', '));
+  if (c.mac.lock.command !== null && typeof c.mac.lock.command !== 'string') problems.push('mac.lock.command must be a command or null');
+  if (!Array.isArray(c.mac.lock.args) || !c.mac.lock.args.every((a) => typeof a === 'string')) problems.push('mac.lock.args must be a list of strings');
+  if (typeof c.mac.messages.manage !== 'boolean') problems.push('mac.messages.manage must be true or false');
+  if (typeof c.mac.messages.app !== 'string' || !c.mac.messages.app) problems.push('mac.messages.app must be the name of the Messages program');
+  if (c.mac.messages.managedBy !== null && typeof c.mac.messages.managedBy !== 'string') problems.push('mac.messages.managedBy must name the program that manages Messages, or null');
   if (problems.length) throw Object.assign(new Error('config: ' + problems.join('; ')), { problems });
   return c;
 }
