@@ -1,5 +1,6 @@
 // The server's own state, in one SQLite file: tokens (hashed, never stored in the clear), send idempotency records
-// (keys and outcomes, no text) and the attachment ids it has handed out. Messages stay in the Mac's Messages history.
+// (keys and outcomes, no text), the attachment ids it has handed out, and the settings every device shares.
+// Messages stay in the Mac's Messages history.
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -8,6 +9,7 @@ const SCHEMA = `
 create table if not exists tokens (id text primary key, name text not null, scope text not null, hash text not null unique, created_at text not null, last_used_at text, revoked_at text);
 create table if not exists sends (client_key text primary key, chat_id text not null, status text not null, message_id text, at text not null);
 create table if not exists attachments (id text primary key, path text not null, mime text not null, name text not null, seen_at text not null);
+create table if not exists settings (key text primary key, value text not null, updated_at text not null);
 `;
 const hash = (t) => createHash('sha256').update(t).digest('hex');
 
@@ -53,6 +55,15 @@ export function openStore(file, { now = () => new Date().toISOString() } = {}) {
     },
     getAttachment(id) {
       return q('select id, path, mime, name from attachments where id = ?').get(id) || null;
+    },
+    getAllSettings() {
+      const out = {};
+      for (const row of q('select key, value from settings').all()) out[row.key] = JSON.parse(row.value);
+      return out;
+    },
+    putSettings(values) {
+      const stmt = q('insert into settings (key, value, updated_at) values (?, ?, ?) on conflict(key) do update set value = excluded.value, updated_at = excluded.updated_at');
+      for (const [k, v] of Object.entries(values)) stmt.run(k, JSON.stringify(v), now());
     },
     close() {
       db.close();

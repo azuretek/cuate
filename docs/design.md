@@ -22,7 +22,8 @@ Cuate has two halves: a headless server on a Mac that already runs Messages, and
 
 - **Headless.** A Node process started by a LaunchAgent in the logged-in session, because Messages only runs there. A config file in its data folder, a command line (`init`, `token`, `sending`, `doctor`, `run`) and JSON log lines on stdout and stderr.
 - **The engine adapter.** One interface over `imsg rpc` (JSON-RPC 2.0 over stdio), supervised with a backoff and resumed after the last row it saw. A fake engine answers the same methods over synthetic data, so the same adapter code runs in every test and in the desktop smoke.
-- **The API** (`core/spec/api.json`, version 1): server info, chats newest first with a preview, a chat's history paged from newest to oldest, attachments by id, and sending text. One WebSocket carries live events (new messages, tapbacks, server state) and resumes after a reconnect from the last event the client saw, or tells the client to reload when it cannot.
+- **The API** (`core/spec/api.json`, version 1): server info, chats newest first with a preview, a chat's history paged from newest to oldest, message search, attachments by id, sending text, and settings read and written. One WebSocket carries live events (new messages, tapbacks, server state, settings changes) and resumes after a reconnect from the last event the client saw, or tells the client to reload when it cannot.
+- **Routes and commands are modules.** Each route is one module under `server/src/routes/` and each command one under `server/src/commands/`, mounted by the route id in the spec or the command name it declares, so a new route or command is a file rather than another branch in `app.js` or `main.js`.
 - **The chat list is held in memory.** It and its previews are read as soon as the engine is ready. A live message moves its chat to the top, and the list is read again when a message arrives in a chat it does not hold, when it is five minutes old, or when a client asks for more chats than it holds. Page sizes live in `core/spec/api.json` under `paging`.
 - **Tokens and scopes.** Every route but the health check needs a bearer token in the Authorization header, never in a URL. A device token reads and sends, a tooling token reads, and an admin token does everything. Tokens are stored hashed.
 - **Sending is the dangerous half.** It is off until switched on, rate limited, done at most once per client key, and an outcome the engine cannot vouch for is reported as uncertain and never retried.
@@ -44,7 +45,7 @@ Cuate has two halves: a headless server on a Mac that already runs Messages, and
 
 ## Testing
 
-- The server's suite runs against the fake engine: auth and scopes, loopback binding, paging, sending (off, rate limited, duplicate, uncertain, failed), attachments, the event stream with resume, engine restarts, and the log leak test.
+- The server's suite runs against the fake engine: auth and scopes, loopback binding, paging, search, settings kept on the server, sending (off, rate limited, duplicate, uncertain, failed), attachments, the event stream with resume, engine restarts, and the log leak test.
 - Guard tests hold the framework's rules: the kit boundary, pure rules, custom elements only in core, no literal style values, the product name only where naming.json allows, fresh tokens, the pinned Lit build, the specs' consistency, and no em dash anywhere.
 - CI runs the suites on Linux, macOS and Windows, and boots the desktop app under a virtual display against a real server over the fake engine, capturing what it drew.
 - Fixtures are synthetic: handles in the fictional 555-555-01xx range or at example.com, and text written in the fixture file. A test asserts it.
