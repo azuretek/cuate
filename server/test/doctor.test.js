@@ -6,7 +6,7 @@ import { createLogger } from '../../core/kit/log.js';
 import { logSpec } from '../src/paths.js';
 import { createMac, macConfig, parseAutomaticLogin, parseFileVault, parsePowerFailure, parseScreenLock, parseSleep } from '../src/mac.js';
 import { createRestarts, createWatchdog } from '../src/watchdog.js';
-import { runDoctor } from '../src/doctor.js';
+import { databaseVerdict, runDoctor } from '../src/doctor.js';
 
 const logger = () => {
   const lines = [];
@@ -73,6 +73,56 @@ test('doctor reports the Mac settings the server relies on', async () => {
   assert.equal(find(r.lines, 'ok    FileVault is off'), 'ok    FileVault is off, so automatic login can work');
   assert.ok(find(r.lines, 'ok    the Mac starts up again after a power failure'));
   assert.ok(find(r.lines, 'ok    the Mac is set never to sleep on its own'));
+});
+
+test('doctor reads the grant behind the Messages database from the engine status report', async () => {
+  const blocked = await doctor({
+    makeTransport: () => statusTransport({
+      version: '1.2.3',
+      database: { ready: false, error: 'The configured Messages database could not be opened read-only. Verify the path and grant Full Disk Access to the supervising process, then retry.' },
+    }),
+  });
+  assert.equal(blocked.failed, true);
+  assert.ok(find(blocked.lines, 'ok    engine imsg 1.2.3 answered'), blocked.lines.join('\n'));
+  assert.ok(/^fail +the Messages database could not be opened: give the program that starts the server Full Disk Access, and if its entry is already on, switch it off and on again because a macOS or Homebrew update leaves the grant stale/.test(find(blocked.lines, 'fail  the Messages database could not be opened')), blocked.lines.join('\n'));
+});
+
+test('doctor tells a missing Messages database apart from a grant it cannot use', async () => {
+  const missing = await doctor({
+    makeTransport: () => statusTransport({
+      version: '1.2.3',
+      database: { ready: false, error: 'The configured Messages database does not exist. Create or copy chat.db at this path, then retry.' },
+    }),
+  });
+  assert.equal(missing.failed, true);
+  assert.ok(/^fail +the Messages database is not there, so Messages is not signed in/.test(find(missing.lines, 'fail  the Messages database is not there')), missing.lines.join('\n'));
+});
+
+test('doctor names an unreadable database it cannot classify, and the error the engine gave', async () => {
+  const r = await doctor({ makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: false } }) });
+  assert.equal(r.failed, true);
+  assert.ok(find(r.lines, 'fail  engine imsg 1.2.3 cannot read the Messages database: give Full Disk Access to the program that starts the server, then run doctor again'), r.lines.join('\n'));
+});
+
+test('doctor reports the Contacts grant the engine status names', async () => {
+  const off = await doctor({ makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: false } }) });
+  assert.equal(off.failed, false);
+  assert.ok(find(off.lines, 'warn  the Contacts permission is not granted, so contact names are left out: grant it in System Settings, Privacy & Security, Contacts, then run doctor again'), off.lines.join('\n'));
+  const on = await doctor({ makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: true } }) });
+  assert.ok(find(on.lines, 'ok    the Contacts permission is granted, so contact names are resolved'), on.lines.join('\n'));
+});
+
+test('doctor names the Automation grant that sending needs', async () => {
+  const r = await doctor({ config: { ...CONFIG, sending: { enabled: true, perMinute: 20 } } });
+  assert.ok(/^warn +sending drives Messages through AppleScript and needs Automation for Messages/.test(find(r.lines, 'warn  sending drives Messages through AppleScript and needs Automation for Messages')), r.lines.join('\n'));
+});
+
+test('databaseVerdict reads every degraded engine state', () => {
+  assert.equal(databaseVerdict({ database: { ready: true } }), 'ready');
+  assert.equal(databaseVerdict({ database: { ready: false, error: 'The configured Messages database does not exist. Create or copy chat.db at this path, then retry.' } }), 'missing');
+  assert.equal(databaseVerdict({ database: { ready: false, error: 'The configured Messages database could not be opened read-only. Verify the path and grant Full Disk Access to the supervising process, then retry.' } }), 'blocked');
+  assert.equal(databaseVerdict({ database: { ready: false } }), 'unreadable');
+  assert.equal(databaseVerdict({}), 'unknown');
 });
 
 test('doctor names each Mac setting that needs a person to fix it', async () => {
