@@ -41,7 +41,10 @@ jobs:
   # phone. The pipelines are named here, and desktop/test/gate.test.js fails when
   # a workflow that builds a platform is not named by a gate call, so a new
   # platform joins the gate by failing a test rather than by publishing silently.
-  gate:
+  # Named platforms, not gate: ci.yml owns the one job called gate, and a second
+  # one would mean two answers to what the required gate is. desktop/test/release-policy.test.js
+  # fails when the release path grows its own.
+  platforms:
     needs: prepare
     if: ${{ needs.prepare.outputs.release == 'true' }}
     uses: ./.github/workflows/platforms-gate.yml
@@ -68,9 +71,9 @@ jobs:
   release:
     needs:
       - prepare
-      - gate
+      - platforms
       - build
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' && needs.gate.result == 'success' }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' && needs.platforms.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
