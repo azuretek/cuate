@@ -84,11 +84,13 @@ val copyCore by tasks.registering(Copy::class) {
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach { dependsOn(copyCore) }
 
-// Every lint task reads the same copied assets, so every one waits for the copy.
-// Left implicit, Gradle refuses the release build with an execution-time
-// dependency validation error; the release analysis task was the first to catch
-// it, and naming a single model task only moved the refusal to the next one.
-tasks.matching { it.name.startsWith("lint") }.configureEach { dependsOn(copyCore) }
+// Every task with lint in its name reads the same copied assets, so every one
+// waits for the copy. A name prefix is not enough: the model tasks are the
+// generate*Lint*ReportModel ones, so a prefix rule let the release model task
+// through while catching the analysis task, and the build failed on the one that
+// was missed. The match is on the whole name, case insensitively, because AGP
+// spells some of them with a capital L in the middle.
+tasks.matching { it.name.lowercase().contains("lint") }.configureEach { dependsOn(copyCore) }
 
 dependencies {
     // The web view host and its asset loader.
