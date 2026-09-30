@@ -17,8 +17,9 @@
   "scripts": {
     "lint": "eslint .",
     "test": "node --test --test-concurrency=1 \"core/test/*.test.js\" \"server/test/*.test.js\" \"desktop/test/*.test.js\"",
-    "build": "node scripts/gen-tokens.mjs --check && node desktop/scripts/icons.mjs --check",
+    "build": "node scripts/gen-tokens.mjs --check && node scripts/gen-engine-bundle.mjs --check && node desktop/scripts/icons.mjs --check",
     "tokens": "node scripts/gen-tokens.mjs",
+    "engine": "node scripts/gen-engine-bundle.mjs",
     "server": "node server/src/main.js",
     "desktop": "pnpm --filter desktop start",
     "smoke": "node desktop/scripts/smoke.mjs",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "globals": "^17.12.0",
     "yaml": "2.8.2"
