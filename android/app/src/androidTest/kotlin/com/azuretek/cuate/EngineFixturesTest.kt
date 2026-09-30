@@ -29,7 +29,8 @@ class EngineFixturesTest {
 
         engine!!.use { embedded ->
             val harness = """
-                (function (fixtures) {
+                (function (text) {
+                  var fixtures = JSON.parse(text);
                   return JSON.stringify(fixtures.cases.map(function (c) {
                     try { return { id: c.id, value: JSON.stringify(engine[c.call].apply(null, c.args)) }; }
                     catch (err) { return { id: c.id, error: String(err) }; }
