@@ -48,7 +48,7 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
         const hadResume = resume !== null;
         if (!f.resumed) resume = { epoch: f.epoch, seq: f.seq };
         onState('open');
-        if (hadResume && !f.resumed) onEvent({ name: 'resync', data: {} });
+        if (!f.resumed && (hadResume || f.seq > 0)) onEvent({ name: 'resync', data: {} });
       } else if (f.type === 'event') {
         if (resume) resume.seq = f.seq;
         onEvent({ name: f.name, data: f.data });

@@ -3,16 +3,16 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-export function packageMac(arch) {
+export function packageMac(arch, { environment = process.env, execute = execFileSync } = {}) {
   if (!['arm64', 'x64'].includes(arch)) throw new Error('Name the architecture');
-  for (const key of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_API_KEY_P8', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER']) if (!process.env[key]) throw new Error('Missing signing input: ' + key);
+  for (const key of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_API_KEY_P8', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER']) if (!environment[key]) throw new Error('Missing signing input: ' + key);
   const desktop = fileURLToPath(new URL('../', import.meta.url));
   const temp = mkdtempSync(path.join(os.tmpdir(), 'notarize-'));
   const key = path.join(temp, 'AuthKey.p8');
-  const run = (command, args, options = {}) => execFileSync(command, args, { stdio: 'inherit', timeout: 20 * 60 * 1000, ...options });
+  const run = (command, args, options = {}) => execute(command, args, { stdio: 'inherit', timeout: 20 * 60 * 1000, ...options });
   try {
-    writeFileSync(key, process.env.APPLE_API_KEY_P8, { mode: 0o600 });
-    const env = { ...process.env, APPLE_API_KEY: key };
+    writeFileSync(key, environment.APPLE_API_KEY_P8, { mode: 0o600 });
+    const env = { ...environment, APPLE_API_KEY: key, CSC_IDENTITY_AUTO_DISCOVERY: 'true' };
     delete env.APPLE_API_KEY_P8;
     run('pnpm', ['package', '--mac', '--' + arch, '--config.forceCodeSigning=true'], { cwd: desktop, env });
     const naming = JSON.parse(readFileSync(new URL('../../core/spec/naming.json', import.meta.url)));

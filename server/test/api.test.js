@@ -15,6 +15,29 @@ test('the server listens on loopback only', () => {
   assert.equal(s.srv.address, '127.0.0.1');
 });
 
+test('a first socket reloads a snapshot when an event arrived before authentication', async (t) => {
+  const server = await boot();
+  t.after(() => server.close());
+  let messages;
+  const states = [];
+  let refreshed;
+  const client = createApiClient({ baseUrl: server.base, token: server.tokens.device, onState: (state) => states.push(state), onEvent: (event) => {
+    if (event.name === 'resync') refreshed = client.messages('1').then((result) => { messages = result.messages; });
+  } });
+  t.after(() => client.close());
+  messages = (await client.messages('1')).messages;
+  const before = messages.length;
+  const delivered = new Promise((resolve) => server.engine.on((name) => { if (name === 'message.new') resolve(); }));
+  server.world.incoming(1, 'Synthetic message during initial connection');
+  await delivered;
+  client.connect();
+  await waitFor(() => states.includes('open'));
+  assert.ok(refreshed, 'initial hello must request a fresh snapshot');
+  await refreshed;
+  assert.equal(messages.length, before + 1);
+  assert.equal(messages.at(-1).text, 'Synthetic message during initial connection');
+});
+
 test('health answers without a token', async () => {
   const r = await s.get('/healthz');
   assert.equal(r.status, 200);
