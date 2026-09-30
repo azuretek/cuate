@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
@@ -116,4 +118,31 @@ test('restore refuses a folder that already holds state, and refuses a file that
   t.after(() => rmSync(target, { recursive: true, force: true }));
   restoreDataDir({ file, dataDir: target });
   assert.ok(existsSync(path.join(target, 'state.db')));
+});
+
+const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
+const runCli = (dir, ...args) => execFileSync(process.execPath, [cli, ...args, '--data', dir], { encoding: 'utf8' });
+
+test('backup and restore work from the command line, and restore refuses a folder that holds state', () => {
+  const dirA = tmp('backup-cli-a-');
+  const dirB = tmp('backup-cli-b-');
+  const file = path.join(tmp('backup-cli-file-'), 'state.backup');
+  try {
+    assert.match(runCli(dirA, 'init', '--engine', 'fake'), /initialised/);
+    const token = runCli(dirA, 'token', 'create', '--scope', 'device', '--name', 'kept').trim().split('\n').pop();
+    assert.match(token, /^tok_/);
+    assert.match(runCli(dirA, 'backup', '--out', file), /wrote/);
+    assert.ok(existsSync(file), 'the backup file exists');
+
+    assert.match(runCli(dirB, 'restore', '--file', file), /restored/);
+    assert.ok(existsSync(path.join(dirB, 'state.db')), 'the restored state is there');
+    assert.ok(existsSync(path.join(dirB, 'config.json')), 'the config came back');
+    assert.ok(existsSync(path.join(dirB, 'secret')), 'the secret came back');
+
+    assert.throws(() => runCli(dirB, 'restore', '--file', file), /not empty/);
+  } finally {
+    rmSync(dirA, { recursive: true, force: true });
+    rmSync(dirB, { recursive: true, force: true });
+    rmSync(path.dirname(file), { recursive: true, force: true });
+  }
 });

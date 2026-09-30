@@ -18,12 +18,14 @@ export const DEFAULTS = Object.freeze({
   previews: 40,
   log: { level: 'notice' },
   mac: macDefaults(),
+  webhooks: { endpoints: [] },
 });
 
 /** A raw config's values without the undefined ones, so a flag nobody gave cannot erase a default. */
 const given = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
 
 export function normalizeConfig(raw = {}) {
+  const webhookEndpoints = (raw.webhooks && raw.webhooks.endpoints) !== undefined ? raw.webhooks.endpoints : DEFAULTS.webhooks.endpoints;
   const c = {
     ...DEFAULTS,
     ...given(raw),
@@ -36,6 +38,7 @@ export function normalizeConfig(raw = {}) {
       lock: { ...DEFAULTS.mac.lock, ...given(raw.mac && raw.mac.lock) },
       messages: { ...DEFAULTS.mac.messages, ...given(raw.mac && raw.mac.messages) },
     },
+    webhooks: { endpoints: Array.isArray(webhookEndpoints) ? webhookEndpoints.map((e) => ({ ...e })) : webhookEndpoints },
   };
   const problems = [];
   if (!Number.isInteger(c.port) || c.port < 0 || c.port > 65535) problems.push('port must be a whole number from 0 to 65535');
@@ -58,6 +61,17 @@ export function normalizeConfig(raw = {}) {
   if (typeof c.mac.messages.manage !== 'boolean') problems.push('mac.messages.manage must be true or false');
   if (typeof c.mac.messages.app !== 'string' || !c.mac.messages.app) problems.push('mac.messages.app must be the name of the Messages program');
   if (c.mac.messages.managedBy !== null && typeof c.mac.messages.managedBy !== 'string') problems.push('mac.messages.managedBy must name the program that manages Messages, or null');
+  // Webhooks: one signed POST per live message to each endpoint, so a half-written endpoint is refused here rather
+  // than dropped at runtime.
+  if (!Array.isArray(c.webhooks.endpoints)) problems.push('webhooks.endpoints must be a list');
+  else c.webhooks.endpoints.forEach((e, i) => {
+    const at = 'webhooks.endpoints[' + i + ']';
+    if (typeof e.id !== 'string' || !e.id) problems.push(at + '.id must be a name');
+    if (typeof e.url !== 'string' || !/^https?:\/\//.test(e.url)) problems.push(at + '.url must be an http or https URL');
+    if (typeof e.secret !== 'string' || !e.secret) problems.push(at + '.secret must be a string');
+    if (e.events !== undefined && (!Array.isArray(e.events) || !e.events.every((x) => typeof x === 'string'))) problems.push(at + '.events must be a list of event names');
+    if (e.active !== undefined && typeof e.active !== 'boolean') problems.push(at + '.active must be true or false');
+  });
   if (problems.length) throw Object.assign(new Error('config: ' + problems.join('; ')), { problems });
   return c;
 }

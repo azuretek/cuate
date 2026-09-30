@@ -22,7 +22,8 @@
     { "id": "settings", "method": "GET", "path": "/api/v1/settings", "scope": "read", "returns": "Settings" },
     { "id": "settings-write", "method": "PUT", "path": "/api/v1/settings", "scope": "settings", "body": "SettingsPatch", "returns": "Settings" },
     { "id": "mac", "method": "GET", "path": "/api/v1/mac", "scope": "read", "returns": "MacState" },
-    { "id": "mac-restart", "method": "POST", "path": "/api/v1/mac/restart", "scope": "admin", "body": "MacRestartRequest", "returns": "MacRestartResult" }
+    { "id": "mac-restart", "method": "POST", "path": "/api/v1/mac/restart", "scope": "admin", "body": "MacRestartRequest", "returns": "MacRestartResult" },
+    { "id": "export", "method": "GET", "path": "/api/v1/export", "scope": "export", "query": ["mode"], "returns": "object" }
   ],
   "websocket": {
     "path": "/api/v1/events",

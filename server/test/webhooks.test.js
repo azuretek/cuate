@@ -5,6 +5,15 @@ import { createHmac } from 'node:crypto';
 import { createLogger } from '../../core/kit/log.js';
 import { logSpec } from '../src/paths.js';
 import { createWebhooks } from '../src/webhooks.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { normalizeConfig } from '../src/config.js';
+import { openStore } from '../src/store.js';
+import { createEngine } from '../src/engine/index.js';
+import { createFakeImsg } from '../src/engine/fake.js';
+import { makeAttachmentId } from '../src/ids.js';
+import { startServer } from '../src/app.js';
 
 function receiver(handler) {
   const requests = [];
@@ -89,4 +98,34 @@ test('an event that is not a message is not delivered', async (t) => {
   hooks.enqueue('server.state', { engine: 'ready' });
   await hooks.drain();
   assert.equal(r.requests.length, 0);
+});
+
+test('the server fires a signed webhook on a live message, from the config its owner wrote', async (t) => {
+  const r = await receiver((rec, res) => { res.writeHead(204); res.end(); });
+  t.after(() => r.close());
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'webhook-srv-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const lines = [];
+  const logger = createLogger({ spec: logSpec, app: 'test', run: 'test', sink: (l) => lines.push(l), now: Date.now, level: 'debug', strict: true });
+  const config = normalizeConfig({ port: 0, engine: { kind: 'fake' }, webhooks: { endpoints: [{ id: 'a', url: r.url, secret: 's3cret' }] } });
+  const store = openStore(path.join(dir, 'state.db'));
+  const root = path.join(dir, 'attachments');
+  const world = createFakeImsg({ attachmentsRoot: root });
+  const engine = createEngine({ kind: 'fake', makeTransport: () => world.transport(), log: logger.child('engine'), attachmentId: makeAttachmentId({ secret: 'test-secret', store }) });
+  await engine.start();
+  const srv = await startServer({ config, store, engine, log: logger.child('http'), dataDir: dir, attachmentsRoot: root });
+  t.after(async () => { await srv.close(); await engine.stop(); store.close(); });
+
+  world.incoming(1, 'Synthetic webhook message');
+  const t0 = Date.now();
+  while (!r.requests.length) {
+    if (Date.now() - t0 > 5000) throw new Error('the webhook did not arrive');
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  const rec = r.requests[0];
+  assert.equal(rec.headers['x-webhook-signature'], 'sha256=' + createHmac('sha256', 's3cret').update(rec.body).digest('hex'), 'the delivery is signed over the exact body');
+  const payload = JSON.parse(rec.body);
+  assert.equal(payload.event, 'message.new');
+  assert.equal(payload.data.message.text, 'Synthetic webhook message');
+  assert.ok(!lines.some((l) => l.event === 'log.undeclared'), 'every event is declared');
 });
