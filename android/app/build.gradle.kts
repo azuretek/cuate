@@ -81,6 +81,11 @@ val copyCore by tasks.registering(Copy::class) {
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach { dependsOn(copyCore) }
 
+// The lint model reads the same copied assets, so it waits for the copy too. Left
+// implicit, Gradle refuses the release build with an execution-time dependency
+// validation error, which is how the first signed-APK run died.
+tasks.matching { it.name.contains("LintVitalReportModel") || it.name.contains("LintModel") }.configureEach { dependsOn(copyCore) }
+
 dependencies {
     // The web view host and its asset loader.
     implementation("androidx.webkit:webkit:1.12.1")
