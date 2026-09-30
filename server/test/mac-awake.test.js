@@ -23,6 +23,18 @@ const exited = (child) => new Promise((resolve) => {
   if (child.exitCode !== null || child.signalCode !== null) return resolve();
   child.once('exit', () => resolve());
 });
+// The hold is a state macOS reports, not an event the server announces: caffeinate registers its assertion a
+// moment after it starts, and the server logs server.ready before it starts the hold, so the check waits for the
+// state instead of reading pmset once and racing the hold. The assertion itself is never relaxed.
+const pmsetNames = (pid, text) => new RegExp('asserting on behalf of Process ID ' + pid + '\\b').test(text);
+const waitForSleepHold = async (pid, ms = 10000) => {
+  const t0 = Date.now();
+  for (;;) {
+    const last = execFileSync('/usr/bin/pmset', ['-g', 'assertions'], { encoding: 'utf8' });
+    if (pmsetNames(pid, last) || Date.now() - t0 > ms) return last;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+};
 
 test('while the server runs, pmset names its process as the one the sleep hold stands for', { skip: darwin ? false : 'needs macOS' }, async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'srv-awake-'));
@@ -33,8 +45,9 @@ test('while the server runs, pmset names its process as the one the sleep hold s
     let out = '';
     child.stdout.on('data', (c) => { out += c; });
     await waitFor(() => /"event":"server.ready"/.test(out));
-    // caffeinate waits on the server's own process id, so macOS says whose sleep it is preventing.
-    const assertions = execFileSync('/usr/bin/pmset', ['-g', 'assertions'], { encoding: 'utf8' });
+    // caffeinate waits on the server's own process id, so macOS says whose sleep it is preventing. The hold
+    // starts just after server.ready, so this waits for the state rather than reading pmset once.
+    const assertions = await waitForSleepHold(child.pid);
     assert.match(assertions, new RegExp('asserting on behalf of Process ID ' + child.pid + '\\b'), 'pmset must name the server process');
   } finally {
     if (child) {

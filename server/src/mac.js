@@ -165,11 +165,22 @@ export function createMac({
       if (hold) return { held: true };
       if (!mac.awake) return refused('awake', 'the awake setting is off');
       if (platform !== 'darwin') return refused('awake', 'not macOS');
+      let started = null;
       try {
-        hold = spawnChild('caffeinate', ['-i', '-s', '-w', String(pid)], { stdio: 'ignore' });
+        started = spawnChild('caffeinate', ['-i', '-s', '-w', String(pid)], { stdio: 'ignore' });
       } catch (e) {
-        hold = null;
         return refused('awake', 'caffeinate did not start: ' + (e && e.message ? e.message : String(e)));
+      }
+      hold = started;
+      // caffeinate holds the assertion until the process it waits on exits. If it dies while this server still
+      // runs, that is not a hold, so it is reported rather than assumed: a silent dead hold would let the Mac
+      // sleep while the status says awake. An intentional release clears hold first, so it is not reported here.
+      if (started && typeof started.once === 'function') {
+        started.once('exit', () => {
+          if (hold !== started) return;
+          hold = null;
+          log.emit('mac.refused', { what: 'awake', reason: 'caffeinate exited while the server was still running' });
+        });
       }
       log.emit('mac.awake', { on: true });
       return { held: true };
