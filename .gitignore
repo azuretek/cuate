@@ -15,3 +15,13 @@ ios/Cuate.xcodeproj/
 ios/proof/
 ios/*.xcuserdata/
 ios/SourcePackages/
+
+# The Android build output and the copied core tree: Gradle produces both, so
+# neither is source. The boot proof is captured in CI and committed under
+# docs/proof instead.
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/proof/
