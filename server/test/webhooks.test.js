@@ -5,6 +5,7 @@ import { createHmac } from 'node:crypto';
 import { createLogger } from '../../core/kit/log.js';
 import { logSpec } from '../src/paths.js';
 import { createWebhooks } from '../src/webhooks.js';
+import { boot } from './helpers.js';
 
 function receiver(handler) {
   const requests = [];
@@ -16,7 +17,7 @@ function receiver(handler) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({
     requests,
     url: 'http://127.0.0.1:' + server.address().port + '/hook',
-    close: () => new Promise((r) => server.close(r)),
+    close: () => new Promise((r) => { server.closeAllConnections(); server.close(r); }),
   })));
 }
 
@@ -89,4 +90,24 @@ test('an event that is not a message is not delivered', async (t) => {
   hooks.enqueue('server.state', { engine: 'ready' });
   await hooks.drain();
   assert.equal(r.requests.length, 0);
+});
+
+test('the server fires a signed webhook on a live message, from the config its owner wrote', async (t) => {
+  const r = await receiver((rec, res) => { res.writeHead(204); res.end(); });
+  t.after(() => r.close());
+  const srv = await boot({ webhooks: { endpoints: [{ id: 'a', url: r.url, secret: 's3cret' }] } });
+  t.after(() => srv.close());
+
+  srv.world.incoming(1, 'Synthetic webhook message');
+  const t0 = Date.now();
+  while (!r.requests.length) {
+    if (Date.now() - t0 > 5000) throw new Error('the webhook did not arrive');
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  const rec = r.requests[0];
+  assert.equal(rec.headers['x-webhook-signature'], 'sha256=' + createHmac('sha256', 's3cret').update(rec.body).digest('hex'), 'the delivery is signed over the exact body');
+  const payload = JSON.parse(rec.body);
+  assert.equal(payload.event, 'message.new');
+  assert.equal(payload.data.message.text, 'Synthetic webhook message');
+  assert.ok(!srv.lines.some((l) => l.event === 'log.undeclared'), 'every event is declared');
 });

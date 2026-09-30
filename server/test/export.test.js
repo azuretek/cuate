@@ -10,6 +10,7 @@ import { createFakeImsg } from '../src/engine/fake.js';
 import { makeAttachmentId } from '../src/ids.js';
 import { openStore } from '../src/store.js';
 import { createExporter, validateExport, exportSpec } from '../src/export.js';
+import { boot } from './helpers.js';
 
 function harness() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'export-test-'));
@@ -68,4 +69,20 @@ test('writing an export records the mark, and the next one carries only what is 
   assert.equal(r2.doc.since, r1.doc.exportedAt);
   assert.ok(r2.doc.messages.length >= 1, 'the new message is there');
   assert.ok(r2.doc.messages.every((m) => m.sentAt > r2.doc.since), 'nothing older than the mark is carried');
+});
+
+test('the export route hands the document to a tooling token and refuses a device token', async (t) => {
+  const s = await boot();
+  t.after(() => s.close());
+  const r = await s.get('/api/v1/export', s.tokens.tooling);
+  assert.equal(r.status, 200);
+  const doc = await r.json();
+  assert.deepEqual(validateExport(doc), [], 'the served document conforms to the export schema');
+  assert.ok(doc.chats.length > 0, 'every chat is named');
+  assert.ok(doc.messages.length > 0, 'the messages are carried');
+  assert.equal((await s.get('/api/v1/export', s.tokens.device)).status, 403, 'a device token has no export scope');
+  assert.equal((await s.get('/api/v1/export?mode=weird', s.tokens.tooling)).status, 400);
+  const since = await s.get('/api/v1/export?mode=since', s.tokens.tooling);
+  assert.equal(since.status, 200);
+  assert.deepEqual(validateExport(await since.json()), [], 'the since mode conforms too');
 });

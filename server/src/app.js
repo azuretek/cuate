@@ -10,6 +10,8 @@ import { createAttachments } from './attachments.js';
 import { createSearch } from './search.js';
 import { createSettings } from './settings.js';
 import { loadRoutes } from './routes/index.js';
+import { createExporter } from './export.js';
+import { createWebhooks } from './webhooks.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
 const badRequest = (code, message, status = 400) => Object.assign(new Error(message), { status, code });
@@ -154,12 +156,16 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     }
   };
 
+  const exporter = createExporter({ engine, dataDir, log: log.child('export') });
+  const webhooks = createWebhooks({ engine, endpoints: (config.webhooks && config.webhooks.endpoints) || [], log: log.child('webhook') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, epoch, platform,
     send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),
+    exporter,
+    webhooks,
     mac,
     restarts,
   };
@@ -296,6 +302,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     epoch,
     publish,
     async close() {
+      webhooks.close();
       clearInterval(beat);
       for (const c of clients) {
         try { c.ws.close(1012, 'restarting'); } catch { /* gone */ }
