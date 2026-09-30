@@ -46,7 +46,7 @@ jobs:
     if: ${{ needs.prepare.outputs.release == 'true' }}
     uses: ./.github/workflows/platforms-gate.yml
     with:
-      platforms: ci, ios
+      platforms: ci, ios, android
       purpose: publish
       sha: ${{ github.sha }}
       ref_name: ${{ github.ref_name }}

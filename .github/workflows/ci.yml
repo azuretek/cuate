@@ -121,11 +121,11 @@ jobs:
     name: platforms gate
     uses: ./.github/workflows/platforms-gate.yml
     with:
-      platforms: ios
+      platforms: ios, android
       purpose: merge
       sha: ${{ github.event.pull_request.head.sha || github.sha }}
       ref_name: ${{ github.head_ref || github.ref_name }}
-      exempt: ${{ github.event_name == 'pull_request' && 'release to TestFlight' || '' }}
+      exempt: ${{ github.event_name == 'pull_request' && 'release to TestFlight|sign and publish the APK' || '' }}
       window: 120
 
   gate:
