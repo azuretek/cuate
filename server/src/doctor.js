@@ -5,6 +5,21 @@ import { createMac } from './mac.js';
 
 const quiet = { emit: () => {} };
 
+// What the engine's own status report says about the Messages database, which is the Full Disk Access grant in
+// action. The engine retries the open on every status, and its error text tells the three states apart: ready,
+// the file is not there (Messages is not signed in yet), or the file is there and could not be opened read-only
+// (the grant is missing, or it went stale after a macOS or Homebrew update and has to be toggled off and on).
+// Pure and exported, so every degraded state is proven against a fixture rather than a Mac.
+export function databaseVerdict(status) {
+  const db = status && status.database;
+  if (!db) return 'unknown';
+  if (db.ready) return 'ready';
+  const error = String(db.error || '');
+  if (/does not exist/i.test(error)) return 'missing';
+  if (/could not be opened/i.test(error)) return 'blocked';
+  return 'unreadable';
+}
+
 export async function runDoctor({
   config,
   store,
@@ -33,16 +48,29 @@ export async function runDoctor({
   transport.onExit(() => { exited = true; });
   try {
     const st = await rpc.request('status', {}, 10000);
-    const version = st && st.version != null ? ' ' + st.version : '';
-    if (st && st.database && st.database.ready) ok('engine ' + config.engine.kind + version + ': the Messages database is readable');
-    else bad('engine ' + config.engine.kind + version + ' cannot read the Messages database: give Full Disk Access to the program that starts the server, then run doctor again');
+    const version = st && st.version != null ? ' ' + String(st.version) : '';
+    ok('engine ' + config.engine.kind + version + ' answered');
+    const verdict = databaseVerdict(st);
+    if (verdict === 'ready') ok('engine ' + config.engine.kind + version + ': the Messages database is readable');
+    else if (verdict === 'missing') bad('the Messages database is not there, so Messages is not signed in (or chat.db has never been created): open Messages, finish signing in, then run doctor again');
+    else if (verdict === 'blocked') bad('the Messages database could not be opened: give the program that starts the server Full Disk Access, and if its entry is already on, switch it off and on again because a macOS or Homebrew update leaves the grant stale, then run doctor again');
+    else bad('engine ' + config.engine.kind + version + ' cannot read the Messages database' + (st && st.database && st.database.error ? ': ' + st.database.error : '') + ': give Full Disk Access to the program that starts the server, then run doctor again');
+    if (st && st.contacts) {
+      if (st.contacts.available === false) warn('the Contacts permission is not granted, so contact names are left out: grant it in System Settings, Privacy & Security, Contacts, then run doctor again');
+      else ok('the Contacts permission is granted, so contact names are resolved');
+    }
   } catch (e) {
     bad('engine ' + config.engine.kind + ' did not answer (' + (exited ? 'it exited' : e.message) + '): check engine.bin in config.json (' + config.engine.bin + ')');
   } finally {
     await transport.close();
   }
-  if (config.sending.enabled) ok('sending is on, at most ' + config.sending.perMinute + ' a minute');
-  else warn('sending is off: switch it on with the command "sending on"');
+  if (config.sending.enabled) {
+    ok('sending is on, at most ' + config.sending.perMinute + ' a minute');
+    // The engine's status report cannot see whether Automation is granted: on macOS send is structurally usable
+    // and macOS only answers the prompt a real send triggers. So doctor names the grant and its fix instead of
+    // claiming it is there.
+    warn('sending drives Messages through AppleScript and needs Automation for Messages: macOS asks the first time a send runs, and a send refused as not authorized to send Apple events is fixed in System Settings, Privacy & Security, Automation, Messages');
+  } else warn('sending is off: switch it on with the command "sending on"');
   if (platform === 'darwin' || config.attachmentsRoot) {
     try {
       accessSync(attachmentsRoot, constants.R_OK);
