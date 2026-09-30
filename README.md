@@ -11,6 +11,10 @@ Cuate is an iMessage client for every platform, and the small headless server it
 - `desktop/`: the Electron shell that hosts core.
 - `docs/`: [the design](docs/design.md), [running the server](docs/server.md), [features](docs/features.md) and [contributing](docs/contributing.md).
 
+## Desktop test builds
+
+[docs/release.md](docs/release.md) describes the desktop prerelease pipeline, installation, update channels and verification.
+
 ## Try it without a Mac
 
 The server has a fake engine with made-up conversations, so the whole stack runs anywhere Node 22.13 or newer does.

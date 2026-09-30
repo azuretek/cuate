@@ -83,9 +83,32 @@ jobs:
           path: ${{ env.SHOTS }}
           if-no-files-found: warn
 
+  packaging:
+    name: desktop package verification
+    needs: package-version
+    uses: ./.github/workflows/package.yml
+    with:
+      signed: false
+      version: ${{ needs.package-version.outputs.version }}
+  package-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: version
+        run: node scripts/release/version.mjs
+
   gate:
     name: gate
-    needs: [test, desktop]
+    needs: [test, desktop, packaging]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -93,3 +116,4 @@ jobs:
         run: |
           test "${{ needs.test.result }}" = success
           test "${{ needs.desktop.result }}" = success
+          test "${{ needs.packaging.result }}" = success

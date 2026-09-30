@@ -2,3 +2,6 @@ packages:
   - core
   - server
   - desktop
+allowBuilds:
+  sharp: true
+  electron-winstaller: false
