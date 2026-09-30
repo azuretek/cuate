@@ -21,6 +21,11 @@
     "send.uncertain": { "level": "warn", "msg": "send outcome uncertain; not retried", "fields": { "chat": "string", "code": "string" } },
     "ws.refused": { "level": "notice", "msg": "event stream refused", "fields": { "reason": "string" } },
     "ws.error": { "level": "error", "msg": "event stream error", "fields": { "error": "string" } },
+    "webhook.delivered": { "level": "debug", "msg": "webhook accepted", "fields": { "endpoint": "string", "trigger": "string", "attempts": "number", "status": "number?" } },
+    "webhook.gaveup": { "level": "warn", "msg": "webhook given up on", "fields": { "endpoint": "string", "trigger": "string", "attempts": "number", "status": "number?", "error": "string?" } },
+    "export.written": { "level": "notice", "msg": "export written", "fields": { "mode": "string", "chats": "number", "messages": "number", "attachments": "number", "bytes": "number" } },
+    "backup.written": { "level": "notice", "msg": "backup written", "fields": { "files": "number", "bytes": "number" } },
+    "backup.restored": { "level": "notice", "msg": "backup restored", "fields": { "files": "number", "bytes": "number" } },
     "ui.state": { "level": "notice", "msg": "connection state", "fields": { "state": "string" } },
     "ui.error": { "level": "error", "msg": "ui error", "fields": { "where": "string", "error": "string" } },
     "log.undeclared": { "level": "warn", "msg": "undeclared log event dropped", "fields": { "name": "string" } }
