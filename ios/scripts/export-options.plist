@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Xcode 26 names this method app-store-connect; the older "app-store"
+	     spelling is what the pre-15 archives used and is no longer accepted. -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<!-- The certificate is imported into the runner's keychain by the step
+	     before this one, and the profile is fetched with the API key, so the
+	     export signs and does not ask for a manual profile. -->
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>
