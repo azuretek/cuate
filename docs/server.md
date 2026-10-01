@@ -43,6 +43,16 @@ The data folder defaults to `~/Library/Application Support/<name>-server`; pass 
 
 The server's output goes to one log file in `~/Library/Logs`, which `service status` names. launchd holds that file open for as long as the server runs, so rotate it by copying it and truncating it in place, never by renaming it: a renamed file keeps receiving the log.
 
+## Send the logs to a collector
+
+The server can ship its own log lines to a syslog collector, so a deployment keeps them beside every other service's. Put the collector's address and port in `config.json` under `log.syslog` and restart the server:
+
+```json
+{ "log": { "syslog": { "host": "log.internal", "port": 514 } } }
+```
+
+It sends one JSON line per syslog message (RFC 5424) over TCP, framed with the octet count (RFC 6587), to an off the shelf rsyslog; the address and port are configuration, never hard coded. When a send fails, the line is kept in `log-spill.jsonl` in the data folder and `log.spilled` is written to the server's own log. Leave `log.syslog` out, or `null`, to keep the lines local only.
+
 ## Reaching it from your other devices
 
 The server listens on 127.0.0.1 only, on purpose. `service install --tailscale` publishes it with `tailscale serve` on port 443 of the Mac's tailnet name, and connects nothing else: other served ports are left alone, and if port 443 already serves something else, nothing is changed. Connect the apps to `https://<the Mac's tailnet name>`.

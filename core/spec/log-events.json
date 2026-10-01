@@ -34,6 +34,7 @@
     "mac.relaunch": { "level": "notice", "msg": "Messages relaunched", "fields": { "reason": "string" } },
     "mac.restart": { "level": "notice", "msg": "restart requested", "fields": { "what": "string" } },
     "mac.refused": { "level": "warn", "msg": "Mac care not applied", "fields": { "what": "string", "reason": "string" } },
-    "log.undeclared": { "level": "warn", "msg": "undeclared log event dropped", "fields": { "name": "string" } }
+    "log.undeclared": { "level": "warn", "msg": "undeclared log event dropped", "fields": { "name": "string" } },
+    "log.spilled": { "level": "warn", "msg": "log lines spilled after a ship failure", "fields": { "host": "string", "port": "number", "count": "number" } }
   }
 }

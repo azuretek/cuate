@@ -22,15 +22,22 @@ export default {
     const { createEngine } = await import('../engine/index.js');
     const { startServer } = await import('../app.js');
     const { makeAttachmentId } = await import('../ids.js');
+    const { createLogSink } = await import('../syslog.js');
     const { createMac } = await import('../mac.js');
     const { createRestarts } = await import('../watchdog.js');
     const { startMacCare } = await import('../mac-care.js');
-    const sink = (line) => {
-      const s = JSON.stringify(line) + '\n';
-      if (line.level === 'error' || line.level === 'fatal') process.stderr.write(s);
-      else process.stdout.write(s);
-    };
-    const logger = createLogger({ spec: logSpec, app: naming.slug + '-server', version: serverVersion, run: randomUUID().slice(0, 8), pid: process.pid, sink, now: Date.now, level: process.env.LOG_LEVEL || config.log.level });
+    // The process's own sink is stdout and stderr, which launchd keeps on the Mac. When a collector is configured,
+    // every approved line is also shipped to it as syslog, and a line the collector will not take is spilled and
+    // reported through this same logger.
+    let logger = null;
+    const sink = createLogSink({
+      spec: logSpec,
+      app: naming.slug + '-server',
+      syslog: config.log.syslog,
+      spillPath: path.join(dataDir, 'log-spill.jsonl'),
+      log: { emit: (event, fields) => { if (logger) logger.emit(event, fields); } },
+    });
+    logger = createLogger({ spec: logSpec, app: naming.slug + '-server', version: serverVersion, run: randomUUID().slice(0, 8), pid: process.pid, sink, now: Date.now, level: process.env.LOG_LEVEL || config.log.level });
     installCrashHandlers({ log: logger, logger, dataDir });
     // Every Mac action is one declared log event, and the run path sends each on as an event too, so the Server
     // screen sees a sleep hold, a lock, a relaunch and a restart as they happen. The sender exists once the
@@ -65,6 +72,7 @@ export default {
       logger.emit('server.stop', { reason });
       setTimeout(() => process.exit(0), 8000).unref();
       care.stop();
+      sink.close();
       await srv.close();
       await engine.stop();
       s.close();
