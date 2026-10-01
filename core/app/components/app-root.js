@@ -4,6 +4,7 @@ import { createApiClient } from '../../kit/api.js';
 import { orderChats, applyMessageToChats, chatTitle } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
+import { resolveScheme, themeVars } from '../rules/theme.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -50,11 +51,36 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
     this.pending = new Map();
     this.client = null;
+    // The custom properties last written from a theme, so a change removes the ones it no longer sets.
+    this.themeApplied = [];
+    this.schemeQuery = null;
   }
 
   connectedCallback() {
     super.connectedCallback();
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      this.schemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      this.onSchemeChange = () => this.applyTheme();
+      this.schemeQuery.addEventListener('change', this.onSchemeChange);
+    }
     this.boot();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.schemeQuery && this.onSchemeChange) this.schemeQuery.removeEventListener('change', this.onSchemeChange);
+  }
+
+  // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
+  // chosen on any device is what this page draws, and light and dark both come from it. No client carries its own copy.
+  applyTheme() {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const scheme = resolveScheme(this.settings['appearance.skin'], Boolean(this.schemeQuery && this.schemeQuery.matches));
+    root.dataset.scheme = scheme;
+    for (const [name] of this.themeApplied) root.style.removeProperty(name);
+    this.themeApplied = themeVars(this.settings['appearance.theme'], scheme);
+    for (const [name, value] of this.themeApplied) root.style.setProperty(name, value);
   }
 
   bridge(name, args) {
@@ -97,6 +123,7 @@ class AppRoot extends KitElement {
       client.connect();
       if (this.chats.length) await this.open(this.chats[0].id);
       this.settings = await this.readSettings();
+      this.applyTheme();
       this.dataset.state = 'ready';
     } catch (e) {
       client.close();
@@ -229,6 +256,7 @@ class AppRoot extends KitElement {
     } else if (name === 'settings.changed') {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
+      this.applyTheme();
     }
   }
 
