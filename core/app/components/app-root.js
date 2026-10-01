@@ -4,7 +4,8 @@ import { createApiClient } from '../../kit/api.js';
 import { orderChats, applyMessageToChats, chatTitle } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
-import { noticeEnabled, updateNotice } from '../rules/notifications.js';
+import { noticeEnabled, updateNotice, autoDownloadEnabled } from '../rules/notifications.js';
+import { updateBanner } from '../rules/updates.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -28,6 +29,8 @@ class AppRoot extends KitElement {
     view: { state: true }, listOpen: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
+    // The update the shell last reported, drawn as a banner while a download runs.
+    update: { state: true },
   };
 
   constructor() {
@@ -49,6 +52,7 @@ class AppRoot extends KitElement {
     this.serverUrl = '';
     this.settingsBusy = false;
     this.settingsProblem = '';
+    this.update = null;
     this.pending = new Map();
     this.client = null;
     // The shell's update states arrive here; the page, which holds the server's settings, decides the notice.
@@ -108,6 +112,7 @@ class AppRoot extends KitElement {
       client.connect();
       if (this.chats.length) await this.open(this.chats[0].id);
       this.settings = await this.readSettings();
+      this.applyUpdateSetting();
       this.dataset.state = 'ready';
     } catch (e) {
       client.close();
@@ -232,14 +237,26 @@ class AppRoot extends KitElement {
     } else if (name === 'settings.changed') {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
+      this.applyUpdateSetting();
     }
   }
 
   // An update the shell reports becomes a notice through the same bridge as a message, unless its own switch is off.
-  onUpdate({ state, version }) {
-    const notice = updateNotice(state, version);
+  // The download and stall states draw no native notice (a notice cannot show a moving bar), so they become the
+  // in-app banner instead, which is where the progress is visible on a platform whose notices cannot update.
+  onUpdate(data) {
+    const { state, version, percent, detail } = data || {};
+    this.update = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null } : null;
+    const notice = updateNotice(state, version, detail);
     if (!notice || !noticeEnabled(this.settings, notice.type)) return;
     this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
+  }
+
+  // The page holds the server's settings, so it is the page that tells the shell whether a found release may be
+  // fetched and applied on its own. A setting the server has never seen keeps the schema default (off).
+  applyUpdateSetting() {
+    if (typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function') return;
+    this.bridge('updates.configure', { autoDownload: autoDownloadEnabled(this.settings) }).catch(() => {});
   }
 
   // A confirmed outgoing message replaces the bubble drawn when Send was pressed.
@@ -313,6 +330,7 @@ class AppRoot extends KitElement {
     try {
       const { values } = await this.client.settingsWrite({ [key]: value });
       this.settings = values || this.settings;
+      this.applyUpdateSetting();
     } catch (e) {
       this.settings = before;
       this.settingsProblem = this.describe(e);
@@ -340,6 +358,7 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
+    const banner = this.update ? updateBanner(this.update.state, { version: this.update.version, percent: this.update.percent, detail: this.update.detail }) : null;
     return html`<div class="shell" data-pane=${this.pane()}>
       <aside class="sidebar" aria-label="Conversations">
         <header class="sidebar-head"><h1 class="title">Chats</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
@@ -347,7 +366,7 @@ class AppRoot extends KitElement {
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
         <app-chat-list .chats=${this.chats} .selected=${this.openChatId} @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}></app-chat-list>
       </aside>
-      <main class="main">${this.mainView(chat)}</main>
+      <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}</div>` : nothing}${this.mainView(chat)}</main>
     </div>`;
   }
 }

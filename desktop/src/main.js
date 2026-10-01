@@ -24,6 +24,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
+// Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
+let updateControl = null;
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
@@ -39,6 +41,7 @@ const handlers = createHandlers({
     shell.openExternal(url);
     return true;
   },
+  configureUpdates: (autoDownload) => (updateControl ? updateControl.setAutoDownload(autoDownload) : false),
 });
 
 ipcMain.handle('bridge', (event, name, args) => {
@@ -149,6 +152,16 @@ async function runSmoke(w) {
   report.noticeSuppressed = smokeNotices.length === 0;
   await putSettings({ 'notifications.updateAvailable': true });
   report.notices = report.noticeFired && report.noticeSuppressed;
+
+  // The download state draws the progress as an in-app banner, because a native notice cannot show a moving bar.
+  wc.send('bridge:event:update.state', { state: 'downloading', version: '9.9.9', percent: 0.5, detail: '5.0 MB of 12 MB' });
+  await waitFor("Boolean(document.querySelector('.banner.update .update-progress'))", 10000);
+  report.updateBanner = await js("(() => { const p = document.querySelector('.update-progress'); return Boolean(p) && Number(p.value) > 0 && Number(p.value) < 1; })()");
+  wc.send('bridge:event:update.state', { state: 'ready', version: '9.9.9' });
+  await pause(300);
+  report.updateBannerCleared = await js("!document.querySelector('.banner.update')");
+  report.updates = report.updateBanner && report.updateBannerCleared;
+
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05-settings.png');
@@ -224,14 +237,18 @@ app.whenReady().then(() => {
   }
   createWindow();
   if (app.isPackaged && !SMOKE) {
-    const stop = startUpdates({
+    updateControl = startUpdates({
       updater: updaterPackage.autoUpdater,
       version,
-      // The page owns the notice, so updates use the same bridge path the new message notices use.
+      // The platform facts and the download preference decide what this build may do; the page supplies the setting.
+      platform: process.platform,
+      packaged: app.isPackaged,
+      appImage: Boolean(process.env.APPIMAGE),
+      // The page owns the notice and the banner, so updates use the same bridge path the new message notices use.
       onState: (state) => { if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state); },
       logError: (message) => console.error(message),
     });
-    app.once('before-quit', stop);
+    app.once('before-quit', () => updateControl.stop());
   }
   app.on('activate', () => { if (!win) createWindow(); });
 });
