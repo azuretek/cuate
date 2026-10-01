@@ -309,6 +309,53 @@
         }
       }
     },
+    "/api/v1/chats/{chatId}/read": {
+      "post": {
+        "operationId": "read",
+        "summary": "POST /api/v1/chats/:chatId/read",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "send",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRead"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chatId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/attachments/{attachmentId}": {
       "get": {
         "operationId": "attachment",
@@ -670,6 +717,25 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ReactionEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
+    "chat.read": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRead"
               }
             }
           }
@@ -1048,6 +1114,22 @@
         "required": [
           "status",
           "clientKey"
+        ],
+        "additionalProperties": false
+      },
+      "ChatRead": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "unread": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "chatId",
+          "unread"
         ],
         "additionalProperties": false
       },

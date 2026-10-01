@@ -10,6 +10,7 @@ What works today, and the test that proves each. Planned work is at the end.
 - Message search through the engine's own history, newest first, narrowed to one chat when asked: "search finds messages through the fixture engine".
 - Settings kept on the server, so a value written by one device is read back by the next device token, and a change streams to every connected client: "a setting written by one device is read back by another", "a settings change is broadcast".
 - Attachments by id, only from inside the Messages attachments folder: "attachments are served by id".
+- Marking a conversation read, so a chat read on one device clears on every device: "opening a conversation marks it read".
 - Sending text and files, off until switched on, rate limited, once per client key, with uncertain outcomes never retried: the send tests.
 - Live events over one WebSocket (new messages and tapbacks), resumed after a reconnect: "live messages stream", "tapbacks stream".
 - Scoped tokens in the Authorization header only, stored hashed: "every other route needs a token", "a tooling token cannot send", `server/test/cli.test.js`.
