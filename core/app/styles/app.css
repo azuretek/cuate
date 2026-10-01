@@ -143,3 +143,24 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
   /* The panel takes the width of the composer rather than spilling off a narrow screen. */
   .emoji-picker { left: var(--space-2); right: var(--space-2); width: auto; }
 }
+
+/* The chat list draws its own tools: the sort control, the filters in force, the search field and the groups. Every
+   colour and length comes from the tokens, as everywhere else. */
+.list-tools { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
+.list-tools-row { display: flex; align-items: center; gap: var(--space-2); }
+.sort-select, .kind-select, .group-filter, .row-group, .chat-search, .new-group-name, .group-rename { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
+.chat-search { flex: 1; }
+.chip { background: var(--color-bg-raised); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); }
+.active-filters { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.active-chip { display: inline-flex; align-items: center; gap: var(--space-1); background: var(--color-selection); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-2); font-size: var(--font-size-sm); }
+.chip-clear { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-sm); line-height: 1; padding: 0 var(--space-1); }
+.add-group { display: flex; align-items: center; gap: var(--space-2); }
+.chat-sections { display: flex; flex-direction: column; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
+.section-name { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
+.section-actions { display: flex; align-items: center; gap: var(--space-1); }
+.icon-button { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; padding: 0 var(--space-1); border-radius: var(--radius-sm); }
+.icon-button:disabled { opacity: 0.4; cursor: default; }
+.row-move { display: inline-flex; flex: none; }
+.list-empty, .section-empty { margin: 0; padding: var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
