@@ -22,6 +22,7 @@ var engine = (() => {
   var engine_exports = {};
   __export(engine_exports, {
     LEVELS: () => LEVELS,
+    NOTICE_TYPES: () => NOTICE_TYPES,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
@@ -44,14 +45,17 @@ var engine = (() => {
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     newTraceparent: () => newTraceparent,
+    noticeEnabled: () => noticeEnabled,
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
     reactionGlyph: () => reactionGlyph,
     scrub: () => scrub,
     settingValue: () => settingValue,
     settingsFields: () => settingsFields,
+    settingsGroups: () => settingsGroups,
     summarizeReactions: () => summarizeReactions,
     tokensCss: () => tokensCss,
+    updateNotice: () => updateNotice,
     validate: () => validate
   });
 
@@ -448,14 +452,29 @@ var engine = (() => {
 
   // core/app/rules/settings.js
   var SETTINGS_SCHEMA = {
+    groups: [
+      { id: "appearance", label: "Appearance" },
+      { id: "notifications", label: "Notifications" }
+    ],
     keys: {
-      "appearance.skin": { label: "Appearance", type: "choice", options: ["system", "light", "dark"], default: "system" },
-      "appearance.textSize": { label: "Text size", type: "number", min: 11, max: 20, step: 1, default: 14 },
-      "appearance.density": { label: "Density", type: "choice", options: ["comfortable", "compact"], default: "comfortable" }
+      "appearance.skin": { group: "appearance", label: "Appearance", type: "choice", options: ["system", "light", "dark"], default: "system" },
+      "appearance.textSize": { group: "appearance", label: "Text size", type: "number", min: 11, max: 20, step: 1, default: 14 },
+      "appearance.density": { group: "appearance", label: "Density", type: "choice", options: ["comfortable", "compact"], default: "comfortable" },
+      // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
+      "notifications.newMessage": { group: "notifications", label: "New messages", type: "toggle", default: true },
+      "notifications.updateAvailable": { group: "notifications", label: "Update available", type: "toggle", default: true },
+      "notifications.updateReady": { group: "notifications", label: "Update ready to install", type: "toggle", default: true },
+      "notifications.errors": { group: "notifications", label: "Update errors", type: "toggle", default: true }
     }
   };
   function settingsFields(schema = SETTINGS_SCHEMA) {
     return Object.entries(schema.keys).map(([key, spec]) => ({ key, ...spec }));
+  }
+  function settingsGroups(schema = SETTINGS_SCHEMA) {
+    const fields = settingsFields(schema);
+    const groups = schema.groups || [];
+    const fallback = groups.length ? groups[0].id : null;
+    return groups.map((g) => ({ id: g.id, label: g.label, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
   }
   function settingValue(field, values) {
     return values && Object.hasOwn(values, field.key) ? values[field.key] : field.default;
@@ -469,6 +488,26 @@ var engine = (() => {
     const out = {};
     for (const field of settingsFields(schema)) out[field.key] = settingValue(field, values);
     return out;
+  }
+
+  // core/app/rules/notifications.js
+  var NOTICE_TYPES = {
+    newMessage: "notifications.newMessage",
+    updateAvailable: "notifications.updateAvailable",
+    updateReady: "notifications.updateReady",
+    error: "notifications.errors"
+  };
+  function noticeEnabled(settings, type) {
+    const key = NOTICE_TYPES[type];
+    if (!key || !SETTINGS_SCHEMA.keys[key]) return false;
+    return settingValue({ key, ...SETTINGS_SCHEMA.keys[key] }, settings) === true;
+  }
+  function updateNotice(state, version) {
+    const v = version ? String(version) : "";
+    if (state === "available") return { type: "updateAvailable", title: "Update available", body: v ? "Version " + v + " is available to download." : "A new version is available to download." };
+    if (state === "ready") return { type: "updateReady", title: "Update ready", body: "Restart the app to install the downloaded update." };
+    if (state === "error") return { type: "error", title: "Update check failed", body: "The app could not check for updates." };
+    return null;
   }
 
   // core/app/rules/time.js

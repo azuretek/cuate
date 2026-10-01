@@ -22,6 +22,8 @@ What works today, and the test that proves each. Planned work is at the end.
 - Connect with a server address and a device token, kept in the OS keychain: `desktop/test/bridge.test.js` and the desktop smoke.
 - The chat list, a conversation with sender runs, time separators, photos, tapbacks and delivery state, and sending: the desktop smoke (`desktop/scripts/smoke.mjs`) and `core/test/rules.test.js`.
 - Live updates without a refresh, and OS notifications for incoming messages: the desktop smoke.
+- A notice when an update is available and one when it is downloaded and ready, both through the same bridge notice path the new message notices use, each with its own switch the server holds: `core/test/rules.test.js`, "every notice type has its own switch...", and the desktop smoke, which fires a notice and then silences one.
+- A notifications section in settings, one switch per notice type, written to the server so every client sees it: `core/test/rules.test.js`, "the settings page draws the schema...".
 - Light and dark: the desktop smoke captures both.
 - A settings page that reads and writes the settings the server holds, and redraws when a change made anywhere arrives on the event stream; an about page drawn from the server's info route; and, below phone width, one pane at a time with the list sliding in over the conversation and a way back: the desktop smoke.
 - The settings page's schema, its defaults and what a control writes: `core/test/rules.test.js`, "the settings page draws the schema and writes the value a control gives".

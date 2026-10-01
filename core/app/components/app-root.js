@@ -4,6 +4,7 @@ import { createApiClient } from '../../kit/api.js';
 import { orderChats, applyMessageToChats, chatTitle } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
+import { noticeEnabled, updateNotice } from '../rules/notifications.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -50,11 +51,21 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
     this.pending = new Map();
     this.client = null;
+    // The shell's update states arrive here; the page, which holds the server's settings, decides the notice.
+    this.offUpdate = null;
   }
 
   connectedCallback() {
     super.connectedCallback();
+    if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.on === 'function') {
+      this.offUpdate = window.bridge.on('update.state', (data) => this.onUpdate(data || {}));
+    }
     this.boot();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
   }
 
   bridge(name, args) {
@@ -209,7 +220,7 @@ class AppRoot extends KitElement {
       if (r.known) this.chats = r.chats;
       else this.reload();
       if (m.chatId === this.openChatId) this.messages = mergeMessages(this.messages, [m]);
-      if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId)) {
+      if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
         this.bridge('notify', { title, body: m.text || 'Attachment' }).catch(() => {});
@@ -222,6 +233,13 @@ class AppRoot extends KitElement {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
     }
+  }
+
+  // An update the shell reports becomes a notice through the same bridge as a message, unless its own switch is off.
+  onUpdate({ state, version }) {
+    const notice = updateNotice(state, version);
+    if (!notice || !noticeEnabled(this.settings, notice.type)) return;
+    this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
   }
 
   // A confirmed outgoing message replaces the bubble drawn when Send was pressed.
