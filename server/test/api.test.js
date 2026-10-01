@@ -290,7 +290,47 @@ test('the client library talks to the server', async () => {
   assert.equal(r.status, 'sent');
   await waitFor(() => events.some((e) => e.name === 'message.new' && e.data.message.text === 'Synthetic from the client'));
   await assert.rejects(c.send('2', { text: 'x', clientKey: 'no' }), (e) => e.status === 400 && e.code === 'bad_client_key');
+  conforms(await c.markRead('2'), 'ChatRead');
   c.close();
+});
+
+test('opening a conversation marks it read, the count follows, and every client is told', async () => {
+  const t = await boot();
+  try {
+    await t.srv.warmed;
+    const chats = async () => (await (await t.get('/api/v1/chats', t.tokens.device)).json()).chats;
+    assert.equal((await chats()).find((c) => c.id === '1').unread, 1, 'the fixture leaves chat 1 unread');
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    const r = await t.post('/api/v1/chats/1/read', t.tokens.device, {});
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    conforms(body, 'ChatRead');
+    assert.equal(body.chatId, '1');
+    assert.equal(body.unread, 0);
+    assert.equal((await chats()).find((c) => c.id === '1').unread, 0, 'the held list follows the read');
+    assert.ok(t.world.requests.includes('read'), 'the engine was asked to clear the read state');
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'chat.read'));
+    const ev = sock.frames.find((f) => f.name === 'chat.read');
+    conforms(ev.data, 'ChatRead');
+    assert.equal(ev.data.chatId, '1');
+    assert.equal(ev.data.unread, 0);
+    sock.ws.close();
+  } finally {
+    await t.close();
+  }
+});
+
+test('marking read needs a client token, and a bad chat id is refused', async () => {
+  const t = await boot();
+  try {
+    assert.equal((await t.post('/api/v1/chats/1/read', t.tokens.tooling, {})).status, 403);
+    assert.equal((await t.post('/api/v1/chats/1/read')).status, 401);
+    assert.equal((await t.post('/api/v1/chats/abc/read', t.tokens.device, {})).status, 400);
+  } finally {
+    await t.close();
+  }
 });
 
 test('the engine is restarted when it dies', async () => {

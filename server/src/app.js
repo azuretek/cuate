@@ -10,6 +10,7 @@ import { createAttachments } from './attachments.js';
 import { createSearch } from './search.js';
 import { createSettings } from './settings.js';
 import { loadRoutes } from './routes/index.js';
+import { allows as scopeAllows } from './scopes.js';
 import { createExporter } from './export.js';
 import { createWebhooks } from './webhooks.js';
 
@@ -89,7 +90,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     const m = /^Bearer\s+(\S+)$/i.exec(String(h || ''));
     return m ? m[1] : null;
   };
-  const allows = (principal, scope) => scope === 'any' || (apiSpec.scopes[principal.scope] || []).includes(scope);
+  const allows = (principal, scope) => scopeAllows(apiSpec, principal, scope);
   const intParam = (url, name, lo, hi, dflt) => {
     const v = url.searchParams.get(name);
     if (v === null) return dflt;
@@ -130,6 +131,16 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     held.chats.splice(at, 1);
     held.chats.unshift({ ...chat, lastMessageAt: m.sentAt });
   };
+  // A conversation read on one device clears here too: the held list drops its count and every client is told,
+  // so the number a client shows is the server's, never its own idea.
+  const markRead = (chatId) => {
+    const id = String(chatId);
+    if (held) {
+      const at = held.chats.findIndex((c) => String(c.id) === id);
+      if (at >= 0) held.chats[at] = { ...held.chats[at], unread: 0 };
+    }
+    publish('chat.read', { chatId: id, unread: 0 });
+  };
   // One history read per chat at a time. A live message that lands during the read is newer, so it is kept.
   const loading = new Map();
   const loadPreview = (id) => {
@@ -160,7 +171,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const webhooks = createWebhooks({ engine, endpoints: (config.webhooks && config.webhooks.endpoints) || [], log: log.child('webhook') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, epoch, platform,
-    send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, publish, warm,
+    send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),
@@ -171,6 +182,54 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   };
   const handlers = await loadRoutes(apiSpec.routes);
   for (const r of apiSpec.routes) if (!handlers.has(r.id)) throw new Error('no handler for route ' + r.id);
+
+  // A tool call runs through the route it names rather than a second copy of the handler, so the spec, the scope
+  // check and the response are the server's own. The request and the response are captured instead of put on a
+  // socket, which is what lets the MCP endpoint carry a tool call straight into an existing route.
+  const fakeReq = (body) => {
+    const listeners = { data: [], end: [] };
+    const chunks = body === null || body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
+    const req = { on(ev, fn) { (listeners[ev] || (listeners[ev] = [])).push(fn); return req; }, destroy() {} };
+    queueMicrotask(() => {
+      for (const fn of listeners.data) fn(Buffer.concat(chunks));
+      for (const fn of listeners.end) fn();
+    });
+    return req;
+  };
+  const captureRes = () => ({
+    statusCode: 200, headersSent: false, headers: {}, body: null,
+    setHeader(k, v) { this.headers[String(k).toLowerCase()] = v; },
+    writeHead(status, headers) { this.statusCode = status; this.headersSent = true; for (const [k, v] of Object.entries(headers || {})) this.headers[String(k).toLowerCase()] = v; },
+    write() { return true; },
+    end(chunk) { if (chunk !== undefined) this.body = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)); },
+    destroy() {},
+    on() { return this; },
+  });
+  const dispatch = async (id, { params = {}, query = {}, body = null, principal = null } = {}) => {
+    const spec = apiSpec.routes.find((r) => r.id === id);
+    if (!spec) throw Object.assign(new Error('No such route.'), { status: 404, code: 'not_found' });
+    if (!allows(principal, spec.scope)) throw Object.assign(new Error('This token cannot do that.'), { status: 403, code: 'forbidden' });
+    const path = spec.path.replace(/:([A-Za-z]+)/g, (_, key) => {
+      if (params[key] === undefined) throw Object.assign(new Error(key + ' is required'), { status: 400, code: 'bad_' + key });
+      return encodeURIComponent(params[key]);
+    });
+    const search = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null) search.set(k, String(v));
+    const url = new URL(path + (search.toString() ? '?' + search.toString() : ''), 'http://127.0.0.1');
+    const res = captureRes();
+    try {
+      await handlers.get(id)({ ...ctx, req: fakeReq(body), res, url, params, principal });
+    } catch (e) {
+      if (!e.status) throw e;
+      res.statusCode = e.status;
+      res.body = Buffer.from(JSON.stringify({ error: { code: e.code, message: e.message } }));
+    }
+    const text = res.body ? res.body.toString('utf8') : '';
+    let parsed;
+    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+    return { status: res.statusCode, body: parsed, binary: String(res.headers['content-type'] || '').startsWith('image/') };
+  };
+  ctx.dispatch = dispatch;
 
   async function handle(req, res) {
     const t0 = performance.now();
