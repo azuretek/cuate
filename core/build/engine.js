@@ -21,11 +21,14 @@ var engine = (() => {
   // core/app/engine.js
   var engine_exports = {};
   __export(engine_exports, {
+    EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
     LEVELS: () => LEVELS,
     SCHEMES: () => SCHEMES,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
+    SETTLE: () => SETTLE,
+    SLOP: () => SLOP,
     SORT_ORDERS: () => SORT_ORDERS,
     THEME_GROUPS: () => THEME_GROUPS,
     UNGROUPED: () => UNGROUPED,
@@ -57,7 +60,9 @@ var engine = (() => {
     importTweakcn: () => importTweakcn,
     initials: () => initials,
     insertEmoji: () => insertEmoji,
+    isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
+    isHorizontal: () => isHorizontal,
     manualOrder: () => manualOrder,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
@@ -71,6 +76,7 @@ var engine = (() => {
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
     placeChat: () => placeChat,
+    progressFor: () => progressFor,
     reactionGlyph: () => reactionGlyph,
     renameGroup: () => renameGroup,
     resolveScheme: () => resolveScheme,
@@ -78,6 +84,7 @@ var engine = (() => {
     searchEmoji: () => searchEmoji,
     settingValue: () => settingValue,
     settingsFields: () => settingsFields,
+    settlesOpen: () => settlesOpen,
     sortChats: () => sortChats,
     summarizeReactions: () => summarizeReactions,
     themeName: () => themeName,
@@ -777,6 +784,25 @@ var engine = (() => {
   };
   function connectionSentence(state) {
     return SENTENCES[state] ?? "";
+  }
+
+  // core/app/rules/drawer.js
+  var EDGE = 24;
+  var SLOP = 6;
+  var SETTLE = 0.5;
+  function isEdgeStart(x, edge = EDGE) {
+    return x <= edge;
+  }
+  function isHorizontal(dx, dy) {
+    return Math.abs(dx) > Math.abs(dy);
+  }
+  function progressFor({ open, startX, x, width }) {
+    const span = width > 0 ? width : 1;
+    const raw = (open ? 1 : 0) + (x - startX) / span;
+    return Math.min(1, Math.max(0, raw));
+  }
+  function settlesOpen(progress) {
+    return progress >= SETTLE;
   }
 
   // core/app/rules/engine-imsg.js
