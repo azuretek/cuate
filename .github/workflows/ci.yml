@@ -141,7 +141,8 @@ jobs:
   # commit publishes from a run whose other platform was red. A pull request
   # exempts the TestFlight upload job, which cannot run there (it is skipped by
   # design and a skipped job is a refusal); a push to main requires it, so the
-  # gate waits for the upload and for the build to reach VALID.
+  # gate waits for the upload, for the build to reach VALID and for it to reach
+  # the tester group.
   platforms:
     name: platforms gate
     uses: ./.github/workflows/platforms-gate.yml

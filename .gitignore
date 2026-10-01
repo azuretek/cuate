@@ -16,6 +16,11 @@ ios/proof/
 ios/*.xcuserdata/
 ios/SourcePackages/
 
+# The Python bytecode the release scripts leave behind when they run: it is
+# never source, and the pipeline runs the scripts from the checkout each time.
+__pycache__/
+*.pyc
+
 # The Android build output and the copied core tree: Gradle produces both, so
 # neither is source. The boot proof is captured in CI and committed under
 # docs/proof instead.

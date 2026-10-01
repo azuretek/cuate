@@ -3,7 +3,8 @@ name: ios
 # The iOS shell's pipeline. A pull request generates the project, builds the app
 # for the simulator, boots it and captures a screenshot as the proof the phase
 # asks for, then runs the unit tests. A push to main (or a manual run)
-# additionally archives, signs and uploads a TestFlight build.
+# additionally archives, signs, uploads a TestFlight build and proves the build
+# reached the tester group, the last being what makes the build installable.
 #
 # Adapted from the sibling app's mobile pipeline, not extracted from it: the
 # framework is still being built and the drift between the two files is
@@ -37,6 +38,13 @@ jobs:
         working-directory: ios
     steps:
       - uses: actions/checkout@v4
+
+      # The group check's own logic, proven against a fake App Store Connect so
+      # the release can never regress to trusting the assignment call's status.
+      # It needs no credential, which is what keeps it runnable on a pull
+      # request, and it fails the same way on a build left in no group.
+      - name: Test the TestFlight group check
+        run: python3 scripts/test_asc.py
 
       # Which Xcode is used is chosen here rather than left to the image's
       # default, and the newest installed bundle wins. It is not pinned by name,
@@ -377,6 +385,22 @@ jobs:
           BUILD_NUMBER: ${{ steps.version.outputs.count }}
           WAIT_SECONDS: "2700"
         run: python3 scripts/asc.py wait
+
+      # VALID is not installable. The app's tester group does not receive every
+      # build, so a build never assigned to it reaches VALID and stays out of
+      # TestFlight, which reads as a released build no tester can install. The
+      # script adds the build to the group named by the repository variable and
+      # reads the group's builds back: Apple answers the assignment the same way
+      # whether or not the build was already in the group, so only the read
+      # proves a tester can install it. A build left in no group fails here,
+      # naming the group, rather than publishing something no one can install.
+      - name: Prove the build reached the tester group
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          BUILD_NUMBER: ${{ steps.version.outputs.count }}
+          ASC_BETA_GROUP: ${{ vars.CUATE_BETA_GROUP }}
+        run: python3 scripts/asc.py assign
 
       # The key and the keychain are removed whatever happened above, so no
       # credential outlives the job.
