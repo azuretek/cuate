@@ -324,7 +324,7 @@ class AppRoot extends KitElement {
     const sentence = connectionSentence(this.conn);
     return html`<div class="shell" data-pane=${this.pane()}>
       <aside class="sidebar" aria-label="Conversations">
-        <header class="sidebar-head"><h1 class="title">Messages</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
+        <header class="sidebar-head"><h1 class="title">Chats</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
         <app-chat-list .chats=${this.chats} .selected=${this.openChatId} @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}></app-chat-list>
