@@ -4,6 +4,7 @@ import { createApiClient } from '../../kit/api.js';
 import { orderChats, applyMessageToChats, chatTitle, emptyFilters } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
+import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
@@ -53,6 +54,7 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
     this.pending = new Map();
     this.client = null;
+    this.drag = null;
     this.filters = emptyFilters();
     // The custom properties last written from a theme, so a change removes the ones it no longer sets.
     this.themeApplied = [];
@@ -328,6 +330,75 @@ class AppRoot extends KitElement {
     if (this.openChatId) this.listOpen = false;
   }
 
+  // The phone's drawer is dragged, not tapped: a drag from the left edge opens it, a drag back closes it, and the
+  // panel and the scrim follow the finger between them. The rules live in rules/drawer.js; this only drives them.
+  onPointerDown = (e) => {
+    if (this.phase !== 'ready' || this.view !== 'messages') return;
+    const sidebar = this.querySelector('.sidebar');
+    if (!sidebar || getComputedStyle(sidebar).position !== 'fixed') return;   // the drawer exists only on the phone
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const open = this.listOpen;
+    if (!open && !isEdgeStart(e.clientX)) return;   // only an edge drag opens the list
+    this.drag = { shell: e.currentTarget, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, open, active: false, width: 0 };
+    window.addEventListener('pointermove', this.onPointerMove, { passive: false });
+    window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onPointerCancel);
+  };
+
+  onPointerMove = (e) => {
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.active) {
+      if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+      if (!isHorizontal(dx, dy)) { this.endDrag(); return; }   // the scroll or the selection keeps the gesture
+      d.active = true;
+      d.width = this.drawerWidth();
+      d.shell.dataset.drawer = 'drag';
+    }
+    e.preventDefault();
+    d.shell.style.setProperty('--drawer-progress', String(progressFor({ open: d.open, startX: d.startX, x: e.clientX, width: d.width })));
+  };
+
+  onPointerUp = (e) => {
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (d.active) this.settleDrawer(d, Number(d.shell.style.getPropertyValue('--drawer-progress')) || 0);
+    this.endDrag();
+  };
+
+  onPointerCancel = (e) => {
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    // A cancelled drag (the browser took the pointer) returns to where it started rather than deciding.
+    if (d.active) this.settleDrawer(d, d.open ? 1 : 0);
+    this.endDrag();
+  };
+
+  // The finger is up: hand the panel's position back to the stylesheet, which animates it from where the finger left
+  // it to where it settled. Clearing the drag flag and the inline position together lets the transition run.
+  settleDrawer(d, progress) {
+    const open = settlesOpen(progress);
+    d.shell.style.removeProperty('--drawer-progress');
+    delete d.shell.dataset.drawer;
+    d.shell.dataset.pane = open ? 'list' : 'conversation';
+    this.listOpen = open;
+  }
+
+  endDrag() {
+    this.drag = null;
+    window.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onPointerCancel);
+  }
+
+  drawerWidth() {
+    const el = this.querySelector('.sidebar');
+    const w = el ? el.getBoundingClientRect().width : 0;
+    return w > 0 ? w : window.innerWidth;
+  }
+
   // A setting is written to the server first; the server's answer, not this page, becomes what the page draws, and a
   // rejected write is rolled back so the control never disagrees with the server.
   async setSetting({ key, value }) {
@@ -399,7 +470,7 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
-    return html`<div class="shell" data-pane=${this.pane()}>
+    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown}>
       <aside class="sidebar" aria-label="Conversations">
         <header class="sidebar-head"><h1 class="title">Chats</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
