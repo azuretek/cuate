@@ -1,43 +1,217 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
-import { chatTitle, chatPreview, initials } from '../rules/chats.js';
+import {
+  chatTitle, chatPreview, initials, sortChats, filterChats, groupSections, emptyFilters,
+  SORT_ORDERS, UNGROUPED, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat,
+} from '../rules/chats.js';
 import { formatListTime } from '../rules/time.js';
 
+// The sort choices named the way a person reads them.
+const SORT_LABELS = { recent: 'Recent activity', unread: 'Unread first', name: 'Name', manual: 'Manual order' };
+
+const newGroupId = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+// The chat list: it draws the chats sorted, filtered and gathered into the person's groups. It holds no state of its
+// own: a sort, a group or a placement is sent up to the page, which writes it to the server, and the page hands the
+// server's own answer back here to draw. Filters are the one exception, and they live with the page too.
 class AppChatList extends KitElement {
-  static properties = { chats: { attribute: false }, selected: {} };
+  static properties = {
+    chats: { attribute: false }, selected: {},
+    sort: {}, groups: { attribute: false }, placement: { attribute: false }, order: { attribute: false },
+    filters: { attribute: false },
+  };
 
   constructor() {
     super();
     this.chats = [];
     this.selected = null;
+    this.sort = 'recent';
+    this.groups = [];
+    this.placement = {};
+    this.order = [];
+    this.filters = emptyFilters();
+    this.renaming = null;
+  }
+
+  get f() {
+    return this.filters || emptyFilters();
+  }
+
+  fire(name, detail) {
+    this.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
   pick(id) {
-    this.dispatchEvent(new CustomEvent('select', { detail: id }));
+    this.fire('select', id);
   }
 
   key(e, id) {
+    // A control inside the row keeps its own keys; only the row itself selects.
+    if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       this.pick(id);
     }
   }
 
+  setFilter(patch) {
+    this.fire('filter', { filters: { ...this.f, ...patch } });
+  }
+
+  // Clearing one filter leaves the others alone.
+  clearFilter(key) {
+    const value = key === 'text' ? '' : key === 'unread' ? false : null;
+    this.setFilter({ [key]: value });
+  }
+
+  onSort(e) { this.fire('sort', { sort: e.currentTarget.value }); }
+  onSearch(e) { this.setFilter({ text: e.currentTarget.value }); }
+  onKind(e) { this.setFilter({ kind: e.currentTarget.value || null }); }
+  onGroupFilter(e) { this.setFilter({ group: e.currentTarget.value || null }); }
+  toggleUnread() { this.setFilter({ unread: !this.f.unread }); }
+
+  patch(settings) { this.fire('chatsettings', { patch: settings }); }
+
+  createGroup() {
+    const input = this.querySelector('.new-group-name');
+    const name = String((input && input.value) || '').trim();
+    if (!name) return;
+    if (input) input.value = '';
+    this.patch({ 'chats.groups': addGroup(this.groups, { id: newGroupId(), name }) });
+  }
+
+  startRename(id) {
+    this.renaming = id;
+    this.updateComplete.then(() => {
+      const el = this.querySelector('.group-rename');
+      if (el) { el.focus(); if (el.select) el.select(); }
+    });
+  }
+
+  commitRename(e) {
+    const el = e.currentTarget;
+    const id = el.dataset.id;
+    if (this.renaming !== id) return;
+    const name = String(el.value || '').trim();
+    this.renaming = null;
+    if (name) this.patch({ 'chats.groups': renameGroup(this.groups, id, name) });
+  }
+
+  onRenameKey(e) {
+    if (e.key === 'Enter') { e.preventDefault(); this.commitRename(e); }
+    else if (e.key === 'Escape') { e.preventDefault(); this.renaming = null; }
+  }
+
+  moveGroupBy(section, delta) { this.patch({ 'chats.groups': moveGroup(this.groups, section.id, delta) }); }
+  setPlacement(chatId, groupId) { this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
+  moveChatBy(chatId, delta) { this.patch({ 'chats.order': moveChat(manualOrder(this.chats, this.order), chatId, delta) }); }
+
+  // The filters in force, drawn in the list so a person sees what is narrowing it and can clear one alone.
+  activeFilters() {
+    const f = this.f;
+    const chips = [];
+    if (f.unread) chips.push({ key: 'unread', label: 'Unread' });
+    if (f.kind) chips.push({ key: 'kind', label: f.kind === 'direct' ? 'Direct' : 'Group chats' });
+    if (f.group) {
+      const g = (this.groups || []).find((x) => x.id === f.group);
+      chips.push({ key: 'group', label: g ? g.name : 'Ungrouped' });
+    }
+    if (f.text) chips.push({ key: 'text', label: 'Search: ' + f.text });
+    if (!chips.length) return nothing;
+    return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${() => this.clearFilter(c.key)}>×</button></span>`)}</div>`;
+  }
+
+  toolbar() {
+    const f = this.f;
+    const groups = this.groups || [];
+    return html`<div class="list-tools">
+      <div class="list-tools-row">
+        <select class="sort-select" aria-label="Sort conversations" @change=${this.onSort}>
+          ${SORT_ORDERS.map((o) => html`<option value=${o} ?selected=${o === (this.sort || 'recent')}>${SORT_LABELS[o]}</option>`)}
+        </select>
+        <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${this.onSearch}>
+      </div>
+      <div class="list-tools-row">
+        <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${() => this.toggleUnread()}>Unread</button>
+        <select class="kind-select" aria-label="Conversation type" @change=${this.onKind}>
+          <option value="" ?selected=${!f.kind}>All conversations</option>
+          <option value="direct" ?selected=${f.kind === 'direct'}>Direct</option>
+          <option value="group" ?selected=${f.kind === 'group'}>Group chats</option>
+        </select>
+        <select class="group-filter" aria-label="Group" @change=${this.onGroupFilter}>
+          <option value="" ?selected=${!f.group}>All groups</option>
+          ${groups.map((g) => html`<option value=${g.id} ?selected=${f.group === g.id}>${g.name}</option>`)}
+          <option value=${UNGROUPED} ?selected=${f.group === UNGROUPED}>Ungrouped</option>
+        </select>
+      </div>
+      <div class="add-group">
+        <input class="new-group-name" type="text" placeholder="New group" aria-label="New group name" @keydown=${(e) => { if (e.key === 'Enter') this.createGroup(); }}>
+        <button type="button" class="text-button" @click=${() => this.createGroup()}>Add group</button>
+      </div>
+      ${this.activeFilters()}
+    </div>`;
+  }
+
+  sectionHead(section) {
+    if (section.id === UNGROUPED) return html`<header class="section-head"><span class="section-name">${section.name}</span></header>`;
+    const i = (this.groups || []).findIndex((g) => g.id === section.id);
+    return html`<header class="section-head">
+      ${this.renaming === section.id
+        ? html`<input class="group-rename" data-id=${section.id} .value=${section.name} aria-label="Group name" @keydown=${this.onRenameKey} @blur=${this.commitRename}>`
+        : html`<span class="section-name">${section.name}</span>`}
+      <span class="section-actions">
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' up'} ?disabled=${i <= 0} @click=${() => this.moveGroupBy(section, -1)}>↑</button>
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' down'} ?disabled=${i >= (this.groups.length - 1)} @click=${() => this.moveGroupBy(section, 1)}>↓</button>
+        <button type="button" class="icon-button" aria-label=${'Rename ' + section.name} @click=${() => this.startRename(section.id)}>✎</button>
+      </span>
+    </header>`;
+  }
+
+  row(c, now, locale) {
+    const title = chatTitle(c);
+    const sel = c.id === this.selected;
+    const groups = this.groups || [];
+    const placed = (this.placement || {})[c.id] || UNGROUPED;
+    return html`<li class=${'chat-row' + (sel ? ' selected' : '') + (c.unread ? ' unread' : '')} role="option" tabindex="0" aria-selected=${sel ? 'true' : 'false'} data-chat=${c.id} @click=${() => this.pick(c.id)} @keydown=${(e) => this.key(e, c.id)}>
+      <span class="avatar" aria-hidden="true">${initials(title)}</span>
+      <span class="chat-main">
+        <span class="chat-top"><span class="chat-name">${title}</span><span class="chat-time">${formatListTime(c.lastMessageAt, { now, locale })}</span></span>
+        <span class="chat-preview">${chatPreview(c)}</span>
+      </span>
+      ${c.unread ? html`<span class="unread-dot" role="img" aria-label=${c.unread + ' unread'}></span>` : nothing}
+      ${groups.length ? html`<select class="row-group" aria-label=${'Group for ' + title} @click=${(e) => e.stopPropagation()} @keydown=${(e) => e.stopPropagation()} @change=${(e) => this.setPlacement(c.id, e.currentTarget.value)}>
+        <option value=${UNGROUPED} ?selected=${placed === UNGROUPED}>No group</option>
+        ${groups.map((g) => html`<option value=${g.id} ?selected=${placed === g.id}>${g.name}</option>`)}
+      </select>` : nothing}
+      ${this.sort === 'manual' ? html`<span class="row-move">
+        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' up'} @click=${(e) => { e.stopPropagation(); this.moveChatBy(c.id, -1); }}>↑</button>
+        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' down'} @click=${(e) => { e.stopPropagation(); this.moveChatBy(c.id, 1); }}>↓</button>
+      </span>` : nothing}
+    </li>`;
+  }
+
+  section(section, split, now, locale) {
+    if (split && section.id === UNGROUPED && !section.chats.length) return nothing;
+    const body = section.chats.length
+      ? html`<ul class="chat-list" role="listbox" aria-label=${section.name}>${section.chats.map((c) => this.row(c, now, locale))}</ul>`
+      : html`<p class="section-empty" role="status">Nothing in ${section.name}.</p>`;
+    if (!split) return body;
+    return html`<section class="chat-section">${this.sectionHead(section)}${body}</section>`;
+  }
+
   render() {
     const now = Date.now();
     const locale = navigator.language;
-    return html`<ul class="chat-list" role="listbox" aria-label="Conversations">${this.chats.map((c) => {
-      const title = chatTitle(c);
-      const sel = c.id === this.selected;
-      return html`<li class=${'chat-row' + (sel ? ' selected' : '') + (c.unread ? ' unread' : '')} role="option" tabindex="0" aria-selected=${sel ? 'true' : 'false'} data-chat=${c.id} @click=${() => this.pick(c.id)} @keydown=${(e) => this.key(e, c.id)}>
-        <span class="avatar" aria-hidden="true">${initials(title)}</span>
-        <span class="chat-main">
-          <span class="chat-top"><span class="chat-name">${title}</span><span class="chat-time">${formatListTime(c.lastMessageAt, { now, locale })}</span></span>
-          <span class="chat-preview">${chatPreview(c)}</span>
-        </span>
-        ${c.unread ? html`<span class="unread-dot" role="img" aria-label=${c.unread + ' unread'}></span>` : nothing}
-      </li>`;
-    })}</ul>`;
+    const groups = this.groups || [];
+    const placement = this.placement || {};
+    const sorted = sortChats(this.chats, { sort: this.sort || 'recent', order: this.order || [] });
+    const visible = filterChats(sorted, this.f, { placement });
+    const sections = groupSections(visible, { groups, placement });
+    const split = groups.length > 0;
+    return html`${this.toolbar()}
+      ${visible.length === 0
+        ? html`<p class="list-empty" role="status">No conversations match these filters.</p>`
+        : html`<div class="chat-sections">${sections.map((s) => this.section(s, split, now, locale))}</div>`}`;
   }
 }
 

@@ -407,6 +407,23 @@ test('a setting written by one device is read back by another', async () => {
   assert.equal((await s.put('/api/v1/settings', s.tokens.tooling, { values: { 'appearance.skin': 'light' } })).status, 403, 'a tooling token cannot change settings');
 });
 
+test('a chat arrangement is held on the server and read back on a reconnect', async () => {
+  const a = s.store.createToken('device', 'arrangement device a').token;
+  const b = s.store.createToken('device', 'arrangement device b').token;
+  const groups = [{ id: 'g1', name: 'Family' }];
+  const placement = { '1': 'g1' };
+  const order = ['1', '2'];
+  const w = await s.put('/api/v1/settings', a, { values: { 'chats.sort': 'manual', 'chats.groups': groups, 'chats.placement': placement, 'chats.order': order } });
+  assert.equal(w.status, 200);
+  // A second device connecting fresh reads the same arrangement, which is what surviving a reconnect means for a
+  // value that lives on the server rather than on one device.
+  const read = await (await s.get('/api/v1/settings', b)).json();
+  assert.equal(read.values['chats.sort'], 'manual');
+  assert.deepEqual(read.values['chats.groups'], groups);
+  assert.deepEqual(read.values['chats.placement'], placement);
+  assert.deepEqual(read.values['chats.order'], order);
+});
+
 test('a settings change is broadcast over the event stream', async () => {
   const a = await openSocket(s.base);
   a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
