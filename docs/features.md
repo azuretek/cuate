@@ -27,6 +27,7 @@ What works today, and the test that proves each. Planned work is at the end.
 - A tweakcn theme converted into the token set, with every name it cannot carry refused and named: `core/test/rules.test.js`, "a tweakcn theme is imported, and every name it cannot carry is refused out loud".
 - A settings page that reads and writes the settings the server holds, and redraws when a change made anywhere arrives on the event stream; an about page drawn from the server's info route; and, below phone width, one pane at a time with the list sliding in over the conversation and a way back: the desktop smoke.
 - The settings page's schema, its defaults and what a control writes: `core/test/rules.test.js`, "the settings page draws the schema and writes the value a control gives".
+- The chat list sorted by activity, unread first, name or a stored manual order, and filtered by unread, a named group, direct or group conversations and a text search, with the arrangement and the person-made groups held on the server: `core/test/rules.test.js`, "the list sorts by activity, unread, name and the manual order the server holds", "filters compose, clear one at a time, and search names and last messages", "groups keep their own order, draw as sections, and never lose an ungrouped chat"; `server/test/api.test.js`, "a chat arrangement is held on the server and read back on a reconnect".
 
 ## Planned
 
