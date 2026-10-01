@@ -33,10 +33,20 @@
   --size-dot: 10px;
   --size-border: 1px;
   --size-onboarding: 420px;
+  --size-drawer: min(86vw, 320px);
+  --size-drawer-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+  --size-picker: 320px;
+  --size-picker-h: 320px;
+  --size-emoji: 32px;
+  --size-picker-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
   --motion-fast: 120ms;
   --motion-normal: 200ms;
   --motion-spin: 900ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --motion-drawer: 200ms;
+  --motion-drawer-out: 160ms;
+  --motion-drawer-fade: 140ms;
+  --motion-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --color-bg: #ffffff;
   --color-bg-raised: #f5f5f7;
   --color-bg-sunken: #ececf0;
@@ -56,6 +66,7 @@
   --color-selection: #e3efff;
   --color-banner: #fff4e5;
   --color-unread: #0a84ff;
+  --color-scrim: rgba(0, 0, 0, 0.44);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -78,5 +89,6 @@
     --color-selection: #1d3557;
     --color-banner: #3a2a12;
     --color-unread: #0a84ff;
+    --color-scrim: rgba(0, 0, 0, 0.44);
   }
 }
