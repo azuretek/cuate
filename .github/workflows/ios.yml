@@ -90,6 +90,22 @@ jobs:
             # Homebrew mirror fails here in five minutes rather than holding the
             # job to its own limit (the shape measured on the Linux packaging leg,
             # run 36888349385).
+            # macOS runners ship no GNU timeout, so it is provided here when it is
+            # absent: the install runs in the background and a watchdog kills it at
+            # the deadline, so a stalled mirror fails this step rather than the job.
+            # The deadline is still a literal `timeout <seconds>` on the call below,
+            # which is the shape every bounded network step in this repo carries.
+            if ! command -v timeout >/dev/null 2>&1; then
+              timeout() {
+                local secs="$1"; shift
+                "$@" & local pid=$!
+                ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) & local watch=$!
+                local rc=0
+                wait "$pid" || rc=$?
+                kill "$watch" 2>/dev/null || true
+                return "$rc"
+              }
+            fi
             HOMEBREW_NO_AUTO_UPDATE=1 timeout 300 brew install xcodegen
           fi
           xcodegen --version
@@ -200,6 +216,22 @@ jobs:
             # Homebrew mirror fails here in five minutes rather than holding the
             # job to its own limit (the shape measured on the Linux packaging leg,
             # run 36888349385).
+            # macOS runners ship no GNU timeout, so it is provided here when it is
+            # absent: the install runs in the background and a watchdog kills it at
+            # the deadline, so a stalled mirror fails this step rather than the job.
+            # The deadline is still a literal `timeout <seconds>` on the call below,
+            # which is the shape every bounded network step in this repo carries.
+            if ! command -v timeout >/dev/null 2>&1; then
+              timeout() {
+                local secs="$1"; shift
+                "$@" & local pid=$!
+                ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) & local watch=$!
+                local rc=0
+                wait "$pid" || rc=$?
+                kill "$watch" 2>/dev/null || true
+                return "$rc"
+              }
+            fi
             HOMEBREW_NO_AUTO_UPDATE=1 timeout 300 brew install xcodegen
           fi
 
