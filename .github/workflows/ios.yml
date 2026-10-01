@@ -78,7 +78,11 @@ jobs:
         run: |
           set -eo pipefail
           if ! command -v xcodegen >/dev/null; then
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+            # A network step, so it is bounded like every other one: a stalled
+            # Homebrew mirror fails here in five minutes rather than holding the
+            # job to its own limit (the shape measured on the Linux packaging leg,
+            # run 36888349385).
+            HOMEBREW_NO_AUTO_UPDATE=1 timeout 300 brew install xcodegen
           fi
           xcodegen --version
 
@@ -184,7 +188,11 @@ jobs:
         run: |
           set -eo pipefail
           if ! command -v xcodegen >/dev/null; then
-            HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+            # A network step, so it is bounded like every other one: a stalled
+            # Homebrew mirror fails here in five minutes rather than holding the
+            # job to its own limit (the shape measured on the Linux packaging leg,
+            # run 36888349385).
+            HOMEBREW_NO_AUTO_UPDATE=1 timeout 300 brew install xcodegen
           fi
 
       - name: Generate the Xcode project
