@@ -44,8 +44,9 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
   const marker = path.join(dataDir, 'export.json');
 
   // The marker is the export's own cursor: when it ran, and the engine ROWID the sweep reached. A ROWID cursor is
-  // only valid for the database instance that produced it, so it stays with the run that wrote it and a restored
-  // database starts a fresh sweep.
+  // only valid for the database instance that produced it, so this marker belongs to the database that wrote it:
+  // restoring or replacing chat.db means deleting it, since a since run would otherwise resume past rows that the
+  // new database has not seen.
   const lastMark = () => {
     if (!existsSync(marker)) return null;
     try {
