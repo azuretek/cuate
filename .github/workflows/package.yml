@@ -139,6 +139,20 @@ jobs:
         with:
           name: installers-${{ matrix.platform }}-${{ matrix.arch }}
           if-no-files-found: error
+          # ★ The artifact-versus-release retention split, copied from the sibling
+          # app's release path. These artifacts exist only to carry the installers
+          # from the six build runners to the release job: the GitHub Release is
+          # the durable copy, and the prune there keeps the newest ten. GitHub's
+          # repository default is 90 days (measured 2026-10-01), so the split is
+          # stated here rather than left to the default, and artifacts expire as
+          # fast as GitHub allows (age-only: GitHub offers no count-based limit for
+          # artifacts, unlike the releases).
+          retention-days: 1
+          # Stored, not compressed. Every payload here is an installer or an
+          # updater archive, so the bytes are already compressed and the default
+          # deflate pass only spends CPU on the runner and again in the release
+          # job's download for a file that cannot shrink. Copied from the sibling.
+          compression-level: 0
           path: |
             desktop/dist/*.dmg
             desktop/dist/*.zip

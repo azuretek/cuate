@@ -22,10 +22,12 @@ var engine = (() => {
   var engine_exports = {};
   __export(engine_exports, {
     LEVELS: () => LEVELS,
+    SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     chatPreview: () => chatPreview,
     chatTitle: () => chatTitle,
+    coerceSetting: () => coerceSetting,
     connectionSentence: () => connectionSentence,
     createApiClient: () => createApiClient,
     createLogger: () => createLogger,
@@ -40,11 +42,14 @@ var engine = (() => {
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
     mergeMessages: () => mergeMessages,
+    mergeSettings: () => mergeSettings,
     newTraceparent: () => newTraceparent,
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
     reactionGlyph: () => reactionGlyph,
     scrub: () => scrub,
+    settingValue: () => settingValue,
+    settingsFields: () => settingsFields,
     summarizeReactions: () => summarizeReactions,
     tokensCss: () => tokensCss,
     validate: () => validate
@@ -130,6 +135,8 @@ var engine = (() => {
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
       send: (chatId, { text, clientKey }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, clientKey }),
+      settings: () => call("GET", "/api/v1/settings"),
+      settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
       async attachment(id, o = {}) {
         const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
@@ -437,6 +444,31 @@ var engine = (() => {
       counts.set(g, (counts.get(g) || 0) + 1);
     }
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
+  }
+
+  // core/app/rules/settings.js
+  var SETTINGS_SCHEMA = {
+    keys: {
+      "appearance.skin": { label: "Appearance", type: "choice", options: ["system", "light", "dark"], default: "system" },
+      "appearance.textSize": { label: "Text size", type: "number", min: 11, max: 20, step: 1, default: 14 },
+      "appearance.density": { label: "Density", type: "choice", options: ["comfortable", "compact"], default: "comfortable" }
+    }
+  };
+  function settingsFields(schema = SETTINGS_SCHEMA) {
+    return Object.entries(schema.keys).map(([key, spec]) => ({ key, ...spec }));
+  }
+  function settingValue(field, values) {
+    return values && Object.hasOwn(values, field.key) ? values[field.key] : field.default;
+  }
+  function coerceSetting(field, raw) {
+    if (field.type === "number") return Number(raw);
+    if (field.type === "toggle") return raw === true || raw === "true";
+    return String(raw);
+  }
+  function mergeSettings(values = {}, schema = SETTINGS_SCHEMA) {
+    const out = {};
+    for (const field of settingsFields(schema)) out[field.key] = settingValue(field, values);
+    return out;
   }
 
   // core/app/rules/time.js

@@ -111,10 +111,61 @@ async function runSmoke(w) {
   }
   await pause(300);
   await shot('03-after-send.png');
+
+  // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
+  // event stream from anywhere. Values are checked at the server, not from the page's own copy.
+  const srv = process.env.SMOKE_SERVER_URL;
+  const auth = { authorization: 'Bearer ' + process.env.SMOKE_TOKEN };
+  const held = async () => (await (await fetch(srv + '/api/v1/settings', { headers: auth })).json()).values || {};
+  const cdp = (method, params) => wc.debugger.sendCommand(method, params);
+
   await js("document.querySelector('.sidebar-head .text-button').click()");
+  await waitFor("Boolean(document.querySelector('app-settings select[data-key=\"appearance.skin\"]'))");
+  const shown = await js("document.querySelector('app-settings select[data-key=\"appearance.skin\"]').value");
+  report.settingsRead = shown === ((await held())['appearance.skin'] || 'system');
+  await js("(() => { const s = document.querySelector('app-settings select[data-key=\"appearance.skin\"]'); s.value = 'dark'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+  for (let i = 0; i < 50 && (await held())['appearance.skin'] !== 'dark'; i += 1) await pause(200);
+  report.settingsWrote = (await held())['appearance.skin'] === 'dark';
+  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
+  report.settingsStreamed = true;
+  report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('05-settings.png');
+
+  // About: every value comes from the server's info route.
+  await js("document.querySelector('app-settings [data-action=\"about\"]').click()");
+  await waitFor("Boolean(document.querySelector('app-about'))");
+  await pause(200);
+  await shot('06-about.png');
+  report.about = await js("[...document.querySelectorAll('app-about .setting-row')].some((r) => r.textContent.includes('Server version'))");
+  await js("document.querySelector('app-about .back').click()");
+  await waitFor("Boolean(document.querySelector('app-settings'))");
+  await js("document.querySelector('app-settings .back').click()");
+  await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
+
+  // The phone: one pane at a time, the list sliding in over the conversation, with a way back.
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await pause(300);
+  await js("document.querySelector('.sidebar .chat-row').click()");
+  await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'");
+  report.phone = await js("getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'");
+  await shot('07-phone-conversation.png');
+  await js("document.querySelector('app-conversation .conv-back').click()");
+  await waitFor("document.querySelector('.shell')?.dataset.pane === 'list'");
+  await shot('08-phone-list.png');
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  await pause(200);
+
+  // Sign out lives on the settings page now.
+  await js("document.querySelector('.sidebar-head .text-button').click()");
+  await waitFor("Boolean(document.querySelector('app-settings [data-action=\"signout\"]'))");
+  await js("document.querySelector('app-settings [data-action=\"signout\"]').click()");
   await waitFor("Boolean(document.querySelector('app-onboarding form'))");
   await pause(300);
-  await shot('04-onboarding.png');
+  await shot('09-onboarding.png');
   report.onboarding = true;
   report.captures = captured.length;
   writeFileSync(path.join(SMOKE, 'report.json'), JSON.stringify(report, null, 1));
@@ -132,6 +183,7 @@ function createWindow() {
     icon: path.join(here, '../build/icon.png'),
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
+  win.on('page-title-updated', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => {
     handlers['open.external']({ url });
     return { action: 'deny' };

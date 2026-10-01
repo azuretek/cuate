@@ -41,7 +41,7 @@ Cuate has two halves: a headless server on a Mac that already runs Messages, and
 
 - It speaks only the server's API: HTTP for reads and sends, one WebSocket for live events. fetch and WebSocket are injected, so the same client library runs in every shell and in the server's tests.
 - The device token lives only in the shell's secure storage (Electron's safeStorage on desktop), handed to the page through the host bridge.
-- Screens today: connect, the chat list, a conversation with sender runs, time separators, photos, tapbacks and delivery state, and the composer. A sent message shows at once and is replaced by the confirmed one when the server reports it.
+- Screens today: connect, the chat list, a conversation with sender runs, time separators, photos, tapbacks and delivery state, and the composer; a settings page that reads and writes the settings the server holds and redraws from the event stream, and an about page drawn from the server's info route. Below phone width one pane shows at a time, the list sliding in over the conversation with a way back. A sent message shows at once and is replaced by the confirmed one when the server reports it.
 
 ## Testing
 

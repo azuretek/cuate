@@ -23,6 +23,8 @@ What works today, and the test that proves each. Planned work is at the end.
 - The chat list, a conversation with sender runs, time separators, photos, tapbacks and delivery state, and sending: the desktop smoke (`desktop/scripts/smoke.mjs`) and `core/test/rules.test.js`.
 - Live updates without a refresh, and OS notifications for incoming messages: the desktop smoke.
 - Light and dark: the desktop smoke captures both.
+- A settings page that reads and writes the settings the server holds, and redraws when a change made anywhere arrives on the event stream; an about page drawn from the server's info route; and, below phone width, one pane at a time with the list sliding in over the conversation and a way back: the desktop smoke.
+- The settings page's schema, its defaults and what a control writes: `core/test/rules.test.js`, "the settings page draws the schema and writes the value a control gives".
 
 ## Planned
 
