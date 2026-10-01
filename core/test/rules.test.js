@@ -5,6 +5,7 @@ import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats } fro
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
+import { settingsFields, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
 import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -170,4 +171,17 @@ test('the token stylesheet comes from the token spec', () => {
   assert.match(css, /--color-bg: #ffffff;/);
   assert.match(css, /prefers-color-scheme: dark/);
   assert.match(css, /--space-4: 16px;/);
+});
+
+test('the settings page draws the schema and writes the value a control gives', () => {
+  const fields = settingsFields();
+  assert.deepEqual(fields.map((f) => f.key), ['appearance.skin', 'appearance.textSize', 'appearance.density']);
+  const skin = fields.find((f) => f.key === 'appearance.skin');
+  const size = fields.find((f) => f.key === 'appearance.textSize');
+  assert.deepEqual(skin.options, ['system', 'light', 'dark']);
+  assert.equal(settingValue(skin, {}), 'system', 'an unset key draws the schema default');
+  assert.equal(settingValue(skin, { 'appearance.skin': 'dark' }), 'dark', 'the server value wins');
+  assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
+  assert.equal(coerceSetting(skin, 'dark'), 'dark');
+  assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable' });
 });
