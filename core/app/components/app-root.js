@@ -160,7 +160,10 @@ class AppRoot extends KitElement {
     if (show) this.listOpen = false;
     this.messages = [];
     this.hasMore = false;
+    const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
+    // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
+    if (wasUnread && this.client) this.client.markRead(chatId).catch(() => {});
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50 });
       if (this.openChatId !== chatId) return;
@@ -216,6 +219,11 @@ class AppRoot extends KitElement {
       }
     } else if (name === 'reaction') {
       if (data.chatId === this.openChatId) this.messages = applyReaction(this.messages, data);
+    } else if (name === 'chat.read') {
+      // A chat read on any device clears here too, so the count is the server's and not this page's own idea.
+      const id = String(data.chatId);
+      const unread = Number.isFinite(data.unread) ? data.unread : 0;
+      this.chats = this.chats.map((c) => (c.id === id ? { ...c, unread } : c));
     } else if (name === 'server.state') {
       this.sending = Boolean(data.sending);
     } else if (name === 'settings.changed') {

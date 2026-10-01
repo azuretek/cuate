@@ -17,6 +17,7 @@
     { "id": "chats", "method": "GET", "path": "/api/v1/chats", "scope": "read", "query": ["limit"], "returns": "ChatList" },
     { "id": "messages", "method": "GET", "path": "/api/v1/chats/:chatId/messages", "scope": "read", "query": ["limit", "before"], "returns": "MessageList" },
     { "id": "send", "method": "POST", "path": "/api/v1/chats/:chatId/messages", "scope": "send", "body": "SendRequest", "returns": "SendResult" },
+    { "id": "read", "method": "POST", "path": "/api/v1/chats/:chatId/read", "scope": "send", "returns": "ChatRead" },
     { "id": "attachment", "method": "GET", "path": "/api/v1/attachments/:attachmentId", "scope": "read", "query": ["format"], "returns": "binary" },
     { "id": "search", "method": "GET", "path": "/api/v1/search", "scope": "search", "query": ["q", "limit", "chatId"], "returns": "SearchResults" },
     { "id": "settings", "method": "GET", "path": "/api/v1/settings", "scope": "read", "returns": "Settings" },
@@ -34,6 +35,7 @@
   "events": {
     "message.new": "MessageEvent",
     "reaction": "ReactionEvent",
+    "chat.read": "ChatRead",
     "server.state": "ServerState",
     "settings.changed": "SettingsEvent",
     "mac.state": "MacEvent"
@@ -51,6 +53,7 @@
     "Reaction": { "type": "string", "emoji": "string?", "fromMe": "boolean", "sender": "string?" },
     "SendRequest": { "text": "string?", "file": "string?", "clientKey": "string" },
     "SendResult": { "status": "string", "clientKey": "string", "messageId": "string?", "duplicate": "boolean?" },
+    "ChatRead": { "chatId": "string", "unread": "number" },
     "SearchResults": { "query": "string", "results": "SearchResult[]" },
     "SearchResult": { "chatId": "string", "chatName": "string", "message": "Message" },
     "Settings": { "values": "object" },

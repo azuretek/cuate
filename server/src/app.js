@@ -130,6 +130,16 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     held.chats.splice(at, 1);
     held.chats.unshift({ ...chat, lastMessageAt: m.sentAt });
   };
+  // A conversation read on one device clears here too: the held list drops its count and every client is told,
+  // so the number a client shows is the server's, never its own idea.
+  const markRead = (chatId) => {
+    const id = String(chatId);
+    if (held) {
+      const at = held.chats.findIndex((c) => String(c.id) === id);
+      if (at >= 0) held.chats[at] = { ...held.chats[at], unread: 0 };
+    }
+    publish('chat.read', { chatId: id, unread: 0 });
+  };
   // One history read per chat at a time. A live message that lands during the read is newer, so it is kept.
   const loading = new Map();
   const loadPreview = (id) => {
@@ -160,7 +170,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const webhooks = createWebhooks({ engine, endpoints: (config.webhooks && config.webhooks.endpoints) || [], log: log.child('webhook') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, epoch, platform,
-    send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, publish, warm,
+    send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),

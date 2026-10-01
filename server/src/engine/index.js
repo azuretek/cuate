@@ -147,6 +147,13 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
   }
 
+  // imsg `read` marks every message in a conversation read on the Mac, which is also what sends the read
+  // receipt. The engine resolves the chat target itself and answers { ok: true }.
+  async function read(chatId) {
+    const r = await request('read', { chat_id: Number(chatId) }, timeoutMs);
+    return { ok: Boolean(r && r.ok) };
+  }
+
   const sendText = (chatId, text) => sendOut({ chat_id: Number(chatId), text });
 
   // imsg stages one file per send under the Messages attachments folder before dispatch. An empty caption is left
@@ -168,6 +175,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     chats,
     messages,
     after,
+    read,
     sendText,
     sendFile,
     info: () => ({ kind: state.kind, version: state.version, ready: state.ready }),
