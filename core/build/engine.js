@@ -26,9 +26,11 @@ var engine = (() => {
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
     LEVELS: () => LEVELS,
     NOTICE_TYPES: () => NOTICE_TYPES,
+    NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
     SCHEMES: () => SCHEMES,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
+    SILENT_UPDATE_STATES: () => SILENT_UPDATE_STATES,
     SLOP: () => SLOP,
     SORT_ORDERS: () => SORT_ORDERS,
     THEME_GROUPS: () => THEME_GROUPS,
@@ -972,6 +974,8 @@ var engine = (() => {
     updateReady: "notifications.updateReady",
     error: "notifications.errors"
   };
+  var NOTICE_UPDATE_STATES = ["available", "ready", "error"];
+  var SILENT_UPDATE_STATES = ["checking"];
   function noticeEnabled(settings, type) {
     const key = NOTICE_TYPES[type];
     if (!key || !SETTINGS_SCHEMA.keys[key]) return false;

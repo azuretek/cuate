@@ -6,8 +6,8 @@ import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, delete
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
-import { NOTICE_TYPES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
+import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
@@ -235,7 +235,10 @@ test('a tweakcn theme is imported, and every name it cannot carry is refused out
 
 test('the settings page draws the schema and writes the value a control gives', () => {
   const fields = settingsFields();
-  assert.deepEqual(fields.slice(0, 3).map((f) => f.key), ['appearance.skin', 'appearance.textSize', 'appearance.density']);
+  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textSize', 'appearance.density', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every key the schema declares lands in one section, once, in the schema order');
+  const groupIds = settingsGroups().map((g) => g.id);
+  for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
+  for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
   assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications'], 'the page draws one section per group');
   assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   const skin = fields.find((f) => f.key === 'appearance.skin');
@@ -255,6 +258,16 @@ test('every notice type has its own switch and a notice only fires when it is on
   assert.equal(noticeEnabled({ ...all, 'notifications.updateAvailable': false }, 'updateAvailable'), false);
   assert.equal(noticeEnabled({ ...all, 'notifications.newMessage': false }, 'updateReady'), true, 'one switch leaves the others alone');
   assert.equal(noticeEnabled(all, 'nope'), false, 'an unknown type raises nothing');
+});
+
+test('the bridge spec owns the update states, and every one is either a notice or called silent', () => {
+  const spec = JSON.parse(readFileSync(new URL('../spec/host-bridge.json', import.meta.url), 'utf8'));
+  const declared = spec.events['update.state'].states;
+  assert.ok(declared.length > 0, 'the spec declares the states the shell may send');
+  for (const state of declared) assert.ok(NOTICE_UPDATE_STATES.includes(state) || SILENT_UPDATE_STATES.includes(state), state + ' is declared in the spec, so the rules must name it');
+  for (const state of [...NOTICE_UPDATE_STATES, ...SILENT_UPDATE_STATES]) assert.ok(declared.includes(state), state + ' is named by the rules, so the spec must declare it');
+  for (const state of NOTICE_UPDATE_STATES) assert.ok(updateNotice(state), state + ' raises a notice');
+  for (const state of SILENT_UPDATE_STATES) assert.equal(updateNotice(state), null, state + ' raises nothing on purpose');
 });
 
 test('an update state carries the notice it raises, and a state with none raises nothing', () => {

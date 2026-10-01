@@ -9,6 +9,12 @@ export const NOTICE_TYPES = {
   error: 'notifications.errors',
 };
 
+// The update states the shell may send, split by whether they raise a notice. The state names are the bridge spec's;
+// these two lists are the rules' side of that contract, so a state the spec adds fails the test until it is either
+// given a notice or called silent here, rather than slipping through as a null and never appearing.
+export const NOTICE_UPDATE_STATES = ['available', 'ready', 'error'];
+export const SILENT_UPDATE_STATES = ['checking'];
+
 // A notice fires unless its own switch is explicitly off; a key the server has never seen keeps the schema default.
 export function noticeEnabled(settings, type) {
   const key = NOTICE_TYPES[type];

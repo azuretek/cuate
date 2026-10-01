@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { channelOf, startUpdates } from '../src/updates.js';
+
+// The states the shell may send are the bridge spec's. Every state an update raises here is checked against that
+// list, so a state renamed on one side fails a test rather than going quiet on the page.
+const DECLARED_STATES = JSON.parse(readFileSync(new URL('../../core/spec/host-bridge.json', import.meta.url), 'utf8')).events['update.state'].states;
 test('prereleases follow dev and stable builds follow latest', () => {
   assert.equal(channelOf('1.0.1-dev.10.abcdef0123'), 'dev');
   assert.equal(channelOf('1.0.0'), 'latest');
@@ -23,6 +28,7 @@ test('checks at boot and every four hours, reports available and ready, and stop
   assert.deepEqual(states.at(-1), { state: 'available', version: '1.0.1-dev.4.def' });
   updater.emit('update-downloaded', { version: '1.0.1-dev.4.def' });
   assert.deepEqual(states.at(-1), { state: 'ready', version: '1.0.1-dev.4.def' });
+  for (const s of states) assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
   stop();
   assert.equal(cleared, 42);
   assert.equal(updater.listenerCount('update-available'), 0);
@@ -36,6 +42,7 @@ test('network failure is contained, reported as an error state, and the next che
   await Promise.resolve(); await Promise.resolve(); await callback();
   assert.equal(errors, 2);
   assert.equal(states.filter((s) => s.state === 'error').length, 2, 'each failure is reported as an error state');
+  for (const s of states) assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
   assert.equal(updater.allowPrerelease, false);
   stop();
 });

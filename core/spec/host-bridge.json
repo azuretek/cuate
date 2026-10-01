@@ -9,6 +9,6 @@
     "open.external": { "args": { "url": "string" }, "returns": "boolean" }
   },
   "events": {
-    "update.state": { "args": { "state": "string", "version": "string?" }, "returns": "void" }
+    "update.state": { "args": { "state": "string", "version": "string?" }, "returns": "void", "states": ["checking", "available", "ready", "error"] }
   }
 }
