@@ -5,6 +5,7 @@
 - `pnpm install`, then `pnpm run hooks:install` once, so lint runs before each commit and the tests before each push.
 - `pnpm run lint`, `pnpm run test` and `pnpm run build` must pass. `pnpm run smoke` boots the desktop app against a fake server; it needs a display.
 - `pnpm run build` also checks that the generated PNG and ICO match the placeholder SVG. Regenerate them with `pnpm --filter desktop icons`. [Release instructions](release.md) cover packaged smoke tests.
+- A design, style or token change is validated on every platform, not only the one it was written on. `pnpm run smoke` renders the app and asserts that the tokens the page RESOLVES match `core/spec/tokens.json` in both light and dark; CI runs it once per desktop platform (macOS, Windows, Linux), and the phone shells run their own legs, which the platforms gate requires. The platform list is `core/spec/platforms.json`, and `desktop/test/desktop-platforms.test.js` fails when a platform it names has no leg or a stated reason.
 - Every change lands as a pull request and merges when CI is green. Commits follow Conventional Commits, and the message says why.
 - The platforms gate decides what publishes: a test build goes out only when every pipeline that builds a platform on the commit is green, the iOS build reaching VALID in TestFlight included, and a missing or skipped leg refuses. The rule lives in `scripts/release/gate.mjs` and `desktop/test/gate.test.js` holds it, so a new platform pipeline fails a test until it joins the gate rather than publishing silently.
 

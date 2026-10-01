@@ -39,10 +39,20 @@ jobs:
       - run: pnpm run test
       - run: pnpm run build
 
+  # ★ The desktop on screen, on EVERY platform, with the scheme matrix included. A design, style or token change is
+  # validated on each platform rather than only the one it was written on: a change that breaks one platform's chrome,
+  # or only dark, fails a leg whose name says which platform and which scheme. The leg renders the app against a fake
+  # server and asserts the tokens the page RESOLVES match core/spec/tokens.json in light and dark; a platform whose
+  # chrome did not take the tokens names the token rather than passing as a boot. The same matrix of desktop legs runs
+  # in package.yml against the packaged artifact, so the source tree and the shrink-wrapped build are both covered.
   desktop:
-    name: desktop smoke (Linux, xvfb)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: desktop smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -54,13 +64,16 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Ensure Electron is usable
         working-directory: desktop
+        shell: bash
         run: |
           usable() { node -e "const fs=require('fs'),p=require('electron');if(!fs.existsSync(p))process.exit(1)"; }
           usable || node node_modules/electron/install.js
           usable && echo "electron loads"
-      # A virtual display, emoji fonts, the namespace restriction lifted so Chromium's sandbox starts, and a session
-      # bus with an unlocked keyring so safeStorage encrypts the token as it does on a desktop.
-      - name: A display and a keyring for Electron
+      # Linux only: a virtual display, emoji fonts, the namespace restriction lifted so Chromium's sandbox starts, and
+      # a session bus with an unlocked keyring so safeStorage encrypts the token as it does on a desktop. macOS and
+      # Windows runners carry a desktop session, so the smoke opens a real window there.
+      - name: A display and a keyring for Electron (Linux)
+        if: runner.os == 'Linux'
         run: |
           set -eo pipefail
           sudo apt-get update -qq
@@ -73,17 +86,24 @@ jobs:
           printf 'ci' | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null
           printf 'ci' | gnome-keyring-daemon --start --components=secrets >/dev/null
           echo "SHOTS=$RUNNER_TEMP/shots" >> "$GITHUB_ENV"
-      # The virtual display has no GPU, so the app renders in software here.
-      - name: Boot the app against a server over the fake engine
+      # The virtual display has no GPU, so the app renders in software there; macOS and Windows render normally.
+      - name: Boot the app against a server over the fake engine (Linux)
+        if: runner.os == 'Linux'
         env:
           SMOKE_SOFTWARE_RENDERING: '1'
+          SHOTS: ${{ runner.temp }}/shots
         run: xvfb-run -a -s "-screen 0 1280x800x24" node desktop/scripts/smoke.mjs
+      - name: Boot the app against a server over the fake engine (macOS, Windows)
+        if: runner.os != 'Linux'
+        env:
+          SHOTS: ${{ runner.temp }}/shots
+        run: node desktop/scripts/smoke.mjs
       - name: Keep the captures
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-smoke
-          path: ${{ env.SHOTS }}
+          name: desktop-smoke-${{ matrix.os }}
+          path: ${{ runner.temp }}/shots
           if-no-files-found: warn
 
   packaging:

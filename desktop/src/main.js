@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates } from './updates.js';
 
@@ -12,6 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
 const naming = JSON.parse(readFileSync(path.join(CORE, 'spec/naming.json'), 'utf8'));
 const bridgeSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/host-bridge.json'), 'utf8'));
+const tokenSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/tokens.json'), 'utf8'));
 const version = app.getVersion();
 const SMOKE = process.env.SMOKE_OUT || '';
 
@@ -130,6 +132,23 @@ async function runSmoke(w) {
   await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
+
+  // The rendered surface: the values the page RESOLVES must be the ones the one spec holds, in each scheme. The
+  // colour scheme follows the platform's, so the shell drives nativeTheme and the page is read back. A platform whose
+  // chrome did not take the tokens, or a scheme a change only half applied, fails here and names the scheme and the
+  // token rather than being assumed to match the platform it was written on.
+  const surface = async (scheme) => {
+    const expected = expectedTokens(tokenSpec, scheme);
+    nativeTheme.themeSource = scheme;
+    await pause(500);
+    const resolved = await js(`(() => { const s = getComputedStyle(document.documentElement); const out = {}; for (const n of ${JSON.stringify(Object.keys(expected))}) out[n] = s.getPropertyValue(n).trim(); return out; })()`);
+    return tokenMismatches({ expected, resolved });
+  };
+  const surfaceFound = { light: await surface('light'), dark: await surface('dark') };
+  report.surfaceLight = surfaceFound.light.length === 0;
+  report.surfaceDark = surfaceFound.dark.length === 0;
+  report.surface = report.surfaceLight && report.surfaceDark;
+  if (!report.surface) console.error('surface mismatches: ' + JSON.stringify(surfaceFound));
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05-settings.png');

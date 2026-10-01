@@ -1,0 +1,10 @@
+{
+  "description": "The one owner of the platforms this product ships and how each one is validated on a pull request. A desktop entry names the runner its leg uses in the ci workflow's desktop matrix, and the phone shells name their own pipelines, which the ci workflow requires through the platforms gate. An entry may carry a reason instead of a leg, and then the desktop-platforms test requires that reason to be stated, so a platform whose validation quietly does not run is a failing test rather than a silent gap in the gate.",
+  "platforms": {
+    "macos": { "shell": "desktop", "runner": "macos-latest", "leg": "ci" },
+    "windows": { "shell": "desktop", "runner": "windows-latest", "leg": "ci" },
+    "linux": { "shell": "desktop", "runner": "ubuntu-latest", "leg": "ci" },
+    "ios": { "shell": "phone", "pipeline": "ios", "leg": "gate" },
+    "android": { "shell": "phone", "pipeline": "android", "leg": "gate" }
+  }
+}
