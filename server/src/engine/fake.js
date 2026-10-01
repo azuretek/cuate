@@ -32,6 +32,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const world = {
     sends,
     behavior,
+    requests: [],
     get attempts() { return attempts; },
     incoming(chatId, text, sender) {
       const chat = chats.find((c) => c.id === chatId);
@@ -65,6 +66,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       };
       const handle = (req) => {
         const p = req.params || {};
+        world.requests.push(req.method);
         switch (req.method) {
           case 'initialize':
           case 'status':
@@ -82,6 +84,20 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
               setTimeout(() => world.incoming(p.chat_id, liveText), liveDelayMs).unref();
             }
             return reply(req.id, { messages: ms.map((m) => withAttachments(m, p.attachments)) });
+          }
+          case 'messages.after': {
+            const since = Number.isFinite(p.since_rowid) ? p.since_rowid : 0;
+            const limit = Math.min(Math.max(1, Number.isFinite(p.limit) ? p.limit : 100), 500);
+            const rows = messages.slice().sort((a, b) => a.id - b.id).filter((m) => m.id > since);
+            let next = since;
+            const out = [];
+            for (const m of rows) {
+              if (out.length >= limit) break;
+              next = m.id;
+              if (m.is_reaction && !p.include_reactions) continue;
+              out.push(withAttachments(m, p.attachments));
+            }
+            return reply(req.id, { messages: out, next_rowid: next, has_more: rows.some((m) => m.id > next) });
           }
           case 'watch.subscribe':
             nextSub += 1;

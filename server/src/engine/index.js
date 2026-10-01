@@ -112,6 +112,26 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return { messages: list.slice(0, limit).reverse(), hasMore: list.length > limit };
   }
 
+  // The engine's own resumable sweep: one cursor over message ROWID order, across every chat, in pages the
+  // engine bounds itself (messages.after tops out at 500 rows). An export reads this rather than paging every
+  // chat from here, so its round trips grow with the history and not with the chat count.
+  const AFTER_LIMIT_MAX = 500;
+  async function after({ sinceRowid = 0, limit = AFTER_LIMIT_MAX, attachments = true, includeReactions = false } = {}) {
+    const params = {
+      since_rowid: Math.max(0, Math.trunc(Number(sinceRowid) || 0)),
+      limit: Math.min(AFTER_LIMIT_MAX, Math.max(1, Math.trunc(Number(limit) || AFTER_LIMIT_MAX))),
+      attachments: Boolean(attachments),
+      include_reactions: Boolean(includeReactions),
+    };
+    const r = await request('messages.after', params, timeoutMs, ['attachments', 'include_reactions']);
+    const rows = r && Array.isArray(r.messages) ? r.messages : [];
+    return {
+      messages: rows.filter((m) => includeReactions || !m.is_reaction).map((m) => mapMessage(m, { attachmentId })),
+      nextRowid: r && Number.isFinite(r.next_rowid) ? r.next_rowid : params.since_rowid,
+      hasMore: Boolean(r && r.has_more),
+    };
+  }
+
   // One imsg `send` call, for text, a file, or a file with a caption. Whatever comes back, an outcome the engine
   // cannot vouch for is uncertain, and the sender above never retries it.
   async function sendOut(params) {
@@ -147,6 +167,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     stop,
     chats,
     messages,
+    after,
     sendText,
     sendFile,
     info: () => ({ kind: state.kind, version: state.version, ready: state.ready }),
