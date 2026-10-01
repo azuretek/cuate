@@ -137,10 +137,16 @@ async function runSmoke(w) {
   // colour scheme follows the platform's, so the shell drives nativeTheme and the page is read back. A platform whose
   // chrome did not take the tokens, or a scheme a change only half applied, fails here and names the scheme and the
   // token rather than being assumed to match the platform it was written on.
+  // The scheme the page resolves follows the platform only while the skin is 'system',
+  // and the settings step above pinned that skin to dark. Put it back, and wait for the
+  // page to report a scheme it resolved, so a pinned skin cannot make every light token
+  // read dark and fail a check about the scheme the platform is driving.
+  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.skin': 'system' } }) });
+  await waitFor("document.documentElement.dataset.scheme === 'light' || document.documentElement.dataset.scheme === 'dark'");
   const surface = async (scheme) => {
     const expected = expectedTokens(tokenSpec, scheme);
     nativeTheme.themeSource = scheme;
-    await pause(500);
+    await waitFor(`document.documentElement.dataset.scheme === ${JSON.stringify(scheme)}`);
     const resolved = await js(`(() => { const s = getComputedStyle(document.documentElement); const out = {}; for (const n of ${JSON.stringify(Object.keys(expected))}) out[n] = s.getPropertyValue(n).trim(); return out; })()`);
     return tokenMismatches({ expected, resolved });
   };
