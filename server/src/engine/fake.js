@@ -106,6 +106,15 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'watch.unsubscribe':
             subs.delete(p.subscription);
             return reply(req.id, { ok: true });
+          case 'read': {
+            const chat = chats.find((c) => c.id === p.chat_id);
+            if (!chat) return fail(req.id, -32602, 'unknown chat_id');
+            for (const m of messages) {
+              if (m.chat_id === p.chat_id && !m.is_reaction && !m.is_from_me) m.is_read = true;
+            }
+            chat.unread_count = 0;
+            return reply(req.id, { ok: true });
+          }
           case 'send': {
             attempts += 1;
             if (behavior.send === 'hang') return undefined;
