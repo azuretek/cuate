@@ -1,4 +1,18 @@
 name: desktop test release
+
+# ★ The trigger and concurrency conditions, set against the sibling app's release
+# path this workflow is copied from. Two differences are deliberate and named
+# here rather than left for a diff to find later:
+#
+#   * There is no tag (v*) trigger, and none is wanted. This workflow publishes
+#     only test builds; a stable release selects an exact snapshot through a
+#     separately designed process (docs/release.md). The sibling's tag path
+#     exists because it publishes stable releases, so the version job's
+#     tag-equals-package.json check has nothing to check here.
+#   * cancel-in-progress stays false. The sibling cancels an in-progress branch
+#     build when a newer push arrives; this workflow must never cancel a
+#     publishing run, because a cancelled run can leave a draft behind. A newer
+#     push queues behind the publishing run instead.
 on:
   push:
     branches:
@@ -36,8 +50,9 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
   # The platforms gate. A test build publishes only once every pipeline that
   # builds a platform on this commit has, as a whole, concluded success, and the
-  # iOS half is the archive, the TestFlight upload and its wait for the build to
-  # reach VALID, so a desktop-only test build can no longer go out ahead of the
+  # iOS half is the archive, the TestFlight upload, its wait for the build to
+  # reach VALID and its proof that the build reached the tester group, so a
+  # desktop-only test build can no longer go out ahead of the
   # phone. The pipelines are named here, and desktop/test/gate.test.js fails when
   # a workflow that builds a platform is not named by a gate call, so a new
   # platform joins the gate by failing a test rather than by publishing silently.

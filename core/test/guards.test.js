@@ -101,3 +101,19 @@ test('every log event has a level, a message and typed fields', () => {
 test('no em dash anywhere in the repository', () => {
   for (const f of walk('.').filter((f) => /\.(?:c|m)?js$|\.(?:json|md|css|html|ya?ml)$/.test(f))) assert.ok(!read(f).includes('\u2014'), f);
 });
+
+test('the app never names the messaging transport', () => {
+  // The transport is an implementation fact. The repository says which client it provides (README.md, package.json),
+  // the docs explain the engine, the engine adapter maps its JSON, the server drives the Mac app that carries it, and
+  // the fixtures, the generated bundle and the server's log spec hold it (issue 56). Everywhere a person reads the
+  // app it is not named. These allowed paths are named here, so a match anywhere else fails rather than by accident.
+  const NAMES = /\biMessage\b|\bMessages\b/;
+  const ALLOWED = ['README.md', 'package.json', 'docs/', 'server/', 'core/test/', 'core/build/', 'core/fixtures/',
+    'core/spec/log-events.json', 'core/app/rules/engine-imsg.js', 'scripts/gen-engine-fixtures.mjs'];
+  const allowed = (f) => ALLOWED.some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));
+  for (const f of walk('.').filter((f) => /\.(?:c|m)?js$|\.(?:json|md|css|html|ya?ml)$/.test(f))) {
+    if (allowed(f)) continue;
+    const m = NAMES.exec(read(f));
+    assert.equal(m, null, f + ' names the transport: ' + (m && m[0]));
+  }
+});
