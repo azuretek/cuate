@@ -12,6 +12,7 @@ export { newTraceparent, formatTraceparent, parseTraceparent } from '../kit/rule
 export { validate } from '../kit/rules/schema.js';
 export { tokensCss } from '../kit/rules/tokens.js';
 export * from './rules/chats.js';
+export * from './rules/emoji.js';
 export * from './rules/connection.js';
 export * from './rules/engine-imsg.js';
 export * from './rules/messages.js';
