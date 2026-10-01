@@ -52,7 +52,10 @@ class AppRoot extends KitElement {
     this.serverUrl = '';
     this.settingsBusy = false;
     this.settingsProblem = '';
-    this.update = null;
+    // Never name this `update`: Lit's own lifecycle method is update(), and an own property of
+    // that name shadows it, so the element throws "this.update is not a function" on its next
+    // render and the app never becomes ready.
+    this.updateStatus = null;
     this.pending = new Map();
     this.client = null;
     // The shell's update states arrive here; the page, which holds the server's settings, decides the notice.
@@ -254,7 +257,7 @@ class AppRoot extends KitElement {
   // in-app banner instead, which is where the progress is visible on a platform whose notices cannot update.
   onUpdate(data) {
     const { state, version, percent, detail } = data || {};
-    this.update = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null } : null;
+    this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null } : null;
     const notice = updateNotice(state, version, detail);
     if (!notice || !noticeEnabled(this.settings, notice.type)) return;
     this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
@@ -371,7 +374,7 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
-    const banner = this.update ? updateBanner(this.update.state, { version: this.update.version, percent: this.update.percent, detail: this.update.detail }) : null;
+    const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail }) : null;
     return html`<div class="shell" data-pane=${this.pane()}>
       <aside class="sidebar" aria-label="Conversations">
         <header class="sidebar-head"><h1 class="title">Chats</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
