@@ -159,17 +159,31 @@ async function runSmoke(w) {
   await js("document.querySelector('app-settings .back').click()");
   await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
 
-  // The phone: one pane at a time, the list sliding in over the conversation, with a way back.
+  // The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
+  // left, the sibling's slide menu mirrored, with a scrim behind it and a back control returning. Checked at three
+  // phone widths so a hidden right edge fails rather than ships, and the composer's field is checked for iOS's
+  // focus-zoom floor: under the floor a tap zooms the whole page and the send control goes off the right of the screen.
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  let phoneFits = true;
+  for (const width of [320, 375, 414]) {
+    await cdp('Emulation.setDeviceMetricsOverride', { width, height: 812, deviceScaleFactor: 1, mobile: false });
+    await pause(250);
+    const m = await js("({ inner: window.innerWidth, doc: document.documentElement.scrollWidth, body: document.body.scrollWidth })");
+    if (m.inner !== width || m.doc > width || m.body > width) phoneFits = false;
+  }
+  report.phoneFits = phoneFits;
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
-  await pause(300);
+  await pause(250);
+  report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
+  report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
+  await shot('07-phone-list.png');
   await js("document.querySelector('.sidebar .chat-row').click()");
   await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'");
-  report.phone = await js("getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'");
-  await shot('07-phone-conversation.png');
+  await pause(400); // the drawer slides on a 160ms transition; measure the settled position, not a frame of it.
+  report.phone = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const scrim = document.querySelector('.scrim'); return r.right <= 0 && (!scrim || getComputedStyle(scrim).visibility === 'hidden'); })()");
+  await shot('08-phone-conversation.png');
   await js("document.querySelector('app-conversation .conv-back').click()");
   await waitFor("document.querySelector('.shell')?.dataset.pane === 'list'");
-  await shot('08-phone-list.png');
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(200);
 
