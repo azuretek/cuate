@@ -1,0 +1,1381 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Cuate API",
+    "version": "1",
+    "description": "The one owner of the contract between the clients and the server: every route, scope, event and payload. The server's routes and the client's calls are both tested against it (server/test/api.test.js). A payload key not declared here fails the test."
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "health",
+        "summary": "GET /healthz",
+        "tags": [
+          "meta"
+        ],
+        "x-scope": "none",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "summary": "GET /openapi.json",
+        "tags": [
+          "meta"
+        ],
+        "x-scope": "none",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mcp": {
+      "post": {
+        "operationId": "mcp",
+        "summary": "POST /api/v1/mcp",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "any",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/info": {
+      "get": {
+        "operationId": "info",
+        "summary": "GET /api/v1/info",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "any",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Info"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/chats": {
+      "get": {
+        "operationId": "chats",
+        "summary": "GET /api/v1/chats",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/chats/{chatId}/messages": {
+      "get": {
+        "operationId": "messages",
+        "summary": "GET /api/v1/chats/:chatId/messages",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chatId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "send",
+        "summary": "POST /api/v1/chats/:chatId/messages",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "send",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chatId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{attachmentId}": {
+      "get": {
+        "operationId": "attachment",
+        "summary": "GET /api/v1/attachments/:attachmentId",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "The attachment bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "search",
+        "summary": "GET /api/v1/search",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "search",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "chatId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "settings",
+        "summary": "GET /api/v1/settings",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "settings-write",
+        "summary": "PUT /api/v1/settings",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "settings",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mac": {
+      "get": {
+        "operationId": "mac",
+        "summary": "GET /api/v1/mac",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MacState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mac/restart": {
+      "post": {
+        "operationId": "mac-restart",
+        "summary": "POST /api/v1/mac/restart",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "admin",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MacRestartResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MacRestartRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/export": {
+      "get": {
+        "operationId": "export",
+        "summary": "GET /api/v1/export",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "export",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "webhooks": {
+    "message.new": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
+    "reaction": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
+    "server.state": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerState"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
+    "settings.changed": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
+    "mac.state": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MacEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "Info": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "apiVersion": {
+            "type": "number"
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineInfo"
+          },
+          "sending": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "product",
+          "apiVersion",
+          "serverVersion",
+          "epoch",
+          "engine",
+          "sending"
+        ],
+        "additionalProperties": false
+      },
+      "EngineInfo": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "ready"
+        ],
+        "additionalProperties": false
+      },
+      "ChatList": {
+        "type": "object",
+        "properties": {
+          "chats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Chat"
+            }
+          }
+        },
+        "required": [
+          "chats"
+        ],
+        "additionalProperties": false
+      },
+      "Chat": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isGroup": {
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unread": {
+            "type": "number"
+          },
+          "lastMessageAt": {
+            "type": "string"
+          },
+          "lastMessage": {
+            "$ref": "#/components/schemas/Preview"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isGroup",
+          "service",
+          "participants",
+          "unread"
+        ],
+        "additionalProperties": false
+      },
+      "Preview": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "fromMe": {
+            "type": "boolean"
+          },
+          "sentAt": {
+            "type": "string"
+          },
+          "attachments": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "text",
+          "fromMe",
+          "sentAt",
+          "attachments"
+        ],
+        "additionalProperties": false
+      },
+      "MessageList": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "messages",
+          "hasMore"
+        ],
+        "additionalProperties": false
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "fromMe": {
+            "type": "boolean"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "senderName": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          },
+          "replyTo": {
+            "type": "string"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attachment"
+            }
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reaction"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "chatId",
+          "fromMe",
+          "text",
+          "sentAt",
+          "attachments",
+          "reactions"
+        ],
+        "additionalProperties": false
+      },
+      "Attachment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "number"
+          },
+          "sticker": {
+            "type": "boolean"
+          },
+          "missing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mime",
+          "bytes",
+          "sticker",
+          "missing"
+        ],
+        "additionalProperties": false
+      },
+      "Reaction": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "fromMe": {
+            "type": "boolean"
+          },
+          "sender": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "fromMe"
+        ],
+        "additionalProperties": false
+      },
+      "SendRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "clientKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientKey"
+        ],
+        "additionalProperties": false
+      },
+      "SendResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "clientKey": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "clientKey"
+        ],
+        "additionalProperties": false
+      },
+      "SearchResults": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            }
+          }
+        },
+        "required": [
+          "query",
+          "results"
+        ],
+        "additionalProperties": false
+      },
+      "SearchResult": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "chatName": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "required": [
+          "chatId",
+          "chatName",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "SettingsPatch": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "SettingsEvent": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "MacState": {
+        "type": "object",
+        "properties": {
+          "awake": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "lockEnabled": {
+            "type": "boolean"
+          },
+          "lockMethod": {
+            "type": "string"
+          },
+          "messagesRunning": {
+            "type": "boolean"
+          },
+          "managedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "awake",
+          "locked",
+          "lockEnabled",
+          "lockMethod",
+          "messagesRunning"
+        ],
+        "additionalProperties": false
+      },
+      "MacRestartRequest": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "what"
+        ],
+        "additionalProperties": false
+      },
+      "MacRestartResult": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string"
+          },
+          "restarted": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "what",
+          "restarted"
+        ],
+        "additionalProperties": false
+      },
+      "MacEvent": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          },
+          "on": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "Resume": {
+        "type": "object",
+        "properties": {
+          "epoch": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "epoch",
+          "seq"
+        ],
+        "additionalProperties": false
+      },
+      "Hello": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "apiVersion": {
+            "type": "number"
+          },
+          "resumed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "epoch",
+          "seq",
+          "apiVersion",
+          "resumed"
+        ],
+        "additionalProperties": false
+      },
+      "EventFrame": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "type",
+          "seq",
+          "name",
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "MessageEvent": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "ReactionEvent": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "add": {
+            "type": "boolean"
+          },
+          "fromMe": {
+            "type": "boolean"
+          },
+          "sender": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chatId",
+          "targetId",
+          "type",
+          "add",
+          "fromMe"
+        ],
+        "additionalProperties": false
+      },
+      "ServerState": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string"
+          },
+          "sending": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine",
+          "sending"
+        ],
+        "additionalProperties": false
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorBody": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
