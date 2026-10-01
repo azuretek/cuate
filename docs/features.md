@@ -23,7 +23,8 @@ What works today, and the test that proves each. Planned work is at the end.
 - Connect with a server address and a device token, kept in the OS keychain: `desktop/test/bridge.test.js` and the desktop smoke.
 - The chat list, a conversation with sender runs, time separators, photos, tapbacks and delivery state, and sending: the desktop smoke (`desktop/scripts/smoke.mjs`) and `core/test/rules.test.js`.
 - Live updates without a refresh, and OS notifications for incoming messages: the desktop smoke.
-- Light and dark: the desktop smoke captures both.
+- A theme the server holds, applied by every client without a rebuild, with light and dark both drawn from it and a skin that follows the system by default: `core/test/rules.test.js`, "a theme turns into custom properties for the scheme in force" and "a tweakcn theme is imported..."; the desktop smoke asserts the theme reaches the page in both schemes.
+- A tweakcn theme converted into the token set, with every name it cannot carry refused and named: `core/test/rules.test.js`, "a tweakcn theme is imported, and every name it cannot carry is refused out loud".
 - A settings page that reads and writes the settings the server holds, and redraws when a change made anywhere arrives on the event stream; an about page drawn from the server's info route; and, below phone width, one pane at a time with the list sliding in over the conversation and a way back: the desktop smoke.
 - The settings page's schema, its defaults and what a control writes: `core/test/rules.test.js`, "the settings page draws the schema and writes the value a control gives".
 
