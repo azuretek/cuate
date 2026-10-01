@@ -64,12 +64,31 @@ app-attachment { display: block; max-width: var(--size-bubble-max); margin-botto
 .attachment-image.sticker { border-radius: 0; }
 .attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 
-app-composer { display: block; flex: none; border-top: var(--size-border) solid var(--color-border); }
+app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--color-border); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
 .composer textarea { flex: 1; resize: none; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); outline: none; }
 .composer textarea:focus { border-color: var(--color-accent); }
 .send { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-lg); cursor: pointer; }
 .send:disabled { opacity: 0.4; cursor: default; }
+
+/* The composer's own controls: the emoji button, and the panel it opens beside the field rather than as a sheet. */
+.composer-tools { display: flex; align-items: flex-end; gap: var(--space-1); }
+.tool { flex: none; width: var(--size-avatar); height: var(--size-avatar); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font-size: var(--font-size-lg); line-height: 1; cursor: pointer; }
+.tool:hover { background: var(--color-bg-sunken); }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); max-height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); z-index: 3; }
+.emoji-search { width: 100%; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); outline: none; }
+.emoji-search:focus { border-color: var(--color-accent); }
+.emoji-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); flex: none; }
+.emoji-tab { border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); font-size: var(--font-size-xs); padding: var(--space-1) var(--space-2); cursor: pointer; }
+.emoji-tab.active { background: var(--color-selection); color: var(--color-fg); }
+.emoji-row, .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--size-emoji), 1fr)); gap: var(--space-1); overflow-y: auto; }
+.emoji-row { flex: none; border-bottom: var(--size-border) solid var(--color-border); padding-bottom: var(--space-2); }
+.emoji-grid { flex: 1; min-height: 0; }
+.emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
+.emoji-cell:hover { background: var(--color-bg-sunken); }
+.emoji-empty { padding: var(--space-3); text-align: center; }
+
 
 .onboarding-wrap { height: 100%; display: grid; place-items: center; padding: var(--space-5); }
 .onboarding { width: 100%; max-width: var(--size-onboarding); display: flex; flex-direction: column; gap: var(--space-4); }
@@ -97,13 +116,30 @@ app-composer { display: block; flex: none; border-top: var(--size-border) solid 
 .setting-control:focus { outline: none; border-color: var(--color-accent); }
 .conv-back { display: none; background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 
-/* The phone: one pane at a time. The list slides in from the left over the conversation, and the conversation's back
-   control returns to it. The breakpoint is the one literal length in the stylesheet, because a media query cannot read
-   a custom property. */
+/* The scrim behind the phone's drawer. Hidden wherever the sidebar is a column rather than a drawer. */
+.scrim { display: none; }
+
+/* The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
+   left, the sibling app's slide menu mirrored to this side, scrim behind it, and the conversation's back control
+   returns to it. The breakpoint is the one literal length in the stylesheet, because a media query cannot read a
+   custom property. */
 @media (max-width: 640px) {
-  .shell { grid-template-columns: 1fr; }
-  .sidebar { position: absolute; inset: 0; width: 100%; z-index: 2; transform: translateX(0); transition: transform var(--motion-normal) var(--motion-ease); }
-  .shell[data-pane="conversation"] .sidebar { transform: translateX(-100%); }
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; width: var(--size-drawer); z-index: 2;
+    border-right: 0; border-radius: 0 var(--radius-lg) var(--radius-lg) 0; box-shadow: var(--size-drawer-shadow);
+    transform: translateX(-100%); opacity: 0; pointer-events: none;
+    transition: transform var(--motion-drawer-out) var(--motion-drawer-ease), opacity var(--motion-fast) ease-out;
+  }
+  .shell[data-pane="list"] .sidebar { transform: translateX(0); opacity: 1; pointer-events: auto; transition-duration: var(--motion-drawer), var(--motion-drawer-fade); }
+  .scrim { display: block; position: fixed; inset: 0; z-index: 1; border: 0; padding: 0; background: var(--color-scrim); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity var(--motion-drawer-out) var(--motion-drawer-ease), visibility var(--motion-drawer-out) linear; }
+  .shell[data-pane="list"] .scrim { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--motion-drawer) var(--motion-drawer-ease), visibility var(--motion-drawer) linear; }
   .conv-back { display: inline-flex; }
   .main { grid-column: 1; }
+  /* iOS zooms the whole page in when a control whose font is below 16px takes focus, and that zoom is what pushed the
+     send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
+     field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
+  .composer textarea { min-width: 0; font-size: var(--font-size-lg); }
+  /* The panel takes the width of the composer rather than spilling off a narrow screen. */
+  .emoji-picker { left: var(--space-2); right: var(--space-2); width: auto; }
 }
