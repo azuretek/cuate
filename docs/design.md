@@ -17,6 +17,7 @@ Cuate has two halves: a headless server on a Mac that already runs Messages, and
 - **Rules are pure.** Modules under `rules/` do no I/O and read no clock, so they are tested directly and give the same answer on every platform.
 - **Components are Lit web components**, vendored as ESM with no build step. They render into light DOM for now; shadow DOM is a later, measured decision.
 - **Styles come from tokens.** `scripts/gen-tokens.mjs` writes `core/app/styles/tokens.css`, a test fails when it is stale, and a test fails on a literal colour or length in component CSS.
+- **A theme is the client's look.** The palette is the Control UI's own, not the platform's: no system-blue accent, no platform font stack, no platform chrome. A theme the server holds under `appearance.theme` overrides the same token set on every client, so palette, spacing, radii, type scale and elevation come from the theme and a theme chosen once reaches every device without a rebuild. An imported tweakcn theme is converted into that set by `core/app/rules/theme.js`, which names what it accepts and what it refuses.
 
 ## The server
 
@@ -41,6 +42,7 @@ Cuate has two halves: a headless server on a Mac that already runs Messages, and
 
 - It speaks only the server's API: HTTP for reads and sends, one WebSocket for live events. fetch and WebSocket are injected, so the same client library runs in every shell and in the server's tests.
 - The device token lives only in the shell's secure storage (Electron's safeStorage on desktop), handed to the page through the host bridge.
+- The look is a theme the server holds: `appearance.skin` chooses light, dark or the system's scheme, the page writes the scheme and the theme's tokens onto the root as custom properties, and a change made on any device arrives on the event stream and redraws every client.
 - Screens today: connect, the chat list, a conversation with sender runs, time separators, photos, tapbacks and delivery state, and the composer; a settings page that reads and writes the settings the server holds and redraws from the event stream, and an about page drawn from the server's info route. Below phone width one pane shows at a time, the list sliding in over the conversation with a way back. A sent message shows at once and is replaced by the confirmed one when the server reports it.
 
 ## Testing

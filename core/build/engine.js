@@ -22,7 +22,9 @@ var engine = (() => {
   var engine_exports = {};
   __export(engine_exports, {
     LEVELS: () => LEVELS,
+    SCHEMES: () => SCHEMES,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
+    THEME_GROUPS: () => THEME_GROUPS,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     chatPreview: () => chatPreview,
@@ -31,12 +33,14 @@ var engine = (() => {
     connectionSentence: () => connectionSentence,
     createApiClient: () => createApiClient,
     createLogger: () => createLogger,
+    cssVarName: () => cssVarName,
     daysAgo: () => daysAgo,
     deliveryLabel: () => deliveryLabel,
     formatListTime: () => formatListTime,
     formatSeparator: () => formatSeparator,
     formatTraceparent: () => formatTraceparent,
     groupMessages: () => groupMessages,
+    importTweakcn: () => importTweakcn,
     initials: () => initials,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
@@ -47,10 +51,13 @@ var engine = (() => {
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
     reactionGlyph: () => reactionGlyph,
+    resolveScheme: () => resolveScheme,
     scrub: () => scrub,
     settingValue: () => settingValue,
     settingsFields: () => settingsFields,
     summarizeReactions: () => summarizeReactions,
+    themeName: () => themeName,
+    themeVars: () => themeVars,
     tokensCss: () => tokensCss,
     validate: () => validate
   });
@@ -274,13 +281,17 @@ var engine = (() => {
   }
 
   // core/kit/rules/tokens.js
-  var GROUPS = ["space", "radius", "font", "size", "motion"];
+  var GROUPS = ["space", "radius", "font", "size", "motion", "shadow"];
   function tokensCss(spec) {
     const flat = (prefix, obj, indent) => Object.entries(obj).map(([k, v]) => `${indent}--${prefix}-${k}: ${v};`);
     const lines = ["/* Generated from core/spec/tokens.json by scripts/gen-tokens.mjs. Do not edit. */", ":root {", "  color-scheme: light dark;"];
     for (const g of GROUPS) lines.push(...flat(g, spec[g], "  "));
-    lines.push(...flat("color", spec.color.light, "  "), "}", "@media (prefers-color-scheme: dark) {", "  :root {");
-    lines.push(...flat("color", spec.color.dark, "    "), "  }", "}", "");
+    const colours = (obj, indent) => flat("color", obj, indent);
+    lines.push(...colours(spec.color.light, "  "), "}");
+    lines.push("@media (prefers-color-scheme: dark) {", '  :root:not([data-scheme="light"]) {');
+    lines.push(...colours(spec.color.dark, "    "), "  }", "}");
+    lines.push(':root[data-scheme="dark"] {', "  color-scheme: dark;", ...colours(spec.color.dark, "  "), "}");
+    lines.push(':root[data-scheme="light"] {', "  color-scheme: light;", "}", "");
     return lines.join("\n");
   }
 
@@ -469,6 +480,125 @@ var engine = (() => {
     const out = {};
     for (const field of settingsFields(schema)) out[field.key] = settingValue(field, values);
     return out;
+  }
+
+  // core/app/rules/theme.js
+  var SCHEMES = ["light", "dark"];
+  var THEME_GROUPS = ["space", "radius", "font", "size", "motion", "shadow"];
+  function resolveScheme(preference, systemDark) {
+    if (preference === "light" || preference === "dark") return preference;
+    return systemDark ? "dark" : "light";
+  }
+  function cssVarName(group, key) {
+    return group === "color" ? `--color-${key}` : `--${group}-${key}`;
+  }
+  function themeVars(theme, scheme = "light") {
+    const out = [];
+    if (!theme || typeof theme !== "object") return out;
+    for (const group of THEME_GROUPS) {
+      const values = theme[group];
+      if (!values || typeof values !== "object") continue;
+      for (const [key, value] of Object.entries(values)) if (value !== null && value !== void 0) out.push([cssVarName(group, key), String(value)]);
+    }
+    const colours = theme.color && theme.color[scheme];
+    if (colours && typeof colours === "object") {
+      for (const [key, value] of Object.entries(colours)) if (value !== null && value !== void 0) out.push([cssVarName("color", key), String(value)]);
+    }
+    return out;
+  }
+  function themeName(theme) {
+    return theme && typeof theme === "object" && typeof theme.name === "string" ? theme.name : "";
+  }
+  var MAP = {
+    background: ["color", "bg"],
+    foreground: ["color", "fg"],
+    card: ["color", "bg-raised"],
+    muted: ["color", "bg-sunken"],
+    "muted-foreground": ["color", "fg-muted"],
+    border: ["color", "border"],
+    input: ["color", "border"],
+    primary: ["color", "accent"],
+    "primary-foreground": ["color", "accent-fg"],
+    secondary: ["color", "bubble-them"],
+    "secondary-foreground": ["color", "bubble-them-fg"],
+    destructive: ["color", "danger"],
+    accent: ["color", "selection"],
+    radius: ["radius", "md"],
+    "font-sans": ["font", "family"],
+    "font-mono": ["font", "mono"]
+  };
+  var REFUSE = {
+    popover: "the app draws no popover surface",
+    "popover-foreground": "the app draws no popover surface",
+    "card-foreground": "the app takes its words from fg, not a per-surface foreground",
+    "accent-foreground": "the app has no colour on the selection highlight",
+    ring: "the app derives its focus ring from accent",
+    "chart-1": "the app draws no charts",
+    "chart-2": "the app draws no charts",
+    "chart-3": "the app draws no charts",
+    "chart-4": "the app draws no charts",
+    "chart-5": "the app draws no charts",
+    "sidebar-background": "the app draws no sidebar block",
+    "sidebar-foreground": "the app draws no sidebar block",
+    "sidebar-primary": "the app draws no sidebar block",
+    "sidebar-primary-foreground": "the app draws no sidebar block",
+    "sidebar-accent": "the app draws no sidebar block",
+    "sidebar-accent-foreground": "the app draws no sidebar block",
+    "sidebar-border": "the app draws no sidebar block",
+    "sidebar-ring": "the app draws no sidebar block"
+  };
+  var DERIVE = {
+    primary: [["bubble-me"], ["unread"]],
+    "primary-foreground": [["bubble-me-fg"]]
+  };
+  function parseBlocks(text) {
+    const css = String(text).replace(/\/\*[\s\S]*?\*\//g, "");
+    const blocks = [];
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = match[1].trim().replace(/\s+/g, " ").toLowerCase();
+      const vars = {};
+      for (const decl of match[2].matchAll(/--([A-Za-z0-9-]+)\s*:\s*([^;]+);?/g)) vars[decl[1]] = decl[2].trim();
+      blocks.push({ selector, vars });
+    }
+    return blocks;
+  }
+  function schemeOf(selector) {
+    if (/(^|[\s,])[^,]*\.dark\b/.test(selector)) return "dark";
+    if (/:(:?root)\b|\bhtml\b|\bbody\b/.test(selector)) return "light";
+    return null;
+  }
+  function importTweakcn(text, { name = "tweakcn" } = {}) {
+    const accepted = [];
+    const refused = [];
+    const theme = { name, source: "tweakcn", color: { light: {}, dark: {} } };
+    for (const block of parseBlocks(text)) {
+      const scheme = schemeOf(block.selector);
+      for (const [raw, value] of Object.entries(block.vars)) {
+        if (Object.hasOwn(REFUSE, raw)) {
+          refused.push(raw);
+          continue;
+        }
+        const target = MAP[raw];
+        if (!target) {
+          refused.push(raw);
+          continue;
+        }
+        const [group, key] = target;
+        if (group === "color" && !scheme) {
+          refused.push(raw);
+          continue;
+        }
+        if (group === "color") theme.color[scheme][key] = value;
+        else (theme[group] ?? (theme[group] = {}))[key] = value;
+        accepted.push(raw);
+        for (const [extra] of DERIVE[raw] ?? []) {
+          if (group !== "color") break;
+          theme.color[scheme][extra] = value;
+          accepted.push(raw + " -> " + extra);
+        }
+      }
+    }
+    return { theme, accepted, refused };
   }
 
   // core/app/rules/time.js

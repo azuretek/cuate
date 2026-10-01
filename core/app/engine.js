@@ -16,4 +16,5 @@ export * from './rules/connection.js';
 export * from './rules/engine-imsg.js';
 export * from './rules/messages.js';
 export * from './rules/settings.js';
+export * from './rules/theme.js';
 export * from './rules/time.js';

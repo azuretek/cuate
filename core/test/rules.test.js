@@ -6,6 +6,7 @@ import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeRe
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { settingsFields, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -168,9 +169,66 @@ test('the logger emits declared events only, scrubbed, and keeps a flight record
 
 test('the token stylesheet comes from the token spec', () => {
   const css = tokensCss(spec('tokens.json'));
-  assert.match(css, /--color-bg: #ffffff;/);
+  assert.match(css, /--color-bg: #faf9f7;/);
   assert.match(css, /prefers-color-scheme: dark/);
   assert.match(css, /--space-4: 16px;/);
+  assert.match(css, /:root\[data-scheme="dark"\]/, 'an explicit dark skin wins over the system');
+  assert.match(css, /:root:not\(\[data-scheme="light"\]\)/, 'an explicit light skin cancels the system dark block');
+  assert.match(css, /--shadow-sm: 0 1px 2px/, 'elevation comes from the tokens');
+});
+
+test('a theme turns into custom properties for the scheme in force', () => {
+  assert.equal(resolveScheme('dark', false), 'dark', 'an explicit choice wins over the system');
+  assert.equal(resolveScheme('light', true), 'light');
+  assert.equal(resolveScheme('system', true), 'dark', 'the system decides when the choice is system');
+  assert.equal(resolveScheme(undefined, false), 'light');
+  assert.equal(resolveScheme('future', true), 'dark', 'an unknown choice falls back to the system, not a refusal');
+  assert.equal(cssVarName('color', 'bg'), '--color-bg');
+  assert.equal(cssVarName('radius', 'md'), '--radius-md');
+  const theme = { color: { light: { accent: '#111111' }, dark: { accent: '#eeeeee' } }, radius: { md: '9px' } };
+  assert.deepEqual(themeVars(theme, 'light'), [['--radius-md', '9px'], ['--color-accent', '#111111']], 'the scheme picks its own colours');
+  assert.deepEqual(themeVars(theme, 'dark'), [['--radius-md', '9px'], ['--color-accent', '#eeeeee']]);
+  assert.deepEqual(themeVars(null, 'light'), [], 'no theme writes nothing, so tokens.css stands');
+  assert.equal(themeName(theme), '');
+  assert.equal(themeName({ name: 'elegant luxury' }), 'elegant luxury');
+});
+
+test('a tweakcn theme is imported, and every name it cannot carry is refused out loud', () => {
+  const css = [
+    ':root {',
+    '  --background: oklch(1 0 0);',
+    '  --foreground: oklch(0.145 0 0);',
+    '  --primary: oklch(0.205 0 0);',
+    '  --primary-foreground: oklch(0.985 0 0);',
+    '  --accent: oklch(0.97 0 0);',
+    '  --border: oklch(0.922 0 0);',
+    '  --chart-1: oklch(0.646 0.222 41.116);',
+    '  --radius: 0.625rem;',
+    '  --font-sans: Geist, sans-serif;',
+    '  --sidebar-background: oklch(0.985 0 0);',
+    '}',
+    '.dark {',
+    '  --background: oklch(0.145 0 0);',
+    '  --primary: oklch(0.922 0 0);',
+    '  --primary-foreground: oklch(0.205 0 0);',
+    '}',
+  ].join('\n');
+  const { theme, accepted, refused } = importTweakcn(css, { name: 'elegant luxury' });
+  assert.equal(theme.name, 'elegant luxury');
+  assert.equal(theme.source, 'tweakcn');
+  assert.equal(theme.color.light.bg, 'oklch(1 0 0)');
+  assert.equal(theme.color.light.accent, 'oklch(0.205 0 0)', 'primary is the accent');
+  assert.equal(theme.color.light['bubble-me'], 'oklch(0.205 0 0)', 'a sent bubble follows the accent');
+  assert.equal(theme.color.light.selection, 'oklch(0.97 0 0)', 'the tweakcn accent is the selection highlight');
+  assert.equal(theme.color.dark.bg, 'oklch(0.145 0 0)', 'the .dark block fills dark');
+  assert.equal(theme.radius.md, '0.625rem');
+  assert.equal(theme.font.family, 'Geist, sans-serif');
+  assert.ok(accepted.includes('primary'));
+  assert.ok(refused.includes('chart-1'), 'a name with no token is refused');
+  assert.ok(refused.includes('sidebar-background'));
+  assert.ok(!accepted.includes('chart-1'));
+  assert.deepEqual(importTweakcn('not a theme').refused, [], 'input with no tokens refuses nothing rather than throwing');
+  assert.deepEqual(importTweakcn('not a theme').theme.color.light, {});
 });
 
 test('the settings page draws the schema and writes the value a control gives', () => {
