@@ -1,7 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
-import { orderChats, applyMessageToChats, chatTitle } from '../rules/chats.js';
+import { orderChats, applyMessageToChats, chatTitle, emptyFilters } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
 import './app-onboarding.js';
@@ -27,6 +27,8 @@ class AppRoot extends KitElement {
     view: { state: true }, listOpen: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
+    // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
+    filters: { state: true },
   };
 
   constructor() {
@@ -50,6 +52,7 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
     this.pending = new Map();
     this.client = null;
+    this.filters = emptyFilters();
   }
 
   connectedCallback() {
@@ -308,6 +311,39 @@ class AppRoot extends KitElement {
     }
   }
 
+  chatGroups() {
+    const g = this.settings['chats.groups'];
+    return Array.isArray(g) ? g : [];
+  }
+
+  chatPlacement() {
+    const p = this.settings['chats.placement'];
+    return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+  }
+
+  chatOrder() {
+    const o = this.settings['chats.order'];
+    return Array.isArray(o) ? o : [];
+  }
+
+  // The chat list's arrangement is written to the server in one patch, so a group and what it holds land together.
+  async setSettings(patch) {
+    if (!this.client || !patch) return;
+    const before = this.settings;
+    this.settings = { ...this.settings, ...patch };
+    this.settingsBusy = true;
+    this.settingsProblem = '';
+    try {
+      const { values } = await this.client.settingsWrite(patch);
+      this.settings = values || this.settings;
+    } catch (e) {
+      this.settings = before;
+      this.settingsProblem = this.describe(e);
+    } finally {
+      this.settingsBusy = false;
+    }
+  }
+
   pane() {
     if (this.view !== 'messages') return 'conversation';
     return this.listOpen || !this.openChatId ? 'list' : 'conversation';
@@ -332,7 +368,13 @@ class AppRoot extends KitElement {
         <header class="sidebar-head"><h1 class="title">Chats</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
-        <app-chat-list .chats=${this.chats} .selected=${this.openChatId} @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}></app-chat-list>
+        <app-chat-list .chats=${this.chats} .selected=${this.openChatId}
+          .sort=${this.settings['chats.sort'] || 'recent'} .groups=${this.chatGroups()}
+          .placement=${this.chatPlacement()} .order=${this.chatOrder()} .filters=${this.filters}
+          @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
+          @sort=${(e) => this.setSetting({ key: 'chats.sort', value: e.detail.sort })}
+          @filter=${(e) => { this.filters = e.detail.filters; }}
+          @chatsettings=${(e) => this.setSettings(e.detail.patch)}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
       <main class="main">${this.mainView(chat)}</main>

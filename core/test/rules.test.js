@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, SORT_ORDERS, UNGROUPED } from '../app/rules/chats.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
@@ -184,4 +184,71 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
   assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable' });
+});
+
+test('the list sorts by activity, unread, name and the manual order the server holds', () => {
+  const chats = [
+    { id: '1', name: 'Bea', lastMessageAt: '2026-01-03T00:00:00.000Z', unread: 0, isGroup: false },
+    { id: '2', name: 'Al', lastMessageAt: '2026-01-01T00:00:00.000Z', unread: 3, isGroup: true },
+    { id: '3', name: 'Cy', lastMessageAt: '2026-01-02T00:00:00.000Z', unread: 1, isGroup: false },
+    { id: '4', name: 'Di', lastMessageAt: null, unread: 0, isGroup: false },
+  ];
+  assert.deepEqual(sortChats(chats, { sort: 'recent' }).map((c) => c.id), ['1', '3', '2', '4']);
+  // Unread first, and the unread ones keep their own activity order rather than the order they arrived.
+  assert.deepEqual(sortChats(chats, { sort: 'unread' }).map((c) => c.id), ['3', '2', '1', '4']);
+  assert.deepEqual(sortChats(chats, { sort: 'name' }).map((c) => c.id), ['2', '1', '3', '4']);
+  assert.deepEqual(sortChats(chats, { sort: 'manual', order: ['4', '2'] }).map((c) => c.id), ['4', '2', '1', '3']);
+  assert.deepEqual(SORT_ORDERS, ['recent', 'unread', 'name', 'manual']);
+});
+
+test('filters compose, clear one at a time, and search names and last messages', () => {
+  const chats = [
+    { id: '1', name: 'Bea', isGroup: false, unread: 2, participants: ['bea@example.com'], lastMessageAt: '2026-01-03T00:00:00.000Z', lastMessage: { text: 'see you at the lake', fromMe: false, sentAt: '2026-01-03T00:00:00.000Z', attachments: 0 } },
+    { id: '2', name: 'Weekend', isGroup: true, unread: 0, participants: ['a@example.com', 'b@example.com'], lastMessageAt: '2026-01-01T00:00:00.000Z', lastMessage: { text: 'plans', fromMe: true, sentAt: '2026-01-01T00:00:00.000Z', attachments: 0 } },
+    { id: '3', name: '', isGroup: false, unread: 1, participants: ['+15555550142'], lastMessageAt: '2026-01-02T00:00:00.000Z', lastMessage: null },
+  ];
+  const placement = { '1': 'g1', '2': 'g1' };
+  const by = (f) => filterChats(chats, { ...emptyFilters(), ...f }, { placement }).map((c) => c.id);
+  assert.deepEqual(by({}), ['1', '2', '3']);
+  assert.deepEqual(by({ unread: true }), ['1', '3'], 'only unread');
+  assert.deepEqual(by({ group: 'g1' }), ['1', '2'], 'a named group');
+  assert.deepEqual(by({ group: UNGROUPED }), ['3'], 'the chats in no group');
+  assert.deepEqual(by({ kind: 'direct' }), ['1', '3']);
+  assert.deepEqual(by({ kind: 'group' }), ['2']);
+  assert.deepEqual(by({ text: 'lake' }), ['1'], 'searches the last message text');
+  assert.deepEqual(by({ text: 'weekend' }), ['2'], 'searches the name');
+  assert.deepEqual(by({ unread: true, kind: 'direct' }), ['1', '3'], 'two filters narrow together');
+  assert.deepEqual(by({ unread: true, kind: 'group' }), [], 'a filter matching nothing returns nothing');
+  assert.ok(chatSearchText(chats[0]).includes('lake'));
+});
+
+test('groups keep their own order, draw as sections, and never lose an ungrouped chat', () => {
+  const groups = [{ id: 'g1', name: 'Family' }, { id: 'g2', name: 'Work' }];
+  const chats = [
+    { id: '1', name: 'A', lastMessageAt: '2026-01-03T00:00:00.000Z' },
+    { id: '2', name: 'B', lastMessageAt: '2026-01-02T00:00:00.000Z' },
+    { id: '3', name: 'C', lastMessageAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  const sections = groupSections(chats, { groups, placement: { '2': 'g2', '3': 'gone' } });
+  assert.deepEqual(sections.map((s) => s.id), ['g1', 'g2', UNGROUPED]);
+  assert.deepEqual(sections.map((s) => s.chats.map((c) => c.id)), [[], ['2'], ['1', '3']], 'a chat whose group is gone is ungrouped, not lost');
+  assert.equal(renameGroup(groups, 'g1', 'Close family')[0].name, 'Close family');
+  assert.deepEqual(moveGroup(groups, 'g1', 1).map((g) => g.id), ['g2', 'g1']);
+  assert.deepEqual(moveGroup(groups, 'g2', 1).map((g) => g.id), ['g1', 'g2'], 'a move past the end is a no-op');
+  assert.deepEqual(addGroup([], { id: 'g9', name: '  New  ' }), [{ id: 'g9', name: 'New' }]);
+  assert.deepEqual(placeChat({ '1': 'g1' }, '1', UNGROUPED), {}, 'moving a chat out drops its placement');
+  assert.deepEqual(placeChat({}, '1', 'g2'), { '1': 'g2' });
+});
+
+test('the manual order covers every chat and a move swaps one step', () => {
+  const chats = [
+    { id: 'a', lastMessageAt: '2026-01-03T00:00:00.000Z' },
+    { id: 'b', lastMessageAt: '2026-01-02T00:00:00.000Z' },
+    { id: 'c', lastMessageAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  assert.deepEqual(manualOrder(chats, ['c']), ['c', 'a', 'b'], 'a stored head keeps its place and the rest follow activity');
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'b', -1), ['b', 'a', 'c']);
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c'], 'the first chat cannot move up');
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'c', 1), ['a', 'b', 'c']);
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'z', 1), ['a', 'b', 'c']);
 });

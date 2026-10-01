@@ -23,9 +23,13 @@ var engine = (() => {
   __export(engine_exports, {
     LEVELS: () => LEVELS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
+    SORT_ORDERS: () => SORT_ORDERS,
+    UNGROUPED: () => UNGROUPED,
+    addGroup: () => addGroup,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     chatPreview: () => chatPreview,
+    chatSearchText: () => chatSearchText,
     chatTitle: () => chatTitle,
     coerceSetting: () => coerceSetting,
     connectionSentence: () => connectionSentence,
@@ -33,23 +37,32 @@ var engine = (() => {
     createLogger: () => createLogger,
     daysAgo: () => daysAgo,
     deliveryLabel: () => deliveryLabel,
+    emptyFilters: () => emptyFilters,
+    filterChats: () => filterChats,
     formatListTime: () => formatListTime,
     formatSeparator: () => formatSeparator,
     formatTraceparent: () => formatTraceparent,
     groupMessages: () => groupMessages,
+    groupSections: () => groupSections,
     initials: () => initials,
+    manualOrder: () => manualOrder,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
+    moveChat: () => moveChat,
+    moveGroup: () => moveGroup,
     newTraceparent: () => newTraceparent,
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
+    placeChat: () => placeChat,
     reactionGlyph: () => reactionGlyph,
+    renameGroup: () => renameGroup,
     scrub: () => scrub,
     settingValue: () => settingValue,
     settingsFields: () => settingsFields,
+    sortChats: () => sortChats,
     summarizeReactions: () => summarizeReactions,
     tokensCss: () => tokensCss,
     validate: () => validate
@@ -285,8 +298,88 @@ var engine = (() => {
   }
 
   // core/app/rules/chats.js
+  var SORT_ORDERS = ["recent", "unread", "name", "manual"];
+  var UNGROUPED = "ungrouped";
+  function emptyFilters() {
+    return { unread: false, group: null, kind: null, text: "" };
+  }
   function orderChats(chats) {
-    return [...chats].sort((a, b) => (b.lastMessageAt || "").localeCompare(a.lastMessageAt || "") || a.id.localeCompare(b.id));
+    return [...chats].sort(byActivity);
+  }
+  var byActivity = (a, b) => (b.lastMessageAt || "").localeCompare(a.lastMessageAt || "") || String(a.id).localeCompare(String(b.id));
+  var byName = (a, b) => chatTitle(a).localeCompare(chatTitle(b)) || String(a.id).localeCompare(String(b.id));
+  function sortChats(chats, { sort = "recent", order = [] } = {}) {
+    const list = [...chats];
+    if (sort === "unread") return [...list.filter((c) => c.unread > 0).sort(byActivity), ...list.filter((c) => !(c.unread > 0)).sort(byActivity)];
+    if (sort === "name") return list.sort(byName);
+    if (sort === "manual") {
+      const rank = new Map(order.map((id, i) => [id, i]));
+      const at = (c) => rank.has(c.id) ? rank.get(c.id) : Infinity;
+      return list.sort((a, b) => at(a) - at(b) || byActivity(a, b));
+    }
+    return list.sort(byActivity);
+  }
+  function chatSearchText(chat) {
+    return [chatTitle(chat), (chat.participants || []).join(" "), chat.lastMessage && chat.lastMessage.text || ""].join(" ").toLowerCase();
+  }
+  function filterChats(chats, filters = {}, { placement = {} } = {}) {
+    const f = { ...emptyFilters(), ...filters };
+    const q = String(f.text || "").trim().toLowerCase();
+    return chats.filter((c) => {
+      if (f.unread && !(c.unread > 0)) return false;
+      if (f.group) {
+        const g = placement[c.id] || null;
+        if (f.group === UNGROUPED ? g : g !== f.group) return false;
+      }
+      if (f.kind === "direct" && c.isGroup) return false;
+      if (f.kind === "group" && !c.isGroup) return false;
+      if (q && !chatSearchText(c).includes(q)) return false;
+      return true;
+    });
+  }
+  function groupSections(chats, { groups = [], placement = {} } = {}) {
+    const byGroup = new Map(groups.map((g) => [g.id, []]));
+    const ungrouped = [];
+    for (const c of chats) {
+      const g = placement[c.id];
+      (g && byGroup.has(g) ? byGroup.get(g) : ungrouped).push(c);
+    }
+    return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: "Ungrouped", chats: ungrouped }];
+  }
+  function manualOrder(chats, order = []) {
+    const ids = new Set(chats.map((c) => c.id));
+    const head = order.filter((id) => ids.has(id));
+    const seen = new Set(head);
+    const rest = orderChats(chats.filter((c) => !seen.has(c.id))).map((c) => c.id);
+    return [...head, ...rest];
+  }
+  function moveChat(order, id, delta) {
+    const list = [...order];
+    const i = list.indexOf(id);
+    const j = i < 0 ? -1 : i + delta;
+    if (i < 0 || j < 0 || j >= list.length) return list;
+    [list[i], list[j]] = [list[j], list[i]];
+    return list;
+  }
+  function addGroup(groups, { id, name }) {
+    return [...groups, { id, name: String(name || "").trim() || "Group" }];
+  }
+  function renameGroup(groups, id, name) {
+    return groups.map((g) => g.id === id ? { ...g, name: String(name || "").trim() || g.name } : g);
+  }
+  function moveGroup(groups, id, delta) {
+    const list = [...groups];
+    const i = list.findIndex((g) => g.id === id);
+    const j = i < 0 ? -1 : i + delta;
+    if (i < 0 || j < 0 || j >= list.length) return list;
+    [list[i], list[j]] = [list[j], list[i]];
+    return list;
+  }
+  function placeChat(placement, chatId, groupId) {
+    const out = { ...placement };
+    if (groupId && groupId !== UNGROUPED) out[chatId] = groupId;
+    else delete out[chatId];
+    return out;
   }
   function chatTitle(chat) {
     return (chat.name || "").trim() || (chat.participants || []).join(", ") || "Unknown";
