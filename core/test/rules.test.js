@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, SORT_ORDERS, UNGROUPED } from '../app/rules/chats.js';
+import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji } from '../app/rules/emoji.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
@@ -251,4 +252,39 @@ test('the manual order covers every chat and a move swaps one step', () => {
   assert.deepEqual(moveChat(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c'], 'the first chat cannot move up');
   assert.deepEqual(moveChat(['a', 'b', 'c'], 'c', 1), ['a', 'b', 'c']);
   assert.deepEqual(moveChat(['a', 'b', 'c'], 'z', 1), ['a', 'b', 'c']);
+});
+
+test('the emoji picker searches by name, keeps categories, and inserts whole characters', () => {
+  assert.ok(EMOJI.length > 0);
+  assert.ok(EMOJI.every((e) => typeof e.char === 'string' && e.char && typeof e.name === 'string' && EMOJI_CATEGORIES.some((c) => c.id === e.category)));
+  assert.ok(searchEmoji('heart').length > 0 && searchEmoji('heart').every((e) => (e.name + ' ' + (e.keywords || '')).toLowerCase().includes('heart')));
+  assert.ok(searchEmoji('heart').some((e) => e.char === '\u2764\uFE0F'));
+  assert.equal(searchEmoji('').length, EMOJI.length);
+  assert.equal(searchEmoji('', { limit: 5 }).length, 5);
+  assert.ok(searchEmoji('zzzz').length === 0);
+  assert.ok(emojiInCategory('flags').length > 0 && emojiInCategory('flags').every((e) => e.category === 'flags'));
+
+  // A flag and a skin toned hand are each one character, however many code points they are.
+  assert.equal(countGraphemes('\u{1F1FA}\u{1F1F8}'), 1);
+  assert.equal(countGraphemes('\u{1F44B}\u{1F3FB}'), 1);
+  assert.deepEqual(graphemes('a\u{1F1FA}\u{1F1F8}'), ['a', '\u{1F1FA}\u{1F1F8}']);
+
+  // Insert at the caret, over a selection, and several in a row.
+  assert.deepEqual(insertEmoji('hi', 2, 2, '\u{1F44B}'), { text: 'hi\u{1F44B}', caret: 4 });
+  assert.deepEqual(insertEmoji('abcd', 1, 3, '\u2728'), { text: 'a\u2728d', caret: 2 });
+  const first = insertEmoji('x', 1, 1, '\u2728');
+  const twice = insertEmoji(first.text, first.caret, first.caret, '\u{1F525}');
+  assert.equal(twice.text, 'x\u2728\u{1F525}');
+
+  // Backspace removes the whole flag or hand; delete removes the one after the caret.
+  assert.deepEqual(deleteGrapheme('a\u{1F1FA}\u{1F1F8}', 5, 5, -1), { text: 'a', caret: 1 });
+  assert.equal(deleteGrapheme('\u{1F44B}\u{1F3FB}b', 0, 0, 1).text, 'b');
+  assert.deepEqual(deleteGrapheme('abc', 2, 2, -1), { text: 'ac', caret: 1 });
+  assert.deepEqual(deleteGrapheme('abc', 0, 3, -1), { text: '', caret: 0 });
+
+  // The frequent row counts first, recency breaks a tie, and only known characters are offered.
+  assert.deepEqual(frequentEmoji(['\u2764\uFE0F', '\u2728', '\u2764\uFE0F', 'nope']), ['\u2764\uFE0F', '\u2728']);
+  assert.deepEqual(frequentEmoji([]), []);
+  assert.equal(isEmoji('\u2728'), true);
+  assert.equal(isEmoji('x'), false);
 });

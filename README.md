@@ -9,7 +9,7 @@ Cuate is an iMessage client for every platform, and the small headless server it
 - `core/`: the one app. Every screen is a web component and every rule is plain JavaScript, so each platform runs the same code. `core/kit/` is the reusable framework and `core/app/` is this app. `core/spec/` holds the values everything else is checked against: the API contract, the log events, the design tokens, the host bridge and the names.
 - `server/`: the headless server for the Mac. Node, one SQLite file for its own state, and the engine as a supervised child process.
 - `desktop/`: the Electron shell that hosts core.
-- `docs/`: [the design](docs/design.md), [running the server](docs/server.md), [features](docs/features.md) and [contributing](docs/contributing.md).
+- `docs/`: [the design](docs/design.md), [running the server](docs/server.md), [features](docs/features.md), [the OpenAPI document and the MCP](docs/mcp.md) and [contributing](docs/contributing.md).
 
 ## Desktop test builds
 

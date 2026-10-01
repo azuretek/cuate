@@ -64,12 +64,31 @@ app-attachment { display: block; max-width: var(--size-bubble-max); margin-botto
 .attachment-image.sticker { border-radius: 0; }
 .attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 
-app-composer { display: block; flex: none; border-top: var(--size-border) solid var(--color-border); }
+app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--color-border); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
 .composer textarea { flex: 1; resize: none; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); outline: none; }
 .composer textarea:focus { border-color: var(--color-accent); }
 .send { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-lg); cursor: pointer; }
 .send:disabled { opacity: 0.4; cursor: default; }
+
+/* The composer's own controls: the emoji button, and the panel it opens beside the field rather than as a sheet. */
+.composer-tools { display: flex; align-items: flex-end; gap: var(--space-1); }
+.tool { flex: none; width: var(--size-avatar); height: var(--size-avatar); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font-size: var(--font-size-lg); line-height: 1; cursor: pointer; }
+.tool:hover { background: var(--color-bg-sunken); }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); max-height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); z-index: 3; }
+.emoji-search { width: 100%; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); outline: none; }
+.emoji-search:focus { border-color: var(--color-accent); }
+.emoji-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); flex: none; }
+.emoji-tab { border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); font-size: var(--font-size-xs); padding: var(--space-1) var(--space-2); cursor: pointer; }
+.emoji-tab.active { background: var(--color-selection); color: var(--color-fg); }
+.emoji-row, .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--size-emoji), 1fr)); gap: var(--space-1); overflow-y: auto; }
+.emoji-row { flex: none; border-bottom: var(--size-border) solid var(--color-border); padding-bottom: var(--space-2); }
+.emoji-grid { flex: 1; min-height: 0; }
+.emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
+.emoji-cell:hover { background: var(--color-bg-sunken); }
+.emoji-empty { padding: var(--space-3); text-align: center; }
+
 
 .onboarding-wrap { height: 100%; display: grid; place-items: center; padding: var(--space-5); }
 .onboarding { width: 100%; max-width: var(--size-onboarding); display: flex; flex-direction: column; gap: var(--space-4); }
@@ -121,6 +140,8 @@ app-composer { display: block; flex: none; border-top: var(--size-border) solid 
      send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
      field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
   .composer textarea { min-width: 0; font-size: var(--font-size-lg); }
+  /* The panel takes the width of the composer rather than spilling off a narrow screen. */
+  .emoji-picker { left: var(--space-2); right: var(--space-2); width: auto; }
 }
 
 /* The chat list draws its own tools: the sort control, the filters in force, the search field and the groups. Every
