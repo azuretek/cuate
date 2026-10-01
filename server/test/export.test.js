@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createLogger } from '../../core/kit/log.js';
@@ -59,6 +59,9 @@ test('writing an export records the mark, and the next one carries only what is 
   assert.deepEqual(JSON.parse(readFileSync(first, 'utf8')), r1.doc);
   assert.ok(r1.doc.messages.length > 0);
   assert.equal(exporter.lastExport(), r1.doc.exportedAt);
+  const mark = JSON.parse(readFileSync(path.join(h.dir, 'export.json'), 'utf8'));
+  assert.equal(mark.exportedAt, r1.doc.exportedAt);
+  assert.ok(Number.isFinite(mark.lastRowid), 'the mark carries the engine ROWID the sweep reached');
 
   await new Promise((r) => setTimeout(r, 30));
   const chatId = Number(r1.doc.chats[0].id);
@@ -69,6 +72,38 @@ test('writing an export records the mark, and the next one carries only what is 
   assert.equal(r2.doc.since, r1.doc.exportedAt);
   assert.ok(r2.doc.messages.length >= 1, 'the new message is there');
   assert.ok(r2.doc.messages.every((m) => m.sentAt > r2.doc.since), 'nothing older than the mark is carried');
+});
+
+test('a full export sweeps the engine cursor, so its round trips follow the history and not the chat count', async (t) => {
+  const h = harness();
+  t.after(() => h.close());
+  await h.start();
+  const exporter = createExporter({ engine: h.engine, dataDir: h.dir, log: h.logger.child('export'), pageSize: 4 });
+  const doc = await exporter.collect();
+  assert.deepEqual(validateExport(doc), []);
+  const sweeps = h.world.requests.filter((m) => m === 'messages.after').length;
+  const perChat = h.world.requests.filter((m) => m === 'messages.history').length;
+  assert.equal(perChat, 0, 'the export never pages a chat');
+  assert.equal(sweeps, Math.ceil(doc.messages.length / 4), 'one sweep page per four messages, whatever the chat count is');
+  assert.ok(sweeps < doc.chats.length + doc.messages.length, 'the sweep is not one call per chat');
+  assert.ok(h.lines.some((l) => l.event === 'export.page' && l.ms >= 0), 'every page is timed');
+  assert.ok(!h.lines.some((l) => l.event === 'log.undeclared'), 'every event is declared');
+});
+
+test('a since export over a mark written before the rowid cursor filters on the mark time, then carries a cursor', async (t) => {
+  const h = harness();
+  t.after(() => h.close());
+  await h.start();
+  const exporter = createExporter({ engine: h.engine, dataDir: h.dir, log: h.logger.child('export') });
+  const first = await exporter.write(path.join(h.dir, 'out', 'first.json'));
+  writeFileSync(path.join(h.dir, 'export.json'), JSON.stringify({ exportedAt: first.doc.exportedAt }) + '\n');
+  await new Promise((r) => setTimeout(r, 30));
+  h.world.incoming(1, 'A message after a mark with no cursor');
+  const second = await exporter.write(path.join(h.dir, 'out', 'second.json'), { mode: 'since' });
+  assert.equal(second.doc.mode, 'since');
+  assert.ok(second.doc.messages.length >= 1, 'the new message is carried');
+  assert.ok(second.doc.messages.every((m) => m.sentAt > second.doc.since), 'nothing older than the mark is carried');
+  assert.ok(Number.isFinite(JSON.parse(readFileSync(path.join(h.dir, 'export.json'), 'utf8')).lastRowid), 'the run leaves a cursor behind');
 });
 
 test('the export route hands the document to a tooling token and refuses a device token', async (t) => {
