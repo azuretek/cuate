@@ -201,13 +201,60 @@ async function runSmoke(w) {
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
   report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
   await shot('07-phone-list.png');
+  // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
   await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'");
   await pause(400); // the drawer slides on a 160ms transition; measure the settled position, not a frame of it.
   report.phone = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const scrim = document.querySelector('.scrim'); return r.right <= 0 && (!scrim || getComputedStyle(scrim).visibility === 'hidden'); })()");
   await shot('08-phone-conversation.png');
-  await js("document.querySelector('app-conversation .conv-back').click()");
-  await waitFor("document.querySelector('.shell')?.dataset.pane === 'list'");
+
+  // The gesture: the drawer follows the finger from the left edge, settles by where the finger left it, and takes no
+  // drag that began in the middle of the conversation. A drag is a pointerdown on the shell, then moves and an up on
+  // the window, which is where the component listens while a drag is live.
+  const pane = () => js("document.querySelector('.shell').dataset.pane");
+  const sidebarX = () => js("new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.shell .sidebar')).transform).m41");
+  const down = (x) => js(`(() => { document.querySelector('.shell').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: ${x}, clientY: 400, button: 0, buttons: 1 })); return true; })()`);
+  const windowPointer = (type, x, buttons) => js(`(() => { window.dispatchEvent(new PointerEvent('${type}', { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: ${x}, clientY: 400, button: 0, buttons: ${buttons} })); return true; })()`);
+
+  // A drag that starts in the conversation's middle is not the drawer: the pane stays on the conversation.
+  await down(200);
+  await windowPointer('pointermove', 280, 1);
+  await windowPointer('pointerup', 280, 0);
+  await pause(300);
+  report.phoneEdgeOnly = (await pane()) === 'conversation';
+
+  // A short edge drag settles back: it never reaches half the drawer's width, so it returns to the conversation.
+  await down(4);
+  await windowPointer('pointermove', 44, 1);
+  await windowPointer('pointerup', 44, 0);
+  await pause(300);
+  report.phoneSettle = (await pane()) === 'conversation';
+
+  // A longer edge drag carries the drawer with it. Halfway across the panel it is strictly between the two ends,
+  // which is what "follows the finger" means, and past the threshold it settles open.
+  await down(4);
+  await windowPointer('pointermove', 120, 1);
+  const mid = await sidebarX();
+  await windowPointer('pointermove', 220, 1);
+  await windowPointer('pointerup', 220, 0);
+  await pause(400);
+  const drawerWidth = await js("document.querySelector('.shell .sidebar').getBoundingClientRect().width");
+  report.phoneTracks = mid > -drawerWidth && mid < 0;
+  report.phoneEdgeDrag = (await pane()) === 'list' && Math.abs(await sidebarX()) < 1;
+
+  // Reduced motion: the finger still moves the panel, but the settle runs no animation. Emulated here so the path is
+  // checked rather than assumed.
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await pause(150);
+  await down(200);
+  await windowPointer('pointermove', 170, 1);
+  const reducedMid = await sidebarX();
+  await windowPointer('pointerup', 170, 0);
+  await pause(300);
+  const reduced = await js("parseFloat(getComputedStyle(document.querySelector('.shell .sidebar')).transitionDuration) === 0");
+  report.phoneReduced = reduced && reducedMid > -drawerWidth && reducedMid < 0 && (await pane()) === 'list';
+  await cdp('Emulation.setEmulatedMedia', { media: '', features: [] });
+  await pause(150);
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(200);
 
