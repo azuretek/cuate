@@ -159,5 +159,9 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 /* Reduced motion keeps the drag, which is the finger's own movement, and drops only the animation the settle would
    run, so the panel still follows the finger and lands where the finger left it. */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .scrim { transition: none; }
+  /* The settled drawer's rule is far more specific than a bare .sidebar, so this names the
+     same shape: with equal specificity it wins on order, and the settle animation is the
+     only thing dropped. A finger's drag is progress, not a transition, so it still follows. */
+  .shell[data-pane] .sidebar,
+  .shell[data-pane] .scrim { transition: none; }
 }
