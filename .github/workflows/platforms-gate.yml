@@ -26,8 +26,9 @@ name: platforms gate
 #   timed_out                 refuse. A job that never ran is not evidence that
 #                                     its platform built. The iOS release job is
 #                                     the case that matters: it uploads to
-#                                     TestFlight and waits for the build to reach
-#                                     VALID, so a skipped one means no installable
+#                                     TestFlight, waits for the build to reach
+#                                     VALID and proves it reached the tester
+#                                     group, so a skipped one means no installable
 #                                     iOS build exists.
 #   superseded                stand down (exit 0) only when EVERY red leg was
 #                                     cancelled AND a newer run of the same
@@ -87,9 +88,9 @@ jobs:
     # without anyone opening a log.
     name: every platform must be green
     runs-on: ubuntu-latest
-    # A gate that waits for the iOS release job (archive, upload, and the wait for
-    # the build to reach VALID) outlives the default window, and a job killed by
-    # its own timeout is a refusal nobody can read.
+    # A gate that waits for the iOS release job (archive, upload, the wait for the
+    # build to reach VALID and the group check) outlives the default window, and a
+    # job killed by its own timeout is a refusal nobody can read.
     timeout-minutes: 240
     permissions:
       # Reading the other pipelines' runs and jobs is the whole job. actions: read
