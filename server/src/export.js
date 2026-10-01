@@ -5,10 +5,11 @@
 // It is collected with the engine's own ROWID cursor (engine.after, the messages.after surface), one resumable page
 // at a time. Paging every chat from here instead made the round trip count unbounded in the history: one call per
 // page per chat, so a real database answered for minutes and the endpoint never returned (issue 41). A sweep over
-// message ROWID order costs one call per SWEEP_LIMIT messages whatever the chat count is.
+// message ROWID order costs one call per SWEEP_LIMIT messages whatever the chat count is. The chat list is read
+// once in full, so the document names every chat its messages belong to (issue 44).
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { ROOT, serverVersion, apiSpec } from './paths.js';
+import { ROOT, serverVersion } from './paths.js';
 import { validate } from '../../core/kit/rules/schema.js';
 
 const spec = JSON.parse(readFileSync(path.join(ROOT, 'core/spec/export.schema.json'), 'utf8'));
@@ -39,7 +40,14 @@ const toMessage = (m) => ({
 // The engine bounds one messages.after page at 500 rows, so a sweep asks for the largest page the engine will give.
 const SWEEP_LIMIT = 500;
 
-export function createExporter({ engine, dataDir, log = null, now = () => new Date().toISOString(), pageSize = SWEEP_LIMIT, chatLimit = apiSpec.paging.chats.max } = {}) {
+// The engine's chats.list carries no page bound of its own: its rpc docs give a maximum for messages.history,
+// messages.search and messages.after, but none for chats.list. apiSpec.paging.chats.max is GET /api/v1/chats' page
+// bound, and reading it here named only that page while the sweep carried every message, so the document held
+// messages whose chat it never named (issue 44). This is larger than any Messages database, and inside a signed
+// 32-bit int, so no engine can overflow it.
+const CHAT_LIMIT = 1000000000;
+
+export function createExporter({ engine, dataDir, log = null, now = () => new Date().toISOString(), pageSize = SWEEP_LIMIT, chatLimit = CHAT_LIMIT } = {}) {
   const limit = Math.min(SWEEP_LIMIT, Math.max(1, Math.trunc(pageSize) || SWEEP_LIMIT));
   const marker = path.join(dataDir, 'export.json');
 
@@ -110,6 +118,12 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
   function check(doc) {
     const problems = validateExport(doc);
     if (problems.length) throw new Error('export does not conform: ' + problems.join('; '));
+    // Beyond the schema, the document's own contract: it names a chat for every message it carries. The whole chat
+    // list is read, so every chat that carries a message is in it; if the engine's list ever disagrees with its own
+    // message stream, fail rather than hand tooling a message whose chat the document does not name (issue 44).
+    const named = new Set(doc.chats.map((c) => c.id));
+    const missing = [...new Set(doc.messages.map((m) => m.chatId))].filter((id) => !named.has(id));
+    if (missing.length) throw new Error('export carries messages whose chat it does not name: ' + missing.join(', '));
     return doc;
   }
 
