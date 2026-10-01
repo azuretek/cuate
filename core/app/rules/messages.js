@@ -7,7 +7,7 @@ export function mergeMessages(existing, incoming) {
   return [...map.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt) || String(a.id).localeCompare(String(b.id)));
 }
 
-// Separators after a gap, and runs of messages from one sender close together, as Messages draws them.
+// Separators after a gap, and runs of messages from one sender close together.
 export function groupMessages(messages, { gapMs = 3600000, runMs = 300000 } = {}) {
   const items = [];
   let prev = null;
@@ -31,7 +31,7 @@ export function deliveryLabel(m) {
   return 'Sent';
 }
 
-// One tapback per person per message, as iMessage keeps them: adding replaces that person's earlier one.
+// One tapback per person per message: adding replaces that person's earlier one.
 export function applyReaction(messages, r) {
   const i = messages.findIndex((m) => m.id === r.targetId);
   if (i < 0) return messages;

@@ -197,6 +197,7 @@ function createWindow() {
     icon: path.join(here, '../build/icon.png'),
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
+  win.on('page-title-updated', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => {
     handlers['open.external']({ url });
     return { action: 'deny' };
