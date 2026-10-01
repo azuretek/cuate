@@ -7,6 +7,8 @@ import { connectionSentence } from '../rules/connection.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
+import './app-settings.js';
+import './app-about.js';
 
 const API_VERSION = 1;
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
@@ -20,6 +22,11 @@ class AppRoot extends KitElement {
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
     conn: { state: true }, problem: { state: true }, busy: { state: true }, hasMore: { state: true },
     loadingOlder: { state: true }, sending: { state: true },
+    // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
+    // showing. view says which page the main pane draws (the conversation, settings or about).
+    view: { state: true }, listOpen: { state: true },
+    settings: { state: true }, info: { state: true }, serverUrl: { state: true },
+    settingsBusy: { state: true }, settingsProblem: { state: true },
   };
 
   constructor() {
@@ -34,6 +41,13 @@ class AppRoot extends KitElement {
     this.hasMore = false;
     this.loadingOlder = false;
     this.sending = false;
+    this.view = 'messages';
+    this.listOpen = true;
+    this.settings = {};
+    this.info = null;
+    this.serverUrl = '';
+    this.settingsBusy = false;
+    this.settingsProblem = '';
     this.pending = new Map();
     this.client = null;
   }
@@ -75,11 +89,14 @@ class AppRoot extends KitElement {
       if (info.apiVersion !== API_VERSION) throw new Error(connectionSentence('version-mismatch'));
       const { chats } = await client.chats();
       this.client = client;
+      this.info = info;
+      this.serverUrl = url;
       this.sending = Boolean(info.sending);
       this.chats = orderChats(chats);
       this.phase = 'ready';
       client.connect();
       if (this.chats.length) await this.open(this.chats[0].id);
+      this.settings = await this.readSettings();
       this.dataset.state = 'ready';
     } catch (e) {
       client.close();
@@ -88,10 +105,20 @@ class AppRoot extends KitElement {
     }
   }
 
+  // The server holds every setting; the page only draws what it holds. A read that fails leaves the schema defaults.
+  async readSettings() {
+    try {
+      const { values } = await this.client.settings();
+      return values || {};
+    } catch {
+      return {};
+    }
+  }
+
   onConnState(s) {
     this.conn = s;
     if (s === 'unauthorized') this.signOut("The server no longer accepts this device's token. Connect again with a new one.");
-    if (s === 'open' && this.client) this.client.info().then((info) => { this.sending = Boolean(info.sending); }, () => {});
+    if (s === 'open' && this.client) this.client.info().then((info) => { this.info = info; this.sending = Boolean(info.sending); }, () => {});
   }
 
   async onConnect({ url, token }) {
@@ -120,13 +147,17 @@ class AppRoot extends KitElement {
     this.chats = [];
     this.messages = [];
     this.openChatId = null;
+    this.settings = {};
+    this.view = 'messages';
+    this.listOpen = true;
     delete this.dataset.state;
     this.phase = 'onboarding';
     this.problem = reason || '';
   }
 
-  async open(chatId) {
+  async open(chatId, { show = false } = {}) {
     this.openChatId = chatId;
+    if (show) this.listOpen = false;
     this.messages = [];
     this.hasMore = false;
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
@@ -187,6 +218,9 @@ class AppRoot extends KitElement {
       if (data.chatId === this.openChatId) this.messages = applyReaction(this.messages, data);
     } else if (name === 'server.state') {
       this.sending = Boolean(data.sending);
+    } else if (name === 'settings.changed') {
+      // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
+      this.settings = { ...this.settings, ...(data.values || {}) };
     }
   }
 
@@ -237,21 +271,65 @@ class AppRoot extends KitElement {
     }
   }
 
+  openSettings() {
+    this.view = 'settings';
+    this.settingsProblem = '';
+  }
+
+  openAbout() {
+    this.view = 'about';
+  }
+
+  closeView() {
+    this.view = 'messages';
+  }
+
+  // A setting is written to the server first; the server's answer, not this page, becomes what the page draws, and a
+  // rejected write is rolled back so the control never disagrees with the server.
+  async setSetting({ key, value }) {
+    if (!this.client) return;
+    const before = this.settings;
+    this.settings = { ...this.settings, [key]: value };
+    this.settingsBusy = true;
+    this.settingsProblem = '';
+    try {
+      const { values } = await this.client.settingsWrite({ [key]: value });
+      this.settings = values || this.settings;
+    } catch (e) {
+      this.settings = before;
+      this.settingsProblem = this.describe(e);
+    } finally {
+      this.settingsBusy = false;
+    }
+  }
+
+  pane() {
+    if (this.view !== 'messages') return 'conversation';
+    return this.listOpen || !this.openChatId ? 'list' : 'conversation';
+  }
+
+  mainView(chat) {
+    if (this.view === 'settings') return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem}
+      @setting=${(e) => this.setSetting(e.detail)} @signout=${() => this.signOut('')} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
+    if (this.view === 'about') return html`<app-about .info=${this.info} @back=${() => this.openSettings()}></app-about>`;
+    return chat
+      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .client=${this.client} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      : html`<div class="empty">No conversation selected.</div>`;
+  }
+
   render() {
     if (this.phase === 'boot' || this.phase === 'loading') return html`<div class="splash" aria-busy="true"><div class="spinner" role="img" aria-label="Loading"></div></div>`;
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
-    return html`<div class="shell">
+    return html`<div class="shell" data-pane=${this.pane()}>
       <aside class="sidebar" aria-label="Conversations">
-        <header class="sidebar-head"><h1 class="title">Messages</h1><button class="text-button" @click=${() => this.signOut('')}>Sign out</button></header>
+        <header class="sidebar-head"><h1 class="title">Messages</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
-        <app-chat-list .chats=${this.chats} .selected=${this.openChatId} @select=${(e) => this.open(e.detail)}></app-chat-list>
+        <app-chat-list .chats=${this.chats} .selected=${this.openChatId} @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}></app-chat-list>
       </aside>
-      <main class="main">${chat
-        ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .client=${this.client} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()}></app-conversation>`
-        : html`<div class="empty">No conversation selected.</div>`}</main>
+      <main class="main">${this.mainView(chat)}</main>
     </div>`;
   }
 }

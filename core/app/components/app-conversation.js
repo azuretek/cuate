@@ -79,7 +79,7 @@ class AppConversation extends KitElement {
     const sms = this.chat.service === 'SMS' || this.chat.service === 'RCS';
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : this.chat.service;
-    return html`<header class="conv-head"><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div><div class="muted small">${detail}</div></div></header>
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${() => this.fire('back')}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div><div class="muted small">${detail}</div></div></header>
       <div class="messages" role="log" aria-live="polite" @scroll=${this.onScroll} @media-loaded=${this.onMedia}>
         ${this.hasMore ? html`<button class="load-older" ?disabled=${this.loadingOlder} @click=${() => this.fire('older')}>${this.loadingOlder ? 'Loading\u2026' : 'Load earlier messages'}</button>` : nothing}
         ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms)))}
