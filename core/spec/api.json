@@ -13,6 +13,8 @@
   },
   "routes": [
     { "id": "health", "method": "GET", "path": "/healthz", "scope": "none", "returns": "Health" },
+    { "id": "openapi", "method": "GET", "path": "/openapi.json", "scope": "none", "returns": "object" },
+    { "id": "mcp", "method": "POST", "path": "/api/v1/mcp", "scope": "any", "returns": "object" },
     { "id": "info", "method": "GET", "path": "/api/v1/info", "scope": "any", "returns": "Info" },
     { "id": "chats", "method": "GET", "path": "/api/v1/chats", "scope": "read", "query": ["limit"], "returns": "ChatList" },
     { "id": "messages", "method": "GET", "path": "/api/v1/chats/:chatId/messages", "scope": "read", "query": ["limit", "before"], "returns": "MessageList" },

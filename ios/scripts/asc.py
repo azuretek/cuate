@@ -10,9 +10,20 @@ phone's build is still Processing is a feed entry pointing the phone at a build
 that is not there, so the iOS release job waits here and the platforms gate reads
 its whole job list: green means the build reached VALID.
 
-The one subcommand the release needs:
+The two subcommands the release needs, in the order the job runs them:
 
-    asc.py wait     after the upload, to prove the build reached VALID
+    asc.py wait       after the upload, to prove the build reached VALID
+    asc.py assign     after the wait, to prove the build reached the group a
+                      tester installs from, adding it to that group when the
+                      group does not receive every build
+
+The upload command's exit code and the wait are each not evidence that a tester
+can install the build: a build reaches VALID and can still sit in no group, which
+is exactly how a group that does not receive every build behaves. `wait` reads
+only. `assign` writes one relationship, the build into the group, and then reads
+the group's builds back: App Store Connect answers that assignment the same way
+whether or not the build was already in the group, so only the read says the
+build is one a tester in the group can install.
 
 Authentication is a JWT signed ES256 with the key at ASC_KEY_PATH, which is the
 only algorithm App Store Connect accepts. The key is read from that file, passed
@@ -21,9 +32,8 @@ id and the issuer id do travel on the command line, because Apple's token format
 puts them in the JWT header and claims; neither is a credential and both are
 visible in the App Store Connect UI. The key itself is the secret.
 
-Adapted from the sibling app's (chela) asc.py, trimmed to the wait: that file
-also drives preflight and TestFlight group assignment, which this release path
-does not need yet. It reads only; it cannot create or revoke anything.
+Adapted from the sibling app's (chela) asc.py, which also drives preflight and
+TestFlight group assignment.
 """
 
 import base64
@@ -150,6 +160,20 @@ class Credential:
 # The API
 # --------------------------------------------------------------------------
 
+def error_body(error):
+    """Apple's own words about a failed call, because they name the cause."""
+    raw = error.read()
+    try:
+        parsed = json.loads(raw)
+        detail = "; ".join(
+            f"{e.get('title', 'error')}: {e.get('detail', '')}".strip()
+            for e in parsed.get("errors", [])
+        )
+    except Exception:
+        detail = raw.decode("utf-8", "replace")[:400]
+    return {"__error__": f"{error.code} {error.reason}", "__detail__": detail, "__status__": error.code}
+
+
 def api(auth, path, params=None):
     """One GET. Returns the parsed body, or an object carrying Apple's words on
     failure, because that text says which of the several causes it was."""
@@ -164,19 +188,37 @@ def api(auth, path, params=None):
         with urllib.request.urlopen(request, timeout=60) as response:
             raw = response.read()
     except urllib.error.HTTPError as error:
-        raw = error.read()
-        try:
-            parsed = json.loads(raw)
-            detail = "; ".join(
-                f"{e.get('title', 'error')}: {e.get('detail', '')}".strip()
-                for e in parsed.get("errors", [])
-            )
-        except Exception:
-            detail = raw.decode("utf-8", "replace")[:400]
-        return {"__error__": f"{error.code} {error.reason}", "__detail__": detail}
+        return error_body(error)
     except urllib.error.URLError as error:
         fail(f"could not reach {url}: {error.reason}")
     return json.loads(raw) if raw else {}
+
+
+def api_post(auth, path, body):
+    """One POST of a relationship. The status is returned, never trusted to mean
+    the relationship now exists: App Store Connect answers this call the same way
+    when the build was already in the group, so the only proof is reading the
+    group's builds back. A 204 is the success, a 409 is the build already there,
+    and both leave the same state behind."""
+    url = API + path
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {auth}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            response.read()
+            return {"__status__": response.status}
+    except urllib.error.HTTPError as error:
+        return error_body(error)
+    except urllib.error.URLError as error:
+        fail(f"could not reach {url}: {error.reason}")
 
 
 def describe(result):
@@ -223,6 +265,59 @@ def fetch_build(auth, app_id, build_number):
             "uploaded": attributes.get("uploadedDate"),
         }
     return None
+
+
+def fetch_beta_group(auth, app_id, name):
+    """The named test group of this app, or None.
+
+    A test group that does not receive every build sees only the builds it was
+    handed, so the group the release targets is named rather than assumed. The
+    name comes from the job's environment, which is a repository variable, so
+    which group the pipeline expects is visible outside this script.
+    """
+    result = api(auth, f"/apps/{app_id}/betaGroups", {
+        "fields[betaGroups]": "name,hasAccessToAllBuilds,isInternalGroup",
+        "limit": 200,
+    })
+    if "__error__" in result:
+        fail(f"listing the test groups of app {app_id} failed: {describe(result)}")
+    for group in result.get("data", []):
+        attributes = group.get("attributes", {})
+        if attributes.get("name") == name:
+            return {
+                "id": group["id"],
+                "name": attributes.get("name"),
+                "receives_every_build": bool(attributes.get("hasAccessToAllBuilds")),
+            }
+    return None
+
+
+def group_has_build(auth, group_id, build_id):
+    """Whether the group's own build list carries the build.
+
+    This is the proof, not the assignment call's status: only a read of the
+    group's builds says the build is one a tester in that group can install.
+    """
+    result = api(auth, f"/betaGroups/{group_id}/builds", {
+        "fields[builds]": "version,processingState",
+        "limit": 200,
+    })
+    if "__error__" in result:
+        fail(f"reading the builds of group {group_id} back failed: {describe(result)}")
+    return any(build.get("id") == build_id for build in result.get("data", []))
+
+
+def add_build_to_group(auth, group_id, build_id):
+    result = api_post(auth, f"/betaGroups/{group_id}/relationships/builds", {
+        "data": [{"type": "builds", "id": build_id}],
+    })
+    if "__error__" in result:
+        # A conflict is the build already being in the group, which the read back
+        # in the caller confirms; any other refusal is real and stops the job.
+        if result.get("__status__") == 409:
+            print(f"build {build_id} is already in group {group_id}")
+            return
+        fail(f"adding build {build_id} to group {group_id} failed: {describe(result)}")
 
 
 # --------------------------------------------------------------------------
@@ -275,9 +370,61 @@ def wait():
     )
 
 
+def assign():
+    """Prove the build reached the group a tester installs from.
+
+    After the wait the build is VALID, and this step says a tester can install
+    it. A group that receives every build already has it, so there is nothing to
+    add and the read below confirms it; every other group is handed this build,
+    and Apple answers that assignment the same way whether or not the build was
+    already there, so the pass comes from reading the group's builds back. Either
+    way the group is named, and a build in no group fails the job rather than
+    looking like a finished release.
+    """
+    auth = Credential()
+    identifier = bundle_id()
+    app_id = fetch_app_id(auth, identifier)
+    build_number = env("BUILD_NUMBER")
+    build = fetch_build(auth, app_id, build_number)
+    if not build:
+        fail(
+            f"build {build_number} of {identifier} is not in App Store Connect, so it is in no "
+            "tester group and nothing can install it"
+        )
+    if build["state"] != "VALID":
+        fail(
+            f"build {build_number} is {build['state']}, not VALID, so it cannot be handed to a "
+            "tester group yet; the wait has to pass before this step runs"
+        )
+
+    group_name = env("ASC_BETA_GROUP")
+    group = fetch_beta_group(auth, app_id, group_name)
+    if not group:
+        fail(
+            f"the app {identifier} has no test group named {group_name!r}. The release path names "
+            "the group it expects rather than assuming internal testers see every build, so create "
+            "the group in App Store Connect or set the CUATE_BETA_GROUP variable to its name."
+        )
+
+    if group["receives_every_build"]:
+        print(f"group {group['name']!r} receives every build, so there is nothing to add")
+    else:
+        print(f"adding build {build['build_number']} (id {build['id']}) to group {group['name']!r}")
+        add_build_to_group(auth, group["id"], build["id"])
+
+    if not group_has_build(auth, group["id"], build["id"]):
+        fail(
+            f"build {build_number} is not among the builds of group {group['name']!r}, so no "
+            "tester in that group can install this build"
+        )
+    print(f"build {build_number} is in group {group['name']!r} and its testers can install it")
+
+
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     if command == "wait":
         wait()
+    elif command == "assign":
+        assign()
     else:
-        fail("usage: asc.py wait")
+        fail("usage: asc.py wait | asc.py assign")
