@@ -67,3 +67,10 @@ Apple team's vault:
 
 Until those are set, a pull request still builds and boots; only a release run is
 blocked, and it says which of them is missing.
+
+The job then proves the build reached the tester group named by the
+`CUATE_BETA_GROUP` repository variable (its name, not its id). The group is named
+rather than assumed because a group that does not receive every build sees only
+the builds assigned to it: the job assigns this build to that group and reads the
+group's builds back, so a build that reaches VALID and is in no group fails the
+job naming the group instead of looking like a finished release.

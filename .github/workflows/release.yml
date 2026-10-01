@@ -36,8 +36,9 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
   # The platforms gate. A test build publishes only once every pipeline that
   # builds a platform on this commit has, as a whole, concluded success, and the
-  # iOS half is the archive, the TestFlight upload and its wait for the build to
-  # reach VALID, so a desktop-only test build can no longer go out ahead of the
+  # iOS half is the archive, the TestFlight upload, its wait for the build to
+  # reach VALID and its proof that the build reached the tester group, so a
+  # desktop-only test build can no longer go out ahead of the
   # phone. The pipelines are named here, and desktop/test/gate.test.js fails when
   # a workflow that builds a platform is not named by a gate call, so a new
   # platform joins the gate by failing a test rather than by publishing silently.
