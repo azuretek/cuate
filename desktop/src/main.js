@@ -130,6 +130,20 @@ async function runSmoke(w) {
   await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
+
+  // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
+  // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
+  const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
+  const pickSkin = (skin) => js(`(() => { const s = document.querySelector('app-settings select[data-key="appearance.skin"]'); s.value = ${JSON.stringify(skin)}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await putSettings({ 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
+  await pickSkin('light');
+  await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
+  report.themeLight = true;
+  await pickSkin('dark');
+  await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
+  report.themeDark = true;
+  report.theme = report.themeLight && report.themeDark;
+  await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05-settings.png');
