@@ -6,7 +6,8 @@ import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, delete
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { settingsFields, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
+import { settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
+import { NOTICE_TYPES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
@@ -234,7 +235,9 @@ test('a tweakcn theme is imported, and every name it cannot carry is refused out
 
 test('the settings page draws the schema and writes the value a control gives', () => {
   const fields = settingsFields();
-  assert.deepEqual(fields.map((f) => f.key), ['appearance.skin', 'appearance.textSize', 'appearance.density']);
+  assert.deepEqual(fields.slice(0, 3).map((f) => f.key), ['appearance.skin', 'appearance.textSize', 'appearance.density']);
+  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications'], 'the page draws one section per group');
+  assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   const skin = fields.find((f) => f.key === 'appearance.skin');
   const size = fields.find((f) => f.key === 'appearance.textSize');
   assert.deepEqual(skin.options, ['system', 'light', 'dark']);
@@ -242,7 +245,24 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(settingValue(skin, { 'appearance.skin': 'dark' }), 'dark', 'the server value wins');
   assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
-  assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable' });
+  assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true });
+});
+
+test('every notice type has its own switch and a notice only fires when it is on', () => {
+  const all = { 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true };
+  for (const type of Object.keys(NOTICE_TYPES)) assert.equal(noticeEnabled({}, type), true, type + ' defaults on');
+  assert.equal(noticeEnabled({ ...all, 'notifications.newMessage': false }, 'newMessage'), false, 'a type turned off produces no notice');
+  assert.equal(noticeEnabled({ ...all, 'notifications.updateAvailable': false }, 'updateAvailable'), false);
+  assert.equal(noticeEnabled({ ...all, 'notifications.newMessage': false }, 'updateReady'), true, 'one switch leaves the others alone');
+  assert.equal(noticeEnabled(all, 'nope'), false, 'an unknown type raises nothing');
+});
+
+test('an update state carries the notice it raises, and a state with none raises nothing', () => {
+  assert.deepEqual(updateNotice('available', '1.2.3'), { type: 'updateAvailable', title: 'Update available', body: 'Version 1.2.3 is available to download.' });
+  assert.equal(updateNotice('available', null).type, 'updateAvailable');
+  assert.equal(updateNotice('ready', '1.2.3').type, 'updateReady');
+  assert.equal(updateNotice('error').type, 'error');
+  assert.equal(updateNotice('checking'), null);
 });
 
 test('the list sorts by activity, unread, name and the manual order the server holds', () => {

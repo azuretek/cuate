@@ -14,6 +14,8 @@ const naming = JSON.parse(readFileSync(path.join(CORE, 'spec/naming.json'), 'utf
 const bridgeSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/host-bridge.json'), 'utf8'));
 const version = app.getVersion();
 const SMOKE = process.env.SMOKE_OUT || '';
+// Every notice the shell is asked to show while smoking, so the smoke can prove one fired and one was suppressed.
+const smokeNotices = [];
 
 app.setName(naming.product);
 if (SMOKE) app.setPath('userData', path.join(SMOKE, 'user-data'));
@@ -26,6 +28,7 @@ const secure = createSecureStore({ file: () => path.join(app.getPath('userData')
 const handlers = createHandlers({
   secure,
   notify: (title, body) => {
+    if (SMOKE) smokeNotices.push({ title, body });
     if (!Notification.isSupported()) return false;
     new Notification({ title, body }).show();
     return true;
@@ -143,6 +146,21 @@ async function runSmoke(w) {
   await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
   report.themeDark = true;
   report.theme = report.themeLight && report.themeDark;
+
+  // Notices: an update state raises a native notice over the same bridge the message notices use, and a type the
+  // server has switched off raises none. The shell records every notice it is asked to show.
+  smokeNotices.length = 0;
+  wc.send('bridge:event:update.state', { state: 'available', version: '9.9.9' });
+  for (let i = 0; i < 50 && !smokeNotices.some((n) => n.title === 'Update available'); i += 1) await pause(100);
+  report.noticeFired = smokeNotices.some((n) => n.title === 'Update available');
+  await putSettings({ 'notifications.updateAvailable': false });
+  await waitFor("document.querySelector('app-root')?.settings?.['notifications.updateAvailable'] === false", 10000);
+  smokeNotices.length = 0;
+  wc.send('bridge:event:update.state', { state: 'available', version: '9.9.9' });
+  await pause(600);
+  report.noticeSuppressed = smokeNotices.length === 0;
+  await putSettings({ 'notifications.updateAvailable': true });
+  report.notices = report.noticeFired && report.noticeSuppressed;
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
   nativeTheme.themeSource = 'light';
   await pause(300);
@@ -280,7 +298,13 @@ app.whenReady().then(() => {
   }
   createWindow();
   if (app.isPackaged && !SMOKE) {
-    const stop = startUpdates({ updater: updaterPackage.autoUpdater, version, notify: (title, body) => handlers.notify({ title, body }), logError: (message) => console.error(message) });
+    const stop = startUpdates({
+      updater: updaterPackage.autoUpdater,
+      version,
+      // The page owns the notice, so updates use the same bridge path the new message notices use.
+      onState: (state) => { if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state); },
+      logError: (message) => console.error(message),
+    });
     app.once('before-quit', stop);
   }
   app.on('activate', () => { if (!win) createWindow(); });

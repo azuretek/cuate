@@ -112,6 +112,8 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .setting-row:first-child { border-top: 0; }
 .setting-label { color: var(--color-fg-muted); }
 .setting-value { overflow-wrap: anywhere; text-align: right; }
+.setting-group-label { margin: 0; padding: var(--space-2) var(--space-4) var(--space-1); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
+.setting-group-label + .setting-row { border-top: 0; }
 .setting-control { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); }
 .setting-control:focus { outline: none; border-color: var(--color-accent); }
 .conv-back { display: none; background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
