@@ -16,7 +16,7 @@ export const DEFAULTS = Object.freeze({
   attachmentsRoot: null,
   sending: { enabled: false, perMinute: 20 },
   previews: 40,
-  log: { level: 'notice' },
+  log: { level: 'notice', syslog: null },
   mac: macDefaults(),
   webhooks: { endpoints: [] },
 });
@@ -51,6 +51,15 @@ export function normalizeConfig(raw = {}) {
   if (!Number.isInteger(c.sending.perMinute) || c.sending.perMinute < 1 || c.sending.perMinute > 600) problems.push('sending.perMinute must be from 1 to 600');
   if (!Number.isInteger(c.previews) || c.previews < 0 || c.previews > 500) problems.push('previews must be from 0 to 500');
   if (!LEVELS.includes(c.log.level)) problems.push('log.level must be one of ' + LEVELS.join(', '));
+  // Syslog: the collector's address and port are configuration, never hard coded, so a half-written setting is
+  // refused here rather than leaving the sink pointed at nothing.
+  if (c.log.syslog !== null) {
+    if (typeof c.log.syslog !== 'object' || Array.isArray(c.log.syslog)) problems.push('log.syslog must be an object with a host and a port, or null');
+    else {
+      if (typeof c.log.syslog.host !== 'string' || !c.log.syslog.host) problems.push('log.syslog.host must be the collector address');
+      if (!Number.isInteger(c.log.syslog.port) || c.log.syslog.port < 1 || c.log.syslog.port > 65535) problems.push('log.syslog.port must be a whole number from 1 to 65535');
+    }
+  }
   // The Mac care: the server stands between the Mac and idle sleep, so a half-written setting is refused here
   // rather than half applied at runtime.
   if (typeof c.mac.awake !== 'boolean') problems.push('mac.awake must be true or false');
