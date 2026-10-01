@@ -105,20 +105,38 @@ app-composer { display: block; flex: none; border-top: var(--size-border) solid 
    returns to it. The breakpoint is the one literal length in the stylesheet, because a media query cannot read a
    custom property. */
 @media (max-width: 640px) {
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  /* The drawer's position is one number, progress: 0 is the conversation, 1 is the list fully across. A settled state
+     drives it from data-pane; a finger drives it through the inline --drawer-progress, so the panel and the scrim can
+     never disagree about where the drag is. touch-action leaves the vertical scroll to the page and the horizontal
+     drag to the pointer handlers. */
+  .shell { grid-template-columns: minmax(0, 1fr); touch-action: pan-y; --drawer-progress: 0; }
+  .shell[data-pane="list"] { --drawer-progress: 1; }
   .sidebar {
     position: fixed; top: 0; bottom: 0; left: 0; width: var(--size-drawer); z-index: 2;
     border-right: 0; border-radius: 0 var(--radius-lg) var(--radius-lg) 0; box-shadow: var(--size-drawer-shadow);
-    transform: translateX(-100%); opacity: 0; pointer-events: none;
+    transform: translateX(calc((var(--drawer-progress) - 1) * 100%)); opacity: var(--drawer-progress);
+    pointer-events: none;
     transition: transform var(--motion-drawer-out) var(--motion-drawer-ease), opacity var(--motion-fast) ease-out;
   }
-  .shell[data-pane="list"] .sidebar { transform: translateX(0); opacity: 1; pointer-events: auto; transition-duration: var(--motion-drawer), var(--motion-drawer-fade); }
-  .scrim { display: block; position: fixed; inset: 0; z-index: 1; border: 0; padding: 0; background: var(--color-scrim); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity var(--motion-drawer-out) var(--motion-drawer-ease), visibility var(--motion-drawer-out) linear; }
-  .shell[data-pane="list"] .scrim { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--motion-drawer) var(--motion-drawer-ease), visibility var(--motion-drawer) linear; }
+  .shell[data-pane="list"] .sidebar { pointer-events: auto; transition-duration: var(--motion-drawer), var(--motion-drawer-fade); }
+  .scrim { display: block; position: fixed; inset: 0; z-index: 1; border: 0; padding: 0; background: var(--color-scrim); opacity: var(--drawer-progress); visibility: hidden; pointer-events: none; transition: opacity var(--motion-drawer-out) var(--motion-drawer-ease), visibility var(--motion-drawer-out) linear; }
+  .shell[data-pane="list"] .scrim { visibility: visible; pointer-events: auto; transition: opacity var(--motion-drawer) var(--motion-drawer-ease), visibility var(--motion-drawer) linear; }
+  /* While the finger is down there is no transition: the panel is where the finger put it, not where an animation would
+     put it. The drag clears the flag on release, and the settle then runs on the transition above. The scrim must be
+     paintable while the finger drags it in, even though it only takes pointer events once the drawer has settled. */
+  .shell[data-drawer="drag"] .sidebar,
+  .shell[data-drawer="drag"] .scrim { transition: none; }
+  .shell[data-drawer="drag"] .scrim { visibility: visible; }
   .conv-back { display: inline-flex; }
   .main { grid-column: 1; }
   /* iOS zooms the whole page in when a control whose font is below 16px takes focus, and that zoom is what pushed the
      send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
      field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
   .composer textarea { min-width: 0; font-size: var(--font-size-lg); }
+}
+
+/* Reduced motion keeps the drag, which is the finger's own movement, and drops only the animation the settle would
+   run, so the panel still follows the finger and lands where the finger left it. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .scrim { transition: none; }
 }

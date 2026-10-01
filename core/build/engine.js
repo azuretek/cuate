@@ -21,8 +21,11 @@ var engine = (() => {
   // core/app/engine.js
   var engine_exports = {};
   __export(engine_exports, {
+    EDGE: () => EDGE,
     LEVELS: () => LEVELS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
+    SETTLE: () => SETTLE,
+    SLOP: () => SLOP,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     chatPreview: () => chatPreview,
@@ -38,6 +41,8 @@ var engine = (() => {
     formatTraceparent: () => formatTraceparent,
     groupMessages: () => groupMessages,
     initials: () => initials,
+    isEdgeStart: () => isEdgeStart,
+    isHorizontal: () => isHorizontal,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
@@ -46,10 +51,12 @@ var engine = (() => {
     newTraceparent: () => newTraceparent,
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
+    progressFor: () => progressFor,
     reactionGlyph: () => reactionGlyph,
     scrub: () => scrub,
     settingValue: () => settingValue,
     settingsFields: () => settingsFields,
+    settlesOpen: () => settlesOpen,
     summarizeReactions: () => summarizeReactions,
     tokensCss: () => tokensCss,
     validate: () => validate
@@ -328,6 +335,25 @@ var engine = (() => {
   };
   function connectionSentence(state) {
     return SENTENCES[state] ?? "";
+  }
+
+  // core/app/rules/drawer.js
+  var EDGE = 24;
+  var SLOP = 6;
+  var SETTLE = 0.5;
+  function isEdgeStart(x, edge = EDGE) {
+    return x <= edge;
+  }
+  function isHorizontal(dx, dy) {
+    return Math.abs(dx) > Math.abs(dy);
+  }
+  function progressFor({ open, startX, x, width }) {
+    const span = width > 0 ? width : 1;
+    const raw = (open ? 1 : 0) + (x - startX) / span;
+    return Math.min(1, Math.max(0, raw));
+  }
+  function settlesOpen(progress) {
+    return progress >= SETTLE;
   }
 
   // core/app/rules/engine-imsg.js
