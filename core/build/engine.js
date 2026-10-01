@@ -146,6 +146,7 @@ var engine = (() => {
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
       send: (chatId, { text, clientKey }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, clientKey }),
+      markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
       async attachment(id, o = {}) {
