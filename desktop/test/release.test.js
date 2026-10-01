@@ -9,7 +9,7 @@ import { classify, changedFiles } from '../../scripts/release/changes.mjs';
 import { versionOf } from '../../scripts/release/version.mjs';
 import { expectedAssets, verifyAssets } from '../../scripts/release/assets.mjs';
 import { collect } from '../../scripts/release/collect.mjs';
-import { publish } from '../../scripts/release/release.mjs';
+import { publish, prunePlan } from '../../scripts/release/release.mjs';
 import config from '../electron-builder.mjs';
 const naming = JSON.parse(readFileSync(new URL('../../core/spec/naming.json', import.meta.url)));
 const sha = 'abcdef0123'.repeat(4);
@@ -127,4 +127,41 @@ test('all six native packaging legs and their tests gate the sole publisher', ()
   assert.equal(workflow.on.push.paths, undefined);
   assert.ok(packaging.jobs.build.steps.some((step) => step.run === 'pnpm run test'));
   assert.ok(packaging.jobs.build.steps.some((step) => step.run?.includes('smoke-packed.mjs')));
+});
+
+test('the prune plan keeps exactly ten dev releases and spares stable and unrelated ones', () => {
+  const dev = Array.from({ length: 14 }, (_, i) => ({ prerelease: true, draft: false, tag_name: 'v0.1.0-dev.' + i + '.abcdef0123', published_at: String(i).padStart(2, '0') }));
+  const stable = { prerelease: false, draft: false, tag_name: 'v0.1.0', published_at: '99' };
+  const unrelated = { prerelease: true, draft: false, tag_name: 'v9.9.9-rc.1', published_at: '50' };
+  const draft = { prerelease: true, draft: true, tag_name: 'v0.1.0-dev.99.abcdef0123', published_at: '51' };
+  const tag = 'v0.1.1-dev.8.abcdef0123';
+  const plan = prunePlan([...dev, stable, unrelated, draft], tag);
+  // Ten survive: the one just published plus the newest nine that were already up.
+  assert.equal(plan.keep.length, 10);
+  assert.equal(plan.keep[0], tag);
+  assert.equal(plan.drop.length, 5);
+  for (const spared of [stable.tag_name, unrelated.tag_name, draft.tag_name]) assert.ok(!plan.drop.includes(spared), spared + ' must never be prunable');
+  // A rerun finds its own tag already listed and does not push it twice: that
+  // would drop one more than it should.
+  const rerun = prunePlan([{ prerelease: true, draft: false, tag_name: tag, published_at: '99' }, ...dev], tag);
+  assert.equal(rerun.keep.length, 10);
+  assert.equal(rerun.drop.length, 5);
+});
+
+test('an abandoned draft for this tag is cleared before re-uploading over it', (t) => {
+  const { dir } = fixture(t);
+  const calls = [];
+  const releases = [{ prerelease: true, draft: true, tag_name: 'v0.1.1-dev.8.abcdef0123', published_at: '01' }];
+  const gh = (args) => {
+    calls.push(args);
+    if (args[0] === 'api' && args[1].includes('?')) return JSON.stringify(releases);
+    if (args.includes('databaseId')) return JSON.stringify({ databaseId: 123 });
+    if (args[0] === 'api') return JSON.stringify({ draft: true, assets: [] });
+    return '';
+  };
+  assert.throws(() => publish({ dir, version, sha, gh, apply: true }), /Draft asset count mismatch/);
+  const del = calls.findIndex((args) => args[1] === 'delete' && args[2] === 'v0.1.1-dev.8.abcdef0123');
+  const create = calls.findIndex((args) => args[1] === 'create');
+  assert.ok(del >= 0, 'the abandoned draft is deleted');
+  assert.ok(create > del, 'the delete happens before the create');
 });

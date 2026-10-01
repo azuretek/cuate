@@ -13,6 +13,7 @@ Adapted from Chela's desktop pipeline.
 - Package with --publish never. Only the final job gets contents: write and a publishing token.
 - Test packaged applications, not just the source checkout. Upload installers only after the smoke succeeds.
 - Merge architecture metadata deliberately. Check the complete expected asset set and feed hashes before creating a draft; verify uploaded bytes before publication.
-- Never cancel a publishing run to start a newer one. Withdraw failed partial drafts; never replace published assets in place. Investigate and withdraw a draft left by a runner hard failure before rerunning that version.
+- Never cancel a publishing run to start a newer one. Withdraw failed partial drafts; never replace published assets in place, and a rerun against a published release leaves it alone. The publisher clears OUR abandoned draft for its own tag before re-creating it, so a draft left by a runner hard failure is repaired in place rather than blocking the rerun (copied from the sibling app's release path).
 - Keep ten published dev builds. Never prune a stable release or an unrelated prerelease.
+- Artifacts and releases are retained differently (copied from the sibling app's release path). Workflow artifacts exist only to carry installers from the six build runners to the release job and expire as fast as GitHub allows (retention-days: 1, GitHub's age-only limit; the repository default was 90 days). The GitHub Release is the durable copy and is pruned to the newest ten by count, which is the half GitHub's artifact retention cannot express.
 - Branch protection and external publication approval are not changed by this workflow.
