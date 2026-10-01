@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createLogger } from '../../core/kit/log.js';
-import { logSpec } from '../src/paths.js';
+import { logSpec, apiSpec } from '../src/paths.js';
 import { createEngine } from '../src/engine/index.js';
 import { createFakeImsg } from '../src/engine/fake.js';
 import { makeAttachmentId } from '../src/ids.js';
@@ -120,4 +120,48 @@ test('the export route hands the document to a tooling token and refuses a devic
   const since = await s.get('/api/v1/export?mode=since', s.tokens.tooling);
   assert.equal(since.status, 200);
   assert.deepEqual(validateExport(await since.json()), [], 'the since mode conforms too');
+});
+
+test('a full export asks for the whole chat list, not the client page bound, so nothing is capped', async (t) => {
+  const h = harness();
+  t.after(() => h.close());
+  await h.start();
+  const asked = [];
+  const engine = { ...h.engine, chats: (opts) => { asked.push(opts && opts.limit); return h.engine.chats(opts); } };
+  const doc = await createExporter({ engine, dataDir: h.dir }).collect();
+  assert.equal(asked.length, 1, 'the chat list is read once');
+  assert.ok(asked[0] > apiSpec.paging.chats.max, 'the read is not the client page bound');
+  assert.deepEqual(validateExport(doc), []);
+});
+
+test('an export refuses a document whose messages name a chat its list does not carry', async (t) => {
+  const h = harness();
+  t.after(() => h.close());
+  await h.start();
+  // A cap below the chats that carry messages stands in for the client page bound the export used to read: the sweep
+  // still carries chat 3's messages, so the run must refuse rather than hand tooling a message with no chat.
+  await assert.rejects(() => createExporter({ engine: h.engine, dataDir: h.dir, chatLimit: 2 }).collect(), /does not name/);
+});
+
+test('a full export names every chat in a database larger than the client page bound', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'export-big-'));
+  try {
+    const many = Array.from({ length: 1200 }, (_, i) => ({ id: String(i + 1), name: 'chat ' + (i + 1), isGroup: false, service: 'iMessage', participants: [], lastMessageAt: null }));
+    const asked = [];
+    const engine = {
+      chats: async (opts) => { asked.push(opts.limit); return many; },
+      after: async ({ sinceRowid }) => ({
+        messages: [{ id: 'm-1200', chatId: '1200', fromMe: false, sender: null, senderName: null, text: 'hi', sentAt: '2026-01-01T00:00:00.000Z', replyTo: null, read: null, attachments: [], reactions: [] }],
+        nextRowid: sinceRowid + 1,
+        hasMore: false,
+      }),
+    };
+    const doc = await createExporter({ engine, dataDir: dir }).collect();
+    assert.ok(asked[0] > apiSpec.paging.chats.max, 'the whole list is read, not a capped page');
+    assert.equal(doc.chats.length, 1200, 'every chat is named');
+    assert.ok(doc.messages.every((m) => doc.chats.some((c) => c.id === m.chatId)), 'every message belongs to a named chat');
+    assert.deepEqual(validateExport(doc), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
