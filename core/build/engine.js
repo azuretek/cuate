@@ -44,6 +44,7 @@ var engine = (() => {
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     newTraceparent: () => newTraceparent,
+    openapiDocument: () => openapiDocument,
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
     reactionGlyph: () => reactionGlyph,
@@ -271,6 +272,81 @@ var engine = (() => {
     };
     check(value, type, where);
     return problems;
+  }
+  function jsonSchema(type, models, refPrefix = "#/components/schemas/") {
+    const base = type.endsWith("?") ? type.slice(0, -1) : type;
+    if (base.endsWith("[]")) return { type: "array", items: jsonSchema(base.slice(0, -2), models, refPrefix) };
+    if (base === "string") return { type: "string" };
+    if (base === "number") return { type: "number" };
+    if (base === "boolean") return { type: "boolean" };
+    if (base === "object") return { type: "object" };
+    if (base === "binary") return { type: "string", format: "binary" };
+    if (!models[base]) throw new Error("unknown type " + base);
+    return { $ref: refPrefix + base };
+  }
+  function modelJsonSchema(name, models, refPrefix = "#/components/schemas/") {
+    const model = models[name];
+    if (!model) throw new Error("unknown model " + name);
+    const properties = {};
+    const required = [];
+    for (const [key, type] of Object.entries(model)) {
+      properties[key] = jsonSchema(type, models, refPrefix);
+      if (!type.endsWith("?")) required.push(key);
+    }
+    return { type: "object", properties, ...required.length ? { required } : {}, additionalProperties: false };
+  }
+
+  // core/kit/rules/openapi.js
+  var COMPONENT = "#/components/schemas/";
+  var ref = (name) => ({ $ref: COMPONENT + name });
+  var pathParams = (p) => [...p.matchAll(/:([A-Za-z]+)/g)].map((m) => m[1]);
+  var openapiPath = (p) => p.replace(/:([A-Za-z]+)/g, "{$1}");
+  var tagFor = (route) => route.path.startsWith("/api/") ? "api" : "meta";
+  function responseFor(route, models) {
+    if (route.returns === "binary") {
+      return { description: "The attachment bytes", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } };
+    }
+    return { description: "OK", content: { "application/json": { schema: jsonSchema(route.returns, models, COMPONENT) } } };
+  }
+  function operationFor(route, models) {
+    const op = {
+      operationId: route.id,
+      summary: route.method + " " + route.path,
+      tags: [tagFor(route)],
+      "x-scope": route.scope,
+      responses: {
+        200: responseFor(route, models),
+        default: { description: "An error", content: { "application/json": { schema: ref("Error") } } }
+      }
+    };
+    if (route.scope !== "none") op.security = [{ bearerAuth: [] }];
+    const parameters = pathParams(route.path).map((name) => ({ name, in: "path", required: true, schema: { type: "string" } }));
+    for (const name of route.query || []) parameters.push({ name, in: "query", required: name === "q", schema: { type: "string" } });
+    if (parameters.length) op.parameters = parameters;
+    if (route.body) op.requestBody = { required: true, content: { "application/json": { schema: ref(route.body) } } };
+    return op;
+  }
+  function openapiDocument(apiSpec, naming) {
+    const models = apiSpec.models;
+    const schemas = {};
+    for (const name of Object.keys(models)) schemas[name] = modelJsonSchema(name, models, COMPONENT);
+    const paths = {};
+    for (const route of apiSpec.routes) {
+      const at = openapiPath(route.path);
+      paths[at] = paths[at] || {};
+      paths[at][route.method.toLowerCase()] = operationFor(route, models);
+    }
+    const webhooks = {};
+    for (const [event, model] of Object.entries(apiSpec.events)) {
+      webhooks[event] = { post: { requestBody: { required: true, content: { "application/json": { schema: ref(model) } } }, responses: { 200: { description: "The receiver accepted the event." } } } };
+    }
+    return {
+      openapi: "3.1.0",
+      info: { title: naming.product + " API", version: String(apiSpec.version), description: apiSpec.description },
+      paths,
+      webhooks,
+      components: { schemas, securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } } }
+    };
   }
 
   // core/kit/rules/tokens.js
