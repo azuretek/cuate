@@ -1,4 +1,18 @@
 name: desktop test release
+
+# ★ The trigger and concurrency conditions, set against the sibling app's release
+# path this workflow is copied from. Two differences are deliberate and named
+# here rather than left for a diff to find later:
+#
+#   * There is no tag (v*) trigger, and none is wanted. This workflow publishes
+#     only test builds; a stable release selects an exact snapshot through a
+#     separately designed process (docs/release.md). The sibling's tag path
+#     exists because it publishes stable releases, so the version job's
+#     tag-equals-package.json check has nothing to check here.
+#   * cancel-in-progress stays false. The sibling cancels an in-progress branch
+#     build when a newer push arrives; this workflow must never cancel a
+#     publishing run, because a cancelled run can leave a draft behind. A newer
+#     push queues behind the publishing run instead.
 on:
   push:
     branches:
