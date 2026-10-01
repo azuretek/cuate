@@ -97,13 +97,28 @@ app-composer { display: block; flex: none; border-top: var(--size-border) solid 
 .setting-control:focus { outline: none; border-color: var(--color-accent); }
 .conv-back { display: none; background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 
-/* The phone: one pane at a time. The list slides in from the left over the conversation, and the conversation's back
-   control returns to it. The breakpoint is the one literal length in the stylesheet, because a media query cannot read
-   a custom property. */
+/* The scrim behind the phone's drawer. Hidden wherever the sidebar is a column rather than a drawer. */
+.scrim { display: none; }
+
+/* The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
+   left, the sibling app's slide menu mirrored to this side, scrim behind it, and the conversation's back control
+   returns to it. The breakpoint is the one literal length in the stylesheet, because a media query cannot read a
+   custom property. */
 @media (max-width: 640px) {
-  .shell { grid-template-columns: 1fr; }
-  .sidebar { position: absolute; inset: 0; width: 100%; z-index: 2; transform: translateX(0); transition: transform var(--motion-normal) var(--motion-ease); }
-  .shell[data-pane="conversation"] .sidebar { transform: translateX(-100%); }
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; width: var(--size-drawer); z-index: 2;
+    border-right: 0; border-radius: 0 var(--radius-lg) var(--radius-lg) 0; box-shadow: var(--size-drawer-shadow);
+    transform: translateX(-100%); opacity: 0; pointer-events: none;
+    transition: transform var(--motion-drawer-out) var(--motion-drawer-ease), opacity var(--motion-fast) ease-out;
+  }
+  .shell[data-pane="list"] .sidebar { transform: translateX(0); opacity: 1; pointer-events: auto; transition-duration: var(--motion-drawer), var(--motion-drawer-fade); }
+  .scrim { display: block; position: fixed; inset: 0; z-index: 1; border: 0; padding: 0; background: var(--color-scrim); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity var(--motion-drawer-out) var(--motion-drawer-ease), visibility var(--motion-drawer-out) linear; }
+  .shell[data-pane="list"] .scrim { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--motion-drawer) var(--motion-drawer-ease), visibility var(--motion-drawer) linear; }
   .conv-back { display: inline-flex; }
   .main { grid-column: 1; }
+  /* iOS zooms the whole page in when a control whose font is below 16px takes focus, and that zoom is what pushed the
+     send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
+     field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
+  .composer textarea { min-width: 0; font-size: var(--font-size-lg); }
 }
