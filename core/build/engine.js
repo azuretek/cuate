@@ -24,23 +24,31 @@ var engine = (() => {
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
+    INSTALL: () => INSTALL,
     LEVELS: () => LEVELS,
+    MANUAL: () => MANUAL,
+    NONE: () => NONE,
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
+    NOTIFY: () => NOTIFY,
     SCHEMES: () => SCHEMES,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
     SILENT_UPDATE_STATES: () => SILENT_UPDATE_STATES,
     SLOP: () => SLOP,
     SORT_ORDERS: () => SORT_ORDERS,
+    STALL_MS: () => STALL_MS,
     THEME_GROUPS: () => THEME_GROUPS,
     UNGROUPED: () => UNGROUPED,
     addGroup: () => addGroup,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
+    autoDownloadEnabled: () => autoDownloadEnabled,
+    capability: () => capability,
     chatPreview: () => chatPreview,
     chatSearchText: () => chatSearchText,
     chatTitle: () => chatTitle,
+    checksumMatches: () => checksumMatches,
     coerceSetting: () => coerceSetting,
     connectionSentence: () => connectionSentence,
     countGraphemes: () => countGraphemes,
@@ -50,6 +58,8 @@ var engine = (() => {
     daysAgo: () => daysAgo,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
+    downloadProgress: () => downloadProgress,
+    downloadingNotice: () => downloadingNotice,
     emojiInCategory: () => emojiInCategory,
     emptyFilters: () => emptyFilters,
     filterChats: () => filterChats,
@@ -63,6 +73,7 @@ var engine = (() => {
     importTweakcn: () => importTweakcn,
     initials: () => initials,
     insertEmoji: () => insertEmoji,
+    installPolicy: () => installPolicy,
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
@@ -80,6 +91,7 @@ var engine = (() => {
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
     placeChat: () => placeChat,
+    policy: () => policy,
     progressFor: () => progressFor,
     reactionGlyph: () => reactionGlyph,
     renameGroup: () => renameGroup,
@@ -91,12 +103,16 @@ var engine = (() => {
     settingsGroups: () => settingsGroups,
     settlesOpen: () => settlesOpen,
     sortChats: () => sortChats,
+    stalledNotice: () => stalledNotice,
     summarizeReactions: () => summarizeReactions,
     themeName: () => themeName,
     themeVars: () => themeVars,
     tokensCss: () => tokensCss,
+    transferDetail: () => transferDetail,
+    updateBanner: () => updateBanner,
     updateNotice: () => updateNotice,
-    validate: () => validate
+    validate: () => validate,
+    verificationCheck: () => verificationCheck
   });
 
   // core/kit/api.js
@@ -931,7 +947,8 @@ var engine = (() => {
   var SETTINGS_SCHEMA = {
     groups: [
       { id: "appearance", label: "Appearance" },
-      { id: "notifications", label: "Notifications" }
+      { id: "notifications", label: "Notifications" },
+      { id: "updates", label: "Updates" }
     ],
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "choice", options: ["system", "light", "dark"], default: "system" },
@@ -941,7 +958,11 @@ var engine = (() => {
       "notifications.newMessage": { group: "notifications", label: "New messages", type: "toggle", default: true },
       "notifications.updateAvailable": { group: "notifications", label: "Update available", type: "toggle", default: true },
       "notifications.updateReady": { group: "notifications", label: "Update ready to install", type: "toggle", default: true },
-      "notifications.errors": { group: "notifications", label: "Update errors", type: "toggle", default: true }
+      "notifications.errors": { group: "notifications", label: "Update errors", type: "toggle", default: true },
+      // Whether a release a check finds is fetched and applied with no further prompt. Off until someone turns it on: a
+      // download nobody asked for spends someone's bandwidth, and the setting is how they asked. The check still runs
+      // with it off, because knowing a release exists is what makes installing by hand possible.
+      "updates.autoDownload": { group: "updates", label: "Download updates automatically", type: "toggle", default: false }
     }
   };
   function settingsFields(schema = SETTINGS_SCHEMA) {
@@ -975,17 +996,23 @@ var engine = (() => {
     error: "notifications.errors"
   };
   var NOTICE_UPDATE_STATES = ["available", "ready", "error"];
-  var SILENT_UPDATE_STATES = ["checking"];
+  var SILENT_UPDATE_STATES = ["checking", "downloading", "stalled"];
   function noticeEnabled(settings, type) {
     const key = NOTICE_TYPES[type];
     if (!key || !SETTINGS_SCHEMA.keys[key]) return false;
     return settingValue({ key, ...SETTINGS_SCHEMA.keys[key] }, settings) === true;
   }
-  function updateNotice(state, version) {
+  function autoDownloadEnabled(settings) {
+    const key = "updates.autoDownload";
+    if (!SETTINGS_SCHEMA.keys[key]) return false;
+    return settingValue({ key, ...SETTINGS_SCHEMA.keys[key] }, settings) === true;
+  }
+  function updateNotice(state, version, detail = null) {
     const v = version ? String(version) : "";
+    const why = detail ? String(detail) : null;
     if (state === "available") return { type: "updateAvailable", title: "Update available", body: v ? "Version " + v + " is available to download." : "A new version is available to download." };
     if (state === "ready") return { type: "updateReady", title: "Update ready", body: "Restart the app to install the downloaded update." };
-    if (state === "error") return { type: "error", title: "Update check failed", body: "The app could not check for updates." };
+    if (state === "error") return { type: "error", title: "Update failed", body: why || "The update could not be checked for or downloaded." };
     return null;
   }
 
@@ -1132,6 +1159,87 @@ var engine = (() => {
     if (d === 1) return "Yesterday " + clock(t, locale, timeZone);
     if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t) + " " + clock(t, locale, timeZone);
     return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(t);
+  }
+
+  // core/app/rules/updates.js
+  var INSTALL = "install";
+  var MANUAL = "manual";
+  var NOTIFY = "notify";
+  var NONE = "none";
+  var STALL_MS = 45e3;
+  var KB = 1024;
+  var MB = KB * KB;
+  function size(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return null;
+    const mb = bytes / MB;
+    if (mb < 10) return mb.toFixed(1) + " MB";
+    if (mb < 1e3) return Math.round(mb) + " MB";
+    return (mb / KB).toFixed(2) + " GB";
+  }
+  function capability({ platform, packaged, appImage = false }) {
+    if (!packaged) return { action: NONE, check: false, autoDownload: false, canInstall: false, reason: "running from source" };
+    if (platform === "win32") return { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "the installer is verified against its published checksum" };
+    if (platform === "darwin") return { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "the build is signed and notarized, so an update can be installed" };
+    if (platform === "linux") {
+      return appImage ? { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "an AppImage replaces itself in place" } : { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "not running as an AppImage, so there is no file an update could replace" };
+    }
+    return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, reason: "no install path on this platform" };
+  }
+  function policy({ autoDownload = false, ...opts }) {
+    const base = capability(opts);
+    if (!base.canInstall) return base;
+    if (autoDownload) return { ...base, autoDownload: true };
+    return { action: MANUAL, check: true, autoDownload: false, canInstall: true, reason: "automatic downloads are turned off in Settings" };
+  }
+  function downloadProgress(info) {
+    const percent = info ? info.percent : null;
+    if (!Number.isFinite(percent)) return null;
+    return Math.min(1, Math.max(0, percent / 100));
+  }
+  function transferDetail(info) {
+    const { transferred = 0, total = 0, bytesPerSecond = 0 } = info || {};
+    const arrived = size(transferred);
+    const whole = size(total);
+    const rate = size(bytesPerSecond);
+    const parts = [];
+    if (arrived && whole) parts.push(arrived + " of " + whole);
+    else if (arrived) parts.push(arrived);
+    if (rate) parts.push(rate + "/s");
+    return parts.length ? parts.join(", ") : null;
+  }
+  function downloadingNotice({ version = null, transfer = null } = {}) {
+    const what = version ? "version " + version : "the update";
+    return { message: "Downloading " + what + ".", detail: transfer || "Starting the download." };
+  }
+  function stalledNotice({ version = null, stallMs = STALL_MS } = {}) {
+    const what = version ? "version " + version : "the update";
+    const seconds = Math.max(1, Math.round(stallMs / 1e3));
+    return { message: "Downloading " + what + " has stopped making progress.", detail: "Nothing has arrived for " + seconds + " seconds. It has not been cancelled, so it may still finish on its own." };
+  }
+  function verificationCheck({ platform }) {
+    if (platform === "win32") return { name: "publisher signature", detail: "the installer is checked against the publisher name in the release metadata" };
+    if (platform === "darwin") return { name: "code signature and checksum", detail: "the archive is checked against the checksum in the release metadata, and the installed build is signed" };
+    return { name: "sha512 checksum", detail: "the artifact is checked against the checksum in the release metadata" };
+  }
+  function checksumMatches(expected, actual) {
+    if (typeof expected !== "string" || typeof actual !== "string") return false;
+    const a = expected.trim().toLowerCase();
+    const b = actual.trim().toLowerCase();
+    return a.length > 0 && a === b;
+  }
+  function installPolicy() {
+    return { on: "quit", why: "the download is applied when the app next quits, so an update never interrupts what a person is doing" };
+  }
+  function updateBanner(state, { version = null, percent = null, detail = null } = {}) {
+    if (state === "downloading") {
+      const n = downloadingNotice({ version, transfer: detail });
+      return { message: n.message, detail: n.detail, percent };
+    }
+    if (state === "stalled") {
+      const n = stalledNotice({ version });
+      return { message: n.message, detail: n.detail, percent: null };
+    }
+    return null;
   }
   return __toCommonJS(engine_exports);
 })();

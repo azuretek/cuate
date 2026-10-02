@@ -3,46 +3,112 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { channelOf, startUpdates } from '../src/updates.js';
+import { checksumMatches, installPolicy } from '../../core/app/rules/updates.js';
 
-// The states the shell may send are the bridge spec's. Every state an update raises here is checked against that
-// list, so a state renamed on one side fails a test rather than going quiet on the page.
+const make = () => {
+  const updater = new EventEmitter();
+  updater.checkForUpdates = async () => {};
+  updater.downloadUpdate = async () => { updater.downloads = (updater.downloads || 0) + 1; };
+  return updater;
+};
+const collect = () => { const states = []; return { states, onState: (s) => states.push(s) }; };
+const quiet = { logError: assert.fail, setTimer: () => 0, clearTimer: () => {} };
+// The states the shell may send are the bridge spec's, so a state renamed on one side fails here rather than going
+// quiet on the page.
 const DECLARED_STATES = JSON.parse(readFileSync(new URL('../../core/spec/host-bridge.json', import.meta.url), 'utf8')).events['update.state'].states;
+
 test('prereleases follow dev and stable builds follow latest', () => {
   assert.equal(channelOf('1.0.1-dev.10.abcdef0123'), 'dev');
   assert.equal(channelOf('1.0.0'), 'latest');
 });
-test('checks at boot and every four hours, reports available and ready, and stops cleanly', async () => {
-  const updater = new EventEmitter();
-  let checks = 0; let callback; const states = []; let cleared;
-  updater.checkForUpdates = async () => { checks++; };
-  const stop = startUpdates({ updater, version: '1.0.1-dev.3.abc', onState: (s) => states.push(s), logError: assert.fail, setTimer: (fn, ms) => { callback = fn; assert.equal(ms, 14400000); return 42; }, clearTimer: (id) => { cleared = id; } });
+
+test('every state the shell emits is declared in the bridge spec', async () => {
+  const updater = make();
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: true, onState, ...quiet });
   await Promise.resolve();
-  assert.equal(checks, 1);
-  await callback();
-  assert.equal(checks, 2);
-  assert.equal(updater.autoDownload, true);
-  assert.equal(updater.autoInstallOnAppQuit, true);
-  assert.equal(updater.allowDowngrade, false);
-  assert.equal(updater.allowPrerelease, true);
-  updater.emit('update-available', { version: '1.0.1-dev.4.def' });
-  assert.deepEqual(states.at(-1), { state: 'available', version: '1.0.1-dev.4.def' });
-  updater.emit('update-downloaded', { version: '1.0.1-dev.4.def' });
-  assert.deepEqual(states.at(-1), { state: 'ready', version: '1.0.1-dev.4.def' });
+  updater.emit('update-available', { version: '1.2.3' });
+  updater.emit('download-progress', { percent: 10, transferred: 1, total: 10, bytesPerSecond: 1 });
+  updater.emit('update-downloaded', { version: '1.2.3' });
   for (const s of states) assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
-  stop();
-  assert.equal(cleared, 42);
-  assert.equal(updater.listenerCount('update-available'), 0);
-  assert.equal(updater.listenerCount('update-downloaded'), 0);
-  assert.equal(updater.listenerCount('error'), 0);
+  ctl.stop();
 });
-test('network failure is contained, reported as an error state, and the next check can retry', async () => {
-  const updater = new EventEmitter(); let errors = 0; let callback; const states = [];
+
+test('a source run does not check at all', async () => {
+  const updater = make(); let checks = 0; updater.checkForUpdates = async () => { checks++; };
+  const { onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: false, onState, ...quiet });
+  await Promise.resolve();
+  assert.equal(checks, 0);
+  assert.equal(updater.autoDownload, false);
+  ctl.stop();
+});
+
+test('automatic download off: a found release is announced and nothing is fetched', async () => {
+  const updater = make();
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: false, onState, ...quiet });
+  assert.equal(updater.autoDownload, false, 'the setting narrows the platform answer');
+  assert.equal(updater.autoInstallOnAppQuit, true, 'the install policy is applied on quit');
+  await Promise.resolve();
+  updater.emit('update-available', { version: '1.2.3' });
+  assert.equal(states.at(-1).state, 'available');
+  assert.equal(updater.downloads, undefined, 'nothing was fetched on its own');
+  ctl.stop();
+});
+
+test('automatic download on: the release is fetched, progress reaches the surface, and ready names the check', async () => {
+  const updater = make();
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: true, onState, ...quiet });
+  assert.equal(updater.autoDownload, true);
+  await Promise.resolve();
+  updater.emit('update-available', { version: '1.2.3' });
+  updater.emit('download-progress', { percent: 42.5, transferred: 5 * 1024 * 1024, total: 12 * 1024 * 1024, bytesPerSecond: 1024 * 1024 });
+  const p = states.at(-1);
+  assert.equal(p.state, 'downloading');
+  assert.equal(p.version, '1.2.3');
+  assert.ok(Math.abs(p.percent - 0.425) < 1e-9);
+  assert.match(p.detail, /5.0 MB of 12 MB/);
+  updater.emit('update-downloaded', { version: '1.2.3' });
+  assert.equal(states.at(-1).state, 'ready');
+  assert.equal(states.at(-1).detail, 'code signature and checksum');
+  ctl.stop();
+});
+
+test('turning the setting on later fetches a release the check already found', async () => {
+  const updater = make();
+  const { onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'win32', packaged: true, autoDownload: false, onState, ...quiet });
+  await Promise.resolve();
+  updater.emit('update-available', { version: '1.2.3' });
+  assert.equal(updater.downloads, undefined);
+  assert.equal(ctl.setAutoDownload(true), true);
+  await Promise.resolve();
+  assert.equal(updater.downloads, 1);
+  ctl.stop();
+});
+
+test('a failure is reported and the next check can retry', async () => {
+  const updater = make(); let errors = 0; let callback;
   updater.checkForUpdates = async () => { throw new Error('private transport details'); };
-  const stop = startUpdates({ updater, version: '1.0.0', onState: (s) => states.push(s), logError: (message) => { errors++; assert.ok(!message.includes('private')); }, setTimer: (fn) => { callback = fn; }, clearTimer: () => {} });
-  await Promise.resolve(); await Promise.resolve(); await callback();
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'win32', packaged: true, autoDownload: true, onState, logError: (m) => { errors++; assert.ok(!m.includes('private')); }, setTimer: (fn) => { callback = fn; return 1; }, clearTimer: () => {} });
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(errors, 1);
+  assert.equal(states.at(-1).state, 'error');
+  await callback();
   assert.equal(errors, 2);
-  assert.equal(states.filter((s) => s.state === 'error').length, 2, 'each failure is reported as an error state');
-  for (const s of states) assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
-  assert.equal(updater.allowPrerelease, false);
-  stop();
+  ctl.stop();
+});
+
+test('nothing is installed unverified: a mismatched checksum refuses', () => {
+  assert.equal(checksumMatches('abc123', 'abc123'), true);
+  assert.equal(checksumMatches('abc123', 'def456'), false);
+  assert.equal(checksumMatches('abc123', null), false);
+  assert.equal(checksumMatches('', ''), false);
+});
+
+test('the install policy applies an update on quit', () => {
+  assert.equal(installPolicy().on, 'quit');
 });

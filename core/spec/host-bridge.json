@@ -6,9 +6,10 @@
     "storage.delete": { "args": { "key": "string" }, "returns": "boolean" },
     "app.info": { "args": {}, "returns": "AppInfo" },
     "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
-    "open.external": { "args": { "url": "string" }, "returns": "boolean" }
+    "open.external": { "args": { "url": "string" }, "returns": "boolean" },
+    "updates.configure": { "args": { "autoDownload": "boolean" }, "returns": "boolean" }
   },
   "events": {
-    "update.state": { "args": { "state": "string", "version": "string?" }, "returns": "void", "states": ["checking", "available", "ready", "error"] }
+    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error"] }
   }
 }
