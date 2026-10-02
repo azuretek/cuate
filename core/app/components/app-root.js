@@ -29,8 +29,10 @@ class AppRoot extends KitElement {
     view: { state: true }, listOpen: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
-    // The update the shell last reported, drawn as a banner while a download runs.
-    update: { state: true },
+    // The update the shell last reported, drawn as a banner while a download runs. The name must NOT be "update":
+    // Lit writes this.update for any reactive property of that name, which shadows LitElement's own update() method
+    // and the element throws "this.update is not a function" on its next render.
+    updateStatus: { state: true },
   };
 
   constructor() {
