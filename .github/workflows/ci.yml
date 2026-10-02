@@ -68,29 +68,43 @@ jobs:
       # The Electron download reaches the network, so it gets a cache and a deadline
       # like every other one: a cold or stalled download fails here in five minutes
       # rather than holding the job to its own limit.
+      # The cache directory is named, not left to Electron's per-OS default: the
+      # default is ~/.cache/electron only on Linux, so on macOS and Windows the
+      # cached path never existed and nothing was ever saved (run 37005181037,
+      # "Path Validation Error"). And the check below must not require('electron'):
+      # Electron downloads itself on first require, so that check fetched the
+      # binary with no deadline and then reported it as already unpacked.
       - name: Cache the Electron download
         id: electron-cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/electron
+          path: ${{ runner.temp }}/electron-cache
           key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             electron-${{ runner.os }}-
       - name: Ensure Electron is usable
         working-directory: desktop
         shell: bash
+        timeout-minutes: 5
         env:
           ELECTRON_CACHE_HIT: ${{ steps.electron-cache.outputs.cache-hit }}
+          electron_config_cache: ${{ runner.temp }}/electron-cache
         run: |
           set -eo pipefail
-          usable() { node -e "const fs=require('fs'),p=require('electron');if(!fs.existsSync(p))process.exit(1)"; }
-          if usable; then
+          unpacked() { node -e "const fs=require('fs'),path=require('path'),d=path.dirname(require.resolve('electron/package.json'));let p;try{p=fs.readFileSync(path.join(d,'path.txt'),'utf8')}catch{process.exit(1)}if(!fs.existsSync(path.join(d,'dist',p)))process.exit(1)"; }
+          case "${ELECTRON_CACHE_HIT}" in
+            true) echo "electron download cache: hit" ;;
+            false) echo "electron download cache: partial (restored from an older key)" ;;
+            *) echo "electron download cache: miss" ;;
+          esac
+          zips=$(node -e "const fs=require('fs'),path=require('path'),r=process.env.electron_config_cache;let n=0;try{for(const d of fs.readdirSync(r))try{n+=fs.readdirSync(path.join(r,d)).filter((f)=>/^electron-v.*\.zip$/.test(f)).length}catch{}}catch{}console.log(n)")
+          echo "electron archives in the cache: $zips"
+          if unpacked; then
             echo "electron is already unpacked"
           else
-            echo "electron download cache: ${ELECTRON_CACHE_HIT:-miss}"
-            timeout 300 node node_modules/electron/install.js
+            node node_modules/electron/install.js
           fi
-          usable && echo "electron loads"
+          unpacked && node -e "require('electron')" && echo "electron loads"
       # Linux only: a virtual display, emoji fonts, the namespace restriction lifted so Chromium's sandbox starts, and
       # a session bus with an unlocked keyring so safeStorage encrypts the token as it does on a desktop. macOS and
       # Windows runners carry a desktop session, so the smoke opens a real window there.
