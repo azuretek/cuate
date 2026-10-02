@@ -10,7 +10,7 @@ export const channelOf = (version) => version.includes('-') ? 'dev' : 'latest';
 
 export function startUpdates({
   updater, version, platform, packaged, appImage = false, autoDownload = false,
-  onState, logError, setTimer = setInterval, clearTimer = clearInterval,
+  onState, logError, onQuit = () => {}, setTimer = setInterval, clearTimer = clearInterval,
 }) {
   updater.channel = channelOf(version);
   updater.allowPrerelease = updater.channel === 'dev';
@@ -22,14 +22,18 @@ export function startUpdates({
   updater.autoDownload = plan.autoDownload;
 
   // The check that stands between a download and an install, named on the ready state.
-  const check = verificationCheck({ platform });
+  const verify = verificationCheck({ platform });
   // canInstall travels with every state, so the page knows whether to offer an action at all: a build with no
   // install path is told about a release by its notice alone, and a platform difference stays data.
   const emit = (state, extra = {}) => onState({ state, version: null, canInstall: plan.canInstall, ...extra });
   let availableVersion = null;
   let downloading = false;
   let ready = false;
+  let readyVersion = null;
   let stallTimer = null;
+  // A check someone asked for (the tray's Check for updates) says how it ended even when nothing was found; the
+  // scheduled check stays quiet then, so a person is not told every four hours that nothing happened.
+  let manual = false;
 
   const clearStall = () => { if (stallTimer) { clearTimer(stallTimer); stallTimer = null; } };
   // The stall window is measured from the last evidence of movement, so a slow transfer re-arms it on every chunk.
@@ -45,6 +49,7 @@ export function startUpdates({
   const available = (info) => {
     availableVersion = info && info.version ? String(info.version) : null;
     ready = false;
+    manual = false;
     emit('available', { version: availableVersion });
     if (plan.autoDownload) armStall();
   };
@@ -59,19 +64,29 @@ export function startUpdates({
     ready = true;
     clearStall();
     const v = info && info.version ? String(info.version) : availableVersion;
+    readyVersion = v;
     // Nothing reaches ready unverified: the check that ran is named on the state.
-    emit('ready', { version: v, detail: check.name });
+    emit('ready', { version: v, detail: verify.name });
   };
   // A failure is stated, never silent: the page raises a notice and draws the banner, and the log says the same.
   const error = () => {
     downloading = false;
     ready = false;
+    manual = false;
     clearStall();
     logError('Update check or download failed');
     emit('error', { detail: 'The update could not be downloaded.' });
   };
 
+  // Nothing newer was found. Only a check someone asked for answers that, with the version this build already is.
+  const current = () => {
+    if (!manual) return;
+    manual = false;
+    emit('current', { version });
+  };
+
   updater.on('update-available', available);
+  updater.on('update-not-available', current);
   updater.on('download-progress', progress);
   updater.on('update-downloaded', downloaded);
   updater.on('error', error);
@@ -110,10 +125,30 @@ export function startUpdates({
     return true;
   };
 
+  // The check someone asked for: the same check the schedule runs, reporting through the same states, so its outcome
+  // appears where the scheduled one does. A download already on disk is the answer as it stands, so it is said again
+  // rather than checked for afresh, and a check already in flight is joined rather than doubled.
+  const check = () => {
+    if (!plan.check) {
+      emit('unsupported', { detail: plan.reason });
+      return false;
+    }
+    if (ready) {
+      emit('ready', { version: readyVersion, detail: verify.name });
+      return true;
+    }
+    manual = true;
+    emit('checking');
+    void run();
+    return true;
+  };
+
   // Install now: quit and apply the downloaded update. It is still an install on quit, so it never interrupts what a
   // person is doing until the install itself, and it is refused when there is nothing downloaded to apply.
   const install = () => {
     if (!plan.canInstall || !ready || typeof updater.quitAndInstall !== 'function') return false;
+    // The shell is told before the install quits, so a window that hides on close lets this quit through.
+    onQuit();
     updater.quitAndInstall();
     return true;
   };
@@ -123,6 +158,7 @@ export function startUpdates({
       clearStall();
       if (timer) clearTimer(timer);
       updater.removeListener('update-available', available);
+      updater.removeListener('update-not-available', current);
       updater.removeListener('download-progress', progress);
       updater.removeListener('update-downloaded', downloaded);
       updater.removeListener('error', error);
@@ -130,5 +166,18 @@ export function startUpdates({
     setAutoDownload,
     download,
     install,
+    check,
   };
+}
+
+// The tray's Check for updates. A running updater checks; a session that never started one still answers in the app,
+// saying why it does not update itself, so the menu item is never a click that does nothing. The reason is the
+// platform's when it cannot update at all (a run from source), and otherwise that no updater runs in this session (a
+// packaged smoke), so a build that could update is never told it cannot for the wrong reason.
+export function checkForUpdates(control, { platform, packaged, appImage = false }, onState) {
+  if (control) return control.check();
+  const plan = policy({ platform, packaged, appImage });
+  const detail = plan.check ? 'no updater is running in this session' : plan.reason;
+  onState({ state: 'unsupported', version: null, canInstall: false, detail });
+  return false;
 }
