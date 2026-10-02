@@ -354,6 +354,167 @@ async function runSmoke(w) {
   console.log('attach menu: ' + JSON.stringify({ checks: attachChecks, menu: attachMenu }));
   await shot('03b-after-file-send.png');
 
+  // Pictures (issue 126): a received picture and a staged one both show an aspect-correct, dressed preview, and the
+  // viewer opens over the sheet's own blurred, darkened backdrop. The desktop drives the viewer with real mouse input
+  // (sendInputEvent): a left click zooms in, a right click zooms out with no context menu, the wheel zooms about the
+  // pointer. A finger's pinch, drag and double tap are driven as touch pointers through the same component the phone
+  // shells host. Each reading is the scale the viewer says it drew, so a click that did nothing fails.
+  const previewOf = (sel) => js('(() => { const img = document.querySelector(' + JSON.stringify(sel) + '); if (!img || !img.complete || !img.naturalWidth) return null; const box = img.closest(".attachment-preview") || img; const r = img.getBoundingClientRect(); const s = getComputedStyle(box); return { w: r.width, h: r.height, nw: img.naturalWidth, nh: img.naturalHeight, shadow: s.boxShadow, radius: parseFloat(s.borderTopLeftRadius), border: s.borderTopWidth }; })()');
+  const dressed = (p) => Boolean(p) && Math.abs(p.w / p.h - p.nw / p.nh) < 0.02 && p.shadow !== 'none' && p.radius > 0 && p.border !== '0px';
+  await js("(() => { const img = document.querySelector('app-attachment .attachment-preview img'); if (img) img.scrollIntoView({ block: 'center' }); return true; })()");
+  await waitFor("Boolean(document.querySelector('app-attachment .attachment-preview img.attachment-image')?.naturalWidth)", 10000);
+  const received = await previewOf('app-attachment .attachment-preview img.attachment-image');
+  await pause(200);
+  await shot('10-image-received-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('10b-image-received-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  // A picture staged in the composer, drawn on a canvas in the page so the smoke carries no image file of its own.
+  await js("(() => { const c = document.createElement('canvas'); c.width = 360; c.height = 240; const g = c.getContext('2d'); const grad = g.createLinearGradient(0, 0, 360, 240); grad.addColorStop(0, 'rgb(40, 90, 160)'); grad.addColorStop(1, 'rgb(240, 170, 90)'); g.fillStyle = grad; g.fillRect(0, 0, 360, 240); c.toBlob((blob) => { const input = document.querySelector('app-composer input[type=file]'); const dt = new DataTransfer(); dt.items.add(new File([blob], 'smoke-picture.png', { type: 'image/png' })); input.files = dt.files; input.dispatchEvent(new Event('change')); }, 'image/png'); return true; })()");
+  await waitFor("Boolean(document.querySelector('app-composer .staged-preview-image')?.naturalWidth)", 10000);
+  const composed = await previewOf('app-composer .staged-preview-image');
+  await pause(200);
+  await shot('11-image-composer-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('11b-image-composer-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  const imagePreviewChecks = { received: dressed(received), composer: dressed(composed) };
+  report.imagePreview = Object.values(imagePreviewChecks).every(Boolean);
+  console.log('image preview: ' + JSON.stringify({ checks: imagePreviewChecks, received, composed }));
+  // The staged picture opens the viewer too; then it comes back off, so nothing is sent.
+  await js("document.querySelector('app-composer .staged-preview').click()");
+  await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image')?.naturalWidth)", 10000);
+  const stagedOpens = await js("document.querySelector('app-image-viewer .viewer-image').alt === 'smoke-picture.png'");
+  await js("document.querySelector('app-image-viewer .viewer-close').click()");
+  await waitFor("!document.querySelector('app-image-viewer')", 5000);
+  await js("document.querySelector('app-composer .staged-remove').click()");
+
+  const scale = () => js("Number(document.querySelector('app-image-viewer .viewer')?.dataset.scale || 0)");
+  const viewerOpen = () => js("Boolean(document.querySelector('app-image-viewer'))");
+  const openViewer = async () => {
+    await js("document.querySelector('app-attachment .attachment-preview').click()");
+    await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image')?.naturalWidth)", 10000);
+    await pause(350);
+  };
+  const imageCentre = () => js("(() => { const r = document.querySelector('app-image-viewer .viewer-image').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: r.width, h: r.height }; })()");
+  const mouse = async (button, x, y) => {
+    wc.sendInputEvent({ type: 'mouseMove', x, y });
+    wc.sendInputEvent({ type: 'mouseDown', x, y, button, clickCount: 1 });
+    await pause(60);
+    wc.sendInputEvent({ type: 'mouseUp', x, y, button, clickCount: 1 });
+    await pause(450);
+  };
+  let electronMenus = 0;
+  const onMenu = () => { electronMenus += 1; };
+  wc.on('context-menu', onMenu);
+  wc.focus();
+  await openViewer();
+  const backdrop = await js("(() => { const v = document.querySelector('app-image-viewer .viewer'); const s = getComputedStyle(v); const probe = document.createElement('div'); probe.className = 'sheet-scrim'; probe.hidden = true; document.body.appendChild(probe); const p = getComputedStyle(probe); const same = { background: s.backgroundColor === p.backgroundColor, blur: s.backdropFilter === p.backdropFilter }; probe.remove(); return { background: s.backgroundColor, filter: s.backdropFilter, sheetClass: v.classList.contains('sheet-scrim'), same, label: v.getAttribute('aria-label'), focus: document.activeElement && document.activeElement.className }; })()");
+  await shot('12-viewer-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12b-viewer-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  await js("(() => { window.__ctx = { fired: 0, prevented: 0 }; document.addEventListener('contextmenu', (e) => { window.__ctx.fired += 1; if (e.defaultPrevented) window.__ctx.prevented += 1; }); return true; })()");
+  const fit = await scale();
+  const c0 = await imageCentre();
+  await mouse('left', c0.x + Math.round(c0.w / 6), c0.y);
+  const afterLeft = await scale();
+  await shot('12c-viewer-zoomed.png');
+  await mouse('right', c0.x, c0.y);
+  const afterRight = await scale();
+  const ctx = await js('window.__ctx');
+  wc.sendInputEvent({ type: 'mouseMove', x: c0.x, y: c0.y });
+  // Electron's wheel sign is the platform's; one turn each way, and the scale must have moved on one of them.
+  wc.sendInputEvent({ type: 'mouseWheel', x: c0.x, y: c0.y, deltaX: 0, deltaY: 240 });
+  await pause(400);
+  const wheelOne = await scale();
+  wc.sendInputEvent({ type: 'mouseWheel', x: c0.x, y: c0.y, deltaX: 0, deltaY: -240 });
+  await pause(400);
+  const wheelTwo = await scale();
+  const afterWheel = wheelOne !== afterRight ? wheelOne : wheelTwo;
+  const key = (k) => js('document.dispatchEvent(new KeyboardEvent("keydown", { key: ' + JSON.stringify(k) + ', bubbles: true, cancelable: true }))');
+  await key('0');
+  await pause(300);
+  const afterReset = await scale();
+  await key('+');
+  await pause(300);
+  const afterPlus = await scale();
+  const panBefore = await js("document.querySelector('app-image-viewer .viewer-image').style.getPropertyValue('--zoom-x')");
+  await key('ArrowLeft');
+  await pause(300);
+  const panAfter = await js("document.querySelector('app-image-viewer .viewer-image').style.getPropertyValue('--zoom-x')");
+  await key('-');
+  await pause(300);
+  const afterMinus = await scale();
+
+  // A finger: two touch pointers spread from 80 to 160 apart pinch to twice the scale; a one-finger drag then pans;
+  // two quick taps go back to fit, and two more zoom in again about the tap.
+  const touch = (type, id, x, y) => js('(() => { const v = document.querySelector("app-image-viewer .viewer"); const t = document.elementFromPoint(' + x + ', ' + y + ') || v; t.dispatchEvent(new PointerEvent(' + JSON.stringify(type) + ', { bubbles: true, cancelable: true, pointerId: ' + id + ', pointerType: "touch", isPrimary: ' + (id === 31) + ', clientX: ' + x + ', clientY: ' + y + ', button: 0, buttons: ' + (type === 'pointerup' ? 0 : 1) + ' })); return true; })()');
+  const c1 = await imageCentre();
+  await touch('pointerdown', 31, c1.x - 40, c1.y);
+  await touch('pointerdown', 32, c1.x + 40, c1.y);
+  await touch('pointermove', 32, c1.x + 120, c1.y);
+  const afterPinch = await scale();
+  await touch('pointerup', 32, c1.x + 120, c1.y);
+  await touch('pointerup', 31, c1.x - 40, c1.y);
+  await pause(300);
+  const dragFrom = await js("document.querySelector('app-image-viewer .viewer-image').style.getPropertyValue('--zoom-x')");
+  await touch('pointerdown', 31, c1.x, c1.y);
+  await touch('pointermove', 31, c1.x + 30, c1.y);
+  await touch('pointermove', 31, c1.x + 60, c1.y);
+  await touch('pointerup', 31, c1.x + 60, c1.y);
+  await pause(300);
+  const dragTo = await js("document.querySelector('app-image-viewer .viewer-image').style.getPropertyValue('--zoom-x')");
+  const doubleTap = async (x, y) => {
+    await touch('pointerdown', 31, x, y);
+    await touch('pointerup', 31, x, y);
+    await touch('pointerdown', 31, x, y);
+    await touch('pointerup', 31, x, y);
+    await pause(350);
+  };
+  await doubleTap(c1.x, c1.y);
+  const afterDoubleOut = await scale();
+  await doubleTap(c1.x, c1.y);
+  const afterDoubleIn = await scale();
+  await key('0');
+  await pause(200);
+
+  // The three ways out: Escape, the close control and a real click on the backdrop beside the picture.
+  await key('Escape');
+  await pause(200);
+  const escapeCloses = !(await viewerOpen());
+  await openViewer();
+  await js("document.querySelector('app-image-viewer .viewer-close').click()");
+  await pause(200);
+  const closeCloses = !(await viewerOpen());
+  await openViewer();
+  await mouse('left', 6, Math.round(c0.y));
+  const backdropCloses = !(await viewerOpen());
+  wc.removeListener('context-menu', onMenu);
+  const imageViewerChecks = {
+    backdrop: backdrop.sheetClass && backdrop.same.background && backdrop.same.blur && /blur/.test(backdrop.filter),
+    labelled: backdrop.label === 'sunset.png',
+    stagedOpens,
+    fit: fit === 1,
+    leftZoomsIn: afterLeft > fit,
+    rightZoomsOut: afterRight < afterLeft,
+    noContextMenu: electronMenus === 0 && ctx.fired === ctx.prevented,
+    wheel: afterWheel !== afterRight,
+    keys: afterReset === 1 && afterPlus > 1 && panAfter !== panBefore && afterMinus < afterPlus,
+    pinch: afterPinch > 1.9 && afterPinch < 2.1,
+    drag: dragTo !== dragFrom,
+    doubleTap: afterDoubleOut === 1 && afterDoubleIn > 1,
+    escapeCloses, closeCloses, backdropCloses,
+  };
+  report.imageViewer = Object.values(imageViewerChecks).every(Boolean);
+  console.log('image viewer: ' + JSON.stringify({ checks: imageViewerChecks, backdrop, scales: { fit, afterLeft, afterRight, wheelOne, wheelTwo, afterReset, afterPlus, afterMinus, afterPinch, afterDoubleOut, afterDoubleIn }, pan: { panBefore, panAfter, dragFrom, dragTo }, ctx, electronMenus }));
+
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
   const srv = process.env.SMOKE_SERVER_URL;
