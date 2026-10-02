@@ -265,6 +265,7 @@ async function runSmoke(w) {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
   await pause(250);
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
+  report.phoneSend = await js("(() => { const b = document.querySelector('app-composer button.send'); if (!b) return false; const s = getComputedStyle(b); const box = b.getBoundingClientRect(); const size = Math.min(box.width, box.height); const glyph = parseFloat(s.fontSize); return glyph >= 20 && glyph < size && parseInt(s.fontWeight, 10) >= 600 && size >= 36; })()");
   report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
   await shot('07-phone-list.png');
   // A tap still selects a chat and closes the drawer, unchanged by the gesture.
