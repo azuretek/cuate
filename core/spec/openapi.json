@@ -865,10 +865,17 @@
         "properties": {
           "ok": {
             "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
           }
         },
         "required": [
-          "ok"
+          "ok",
+          "version"
         ],
         "additionalProperties": false
       },

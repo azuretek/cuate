@@ -8,6 +8,10 @@ coverage/
 release-assets/
 artifacts/
 
+# The server's version stamp: scripts/gen-server-stamp.mjs writes it into a built server, and a development
+# checkout reports core/spec/version.json without one.
+server/stamp.json
+
 # The generated Xcode project and the simulator build output: both are produced
 # by xcodegen and xcodebuild, so neither is source.
 ios/build/

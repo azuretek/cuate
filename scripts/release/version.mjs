@@ -17,22 +17,36 @@ export function versionOf(base, count, sha) {
   const [major, minor, patch] = base.split('.').map(Number);
   return major + '.' + minor + '.' + (patch + 1) + '-dev.' + count + '.' + sha.slice(0, 10);
 }
+const gitIn = (cwd) => (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+const baseOf = () => JSON.parse(readFileSync(new URL('../../core/spec/version.json', import.meta.url))).version;
+
+/**
+ * Everything one commit's build is called, from the one base and the commit: the version every platform reports,
+ * the marketing version a bundle can carry, the commit count and the commit. The desktop, the phones and the
+ * server stamp (scripts/gen-server-stamp.mjs) all take their version from here, so a release cannot carry two.
+ */
+export function snapshot({ cwd } = {}) {
+  const git = gitIn(cwd);
+  const base = baseOf();
+  const count = Number(git('rev-list', '--count', 'HEAD'));
+  const sha = git('rev-parse', 'HEAD');
+  return { base, marketing: marketingOf(base), version: versionOf(base, count, sha), count, sha };
+}
+
 export function run({ argv = [] } = {}) {
-  const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
-  const base = JSON.parse(readFileSync(new URL('../../core/spec/version.json', import.meta.url))).version;
-  const marketing = marketingOf(base);
   // --marketing prints only what a bundle can carry: an App Store version is three
   // dot separated integers, so the dev string stays in the app's own build field.
   if (argv.includes('--marketing')) {
+    const marketing = marketingOf(baseOf());
     console.log(marketing);
     return marketing;
   }
-  const version = versionOf(base, Number(git('rev-list', '--count', 'HEAD')), git('rev-parse', 'HEAD'));
+  const { version, marketing, count } = snapshot();
   console.log(version);
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + version + '\n');
     appendFileSync(process.env.GITHUB_OUTPUT, 'marketing=' + marketing + '\n');
-    appendFileSync(process.env.GITHUB_OUTPUT, 'count=' + git('rev-list', '--count', 'HEAD') + '\n');
+    appendFileSync(process.env.GITHUB_OUTPUT, 'count=' + count + '\n');
   }
   return version;
 }

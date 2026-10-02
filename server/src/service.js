@@ -123,7 +123,8 @@ export function fillHandoff(args, t) {
 export function describeInfo(info) {
   const e = (info && info.engine) || {};
   const engine = [e.kind || 'unknown engine', e.version, e.ready === false ? '(not ready)' : null].filter(Boolean).join(' ');
-  return `server ${info.serverVersion}, API ${info.apiVersion}, engine ${engine}, sending ${info.sending ? 'on' : 'off'}`;
+  const commit = info.serverCommit ? ' (' + String(info.serverCommit).slice(0, 10) + ')' : '';
+  return `server ${info.serverVersion}${commit}, API ${info.apiVersion}, engine ${engine}, sending ${info.sending ? 'on' : 'off'}`;
 }
 
 function sh(cmd, args, { cwd, timeout = 120000 } = {}) {
@@ -396,7 +397,14 @@ export async function check({ url, token, print = console.log }) {
   const base = url.replace(/\/+$/, '');
   const auth = { authorization: 'Bearer ' + token };
   const h = await get(base + '/healthz');
-  print((h.status === 200 ? 'ok    ' : 'fail  ') + base + '/healthz answered ' + (h.status || h.text));
+  let health;
+  try {
+    health = h.status === 200 ? JSON.parse(h.text) : null;
+  } catch {
+    health = null;
+  }
+  const stamp = health && health.version ? ', version ' + health.version : '';
+  print((h.status === 200 ? 'ok    ' : 'fail  ') + base + '/healthz answered ' + (h.status || h.text) + stamp);
   const i = await get(base + '/api/v1/info', auth);
   let info;
   try {
