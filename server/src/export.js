@@ -6,11 +6,13 @@
 // at a time. Paging every chat from here instead made the round trip count unbounded in the history: one call per
 // page per chat, so a real database answered for minutes and the endpoint never returned (issue 41). A sweep over
 // message ROWID order costs one call per SWEEP_LIMIT messages whatever the chat count is. The chat list is read
-// once in full, so the document names every chat its messages belong to (issue 44).
+// once in full, so the document names every chat its messages belong to (issue 44). A message that belongs to no
+// chat is left out: it is no conversation's, so the document carries nothing it cannot name (issue 48).
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT, serverVersion } from './paths.js';
 import { validate } from '../../core/kit/rules/schema.js';
+import { NO_CHAT_ID } from '../../core/app/rules/engine-imsg.js';
 
 const spec = JSON.parse(readFileSync(path.join(ROOT, 'core/spec/export.schema.json'), 'utf8'));
 
@@ -83,6 +85,7 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
     const chats = await engine.chats({ limit: chatLimit });
     const messages = [];
     const attachments = new Map();
+    let chatless = 0;
     const startedAt = Date.now();
     let pages = 0;
     let rowid = cursor;
@@ -92,6 +95,10 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
       pages += 1;
       for (const m of page.messages) {
         if (from && m.sentAt <= from) continue;
+        // A message the engine reports with no chat belongs to no conversation, so it is left out rather than carried
+        // half named (issue 48). Every other unnamed chat is a real disagreement between the list and the stream, so it
+        // stays in the document for check() below to refuse.
+        if (m.chatId === NO_CHAT_ID) { chatless += 1; continue; }
         messages.push(toMessage(m));
         for (const a of m.attachments) if (!attachments.has(a.id)) attachments.set(a.id, { id: a.id, name: a.name, mime: a.mime, bytes: a.bytes, missing: a.missing });
       }
@@ -99,7 +106,7 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
       if (!page.hasMore || page.nextRowid <= rowid) break;
       rowid = page.nextRowid;
     }
-    return { chats, messages, attachments: [...attachments.values()], pages, rowid, ms: Date.now() - startedAt };
+    return { chats, messages, chatless, attachments: [...attachments.values()], pages, rowid, ms: Date.now() - startedAt };
   }
 
   function document(swept, from) {
@@ -141,7 +148,7 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
     writeFileSync(file, body, { mode: 0o600 });
     writeFileSync(marker, JSON.stringify({ exportedAt: doc.exportedAt, lastRowid: swept.rowid }) + '\n', { mode: 0o600 });
     const bytes = Buffer.byteLength(body);
-    if (log) log.emit('export.written', { mode: doc.mode, chats: doc.chats.length, messages: doc.messages.length, attachments: doc.attachments.length, bytes, pages: swept.pages, ms: swept.ms });
+    if (log) log.emit('export.written', { mode: doc.mode, chats: doc.chats.length, messages: doc.messages.length, chatless: swept.chatless, attachments: doc.attachments.length, bytes, pages: swept.pages, ms: swept.ms });
     return { file, bytes, doc };
   }
 
