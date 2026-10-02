@@ -314,8 +314,8 @@ class AppRoot extends KitElement {
   // The download and stall states draw no native notice (a notice cannot show a moving bar), so they become the
   // in-app banner instead, which is where the progress is visible on a platform whose notices cannot update.
   onUpdate(data) {
-    const { state, version, percent, detail } = data || {};
-    this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null } : null;
+    const { state, version, percent, detail, canInstall } = data || {};
+    this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null, canInstall: Boolean(canInstall) } : null;
     const notice = updateNotice(state, version, detail);
     if (!notice || !noticeEnabled(this.settings, notice.type)) return;
     this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
@@ -621,6 +621,13 @@ class AppRoot extends KitElement {
     return ['darwin', 'win32', 'linux'].includes(String(this.host && this.host.platform || '').toLowerCase());
   }
 
+  // The banner's action asks the shell to start a download or apply a downloaded update. The command is the one the
+  // rules drew into the banner, so the button and what it does cannot drift; a refusal leaves the banner as it is.
+  async updateAction(command) {
+    if (!command) return;
+    try { await this.bridge(command, {}); } catch { /* the shell refused; the banner keeps the state it last drew */ }
+  }
+
   // The three controls ask the shell; the shell owns the BrowserWindow and answers the new maximized state.
   async windowAction(name) {
     if (!['minimize', 'toggleMaximize', 'close'].includes(name)) return;
@@ -663,7 +670,7 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
-    const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail }) : null;
+    const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail, canInstall: this.updateStatus.canInstall }) : null;
     return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
@@ -678,7 +685,7 @@ class AppRoot extends KitElement {
           @chatsettings=${(e) => this.setSettings(e.detail.patch)}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
-      <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}</div>` : nothing}${this.mainView(chat)}</main>
+      <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${() => this.updateAction(banner.action.command)}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
       ${this.sheetShowing ? html`<div class="sheet-scrim" @click=${() => this.closeView()}></div><section class="sheet" role="dialog" aria-modal="true" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section>` : nothing}
     </div>`;
   }

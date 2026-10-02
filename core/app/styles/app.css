@@ -29,6 +29,7 @@ app-root { display: block; height: 100%; }
 /* The update banner runs the width of the pane it sits in, with the progress bar under the words. */
 .banner.update { margin: 0; border-radius: 0; border-bottom: var(--size-border) solid var(--color-border); display: flex; flex-direction: column; gap: var(--space-2); }
 .update-progress { width: 100%; height: var(--space-1); }
+.banner-action { align-self: flex-start; border: 0; border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); background: var(--color-accent); color: var(--color-accent-fg); font: inherit; cursor: pointer; }
 
 app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); }

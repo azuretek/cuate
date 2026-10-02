@@ -23,9 +23,12 @@ export function startUpdates({
 
   // The check that stands between a download and an install, named on the ready state.
   const check = verificationCheck({ platform });
-  const emit = (state, extra = {}) => onState({ state, version: null, ...extra });
+  // canInstall travels with every state, so the page knows whether to offer an action at all: a build with no
+  // install path is told about a release by its notice alone, and a platform difference stays data.
+  const emit = (state, extra = {}) => onState({ state, version: null, canInstall: plan.canInstall, ...extra });
   let availableVersion = null;
   let downloading = false;
+  let ready = false;
   let stallTimer = null;
 
   const clearStall = () => { if (stallTimer) { clearTimer(stallTimer); stallTimer = null; } };
@@ -41,24 +44,28 @@ export function startUpdates({
 
   const available = (info) => {
     availableVersion = info && info.version ? String(info.version) : null;
+    ready = false;
     emit('available', { version: availableVersion });
     if (plan.autoDownload) armStall();
   };
   const progress = (info) => {
     downloading = true;
+    ready = false;
     armStall();
     emit('downloading', { version: availableVersion, percent: downloadProgress(info), detail: transferDetail(info) });
   };
   const downloaded = (info) => {
     downloading = false;
+    ready = true;
     clearStall();
     const v = info && info.version ? String(info.version) : availableVersion;
     // Nothing reaches ready unverified: the check that ran is named on the state.
     emit('ready', { version: v, detail: check.name });
   };
-  // A failure is stated, never silent: the page raises a notice, and the log says the same thing.
+  // A failure is stated, never silent: the page raises a notice and draws the banner, and the log says the same.
   const error = () => {
     downloading = false;
+    ready = false;
     clearStall();
     logError('Update check or download failed');
     emit('error', { detail: 'The update could not be downloaded.' });
@@ -90,6 +97,27 @@ export function startUpdates({
     return updater.autoDownload;
   };
 
+  // An explicit download, asked for by the page. It is never blocked by the automatic-download setting: that preference
+  // only decides whether a found release is fetched on its own, and a person asking for it is exactly what the setting
+  // being off leaves them able to do. A platform that cannot install has no download to offer, so it refuses.
+  const download = () => {
+    if (!plan.canInstall || typeof updater.downloadUpdate !== 'function') return false;
+    if (downloading) return true; // a transfer is already in flight; asking again must not start a second one
+    downloading = true;
+    ready = false;
+    armStall();
+    Promise.resolve(updater.downloadUpdate()).catch(() => error());
+    return true;
+  };
+
+  // Install now: quit and apply the downloaded update. It is still an install on quit, so it never interrupts what a
+  // person is doing until the install itself, and it is refused when there is nothing downloaded to apply.
+  const install = () => {
+    if (!plan.canInstall || !ready || typeof updater.quitAndInstall !== 'function') return false;
+    updater.quitAndInstall();
+    return true;
+  };
+
   return {
     stop() {
       clearStall();
@@ -100,5 +128,7 @@ export function startUpdates({
       updater.removeListener('error', error);
     },
     setAutoDownload,
+    download,
+    install,
   };
 }
