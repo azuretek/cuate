@@ -604,6 +604,53 @@
         }
       }
     },
+    "/api/v1/themes": {
+      "post": {
+        "operationId": "theme-import",
+        "summary": "POST /api/v1/themes",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "settings",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeImportResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThemeImportRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mac": {
       "get": {
         "operationId": "mac",
@@ -1304,6 +1351,55 @@
           }
         },
         "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "ThemeImportRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "ThemeImportResult": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "object"
+          },
+          "accepted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refused": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "summary": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "theme",
+          "accepted",
+          "refused",
+          "summary",
           "values"
         ],
         "additionalProperties": false
