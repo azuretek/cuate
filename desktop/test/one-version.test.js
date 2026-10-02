@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { snapshot } from '../../scripts/release/version.mjs';
-import { stampOf, render, STAMP } from '../../scripts/gen-server-stamp.mjs';
+import { stampOf, render, STAMP, givenVersion } from '../../scripts/gen-server-stamp.mjs';
 import { readStamp } from '../../server/src/paths.js';
 import { stampProblem } from '../../core/kit/rules/build.js';
 
@@ -74,8 +74,21 @@ test('a build handed a different version stamps nothing', () => {
   assert.throws(() => stampOf({ env: { BUILD_VERSION: '9.9.9-dev.1.' + 'a'.repeat(10) } }), /would disagree/);
 });
 
+test('a shallow checkout takes the handed-down count only when the version names this commit and base', () => {
+  const sha = 'abcdef0123'.repeat(4);
+  assert.deepEqual(givenVersion('0.0.1-dev.65.abcdef0123', { base: '0.0.0', sha }), { version: '0.0.1-dev.65.abcdef0123', count: 65 });
+  assert.equal(givenVersion('0.0.1-dev.65.0000000000', { base: '0.0.0', sha }), null, 'another commit');
+  assert.equal(givenVersion('0.0.2-dev.65.abcdef0123', { base: '0.0.0', sha }), null, 'another base');
+  assert.equal(givenVersion('0.0.1-dev.0.abcdef0123', { base: '0.0.0', sha }), null, 'no count');
+  assert.equal(givenVersion('0.0.1', { base: '0.0.0', sha }), null, 'not a dev snapshot');
+});
+
 test('a stale, edited or missing stamp in a build fails the check', () => {
-  const run = (root) => spawnSync(process.execPath, [GENERATOR, '--check', '--root', root], { cwd: ROOT, encoding: 'utf8' }).status;
+  // The child gets the same empty BUILD_VERSION the expected stamp is made with: a packaging job sets one, and
+  // inheriting it would compare this test's stamp against the job's version instead of against the generator.
+  const env = { ...process.env };
+  delete env.BUILD_VERSION;
+  const run = (root) => spawnSync(process.execPath, [GENERATOR, '--check', '--root', root], { cwd: ROOT, encoding: 'utf8', env }).status;
   const root = scratch();
   try {
     assert.equal(run(root), 1, 'a built server without a stamp');
