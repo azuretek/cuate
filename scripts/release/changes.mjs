@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-export const NON_RELEASE_PATHS = [/^docs\//, /\.md$/i, /^\.github\//, /^\.githooks\//, /^scripts\//, /^LICENSE$/, /^\.gitignore$/, /^server\//];
+export const NON_RELEASE_PATHS = [/^docs\//, /\.md$/i, /^\.github\//, /^\.githooks\//, /^scripts\//, /^LICENSE$/, /^\.gitignore$/];
 export const ships = (file) => !NON_RELEASE_PATHS.some((pattern) => pattern.test(file));
 export const classify = (files) => ({ release: files.some(ships), shipped: files.filter(ships) });
 export function changedFiles(env = process.env, git = (args) => execFileSync('git', args, { encoding: 'utf8' })) {
