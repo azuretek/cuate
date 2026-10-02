@@ -28,6 +28,9 @@ class AppRoot extends KitElement {
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
     // showing. view says which page the main pane draws (the conversation, settings or about).
     view: { state: true }, listOpen: { state: true },
+    // The sheet's leaving state has to be reactive: the departure is driven from body.surface--leaving, which updated()
+    // writes after a render, so a plain field would never repaint and the leave would never begin.
+    sheetLeaving: { state: true }, pendingSheet: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
     // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
@@ -48,6 +51,8 @@ class AppRoot extends KitElement {
     this.sending = false;
     this.view = 'messages';
     this.listOpen = true;
+    this.sheetLeaving = false;
+    this.pendingSheet = null;
     this.settings = {};
     this.info = null;
     this.serverUrl = '';
