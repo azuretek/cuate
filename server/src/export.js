@@ -8,6 +8,12 @@
 // message ROWID order costs one call per SWEEP_LIMIT messages whatever the chat count is. The chat list is read
 // once in full, so the document names every chat its messages belong to (issue 44). A message that belongs to no
 // chat is left out: it is no conversation's, so the document carries nothing it cannot name (issue 48).
+//
+// The engine answers one call at a time and does not stop working on a call the server has given up on, so a sweep
+// is the most expensive thing the server asks of it. Two sweeps at once pushed single pages past the engine timeout,
+// and a sweep whose client had gone kept paging for minutes, so every request behind either one timed out (issue 107).
+// One sweep runs at a time, a second is refused with a busy error rather than started, and a sweep stops at the next
+// page once its caller's signal aborts, so an abandoned export costs at most the page in flight.
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT, serverVersion } from './paths.js';
@@ -49,6 +55,11 @@ const SWEEP_LIMIT = 500;
 // 32-bit int, so no engine can overflow it.
 const CHAT_LIMIT = 1000000000;
 
+/** Thrown when an export is asked for while another is sweeping the engine. */
+export const EXPORT_RUNNING = 'export_running';
+/** Thrown when the caller's signal aborted the sweep before it finished. */
+export const EXPORT_ABANDONED = 'export_abandoned';
+
 export function createExporter({ engine, dataDir, log = null, now = () => new Date().toISOString(), pageSize = SWEEP_LIMIT, chatLimit = CHAT_LIMIT } = {}) {
   const limit = Math.min(SWEEP_LIMIT, Math.max(1, Math.trunc(pageSize) || SWEEP_LIMIT));
   const marker = path.join(dataDir, 'export.json');
@@ -67,6 +78,15 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
 
   const lastExport = () => { const m = lastMark(); return m ? m.exportedAt : null; };
 
+  // The one sweep allowed on the engine. It is taken before the first engine call and released only once the sweep's
+  // last call has settled, an abandoned one included, so a new export never overlaps the page an old one left in flight.
+  let running = false;
+  async function exclusive(fn) {
+    if (running) throw Object.assign(new Error('An export is already running. Try again when it has finished.'), { code: EXPORT_RUNNING });
+    running = true;
+    try { return await fn(); } finally { running = false; }
+  }
+
   // Where a run starts: the whole history, or the mark the last run left. A mark written before the cursor existed
   // has no rowid, so a since run sweeps from the start and filters on the mark's time instead; the run it writes
   // then carries the cursor, so that happens once.
@@ -81,15 +101,23 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
   // One sweep of the engine cursor. The engine may consume more physical rows than it returns while it coalesces
   // URL previews, so the cursor it hands back is the one to continue from, and a cursor that does not advance ends
   // the sweep rather than looping on it.
-  async function sweep({ from, cursor }) {
-    const chats = await engine.chats({ limit: chatLimit });
+  async function sweep({ from, cursor, signal = null }) {
+    const startedAt = Date.now();
     const messages = [];
     const attachments = new Map();
     let chatless = 0;
-    const startedAt = Date.now();
     let pages = 0;
     let rowid = cursor;
+    // Checked before every engine call: the call in flight when the caller goes away is the last one this sweep makes.
+    const stopIfAbandoned = () => {
+      if (!signal || !signal.aborted) return;
+      if (log) log.emit('export.abandoned', { mode: from ? 'since' : 'full', pages, messages: messages.length, ms: Date.now() - startedAt });
+      throw Object.assign(new Error('The export was abandoned by its caller.'), { code: EXPORT_ABANDONED });
+    };
+    stopIfAbandoned();
+    const chats = await engine.chats({ limit: chatLimit });
     for (;;) {
+      stopIfAbandoned();
       const t = Date.now();
       const page = await engine.after({ sinceRowid: rowid, limit });
       pages += 1;
@@ -134,14 +162,20 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
     return doc;
   }
 
-  async function collect({ mode = 'full', since = null } = {}) {
-    const { from, cursor } = plan(mode, since);
-    return check(document(await sweep({ from, cursor }), from));
+  async function collect({ mode = 'full', since = null, signal = null } = {}) {
+    return exclusive(async () => {
+      const { from, cursor } = plan(mode, since);
+      return check(document(await sweep({ from, cursor, signal }), from));
+    });
   }
 
   async function write(file, opts = {}) {
+    return exclusive(() => writeNow(file, opts));
+  }
+
+  async function writeNow(file, opts) {
     const { from, cursor } = plan(opts.mode || 'full', opts.since || null);
-    const swept = await sweep({ from, cursor });
+    const swept = await sweep({ from, cursor, signal: opts.signal || null });
     const doc = check(document(swept, from));
     mkdirSync(path.dirname(file), { recursive: true });
     const body = JSON.stringify(doc, null, 2) + '\n';
@@ -152,5 +186,5 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
     return { file, bytes, doc };
   }
 
-  return { collect, write, lastExport };
+  return { collect, write, lastExport, running: () => running };
 }
