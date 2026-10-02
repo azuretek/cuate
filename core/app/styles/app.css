@@ -248,3 +248,32 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
   .sheet, .sheet-scrim { animation: surface-scrim-in var(--motion-normal) ease-out both; }
   body.surface--leaving .sheet, body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-fast) ease-out both; }
 }
+
+/* The chat list's sort control sits beside the filter in the page header, its edit button beside it. The list's own
+   tools row keeps only the group row; the sort choices open under the icon. Every value is a token. */
+.sort-button, .edit-button { flex: none; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.sort-button:hover, .edit-button:hover { background: var(--color-bg-sunken); }
+.sort-button[aria-expanded="true"], .edit-button[aria-pressed="true"] { background: var(--color-selection); color: var(--color-fg); }
+.sort-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 4; }
+.sort-choice { display: flex; align-items: center; gap: var(--space-2); background: none; border: 0; color: var(--color-fg); text-align: left; cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.sort-choice:hover { background: var(--color-bg-sunken); }
+.sort-choice[aria-checked="true"] { color: var(--color-accent); font-weight: var(--font-weight-bold); }
+.sort-check { display: inline-block; width: var(--space-3); }
+
+/* The edit mode: a bar under the header with select-all, the count and the actions; each row carries a checkbox. */
+.edit-bar { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
+.edit-all { display: flex; align-items: center; gap: var(--space-2); color: var(--color-fg-muted); }
+.edit-count { color: var(--color-fg-muted); }
+.edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.selection-group, .selection-group-name { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
+.chat-check { flex: none; margin: 0; }
+.chat-row.checked { background: var(--color-selection); }
+.danger-button { background: var(--color-danger); color: var(--color-danger-fg); border: var(--size-border) solid var(--color-danger); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-3); cursor: pointer; }
+.danger-button:disabled, .chip:disabled { opacity: 0.4; cursor: default; }
+
+/* The confirm gate: a small dialog over a dim, naming what it removes and requiring its own press. */
+.confirm-scrim { position: fixed; inset: 0; z-index: 5; background: var(--color-scrim); }
+.confirm-modal { position: fixed; left: 0; right: 0; top: 50%; transform: translateY(-50%); z-index: 6; max-width: var(--size-onboarding); margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.confirm-modal h2 { margin: 0; font-size: var(--font-size-lg); }
+.confirm-modal p { margin: 0; color: var(--color-fg-muted); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }

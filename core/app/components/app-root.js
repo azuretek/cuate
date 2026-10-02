@@ -1,7 +1,12 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
-import { orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED } from '../rules/chats.js';
+import {
+  orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS,
+  sortChats, filterChats, setAllChecked, allChecked, checkedCount,
+  addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats,
+  requestDelete, requestDeleteGroup, resolveDelete,
+} from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled } from '../rules/notifications.js';
@@ -17,6 +22,7 @@ import './app-about.js';
 
 const API_VERSION = 1;
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
+const newGroupId = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const normalizeUrl = (u) => {
   const s = String(u || '').trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(s) ? s : 'https://' + s;
@@ -49,7 +55,10 @@ class AppRoot extends KitElement {
     // platform had a frame; maximized is the window's own state, which the shell reports.
     host: { state: true }, maximized: { state: true },
     // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
-    filters: { state: true }, filterOpen: { state: true },
+    filters: { state: true }, filterOpen: { state: true }, sortOpen: { state: true },
+    // The edit mode and its selection also live on the page: the list draws the checkboxes, the header selects all
+    // and acts on the count, and the confirm gate names what a delete will remove before it removes anything.
+    editing: { state: true }, checked: { state: true }, pendingDelete: { state: true },
   };
 
   constructor() {
@@ -82,6 +91,12 @@ class AppRoot extends KitElement {
     this.drag = null;
     this.filters = emptyFilters();
     this.filterOpen = false;
+    this.sortOpen = false;
+    this.editing = false;
+    this.checked = [];
+    this.pendingDelete = null;
+    // Escape dismisses the confirm modal, bound once so the same function is added and removed.
+    this.confirmKey = (event) => { if (event.key === 'Escape') { event.preventDefault(); this.cancelDelete(); } };
     // The custom properties last written from a theme, so a change removes the ones it no longer sets.
     this.themeApplied = [];
     this.schemeQuery = null;
@@ -598,12 +613,172 @@ class AppRoot extends KitElement {
     </div>`;
   }
 
+  // The sort choices the icon opens, the current one marked. Picking one writes it to the server through the page,
+  // the same setting the list has always read.
+  sortMenu() {
+    const current = this.settings['chats.sort'] || 'recent';
+    return html`<div class="sort-menu" role="menu" aria-label="Sort conversations">
+      ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${() => this.chooseSort(o)}>
+        <span class="sort-check" aria-hidden="true">${o === current ? '✓' : ''}</span>${SORT_LABELS[o]}
+      </button>`)}
+    </div>`;
+  }
+
+  chooseSort(sort) {
+    this.sortOpen = false;
+    this.setSetting({ key: 'chats.sort', value: sort });
+  }
+
+  // --- Edit mode. The page owns the selection, so the header can select all and act on the count, and a delete is
+  // held behind the confirm gate before anything is hidden. ---
+
+  chatHidden() {
+    const h = this.settings['chats.hidden'];
+    return Array.isArray(h) ? h : [];
+  }
+
+  // What the list is drawn from: the server's chats minus the ones this client has hidden.
+  visibleChats() {
+    const hidden = new Set(this.chatHidden());
+    return this.chats.filter((c) => !hidden.has(c.id));
+  }
+
+  // The rows an edit action can act on, computed with the same rules the list draws with, so the count and the rows
+  // can never disagree.
+  selectableIds() {
+    const sorted = sortChats(this.visibleChats(), { sort: this.settings['chats.sort'] || 'recent', order: this.chatOrder() });
+    const visible = filterChats(sorted, this.filters || emptyFilters(), { placement: this.chatPlacement() });
+    return visible.map((c) => c.id);
+  }
+
+  selectionCount() { return checkedCount(this.checked, this.selectableIds()); }
+
+  toggleEditing() {
+    this.editing = !this.editing;
+    this.checked = [];
+    this.filterOpen = false;
+    this.sortOpen = false;
+  }
+
+  exitEdit() {
+    this.editing = false;
+    this.checked = [];
+  }
+
+  setChecked(id, checked) {
+    this.checked = setAllChecked(this.checked, [id], checked === true);
+  }
+
+  toggleAllChecked() {
+    const ids = this.selectableIds();
+    this.checked = setAllChecked(this.checked, ids, !allChecked(this.checked, ids));
+  }
+
+  addSelectionToGroup(groupId) {
+    if (!groupId || !this.checked.length) return;
+    this.setSettings({ 'chats.placement': addChatsToGroup(this.chatPlacement(), this.checked, groupId) });
+    this.exitEdit();
+  }
+
+  newGroupFromSelection() {
+    const input = this.querySelector('.selection-group-name');
+    const name = String((input && input.value) || '').trim();
+    if (!name || !this.checked.length) return;
+    const { groups, placement } = groupFromSelection(this.chatGroups(), this.chatPlacement(), this.checked, { id: newGroupId(), name });
+    if (input) input.value = '';
+    this.setSettings({ 'chats.groups': groups, 'chats.placement': placement });
+    this.exitEdit();
+  }
+
+  // The first press opens the gate; only the modal's own press, a second one, resolves it. The modal is drawn only
+  // while a delete is pending, so a delete cannot complete without that press.
+  requestDeleteSelection() {
+    this.pendingDelete = requestDelete(this.checked);
+    this.holdConfirm();
+  }
+
+  requestGroupDelete(id, name) {
+    this.pendingDelete = requestDeleteGroup(id, name);
+    this.holdConfirm();
+  }
+
+  holdConfirm() {
+    if (!this.pendingDelete || typeof window === 'undefined') return;
+    window.addEventListener('keydown', this.confirmKey);
+    this.updateComplete.then(() => { const el = this.querySelector('.confirm-delete'); if (el) el.focus(); });
+  }
+
+  cancelDelete() {
+    this.pendingDelete = null;
+    if (typeof window !== 'undefined') window.removeEventListener('keydown', this.confirmKey);
+  }
+
+  confirmDeleteSelection() {
+    const pending = resolveDelete(this.pendingDelete, true);
+    this.cancelDelete();
+    if (!pending) return;
+    if (pending.kind === 'group') {
+      this.setSettings({ 'chats.groups': removeGroup(this.chatGroups(), pending.id), 'chats.placement': clearGroupPlacement(this.chatPlacement(), pending.id) });
+      return;
+    }
+    const forget = forgetChats(this.chatOrder(), this.chatPlacement(), pending.ids);
+    this.setSettings({ 'chats.hidden': hideChats(this.chatHidden(), pending.ids), 'chats.order': forget.order, 'chats.placement': forget.placement });
+    this.exitEdit();
+  }
+
+  // The header while editing: select-all, the count, and the group actions. Delete is held by the gate above.
+  editBar() {
+    if (!this.editing) return nothing;
+    const groups = this.chatGroups();
+    const ids = this.selectableIds();
+    const count = checkedCount(this.checked, ids);
+    const all = allChecked(this.checked, ids);
+    return html`<div class="edit-bar" role="group" aria-label="Edit conversations">
+      <label class="edit-all"><input type="checkbox" class="select-all" .checked=${all} .indeterminate=${count > 0 && !all} ?disabled=${ids.length === 0} @change=${() => this.toggleAllChecked()}> <span>Select all</span></label>
+      <span class="edit-count" role="status">${count} selected</span>
+      <div class="edit-actions">
+        <select class="selection-group" aria-label="Add to a group" ?disabled=${groups.length === 0}>
+          <option value="">Add to group</option>
+          ${groups.map((g) => html`<option value=${g.id}>${g.name}</option>`)}
+        </select>
+        <button type="button" class="chip" ?disabled=${groups.length === 0 || count === 0} @click=${() => this.addSelectionToGroup(this.querySelector('.selection-group').value)}>Add</button>
+        <input class="selection-group-name" type="text" placeholder="New group" aria-label="New group name">
+        <button type="button" class="chip" ?disabled=${count === 0} @click=${() => this.newGroupFromSelection()}>New group</button>
+        <button type="button" class="danger-button" ?disabled=${count === 0} @click=${() => this.requestDeleteSelection()}>Delete</button>
+      </div>
+    </div>`;
+  }
+
+  // The confirm gate drawn: it names what it will remove, says what it will not touch, and only its own Delete
+  // resolves it. Escape and Cancel leave everything as it was.
+  confirmModal() {
+    const pending = this.pendingDelete;
+    const isGroup = pending.kind === 'group';
+    const n = isGroup ? 1 : pending.ids.length;
+    const title = isGroup ? 'Delete the group "' + pending.name + '"?' : 'Delete ' + n + ' conversation' + (n === 1 ? '' : 's') + '?';
+    const body = isGroup
+      ? "The group leaves this client's list. Its conversations stay, and no message is deleted on the Mac."
+      : "They leave this client's list only. No message is deleted on the Mac.";
+    return html`<div class="confirm-scrim" @click=${() => this.cancelDelete()}></div>
+      <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <h2 id="confirm-title">${title}</h2>
+        <p>${body}</p>
+        <div class="confirm-actions">
+          <button type="button" class="chip" @click=${() => this.cancelDelete()}>Cancel</button>
+          <button type="button" class="danger-button confirm-delete" @click=${() => this.confirmDeleteSelection()}>Delete</button>
+        </div>
+      </section>`;
+  }
+
   sidebarHead() {
     const f = this.filters || emptyFilters();
     return html`<header class="sidebar-head">
       <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })}>
-      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${() => { this.filterOpen = !this.filterOpen; }}>≡</button>
+      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; }}>≡</button>
+      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; }}>⇅</button>
+      <button type="button" class="edit-button" aria-label=${this.editing ? 'Done editing' : 'Edit conversations'} aria-pressed=${this.editing ? 'true' : 'false'} @click=${() => this.toggleEditing()}>✎</button>
       <button type="button" class="gear-button" aria-label="Settings" @click=${() => this.openSettings()}>⚙</button>
+      ${this.sortOpen ? this.sortMenu() : nothing}
       ${this.filterOpen ? this.filterMenu() : nothing}
     </header>`;
   }
@@ -702,19 +877,23 @@ class AppRoot extends KitElement {
     return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
+        ${this.editBar()}
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
         ${this.activeFilters()}
-        <app-chat-list .chats=${this.chats} .selected=${this.openChatId}
+        <app-chat-list .chats=${this.visibleChats()} .selected=${this.openChatId}
           .sort=${this.settings['chats.sort'] || 'recent'} .groups=${this.chatGroups()}
           .placement=${this.chatPlacement()} .order=${this.chatOrder()} .filters=${this.filters}
+          .editing=${this.editing} .checked=${this.checked}
           @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
-          @sort=${(e) => this.setSetting({ key: 'chats.sort', value: e.detail.sort })}
+          @check=${(e) => this.setChecked(e.detail.id, e.detail.checked)}
+          @groupdelete=${(e) => this.requestGroupDelete(e.detail.id, e.detail.name)}
           @chatsettings=${(e) => this.setSettings(e.detail.patch)}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
       <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${() => this.updateAction(banner.action.command)}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
       ${this.sheetShowing ? html`<div class="sheet-scrim" @click=${() => this.closeView()}></div><section class="sheet" role="dialog" aria-modal="true" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section>` : nothing}
+      ${this.pendingDelete ? this.confirmModal() : nothing}
     </div>`;
   }
 }
