@@ -114,6 +114,8 @@ var engine = (() => {
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
     settingValue: () => settingValue,
+    settingsAfterRefusal: () => settingsAfterRefusal,
+    settingsAfterWrite: () => settingsAfterWrite,
     settingsFields: () => settingsFields,
     settingsGroups: () => settingsGroups,
     settlesOpen: () => settlesOpen,
@@ -1198,6 +1200,21 @@ var engine = (() => {
     if (field.type === "number") return Number(raw);
     if (field.type === "toggle") return raw === true || raw === "true";
     return String(raw);
+  }
+  function settingsAfterWrite(current, patch, answer) {
+    const out = { ...current };
+    for (const key of Object.keys(patch || {})) {
+      if (answer && Object.hasOwn(answer, key)) out[key] = answer[key];
+    }
+    return out;
+  }
+  function settingsAfterRefusal(current, before, patch) {
+    const out = { ...current };
+    for (const key of Object.keys(patch || {})) {
+      if (before && Object.hasOwn(before, key)) out[key] = before[key];
+      else delete out[key];
+    }
+    return out;
   }
   function mergeSettings(values = {}, schema = SETTINGS_SCHEMA) {
     const out = {};
