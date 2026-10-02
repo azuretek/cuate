@@ -223,7 +223,12 @@ async function runSmoke(w) {
   await js("(() => { const s = document.querySelector('app-settings select[data-key=\"appearance.skin\"]'); s.value = 'dark'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
   for (let i = 0; i < 50 && (await held())['appearance.skin'] !== 'dark'; i += 1) await pause(200);
   report.settingsWrote = (await held())['appearance.skin'] === 'dark';
-  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  // This step flaked on macOS (run 37000805003): the page's own answer to the skin write above landed after this
+  // change's event and put the old density back. The page now takes only the written keys from an answer
+  // (settingsAfterWrite), so a change made elsewhere survives a late answer, and this step is the live check of that.
+  // A refused write would leave the wait below timing out on a value that was never stored, so it fails here instead.
+  const densityWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  if (!densityWrite.ok) throw new Error('the server refused the density write: ' + densityWrite.status);
   await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
