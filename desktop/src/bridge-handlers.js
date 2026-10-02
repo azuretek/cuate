@@ -54,7 +54,7 @@ export function createSecureStore({ file, safeStorage, fs }) {
   };
 }
 
-export function createHandlers({ secure, notify, info, openExternal }) {
+export function createHandlers({ secure, notify, info, openExternal, configureUpdates = () => false }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -62,6 +62,8 @@ export function createHandlers({ secure, notify, info, openExternal }) {
     'app.info': async () => info(),
     notify: async ({ title, body }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500)),
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
+    // The page holds the server's settings, so it tells the shell whether a found release may be fetched on its own.
+    'updates.configure': async ({ autoDownload }) => configureUpdates(autoDownload === true),
   };
 }
 

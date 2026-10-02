@@ -90,6 +90,8 @@ class HostBridge(
             )
             "notify" -> success(notify(args))
             "open.external" -> success(openExternal(args))
+            // No self-updater on Android, so there is nothing to configure; the page ignores the answer.
+            "updates.configure" -> success(false)
             else -> failure("undeclared bridge command: " + name)
         }
     }

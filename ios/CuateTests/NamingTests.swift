@@ -15,7 +15,7 @@ final class NamingTests: XCTestCase {
     }
 
     func testTheBridgeAnswersExactlyTheHostBridgeSpec() {
-        let declared: Set<String> = ["storage.get", "storage.set", "storage.delete", "app.info", "notify", "open.external"]
+        let declared: Set<String> = ["storage.get", "storage.set", "storage.delete", "app.info", "notify", "open.external", "updates.configure"]
         XCTAssertEqual(HostBridge.commandNames(), declared)
     }
 
