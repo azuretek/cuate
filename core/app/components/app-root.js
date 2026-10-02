@@ -605,7 +605,7 @@ class AppRoot extends KitElement {
 
   // The settings page and the about page are sheets, so they are drawn by sheetBody and never in the main pane.
   sheetBody() {
-    if (this.view === 'about') return html`<app-about .info=${this.info} @back=${() => this.openSheet('settings')}></app-about>`;
+    if (this.view === 'about') return html`<app-about .info=${this.info} .host=${this.host} @back=${() => this.openSheet('settings')}></app-about>`;
     return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem}
       @setting=${(e) => this.setSetting(e.detail)} @signout=${() => this.signOut('')} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
   }

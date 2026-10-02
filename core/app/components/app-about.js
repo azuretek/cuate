@@ -1,32 +1,46 @@
-import { html } from '../../kit/lit.js';
+import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { aboutModel, bugReportBlock } from '../../kit/rules/build.js';
+import { copyToClipboard } from '../clipboard.js';
+import { BUILD_SPEC } from '../rules/build-spec.js';
 
-// The about page: everything it shows comes from the server's info route, so a version change in the repository
-// changes what it draws without the page being edited.
-const row = (label, value) => html`<div class="setting-row"><span class="setting-label">${label}</span><span class="setting-value">${value === undefined || value === null || value === '' ? 'Unknown' : value}</span></div>`;
+// The about page: every value comes from the half that owns it. The client's own build is what the shell reported on
+// app.info, the server's is what the server reported on its info route, and the rows and labels come from the one spec
+// in core/spec/build.json. The page never mixes the two, and it says plainly when the pair is not on one commit.
+const row = ({ label, value }) => html`<div class="setting-row"><span class="setting-label">${label}</span><span class="setting-value">${value}</span></div>`;
 
 class AppAbout extends KitElement {
-  static properties = { info: { attribute: false } };
+  static properties = { info: { attribute: false }, host: { attribute: false }, copied: { state: true } };
 
   constructor() {
     super();
     this.info = null;
+    this.host = null;
+    this.copied = '';
+  }
+
+  report() {
+    return aboutModel(BUILD_SPEC, this.host || {}, this.info || {});
+  }
+
+  async copy() {
+    const product = (this.host && this.host.product) || (this.info && this.info.product) || '';
+    const text = bugReportBlock(BUILD_SPEC, this.host || {}, this.info || {}, product);
+    const ok = await copyToClipboard(text);
+    this.copied = ok ? 'copied' : 'failed';
   }
 
   render() {
-    const info = this.info || {};
-    const engine = info.engine || {};
+    const { clientRows, serverRows, commit } = this.report();
     return html`<section class="page" aria-label="About">
       <header class="page-head"><button class="back" aria-label="Back" @click=${() => this.dispatchEvent(new CustomEvent('back'))}>←</button><h2 class="page-title">About</h2></header>
-      <div class="page-body"><div class="setting-group">
-        ${row('Product', info.product)}
-        ${row('Server version', info.serverVersion)}
-        ${row('API version', info.apiVersion)}
-        ${row('Engine', engine.kind)}
-        ${row('Engine version', engine.version)}
-        ${row('Sending', info.sending ? 'On' : 'Off')}
-        ${row('Epoch', info.epoch)}
-      </div></div>
+      <div class="page-body">
+        <div class="setting-group">${clientRows.map(row)}</div>
+        <div class="setting-group">${serverRows.map(row)}</div>
+        <p class="about-compare ${commit.state}">${commit.text}</p>
+        <button class="button primary about-copy" @click=${() => this.copy()}>${this.copied === 'copied' ? 'Copied' : 'Copy for a bug report'}</button>
+        ${this.copied === 'failed' ? html`<p class="problem">The clipboard is not available.</p>` : nothing}
+      </div>
     </section>`;
   }
 }
