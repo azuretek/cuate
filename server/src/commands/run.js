@@ -82,5 +82,10 @@ export default {
     restartServer = () => { stop('restart requested'); };
     process.on('SIGTERM', () => stop('SIGTERM'));
     process.on('SIGINT', () => stop('SIGINT'));
+    // A hooks change is read on SIGHUP, so adding or removing an endpoint never drops the connected clients. A config
+    // that no longer reads is reported and the endpoints the server already has are kept.
+    process.on('SIGHUP', () => {
+      try { srv.reloadHooks(loadConfig(dataDir)); } catch (e) { logger.emit('config.problem', { problem: String(e.message || e) }); }
+    });
   },
 };

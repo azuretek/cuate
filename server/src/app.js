@@ -2,17 +2,20 @@
 // in the Authorization header whose scope covers it. The routes themselves live one per module in ./routes, mounted
 // here by the id they declare in the spec.
 import http from 'node:http';
+import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
 import { createSender } from './send.js';
 import { createAttachments } from './attachments.js';
+import { createUploads } from './uploads.js';
 import { createSearch } from './search.js';
 import { createSettings } from './settings.js';
 import { loadRoutes } from './routes/index.js';
 import { allows as scopeAllows } from './scopes.js';
 import { createExporter } from './export.js';
 import { createWebhooks } from './webhooks.js';
+import { configPath, loadConfig, saveConfig } from './config.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
 const badRequest = (code, message, status = 400) => Object.assign(new Error(message), { status, code });
@@ -50,7 +53,7 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, webhookOptions = {} }) {
   const routes = compile(apiSpec.routes);
   const send = createSender({ engine, store, config, log });
   const previews = new Map();
@@ -59,6 +62,21 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const events = [];
   const clients = new Set();
   let seq = 0;
+  // An endpoint that keeps failing is switched off in the config file too, with why, so doctor and hooks list show
+  // it and a restart does not switch it back on.
+  const disableHook = (id, { reason, at, lastError }) => {
+    for (const e of (config.webhooks && config.webhooks.endpoints) || []) if (e.id === id) Object.assign(e, { active: false, disabledAt: at, disabledReason: reason, lastError });
+    if (!dataDir || !existsSync(configPath(dataDir))) return;
+    const saved = loadConfig(dataDir);
+    const e = saved.webhooks.endpoints.find((x) => x.id === id);
+    if (!e) return;
+    Object.assign(e, { active: false, disabledAt: at, disabledReason: reason, lastError });
+    saveConfig(dataDir, saved);
+  };
+  // The hooks hear exactly what a WebSocket client hears, from this one publish, so there is no second list of
+  // events to drift from the first.
+  const hookLog = log.child('webhook');
+  const webhooks = createWebhooks({ endpoints: (config.webhooks && config.webhooks.endpoints) || [], log: hookLog, onDisable: disableHook, ...webhookOptions });
 
   const publish = (name, data) => {
     seq += 1;
@@ -67,6 +85,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     if (events.length > 1000) events.shift();
     const frame = JSON.stringify({ type: 'event', ...ev });
     for (const c of clients) if (c.authed && c.ws.readyState === 1) c.ws.send(frame);
+    webhooks.enqueue(name, data);
   };
   engine.on((name, data) => {
     if (name === 'message.new') noteMessage(data.message);
@@ -168,11 +187,11 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   };
 
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
-  const webhooks = createWebhooks({ engine, endpoints: (config.webhooks && config.webhooks.endpoints) || [], log: log.child('webhook') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform,
     send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
+    uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),
     exporter,
@@ -360,6 +379,13 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     address: addr.address,
     epoch,
     publish,
+    webhooks,
+    /** Read the hook endpoints again from a new config, as the run command does on SIGHUP. */
+    reloadHooks(next) {
+      config.webhooks = next.webhooks;
+      webhooks.setEndpoints(next.webhooks.endpoints);
+      hookLog.emit('webhook.reloaded', { endpoints: next.webhooks.endpoints.length, active: next.webhooks.endpoints.filter((e) => e.active !== false).length });
+    },
     async close() {
       webhooks.close();
       clearInterval(beat);

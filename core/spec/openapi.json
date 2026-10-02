@@ -309,6 +309,53 @@
         }
       }
     },
+    "/api/v1/attachments": {
+      "post": {
+        "operationId": "upload",
+        "summary": "POST /api/v1/attachments",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "send",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/chats/{chatId}/read": {
       "post": {
         "operationId": "read",
@@ -694,6 +741,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -713,6 +761,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -732,6 +781,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -751,6 +801,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -770,6 +821,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -789,6 +841,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -854,6 +907,9 @@
           },
           "sending": {
             "type": "boolean"
+          },
+          "uploadMaxBytes": {
+            "type": "number"
           }
         },
         "required": [
@@ -864,7 +920,8 @@
           "serverPlatform",
           "epoch",
           "engine",
-          "sending"
+          "sending",
+          "uploadMaxBytes"
         ],
         "additionalProperties": false
       },
@@ -1109,6 +1166,25 @@
         },
         "required": [
           "clientKey"
+        ],
+        "additionalProperties": false
+      },
+      "UploadRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "data"
         ],
         "additionalProperties": false
       },
