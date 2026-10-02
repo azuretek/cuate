@@ -1,9 +1,11 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { boot, waitFor, openSocket } from './helpers.js';
-import { apiSpec, naming } from '../src/paths.js';
+import { openStore } from '../src/store.js';
+import { apiSpec, naming, serverVersion, serverCommit } from '../src/paths.js';
 import { validate } from '../../core/kit/rules/schema.js';
 import { createApiClient } from '../../core/kit/api.js';
 import { settingsGroups } from '../../core/app/rules/settings.js';
@@ -44,7 +46,11 @@ test('a first socket reloads a snapshot when an event arrived before authenticat
 test('health answers without a token', async () => {
   const r = await s.get('/healthz');
   assert.equal(r.status, 200);
-  conforms(await r.json(), 'Health');
+  const body = await r.json();
+  conforms(body, 'Health');
+  // The stamp, so an updater can tell which version answered without holding a token.
+  assert.equal(body.version, serverVersion);
+  assert.equal(body.commit, serverCommit);
 });
 
 test('every other route needs a token, and only in the Authorization header', async () => {
@@ -462,12 +468,12 @@ test('a setting written by one device is read back by another', async () => {
   const a = s.store.createToken('device', 'settings device a').token;
   const b = s.store.createToken('device', 'settings device b').token;
   conforms(await (await s.get('/api/v1/settings', a)).json(), 'Settings');
-  const w = await s.put('/api/v1/settings', a, { values: { 'appearance.skin': 'dark', 'appearance.textSize': 15 } });
+  const w = await s.put('/api/v1/settings', a, { values: { 'appearance.skin': 'dark', 'appearance.textScale': 150 } });
   assert.equal(w.status, 200);
   conforms(await w.json(), 'Settings');
   const read = await (await s.get('/api/v1/settings', b)).json();
   assert.equal(read.values['appearance.skin'], 'dark', 'the second device reads the same value');
-  assert.equal(read.values['appearance.textSize'], 15);
+  assert.equal(read.values['appearance.textScale'], 150);
   assert.equal((await s.put('/api/v1/settings', a, { values: { 'Bad Key': 1 } })).status, 400);
   assert.equal((await s.put('/api/v1/settings', s.tokens.tooling, { values: { 'appearance.skin': 'light' } })).status, 403, 'a tooling token cannot change settings');
 });
@@ -518,10 +524,109 @@ test('a settings change is broadcast over the event stream', async () => {
   const a = await openSocket(s.base);
   a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
   await waitFor(() => a.frames.some((f) => f.type === 'hello'));
-  await s.put('/api/v1/settings', s.tokens.device, { values: { 'appearance.density': 'compact' } });
+  await s.put('/api/v1/settings', s.tokens.device, { values: { 'appearance.textScale': 125 } });
   await waitFor(() => a.frames.some((f) => f.type === 'event' && f.name === 'settings.changed'));
   const ev = a.frames.find((f) => f.type === 'event' && f.name === 'settings.changed');
   conforms(ev.data, 'SettingsEvent');
-  assert.equal(ev.data.values['appearance.density'], 'compact');
+  assert.equal(ev.data.values['appearance.textScale'], 125);
   a.ws.close();
+});
+
+// Theme import by URL (issue 112). The theme is served from a loopback server this test owns, in the two shapes a
+// tweakcn URL can answer with: the registry JSON and the CSS export.
+async function themeHost(routes) {
+  const srv = http.createServer((req, res) => {
+    const r = routes[req.url];
+    if (!r) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('not found'); return; }
+    res.writeHead(r.status || 200, { 'content-type': r.type || 'application/json' });
+    res.end(r.body);
+  });
+  await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  return { base: 'http://127.0.0.1:' + srv.address().port, close: () => new Promise((resolve) => srv.close(resolve)) };
+}
+
+test('a theme given as a URL lands on the server, is offered to every client, and says what it refused', async () => {
+  const item = { name: 'harbour', title: 'Harbour', cssVars: { theme: { radius: '0.5rem' }, light: { background: '#f0f4ff', primary: '#1d4ed8', 'chart-1': '#000000' }, dark: { background: '#0b1020', primary: '#93c5fd' } } };
+  const host = await themeHost({ '/harbour.json': { body: JSON.stringify(item) }, '/plain.css': { type: 'text/css', body: ':root { --primary: #8a3b12; } .dark { --primary: #e0a070; }' } });
+  const a = s.store.createToken('device', 'theme url device a').token;
+  const b = s.store.createToken('device', 'theme url device b').token;
+  const sock = await openSocket(s.base);
+  try {
+    sock.ws.send(JSON.stringify({ type: 'auth', token: b }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    await s.put('/api/v1/settings', a, { values: { 'appearance.themes': null, 'appearance.theme': null } });
+    const r = await s.post('/api/v1/themes', a, { url: host.base + '/harbour.json' });
+    assert.equal(r.status, 200);
+    const out = await r.json();
+    conforms(out, 'ThemeImportResult');
+    assert.equal(out.theme.id, 'harbour');
+    assert.equal(out.theme.name, 'Harbour');
+    assert.equal(out.theme.url, host.base + '/harbour.json');
+    assert.equal(out.theme.color.light.accent, '#1d4ed8');
+    assert.equal(out.theme.color.dark.bg, '#0b1020');
+    assert.deepEqual(out.refused, ['chart-1'], 'what the theme could not carry is named in the answer');
+    assert.match(out.summary, /Refused: chart-1/);
+    const held = (await (await s.get('/api/v1/settings', b)).json()).values;
+    assert.deepEqual(held['appearance.themes'].map((t) => t.id), ['harbour'], 'another device reads the imported theme from the server');
+    assert.equal(held['appearance.theme'], null, 'an import offers the theme; it does not put it in force');
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'settings.changed' && f.data.values['appearance.themes']));
+    // The CSS export works the same way, and the name a request gives wins.
+    const css = await (await s.post('/api/v1/themes', a, { url: host.base + '/plain.css', name: 'Rust' })).json();
+    assert.equal(css.theme.id, 'rust');
+    assert.equal(css.theme.color.dark.accent, '#e0a070');
+    // The same URL again replaces its entry rather than adding a twin.
+    assert.equal((await s.post('/api/v1/themes', a, { url: host.base + '/harbour.json' })).status, 200);
+    assert.deepEqual((await (await s.get('/api/v1/settings', b)).json()).values['appearance.themes'].map((t) => t.id), ['harbour', 'rust']);
+  } finally {
+    sock.ws.close();
+    await host.close();
+  }
+});
+
+test('a bad theme URL, or a URL that is not a theme, is refused with the reason and saves nothing', async () => {
+  const host = await themeHost({ '/page.html': { type: 'text/html', body: '<html><body>A blog post about colours</body></html>' }, '/empty.json': { body: JSON.stringify({ name: 'x', cssVars: { light: { 'chart-1': '#000' } } }) }, '/huge.css': { type: 'text/css', body: ':root { --primary: #000; }' + ' '.repeat(300 * 1024) } });
+  const a = s.store.createToken('device', 'theme url refusals').token;
+  try {
+    await s.put('/api/v1/settings', a, { values: { 'appearance.themes': [{ id: 'kept', name: 'Kept', color: { light: {}, dark: {} } }] } });
+    const before = (await (await s.get('/api/v1/settings', a)).json()).values;
+    const cases = [
+      [{ url: 'not a url' }, 400, 'bad_url'],
+      [{ url: 'file:///etc/passwd' }, 400, 'bad_url'],
+      [{ url: 'ftp://example.com/theme.css' }, 400, 'bad_url'],
+      [{}, 400, 'bad_url'],
+      [{ url: host.base + '/missing.json' }, 400, 'theme_unreachable'],
+      [{ url: host.base + '/page.html' }, 400, 'bad_theme'],
+      [{ url: host.base + '/empty.json' }, 400, 'bad_theme'],
+      [{ url: host.base + '/huge.css' }, 400, 'too_large'],
+      [{ url: 'http://127.0.0.1:1/theme.json' }, 400, 'theme_unreachable'],
+      [{ url: host.base + '/page.html', extra: 1 }, 400, 'bad_body'],
+    ];
+    for (const [body, status, code] of cases) {
+      const r = await s.post('/api/v1/themes', a, body);
+      const err = await r.json();
+      assert.equal(r.status, status, JSON.stringify(body));
+      conforms(err, 'Error');
+      assert.equal(err.error.code, code, JSON.stringify(body));
+      assert.ok(err.error.message.length > 0, 'the refusal carries a reason');
+    }
+    assert.match((await (await s.post('/api/v1/themes', a, { url: host.base + '/missing.json' })).json()).error.message, /404/, 'the reason names what the URL answered');
+    assert.deepEqual((await (await s.get('/api/v1/settings', a)).json()).values['appearance.themes'], before['appearance.themes'], 'nothing was saved');
+    assert.equal((await s.post('/api/v1/themes', s.tokens.tooling, { url: host.base + '/page.html' })).status, 403, 'a tooling token cannot import a theme');
+  } finally {
+    await host.close();
+  }
+});
+
+test('the appearance choice survives a server restart', async () => {
+  const a = s.store.createToken('device', 'skin restart').token;
+  assert.equal((await s.put('/api/v1/settings', a, { values: { 'appearance.skin': 'light', 'appearance.textScale': 200 } })).status, 200);
+  // A second open of the same database is what the next process reads at boot.
+  const reopened = openStore(path.join(s.dir, 'state.db'));
+  try {
+    const values = reopened.getAllSettings();
+    assert.equal(values['appearance.skin'], 'light');
+    assert.equal(values['appearance.textScale'], 200);
+  } finally {
+    reopened.close();
+  }
 });

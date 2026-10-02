@@ -142,3 +142,80 @@
 :root[data-scheme="light"] {
   color-scheme: light;
 }
+[data-palette="default"] {
+  --color-bg: #faf9f7;
+  --color-bg-raised: #ffffff;
+  --color-bg-sunken: #efebe4;
+  --color-fg: #211e1a;
+  --color-fg-muted: #6e6960;
+  --color-border: #e8e4dc;
+  --color-accent: #bd4531;
+  --color-accent-fg: #ffffff;
+  --color-bubble-me: #bd4531;
+  --color-bubble-me-fg: #ffffff;
+  --color-bubble-sms: #166534;
+  --color-bubble-sms-fg: #ffffff;
+  --color-bubble-them: #f4f1ec;
+  --color-bubble-them-fg: #211e1a;
+  --color-danger: #b91c1c;
+  --color-warning: #92400e;
+  --color-selection: rgba(189, 69, 49, 0.12);
+  --color-banner: rgba(146, 64, 14, 0.10);
+  --color-unread: #bd4531;
+  --color-scrim: rgba(0, 0, 0, 0.44);
+  --color-danger-fg: #ffffff;
+  --color-scrollbar-thumb: rgba(110, 105, 96, 0.42);
+  --color-scrollbar-track: transparent;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme="light"]) [data-palette="default"] {
+    --color-bg: #0e1015;
+    --color-bg-raised: #161920;
+    --color-bg-sunken: #1f2330;
+    --color-fg: #f4f4f5;
+    --color-fg-muted: #8b8b94;
+    --color-border: #1e2028;
+    --color-accent: #ff5c5c;
+    --color-accent-fg: #0e1015;
+    --color-bubble-me: #ff5c5c;
+    --color-bubble-me-fg: #0e1015;
+    --color-bubble-sms: #22c55e;
+    --color-bubble-sms-fg: #0e1015;
+    --color-bubble-them: #191c24;
+    --color-bubble-them-fg: #f4f4f5;
+    --color-danger: #f87171;
+    --color-warning: #f59e0b;
+    --color-selection: rgba(255, 92, 92, 0.16);
+    --color-banner: rgba(245, 158, 11, 0.12);
+    --color-unread: #ff5c5c;
+    --color-scrim: rgba(0, 0, 0, 0.44);
+    --color-danger-fg: #0e1015;
+    --color-scrollbar-thumb: rgba(139, 139, 148, 0.42);
+    --color-scrollbar-track: transparent;
+  }
+}
+:root[data-scheme="dark"] [data-palette="default"] {
+  --color-bg: #0e1015;
+  --color-bg-raised: #161920;
+  --color-bg-sunken: #1f2330;
+  --color-fg: #f4f4f5;
+  --color-fg-muted: #8b8b94;
+  --color-border: #1e2028;
+  --color-accent: #ff5c5c;
+  --color-accent-fg: #0e1015;
+  --color-bubble-me: #ff5c5c;
+  --color-bubble-me-fg: #0e1015;
+  --color-bubble-sms: #22c55e;
+  --color-bubble-sms-fg: #0e1015;
+  --color-bubble-them: #191c24;
+  --color-bubble-them-fg: #f4f4f5;
+  --color-danger: #f87171;
+  --color-warning: #f59e0b;
+  --color-selection: rgba(255, 92, 92, 0.16);
+  --color-banner: rgba(245, 158, 11, 0.12);
+  --color-unread: #ff5c5c;
+  --color-scrim: rgba(0, 0, 0, 0.44);
+  --color-danger-fg: #0e1015;
+  --color-scrollbar-thumb: rgba(139, 139, 148, 0.42);
+  --color-scrollbar-track: transparent;
+}

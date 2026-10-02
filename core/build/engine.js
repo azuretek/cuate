@@ -31,6 +31,7 @@ var engine = (() => {
     INSTALL: () => INSTALL,
     LEVELS: () => LEVELS,
     MANUAL: () => MANUAL,
+    MAX_THEMES: () => MAX_THEMES,
     NONE: () => NONE,
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
@@ -45,13 +46,17 @@ var engine = (() => {
     SORT_LABELS: () => SORT_LABELS,
     SORT_ORDERS: () => SORT_ORDERS,
     STALL_MS: () => STALL_MS,
+    SWATCH_TOKENS: () => SWATCH_TOKENS,
+    TEXT_SCALES: () => TEXT_SCALES,
     THEME_GROUPS: () => THEME_GROUPS,
+    TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
     UNGROUPED: () => UNGROUPED,
     UNKNOWN: () => UNKNOWN,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
     aboutModel: () => aboutModel,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
+    addTheme: () => addTheme,
     allChecked: () => allChecked,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
@@ -98,6 +103,7 @@ var engine = (() => {
     groupSections: () => groupSections,
     hideChats: () => hideChats,
     importSummary: () => importSummary,
+    importTheme: () => importTheme,
     importTweakcn: () => importTweakcn,
     initials: () => initials,
     insertEmoji: () => insertEmoji,
@@ -120,6 +126,7 @@ var engine = (() => {
     newTraceparent: () => newTraceparent,
     noticeEnabled: () => noticeEnabled,
     openapiDocument: () => openapiDocument,
+    optionLabel: () => optionLabel,
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
     pick: () => pick,
@@ -129,12 +136,15 @@ var engine = (() => {
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     removeGroup: () => removeGroup,
+    removeTheme: () => removeTheme,
     renameGroup: () => renameGroup,
     reportRows: () => reportRows,
     requestDelete: () => requestDelete,
     requestDeleteGroup: () => requestDeleteGroup,
     resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
+    safeValue: () => safeValue,
+    sameTheme: () => sameTheme,
     screenFor: () => screenFor,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
@@ -149,8 +159,14 @@ var engine = (() => {
     sortChats: () => sortChats,
     stageCheck: () => stageCheck,
     stalledNotice: () => stalledNotice,
+    stampProblem: () => stampProblem,
     stripInlineObjects: () => stripInlineObjects,
     summarizeReactions: () => summarizeReactions,
+    swatchVars: () => swatchVars,
+    textScale: () => textScale,
+    textScaleVars: () => textScaleVars,
+    themeChoices: () => themeChoices,
+    themeId: () => themeId,
     themeName: () => themeName,
     themeVars: () => themeVars,
     toBase64: () => toBase64,
@@ -249,6 +265,7 @@ var engine = (() => {
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
+      themeImport: ({ url, name }) => call("POST", "/api/v1/themes", name ? { url, name } : { url }),
       async attachment(id, o = {}) {
         const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
@@ -471,7 +488,11 @@ var engine = (() => {
     lines.push("@media (prefers-color-scheme: dark) {", '  :root:not([data-scheme="light"]) {');
     lines.push(...colours(spec.color.dark, "    "), "  }", "}");
     lines.push(':root[data-scheme="dark"] {', "  color-scheme: dark;", ...colours(spec.color.dark, "  "), "}");
-    lines.push(':root[data-scheme="light"] {', "  color-scheme: light;", "}", "");
+    lines.push(':root[data-scheme="light"] {', "  color-scheme: light;", "}");
+    lines.push('[data-palette="default"] {', ...colours(spec.color.light, "  "), "}");
+    lines.push("@media (prefers-color-scheme: dark) {", '  :root:not([data-scheme="light"]) [data-palette="default"] {');
+    lines.push(...colours(spec.color.dark, "    "), "  }", "}");
+    lines.push(':root[data-scheme="dark"] [data-palette="default"] {', ...colours(spec.color.dark, "  "), "}", "");
     return lines.join("\n");
   }
 
@@ -484,6 +505,16 @@ var engine = (() => {
   function buildNumberOf(version) {
     const m = /(?:^|-)dev\.(\d+)(?:\.|$)/.exec(String(version || ""));
     return m ? m[1] : null;
+  }
+  function stampProblem(stamp) {
+    if (!stamp || typeof stamp !== "object") return "the stamp is not an object";
+    const { version, commit, channel, builtAt } = stamp;
+    if (!/^\d+\.\d+\.\d+(-dev\.\d+\.[a-f0-9]{10})?$/.test(String(version))) return "the version is not a release version: " + version;
+    if (!/^[a-f0-9]{40}$/.test(String(commit))) return "the commit is not a full commit id";
+    if (channelOf(version) === "dev" && !version.endsWith("." + commit.slice(0, 10))) return "the version does not name the commit";
+    if (channel !== channelOf(version)) return "the channel does not match the version";
+    if (missing(builtAt)) return "the build time is missing";
+    return null;
   }
   function installSource({ packaged, appImage, platform } = {}) {
     if (!packaged) return "source";
@@ -1285,6 +1316,221 @@ var engine = (() => {
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
   }
 
+  // core/app/rules/theme.js
+  var SCHEMES = ["light", "dark"];
+  var THEME_GROUPS = ["space", "radius", "font", "size", "motion", "shadow"];
+  function resolveScheme(preference, systemDark) {
+    if (preference === "light" || preference === "dark") return preference;
+    return systemDark ? "dark" : "light";
+  }
+  function cssVarName(group, key) {
+    return group === "color" ? `--color-${key}` : `--${group}-${key}`;
+  }
+  function themeVars(theme, scheme = "light") {
+    const out = [];
+    if (!theme || typeof theme !== "object") return out;
+    for (const group of THEME_GROUPS) {
+      const values = theme[group];
+      if (!values || typeof values !== "object") continue;
+      for (const [key, value] of Object.entries(values)) if (value !== null && value !== void 0 && safeValue(value)) out.push([cssVarName(group, key), String(value)]);
+    }
+    const colours = theme.color && theme.color[scheme];
+    if (colours && typeof colours === "object") {
+      for (const [key, value] of Object.entries(colours)) if (value !== null && value !== void 0 && safeValue(value)) out.push([cssVarName("color", key), String(value)]);
+    }
+    return out;
+  }
+  function themeName(theme) {
+    return theme && typeof theme === "object" && typeof theme.name === "string" ? theme.name : "";
+  }
+  var MAP = {
+    background: ["color", "bg"],
+    foreground: ["color", "fg"],
+    card: ["color", "bg-raised"],
+    muted: ["color", "bg-sunken"],
+    "muted-foreground": ["color", "fg-muted"],
+    border: ["color", "border"],
+    input: ["color", "border"],
+    primary: ["color", "accent"],
+    "primary-foreground": ["color", "accent-fg"],
+    secondary: ["color", "bubble-them"],
+    "secondary-foreground": ["color", "bubble-them-fg"],
+    destructive: ["color", "danger"],
+    accent: ["color", "selection"],
+    radius: ["radius", "md"],
+    "font-sans": ["font", "family"],
+    "font-mono": ["font", "mono"]
+  };
+  var REFUSE = {
+    popover: "the app draws no popover surface",
+    "popover-foreground": "the app draws no popover surface",
+    "card-foreground": "the app takes its words from fg, not a per-surface foreground",
+    "accent-foreground": "the app has no colour on the selection highlight",
+    ring: "the app derives its focus ring from accent",
+    "chart-1": "the app draws no charts",
+    "chart-2": "the app draws no charts",
+    "chart-3": "the app draws no charts",
+    "chart-4": "the app draws no charts",
+    "chart-5": "the app draws no charts",
+    "sidebar-background": "the app draws no sidebar block",
+    "sidebar-foreground": "the app draws no sidebar block",
+    "sidebar-primary": "the app draws no sidebar block",
+    "sidebar-primary-foreground": "the app draws no sidebar block",
+    "sidebar-accent": "the app draws no sidebar block",
+    "sidebar-accent-foreground": "the app draws no sidebar block",
+    "sidebar-border": "the app draws no sidebar block",
+    "sidebar-ring": "the app draws no sidebar block"
+  };
+  var DERIVE = {
+    primary: [["bubble-me"], ["unread"]],
+    "primary-foreground": [["bubble-me-fg"]]
+  };
+  function parseBlocks(text) {
+    const css = String(text).replace(/\/\*[\s\S]*?\*\//g, "");
+    const blocks = [];
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = match[1].trim().replace(/\s+/g, " ").toLowerCase();
+      const vars = {};
+      for (const decl of match[2].matchAll(/--([A-Za-z0-9-]+)\s*:\s*([^;]+);?/g)) vars[decl[1]] = decl[2].trim();
+      blocks.push({ selector, vars });
+    }
+    return blocks;
+  }
+  var UNSAFE = /[;{}<>\\]|url\s*\(|image(?:-set)?\s*\(|expression\s*\(|@import/i;
+  var MAX_VALUE = 200;
+  function safeValue(value) {
+    const v = String(value);
+    return v.length > 0 && v.length <= MAX_VALUE && !UNSAFE.test(v);
+  }
+  function schemeOf(selector) {
+    if (/(^|[\s,])[^,]*\.dark\b/.test(selector)) return "dark";
+    if (/:(:?root)\b|\bhtml\b|\bbody\b/.test(selector)) return "light";
+    return null;
+  }
+  function importTweakcn(text, { name = "tweakcn" } = {}) {
+    const accepted = [];
+    const refused = [];
+    const theme = { name, source: "tweakcn", color: { light: {}, dark: {} } };
+    for (const block of parseBlocks(text)) {
+      const scheme = schemeOf(block.selector);
+      for (const [raw, value] of Object.entries(block.vars)) {
+        if (Object.hasOwn(REFUSE, raw)) {
+          refused.push(raw);
+          continue;
+        }
+        const target = MAP[raw];
+        if (!target) {
+          refused.push(raw);
+          continue;
+        }
+        const [group, key] = target;
+        if (group === "color" && !scheme) {
+          refused.push(raw);
+          continue;
+        }
+        if (!safeValue(value)) {
+          refused.push(raw);
+          continue;
+        }
+        if (group === "color") theme.color[scheme][key] = value;
+        else (theme[group] ?? (theme[group] = {}))[key] = value;
+        accepted.push(raw);
+        for (const [extra] of DERIVE[raw] ?? []) {
+          if (group !== "color") break;
+          theme.color[scheme][extra] = value;
+          accepted.push(raw + " -> " + extra);
+        }
+      }
+    }
+    return { theme, accepted, refused };
+  }
+  function importSummary({ accepted = [], refused = [] } = {}) {
+    const carried = new Set(accepted.filter((a) => !a.includes(" -> "))).size;
+    const left = [...new Set(refused)];
+    if (carried === 0) return { ok: false, text: "Nothing in that text is a tweakcn theme this app can carry." };
+    const lead = "Imported " + carried + (carried === 1 ? " value." : " values.");
+    return { ok: true, text: left.length ? lead + " Refused: " + left.join(", ") + "." : lead + " Nothing refused." };
+  }
+  function registryCss(item) {
+    const vars = item && typeof item === "object" && item.cssVars;
+    if (!vars || typeof vars !== "object") return null;
+    const block = (selector, ...sources) => {
+      const lines = [];
+      for (const src of sources) {
+        if (!src || typeof src !== "object") continue;
+        for (const [k, v] of Object.entries(src)) if (/^[A-Za-z0-9-]+$/.test(k) && (typeof v === "string" || typeof v === "number")) lines.push("--" + k + ": " + v + ";");
+      }
+      return selector + " { " + lines.join(" ") + " }";
+    };
+    return block(":root", vars.theme, vars.light) + "\n" + block(".dark", vars.dark);
+  }
+  function importTheme(text, { name } = {}) {
+    const raw = String(text ?? "");
+    let item = null;
+    if (/^\s*\{/.test(raw)) {
+      try {
+        item = JSON.parse(raw);
+      } catch {
+        item = null;
+      }
+    }
+    const css = registryCss(item);
+    const given = typeof name === "string" && name.trim() ? name.trim() : "";
+    const fromItem = item && typeof item === "object" ? [item.title, item.name].find((v) => typeof v === "string" && v.trim()) : "";
+    return importTweakcn(css ?? raw, { name: (given || fromItem || "Imported theme").slice(0, 60) });
+  }
+  var MAX_THEMES = 24;
+  function themeId(name) {
+    const slug = String(name ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+    return slug || "theme";
+  }
+  function addTheme(list, theme) {
+    const held = Array.isArray(list) ? list.filter((t) => t && typeof t === "object") : [];
+    const entry = { ...theme, id: theme.id || themeId(theme.name) };
+    const at = held.findIndex((t) => t.id === entry.id);
+    if (at >= 0) return { ok: true, themes: held.map((t, i) => i === at ? entry : t), theme: entry, replaced: true };
+    if (held.length >= MAX_THEMES) return { ok: false, reason: "The server already holds " + MAX_THEMES + " themes; remove one first." };
+    return { ok: true, themes: [...held, entry], theme: entry, replaced: false };
+  }
+  function removeTheme(list, id) {
+    return (Array.isArray(list) ? list : []).filter((t) => t && t.id !== id);
+  }
+  function sameTheme(a, b) {
+    if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+    if (a.id && b.id) return a.id === b.id;
+    return a.name === b.name && a.source === b.source;
+  }
+  function themeChoices(values = {}) {
+    const held = Array.isArray(values["appearance.themes"]) ? values["appearance.themes"].filter((t) => t && typeof t === "object") : [];
+    const current = values["appearance.theme"] && typeof values["appearance.theme"] === "object" ? values["appearance.theme"] : null;
+    const cards = [{ id: "default", name: "Default", theme: null, held: false, selected: !current }];
+    for (const t of held) cards.push({ id: t.id || themeId(t.name), name: themeName(t) || "Theme", theme: t, held: true, selected: sameTheme(t, current) });
+    if (current && !cards.some((c) => c.selected)) cards.push({ id: current.id || "current", name: themeName(current) || "Custom", theme: current, held: false, selected: true });
+    return cards;
+  }
+  var SWATCH_TOKENS = ["bg", "bg-raised", "fg", "accent", "bubble-me", "bubble-them"];
+  function swatchVars(theme, scheme = "light") {
+    const colours = theme && theme.color && theme.color[scheme];
+    if (!colours || typeof colours !== "object") return [];
+    return Object.entries(colours).filter(([, v]) => v !== null && v !== void 0 && safeValue(v)).map(([k, v]) => [cssVarName("color", k), String(v)]);
+  }
+  var TEXT_SCALES = [50, 75, 100, 125, 150, 200, 300];
+  var TYPE_SIZE_VARS = ["--font-size-xs", "--font-size-sm", "--font-size-md", "--font-size-lg", "--font-size-xl"];
+  function textScale(value) {
+    const n = Number(value);
+    return TEXT_SCALES.includes(n) ? n : 100;
+  }
+  function textScaleVars(percent, base = {}) {
+    const p = textScale(percent);
+    if (p === 100) return [];
+    const out = [];
+    for (const name of TYPE_SIZE_VARS) {
+      const value = String(base[name] ?? "").trim();
+      if (value) out.push([name, "calc(" + value + " * " + p / 100 + ")"]);
+    }
+    return out;
+  }
+
   // core/app/rules/settings.js
   var SETTINGS_SCHEMA = {
     groups: [
@@ -1293,9 +1539,8 @@ var engine = (() => {
       { id: "updates", label: "Updates", description: "How a release this app finds is fetched." }
     ],
     keys: {
-      "appearance.skin": { group: "appearance", label: "Appearance", type: "choice", options: ["system", "light", "dark"], default: "system" },
-      "appearance.textSize": { group: "appearance", label: "Text size", type: "number", min: 11, max: 20, step: 1, default: 14 },
-      "appearance.density": { group: "appearance", label: "Density", type: "choice", options: ["comfortable", "compact"], default: "comfortable" },
+      "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
+      "appearance.textScale": { group: "appearance", label: "Text size", type: "scale", options: TEXT_SCALES, default: 100 },
       // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
       "notifications.newMessage": { group: "notifications", label: "New messages", type: "toggle", default: true },
       "notifications.updateAvailable": { group: "notifications", label: "Update available", type: "toggle", default: true },
@@ -1316,11 +1561,16 @@ var engine = (() => {
     const fallback = groups.length ? groups[0].id : null;
     return groups.map((g) => ({ id: g.id, label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
   }
+  function optionLabel(field, option) {
+    if (field.labels && Object.hasOwn(field.labels, option)) return field.labels[option];
+    if (field.type === "scale") return option + "%";
+    return String(option);
+  }
   function settingValue(field, values) {
     return values && Object.hasOwn(values, field.key) ? values[field.key] : field.default;
   }
   function coerceSetting(field, raw) {
-    if (field.type === "number") return Number(raw);
+    if (field.type === "number" || field.type === "scale") return Number(raw);
     if (field.type === "toggle") return raw === true || raw === "true";
     return String(raw);
   }
@@ -1384,132 +1634,6 @@ var engine = (() => {
   // core/app/rules/sheet.js
   function backdropReturns(startsOnBackdrop, endsOnBackdrop) {
     return startsOnBackdrop === true && endsOnBackdrop === true;
-  }
-
-  // core/app/rules/theme.js
-  var SCHEMES = ["light", "dark"];
-  var THEME_GROUPS = ["space", "radius", "font", "size", "motion", "shadow"];
-  function resolveScheme(preference, systemDark) {
-    if (preference === "light" || preference === "dark") return preference;
-    return systemDark ? "dark" : "light";
-  }
-  function cssVarName(group, key) {
-    return group === "color" ? `--color-${key}` : `--${group}-${key}`;
-  }
-  function themeVars(theme, scheme = "light") {
-    const out = [];
-    if (!theme || typeof theme !== "object") return out;
-    for (const group of THEME_GROUPS) {
-      const values = theme[group];
-      if (!values || typeof values !== "object") continue;
-      for (const [key, value] of Object.entries(values)) if (value !== null && value !== void 0) out.push([cssVarName(group, key), String(value)]);
-    }
-    const colours = theme.color && theme.color[scheme];
-    if (colours && typeof colours === "object") {
-      for (const [key, value] of Object.entries(colours)) if (value !== null && value !== void 0) out.push([cssVarName("color", key), String(value)]);
-    }
-    return out;
-  }
-  function themeName(theme) {
-    return theme && typeof theme === "object" && typeof theme.name === "string" ? theme.name : "";
-  }
-  var MAP = {
-    background: ["color", "bg"],
-    foreground: ["color", "fg"],
-    card: ["color", "bg-raised"],
-    muted: ["color", "bg-sunken"],
-    "muted-foreground": ["color", "fg-muted"],
-    border: ["color", "border"],
-    input: ["color", "border"],
-    primary: ["color", "accent"],
-    "primary-foreground": ["color", "accent-fg"],
-    secondary: ["color", "bubble-them"],
-    "secondary-foreground": ["color", "bubble-them-fg"],
-    destructive: ["color", "danger"],
-    accent: ["color", "selection"],
-    radius: ["radius", "md"],
-    "font-sans": ["font", "family"],
-    "font-mono": ["font", "mono"]
-  };
-  var REFUSE = {
-    popover: "the app draws no popover surface",
-    "popover-foreground": "the app draws no popover surface",
-    "card-foreground": "the app takes its words from fg, not a per-surface foreground",
-    "accent-foreground": "the app has no colour on the selection highlight",
-    ring: "the app derives its focus ring from accent",
-    "chart-1": "the app draws no charts",
-    "chart-2": "the app draws no charts",
-    "chart-3": "the app draws no charts",
-    "chart-4": "the app draws no charts",
-    "chart-5": "the app draws no charts",
-    "sidebar-background": "the app draws no sidebar block",
-    "sidebar-foreground": "the app draws no sidebar block",
-    "sidebar-primary": "the app draws no sidebar block",
-    "sidebar-primary-foreground": "the app draws no sidebar block",
-    "sidebar-accent": "the app draws no sidebar block",
-    "sidebar-accent-foreground": "the app draws no sidebar block",
-    "sidebar-border": "the app draws no sidebar block",
-    "sidebar-ring": "the app draws no sidebar block"
-  };
-  var DERIVE = {
-    primary: [["bubble-me"], ["unread"]],
-    "primary-foreground": [["bubble-me-fg"]]
-  };
-  function parseBlocks(text) {
-    const css = String(text).replace(/\/\*[\s\S]*?\*\//g, "");
-    const blocks = [];
-    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-      const selector = match[1].trim().replace(/\s+/g, " ").toLowerCase();
-      const vars = {};
-      for (const decl of match[2].matchAll(/--([A-Za-z0-9-]+)\s*:\s*([^;]+);?/g)) vars[decl[1]] = decl[2].trim();
-      blocks.push({ selector, vars });
-    }
-    return blocks;
-  }
-  function schemeOf(selector) {
-    if (/(^|[\s,])[^,]*\.dark\b/.test(selector)) return "dark";
-    if (/:(:?root)\b|\bhtml\b|\bbody\b/.test(selector)) return "light";
-    return null;
-  }
-  function importTweakcn(text, { name = "tweakcn" } = {}) {
-    const accepted = [];
-    const refused = [];
-    const theme = { name, source: "tweakcn", color: { light: {}, dark: {} } };
-    for (const block of parseBlocks(text)) {
-      const scheme = schemeOf(block.selector);
-      for (const [raw, value] of Object.entries(block.vars)) {
-        if (Object.hasOwn(REFUSE, raw)) {
-          refused.push(raw);
-          continue;
-        }
-        const target = MAP[raw];
-        if (!target) {
-          refused.push(raw);
-          continue;
-        }
-        const [group, key] = target;
-        if (group === "color" && !scheme) {
-          refused.push(raw);
-          continue;
-        }
-        if (group === "color") theme.color[scheme][key] = value;
-        else (theme[group] ?? (theme[group] = {}))[key] = value;
-        accepted.push(raw);
-        for (const [extra] of DERIVE[raw] ?? []) {
-          if (group !== "color") break;
-          theme.color[scheme][extra] = value;
-          accepted.push(raw + " -> " + extra);
-        }
-      }
-    }
-    return { theme, accepted, refused };
-  }
-  function importSummary({ accepted = [], refused = [] } = {}) {
-    const carried = new Set(accepted.filter((a) => !a.includes(" -> "))).size;
-    const left = [...new Set(refused)];
-    if (carried === 0) return { ok: false, text: "Nothing in that text is a tweakcn theme this app can carry." };
-    const lead = "Imported " + carried + (carried === 1 ? " value." : " values.");
-    return { ok: true, text: left.length ? lead + " Refused: " + left.join(", ") + "." : lead + " Nothing refused." };
   }
 
   // core/app/rules/time.js

@@ -95,6 +95,7 @@ test('a handoff fills in the id, scope and name, and nothing else', () => {
 test('the info line names versions, the engine and the switch', () => {
   assert.equal(describeInfo({ serverVersion: '1.2.3', apiVersion: 1, sending: false, engine: { kind: 'imsg', version: '0.1', ready: true } }), 'server 1.2.3, API 1, engine imsg 0.1, sending off');
   assert.equal(describeInfo({ serverVersion: '1', apiVersion: 1, sending: true, engine: { kind: 'fake', ready: false } }), 'server 1, API 1, engine fake (not ready), sending on');
+  assert.equal(describeInfo({ serverVersion: '0.0.1-dev.9.abcdef0123', serverCommit: 'abcdef0123' + '4'.repeat(30), apiVersion: 1, sending: false, engine: { kind: 'fake' } }), 'server 0.0.1-dev.9.abcdef0123 (abcdef0123), API 1, engine fake, sending off');
 });
 
 test('token create hands the token to a command on stdin and never prints it', () => {
