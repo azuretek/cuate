@@ -1,5 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { boot, waitFor, openSocket } from './helpers.js';
 import { apiSpec, naming } from '../src/paths.js';
 import { validate } from '../../core/kit/rules/schema.js';
@@ -186,6 +188,68 @@ test('a file send goes out once, and an unknown or malformed file is refused', a
   assert.equal(unknown.status, 404);
   assert.equal((await unknown.json()).error.code, 'attachment_unknown');
   assert.equal((await s.post(route(1), s.tokens.device, { clientKey: 'key-file-0004' })).status, 400);
+});
+
+test('emoji survive the route, the engine and the store: the same code points come back in the history, the live event and the list preview', async () => {
+  const text = 'emoji \u{1F1EF}\u{1F1F5} \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} \u{1F44D}\u{1F3FF} \u{2764}\u{FE0F}';
+  const a = await openSocket(s.base);
+  a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
+  await waitFor(() => a.frames.some((f) => f.type === 'hello'));
+  const sent = await s.post(route(2), s.tokens.device, { text, clientKey: 'key-emoji-0001' });
+  assert.equal(sent.status, 201);
+  const { messageId } = await sent.json();
+  const isOurs = (f) => f.type === 'event' && f.name === 'message.new' && f.data.message.id === messageId;
+  await waitFor(() => a.frames.some(isOurs));
+  a.ws.close();
+  const live = a.frames.find(isOurs).data.message.text;
+  const history = (await (await s.get(route(2) + '?limit=50', s.tokens.device)).json()).messages.find((m) => m.id === messageId).text;
+  const chats = (await (await s.get('/api/v1/chats', s.tokens.device)).json()).chats;
+  const preview = chats.find((c) => c.id === '2').lastMessage.text;
+  for (const [where, got] of [['live', live], ['history', history], ['preview', preview]]) {
+    assert.deepEqual([...got].map((c) => c.codePointAt(0)), [...text].map((c) => c.codePointAt(0)), where);
+  }
+});
+
+test('a file from the device uploads, is sent by its id with a caption, and keeps its emoji name', async () => {
+  const bytes = Buffer.from('a synthetic photo, not a real one');
+  const name = 'beach \u{1F3D6}\u{FE0F}.jpg';
+  const up = await s.post('/api/v1/attachments', s.tokens.device, { name, mime: 'image/jpeg', data: bytes.toString('base64') });
+  assert.equal(up.status, 201);
+  const att = await up.json();
+  conforms(att, 'Attachment');
+  assert.equal(att.name, name);
+  assert.equal(att.bytes, bytes.length);
+  const held = s.store.getAttachment(att.id);
+  assert.ok(held.path.startsWith(s.dir), 'the upload lives in the server data folder');
+  assert.deepEqual(readFileSync(held.path), bytes, 'the same bytes come back from disk');
+  const count = s.world.sends.length;
+  const r = await s.post(route(1), s.tokens.device, { file: att.id, text: 'look \u{1F44B}\u{1F3FD}', clientKey: 'key-upload-001' });
+  assert.equal(r.status, 201);
+  assert.equal(s.world.sends.length, count + 1);
+  assert.equal(s.world.sends.at(-1).file, held.path);
+});
+
+test('an upload is refused when it is malformed, too large, or the token cannot send', async () => {
+  const ok = Buffer.from('x').toString('base64');
+  for (const body of [{ name: 'a.txt' }, { name: 'a.txt', data: 'not base64!' }, { name: '', data: ok }, { name: 'a.txt', data: ok, extra: 1 }, { name: 'a.txt', data: '' }]) {
+    assert.equal((await s.post('/api/v1/attachments', s.tokens.device, body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal((await s.post('/api/v1/attachments', s.tokens.tooling, { name: 'a.txt', data: ok })).status, 403);
+  const big = Buffer.alloc(apiSpec.uploads.maxBytes + 1).toString('base64');
+  const r = await s.post('/api/v1/attachments', s.tokens.device, { name: 'big.bin', data: big });
+  assert.equal(r.status, 413);
+});
+
+test('an upload name is one path segment, so it cannot leave the uploads folder', async () => {
+  const up = await (await s.post('/api/v1/attachments', s.tokens.device, { name: '../../escape.txt', data: Buffer.from('x').toString('base64') })).json();
+  const held = s.store.getAttachment(up.id);
+  assert.equal(up.name, 'escape.txt');
+  assert.ok(held.path.startsWith(path.join(s.dir, 'uploads') + path.sep));
+});
+
+test('info reports the upload cap from the spec', async () => {
+  const info = await (await s.get('/api/v1/info', s.tokens.device)).json();
+  assert.equal(info.uploadMaxBytes, apiSpec.uploads.maxBytes);
 });
 
 test('an uncertain send is reported as uncertain and never retried', async () => {
