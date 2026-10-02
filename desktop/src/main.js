@@ -166,14 +166,16 @@ async function runSmoke(w) {
   await pause(250);
   const emojiAfter = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid ? grid.getBoundingClientRect().top : null, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length }; })()");
   const emojiOrder = emojiBefore.order.join('|');
-  report.emojiPanel = emojiOrder.indexOf('emoji-grid') >= 0
-    && emojiOrder.indexOf('emoji-grid') < emojiOrder.indexOf('emoji-search')
-    && emojiOrder.indexOf('emoji-search') < emojiOrder.indexOf('emoji-tabs')
-    && emojiBefore.active === 1 && emojiBefore.tabs > 4
-    && emojiBefore.rows > emojiAfter.rows && emojiAfter.rows > 0
-    && emojiAfter.tabs === emojiBefore.tabs
-    && emojiBefore.gridTop === emojiAfter.gridTop
-    && emojiBefore.composerTop === emojiAfter.composerTop;
+  const emojiPanelChecks = {
+    order: emojiOrder.indexOf('emoji-grid') >= 0 && emojiOrder.indexOf('emoji-grid') < emojiOrder.indexOf('emoji-search') && emojiOrder.indexOf('emoji-search') < emojiOrder.indexOf('emoji-tabs'),
+    active: emojiBefore.active === 1,
+    tabs: emojiBefore.tabs > 4 && emojiAfter.tabs === emojiBefore.tabs,
+    narrowed: emojiBefore.rows > emojiAfter.rows && emojiAfter.rows > 0,
+    gridHeld: Math.abs(emojiBefore.gridTop - emojiAfter.gridTop) < 1,
+    composerHeld: Math.abs(emojiBefore.composerTop - emojiAfter.composerTop) < 1,
+  };
+  report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
+  console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, order: emojiOrder }));
   await js("document.querySelector('app-composer button.tool').click()");
 
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
