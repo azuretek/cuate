@@ -1,0 +1,57 @@
+name: server artifact
+
+# The server's release artifact, built from one commit and one version like the desktop packages beside it: a
+# tarball of the server, the core it imports and its production dependencies, stamped by
+# scripts/gen-server-stamp.mjs; a manifest naming the version, the commit, the Node range and the SHA-256 of every
+# file; and the SHA-256 of the tarball. CI calls this on every pull request and push, and release.yml calls it for a
+# test release, whose publisher downloads the artifact and runs the same checks again before attaching it.
+#
+# The leg runs the server's own tests, builds, verifies the three files, then unpacks the verified bytes into a
+# scratch folder and boots them over the fake engine: the health route must name the version and commit the
+# manifest names. Nothing here receives a secret or a publishing token.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version scripts/release/version.mjs derived for this commit. The stamp refuses any other.
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  server:
+    name: server artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BUILD_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: The server's own tests
+        run: node --test --test-concurrency=1 "server/test/*.test.js"
+      - name: Build the tarball, its manifest and its digest
+        run: node scripts/release/server-artifact.mjs build server-assets
+      - name: Verify the digest, the manifest and every file
+        run: node scripts/release/server-artifact.mjs verify server-assets "$BUILD_VERSION" "$GITHUB_SHA"
+      - name: Boot the unpacked artifact over the fake engine
+        timeout-minutes: 3
+        run: node scripts/release/server-artifact.mjs smoke server-assets "$BUILD_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-release
+          path: server-assets
+          if-no-files-found: error
+          retention-days: 1

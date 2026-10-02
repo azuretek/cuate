@@ -42,7 +42,7 @@ export function prunePlan(releases, tag) {
 
 export function publish({ dir, version, sha, apply = false, gh = (args) => execFileSync('gh', args, { encoding: 'utf8', timeout: 120000 }) }) {
   if (!/^\d+\.\d+\.\d+-dev\.\d+\.[a-f0-9]{10}$/.test(version) || !/^[a-f0-9]{40}$/.test(sha) || !version.endsWith(sha.slice(0, 10))) throw new Error('Invalid snapshot identity');
-  const assets = verifyAssets(dir, version);
+  const assets = verifyAssets(dir, version, { commit: sha });
   const tag = 'v' + version;
   console.log(JSON.stringify({ repo: naming.repo, tag, sha, assets, apply }));
   if (!apply) return;
@@ -64,7 +64,7 @@ export function publish({ dir, version, sha, apply = false, gh = (args) => execF
     // repair in place rather than start over.
     if (existing && existing.draft) gh(['release', 'delete', tag, ...repo, '--yes']);
     if (!alreadyPublished) {
-      gh(['release', 'create', tag, ...repo, '--target', sha, '--draft', '--prerelease', '--title', tag, '--notes', 'Desktop test build of commit ' + sha + '. See docs/release.md for installation and update channels.']);
+      gh(['release', 'create', tag, ...repo, '--target', sha, '--draft', '--prerelease', '--title', tag, '--notes', 'Test build of commit ' + sha + ': the desktop apps and the server, one version. See docs/release.md for installation, update channels and verifying the server artifact.']);
       created = true;
       gh(['release', 'upload', tag, ...repo, ...assets.map((asset) => path.join(dir, asset))]);
       const draft = JSON.parse(gh(['release', 'view', tag, ...repo, '--json', 'databaseId']));
