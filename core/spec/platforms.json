@@ -3,7 +3,7 @@
   "platforms": {
     "macos": { "shell": "desktop", "runner": "macos-latest", "leg": "ci" },
     "windows": { "shell": "desktop", "runner": "windows-latest", "leg": "ci" },
-    "linux": { "shell": "desktop", "runner": "ubuntu-latest", "leg": "ci" },
+    "linux": { "shell": "desktop", "runner": "ubuntu-24.04", "leg": "ci" },
     "ios": { "shell": "phone", "pipeline": "ios", "leg": "gate" },
     "android": { "shell": "phone", "pipeline": "android", "leg": "gate" }
   }
