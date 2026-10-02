@@ -84,8 +84,9 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .tool { flex: none; width: var(--size-avatar); height: var(--size-avatar); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font-size: var(--font-size-lg); line-height: 1; cursor: pointer; }
 .tool:hover { background: var(--color-bg-sunken); }
 .tool:disabled { opacity: 0.4; cursor: default; }
-.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); max-height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); z-index: 3; }
-.emoji-search { width: 100%; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); outline: none; }
+/* One fixed height, so narrowing the grid never resizes the panel and never moves the composer below it. */
+.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); z-index: 3; }
+.emoji-search { flex: none; width: 100%; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); outline: none; }
 .emoji-search:focus { border-color: var(--color-accent); }
 .emoji-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); flex: none; }
 .emoji-tab { border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); font-size: var(--font-size-xs); padding: var(--space-1) var(--space-2); cursor: pointer; }
@@ -95,7 +96,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-grid { flex: 1; min-height: 0; }
 .emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
 .emoji-cell:hover { background: var(--color-bg-sunken); }
-.emoji-empty { padding: var(--space-3); text-align: center; }
+.emoji-empty { flex: 1; min-height: 0; padding: var(--space-3); text-align: center; }
 
 
 .onboarding-wrap { height: 100%; display: grid; place-items: center; padding: var(--space-5); }

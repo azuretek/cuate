@@ -155,6 +155,29 @@ async function runSmoke(w) {
   await pause(300);
   await shot('03-after-send.png');
 
+  // The emoji panel: the grid draws first, the search field and the categories sit below it, and the panel keeps one
+  // height, so typing a query narrows the grid without moving the composer or the grid's top edge. The order the eye
+  // reads is the order the keyboard walks: the grid, then the field, then the tabs.
+  await js("document.querySelector('app-composer button.tool').click()");
+  await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-grid'))");
+  await pause(250);
+  const emojiBefore = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); const panel = picker.querySelector('.emoji-picker'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid.getBoundingClientRect().top, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length, active: picker.querySelectorAll('.emoji-tab.active').length, order: [...panel.children].map((n) => n.className) }; })()");
+  await js("(() => { const f = document.querySelector('app-emoji-picker .emoji-search'); f.value = 'heart'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await pause(250);
+  const emojiAfter = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid ? grid.getBoundingClientRect().top : null, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length }; })()");
+  const emojiOrder = emojiBefore.order.join('|');
+  const emojiPanelChecks = {
+    order: emojiOrder.indexOf('emoji-grid') >= 0 && emojiOrder.indexOf('emoji-grid') < emojiOrder.indexOf('emoji-search') && emojiOrder.indexOf('emoji-search') < emojiOrder.indexOf('emoji-tabs'),
+    active: emojiBefore.active === 1,
+    tabs: emojiBefore.tabs > 4 && emojiAfter.tabs === emojiBefore.tabs,
+    narrowed: emojiBefore.rows > emojiAfter.rows && emojiAfter.rows > 0,
+    gridHeld: Math.abs(emojiBefore.gridTop - emojiAfter.gridTop) < 1,
+    composerHeld: Math.abs(emojiBefore.composerTop - emojiAfter.composerTop) < 1,
+  };
+  report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
+  console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, order: emojiOrder }));
+  await js("document.querySelector('app-composer button.tool').click()");
+
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
   const srv = process.env.SMOKE_SERVER_URL;
