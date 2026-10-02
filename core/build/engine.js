@@ -131,6 +131,7 @@ var engine = (() => {
     transferDetail: () => transferDetail,
     updateBanner: () => updateBanner,
     updateNotice: () => updateNotice,
+    updateNoticeKey: () => updateNoticeKey,
     validate: () => validate,
     verificationCheck: () => verificationCheck
   });
@@ -1244,6 +1245,10 @@ var engine = (() => {
     const key = "updates.autoDownload";
     if (!SETTINGS_SCHEMA.keys[key]) return false;
     return settingValue({ key, ...SETTINGS_SCHEMA.keys[key] }, settings) === true;
+  }
+  function updateNoticeKey(state, version) {
+    if (state !== "available" && state !== "ready") return null;
+    return state + ":" + (version ? String(version) : "");
   }
   function updateNotice(state, version, detail = null) {
     const v = version ? String(version) : "";

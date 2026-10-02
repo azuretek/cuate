@@ -40,6 +40,10 @@ if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 let win = null;
 // Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
 let updateControl = null;
+// The last update state the shell reported. The check at start can finish before the page is listening, and a reload
+// starts a page that heard nothing, so the state is told again once the page has loaded; the page announces a release
+// once, so hearing it twice raises one notice.
+let lastUpdateState = null;
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
@@ -225,8 +229,10 @@ async function runSmoke(w) {
   report.settingsWrote = (await held())['appearance.skin'] === 'dark';
   // This step flaked on macOS (run 37000805003): the page's own answer to the skin write above landed after this
   // change's event and put the old density back. The page now takes only the written keys from an answer
-  // (settingsAfterWrite), so a change made elsewhere survives a late answer.
-  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  // (settingsAfterWrite), so a change made elsewhere survives a late answer, and this step is the live check of that.
+  // A refused write would leave the wait below timing out on a value that was never stored, so it fails here instead.
+  const densityWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  if (!densityWrite.ok) throw new Error('the server refused the density write: ' + densityWrite.status);
   await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
@@ -357,10 +363,18 @@ async function runSmoke(w) {
   }
   report.phoneFits = phoneFits;
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
-  await pause(250);
+  await waitFor('window.innerWidth === 375', 5000);
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
   report.phoneSend = await js("(() => { const b = document.querySelector('app-composer button.send'); if (!b) return false; const s = getComputedStyle(b); const box = b.getBoundingClientRect(); const size = Math.min(box.width, box.height); const glyph = parseFloat(s.fontSize); return glyph >= 20 && glyph < size && parseInt(s.fontWeight, 10) >= 600 && size >= 36; })()");
-  report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
+  // The open drawer is read until it has settled, as the closed one is below. One read straight after the resize failed
+  // on the macOS arm64 runner while the screenshot taken next shows the drawer open, and the single boolean could not
+  // say which part it was, so each part is reported when the drawer never settles open.
+  const drawerParts = () => js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); return { back: getComputedStyle(document.querySelector('app-conversation .conv-back')).display, width: r.width, inner: window.innerWidth, scrim: getComputedStyle(document.querySelector('.scrim')).visibility, pane: document.querySelector('.shell').dataset.pane }; })()");
+  const drawerOpen = (d) => d.back !== 'none' && d.width > 0 && d.width < d.inner && d.scrim === 'visible';
+  let drawer = await drawerParts();
+  for (const t0 = Date.now(); !drawerOpen(drawer) && Date.now() - t0 < 3000; drawer = await drawerParts()) await pause(100);
+  report.phoneDrawer = drawerOpen(drawer);
+  if (!report.phoneDrawer) console.error('phone drawer: ' + JSON.stringify(drawer));
   await shot('07-phone-list.png');
   // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
@@ -455,6 +469,9 @@ function createWindow() {
   });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://bundle/')) e.preventDefault(); });
   win.on('closed', () => { win = null; });
+  win.webContents.on('did-finish-load', () => {
+    if (lastUpdateState && win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', lastUpdateState);
+  });
   if (SMOKE) {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     runSmoke(win).catch((e) => { console.error('smoke failed: ' + (e && e.message)); app.exit(1); });
@@ -480,7 +497,10 @@ app.whenReady().then(() => {
       packaged: app.isPackaged,
       appImage: Boolean(process.env.APPIMAGE),
       // The page owns the notice and the banner, so updates use the same bridge path the new message notices use.
-      onState: (state) => { if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state); },
+      onState: (state) => {
+        lastUpdateState = state;
+        if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state);
+      },
       logError: (message) => console.error(message),
     });
     app.once('before-quit', () => updateControl.stop());

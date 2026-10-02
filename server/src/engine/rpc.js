@@ -29,7 +29,9 @@ export function createRpc({ transport, timeoutMs = 30000 }) {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
-          reject(Object.assign(new Error('engine timed out on ' + method), { code: 'timeout' }));
+          // Giving up here does not stop the engine: it keeps working on the call, so the calls made after it can wait
+          // on it too, which is why one timeout tends to be followed by more (issue 107). The message says so.
+          reject(Object.assign(new Error('engine timed out on ' + method + ' after ' + ms + ' ms; the engine keeps working on it, so later calls may wait'), { code: 'timeout' }));
         }, ms);
         pending.set(id, { resolve, reject, timer });
         transport.write(JSON.stringify({ jsonrpc: '2.0', id, method, params: params || {} }));
