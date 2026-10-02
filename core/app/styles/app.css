@@ -187,3 +187,13 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .icon-button:disabled { opacity: 0.4; cursor: default; }
 .row-move { display: inline-flex; flex: none; }
 .list-empty, .section-empty { margin: 0; padding: var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
+
+/* Scrollbars: one set for the whole app, on the containers that scroll rather than one per component, so every
+   surface draws the same bar. The width, the thumb and the track come from tokens, so light and dark follow the
+   theme on their own. Only the two standard properties are used: a width on ::-webkit-scrollbar turns an overlay
+   scrollbar into a classic one, so a platform that draws overlay scrollbars would stop, while scrollbar-width and
+   scrollbar-color thin and tint the platform's own bar and leave that behaviour alone (issue 85). */
+app-chat-list, .messages, .page, .sheet, .emoji-row, .emoji-grid {
+  scrollbar-width: var(--size-scrollbar);
+  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+}
