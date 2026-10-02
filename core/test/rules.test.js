@@ -6,7 +6,7 @@ import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, delete
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal } from '../app/rules/settings.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
@@ -420,4 +420,23 @@ test('the emoji picker searches by name, keeps categories, and inserts whole cha
   assert.deepEqual(frequentEmoji([]), []);
   assert.equal(isEmoji('\u2728'), true);
   assert.equal(isEmoji('x'), false);
+});
+
+// The flake on run 37000805003: the page wrote the skin, a change to the density made at the server arrived on the
+// event stream, and then the skin write's answer (the whole store as it was before the density changed) landed and
+// was drawn wholesale, so the density went back to comfortable. The answer is taken for the written keys only.
+test('a late write answer never rolls back a change the event stream already delivered', () => {
+  const written = { 'appearance.skin': 'dark' };
+  const staleAnswer = { 'appearance.skin': 'dark', 'appearance.density': 'comfortable' };
+  const afterStream = { 'appearance.skin': 'dark', 'appearance.density': 'compact' };
+  assert.equal(staleAnswer['appearance.density'], 'comfortable', 'drawing the answer wholesale is what lost the change');
+  assert.deepEqual(settingsAfterWrite(afterStream, written, staleAnswer), afterStream, 'the streamed density survives the late answer');
+  assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, { 'appearance.skin': 'light' }), { 'appearance.skin': 'light' }, 'the server, not the page, decides a written key');
+  assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, undefined), { 'appearance.skin': 'dark' }, 'an empty answer keeps what the page holds');
+});
+
+test('a refused write rolls back only the keys it named', () => {
+  const before = { 'appearance.skin': 'system' };
+  const current = { 'appearance.skin': 'dark', 'appearance.density': 'compact', 'chats.order': ['a'] };
+  assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.density': 'compact' }, 'the named keys return to what they held, and one that did not exist is removed');
 });
