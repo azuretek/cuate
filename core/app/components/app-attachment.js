@@ -33,7 +33,7 @@ class AppAttachment extends KitElement {
 
   async load() {
     const a = this.attachment;
-    if (!a || a.missing || !isImage(a) || !this.client) return;
+    if (!a || a.local || a.missing || !isImage(a) || !this.client) return;
     try {
       const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined });
       if (this.attachment === a) this.src = URL.createObjectURL(blob);
@@ -49,7 +49,7 @@ class AppAttachment extends KitElement {
   render() {
     const a = this.attachment;
     if (!a) return nothing;
-    if (isImage(a) && !a.missing && !this.failed) {
+    if (isImage(a) && !a.local && !a.missing && !this.failed) {
       return this.src
         ? html`<img class=${'attachment-image' + (a.sticker ? ' sticker' : '')} src=${this.src} alt=${a.name} @load=${this.loaded}>`
         : html`<div class="attachment-image placeholder" role="img" aria-label="Loading image"></div>`;

@@ -40,6 +40,10 @@ if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 let win = null;
 // Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
 let updateControl = null;
+// The last update state the shell reported. The check at start can finish before the page is listening, and a reload
+// starts a page that heard nothing, so the state is told again once the page has loaded; the page announces a release
+// once, so hearing it twice raises one notice.
+let lastUpdateState = null;
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
@@ -189,7 +193,7 @@ async function runSmoke(w) {
   // The emoji panel: the grid draws first, the search field and the categories sit below it, and the panel keeps one
   // height, so typing a query narrows the grid without moving the composer or the grid's top edge. The order the eye
   // reads is the order the keyboard walks: the grid, then the field, then the tabs.
-  await js("document.querySelector('app-composer button.tool').click()");
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
   await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-grid'))");
   await pause(250);
   const emojiBefore = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); const panel = picker.querySelector('.emoji-picker'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid.getBoundingClientRect().top, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length, active: picker.querySelectorAll('.emoji-tab.active').length, order: [...panel.children].map((n) => n.className) }; })()");
@@ -207,7 +211,32 @@ async function runSmoke(w) {
   };
   report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
   console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, order: emojiOrder }));
-  await js("document.querySelector('app-composer button.tool').click()");
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
+
+  // The attach menu (issue 72): the attach button sits beside the emoji button, opens a short menu upward from the
+  // composer rather than a sheet, and a file picked there stages above the field, uploads, and sends with its caption.
+  // The file is handed to the input the way the system picker would, since a smoke cannot drive the OS dialog.
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
+  await waitFor("Boolean(document.querySelector('app-composer .attach-menu'))");
+  const attachMenu = await js("(() => { const c = document.querySelector('app-composer'); const menu = c.querySelector('.attach-menu'); const tools = [...c.querySelectorAll('.composer-tools button.tool')].map((b) => b.getAttribute('aria-label')); return { tools, items: [...menu.querySelectorAll('[role=menuitem]')].map((b) => b.textContent.trim()), above: menu.getBoundingClientRect().bottom <= c.querySelector('form').getBoundingClientRect().top + 1, sheet: menu.getBoundingClientRect().width >= window.innerWidth }; })()");
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
+  const ATTACH_CAPTION = 'smoke caption \u{1F44B}\u{1F3FD}';
+  await js(`(() => { const c = document.querySelector('app-composer'); const input = c.querySelector('input[type=file]'); const dt = new DataTransfer(); dt.items.add(new File(['synthetic smoke file'], 'smoke-note.txt', { type: 'text/plain' })); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
+  await waitFor("Boolean(document.querySelector('app-composer .staged-file'))");
+  const staged = await js("document.querySelector('app-composer .staged-name').textContent");
+  await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${JSON.stringify(ATTACH_CAPTION)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes(${JSON.stringify(ATTACH_CAPTION)}) && r.textContent.includes('smoke-note.txt') && !r.dataset.id.startsWith('local:'))`, 20000);
+  const attachChecks = {
+    beside: attachMenu.tools.join('|') === 'Attach|Emoji',
+    items: attachMenu.items.length === 2,
+    above: attachMenu.above,
+    notSheet: !attachMenu.sheet,
+    staged: staged === 'smoke-note.txt',
+    cleared: await js("!document.querySelector('app-composer .staged-file')"),
+  };
+  report.attachMenu = Object.values(attachChecks).every(Boolean);
+  console.log('attach menu: ' + JSON.stringify({ checks: attachChecks, menu: attachMenu }));
+  await shot('03b-after-file-send.png');
 
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
@@ -267,6 +296,25 @@ async function runSmoke(w) {
   await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
   report.themeDark = true;
   report.theme = report.themeLight && report.themeDark;
+
+  // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
+  // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default
+  // clears it at the server. Values are checked at the server and in what the page resolves, not in the page's copy.
+  const importCss = ':root { --primary: #8a3b12; --chart-1: #000000; }\n.dark { --primary: #e0a070; }';
+  await js(`(() => { const s = document.querySelector('app-settings'); const n = s.querySelector('.theme-import-name'); n.value = 'smoke import'; n.dispatchEvent(new Event('input', { bubbles: true })); const t = s.querySelector('.theme-import-text'); t.value = ${JSON.stringify(importCss)}; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await waitFor("!document.querySelector('app-settings .theme-import-action').disabled");
+  await js("document.querySelector('app-settings .theme-import-action').click()");
+  for (let i = 0; i < 50 && (await held())['appearance.theme']?.name !== 'smoke import'; i += 1) await pause(200);
+  const imported = (await held())['appearance.theme'];
+  report.themeImportHeld = Boolean(imported) && imported.source === 'tweakcn' && imported.name === 'smoke import';
+  await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#e0a070'", 10000);
+  report.themeImportDrawn = true;
+  report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('chart-1'); })()");
+  await js("document.querySelector('app-settings [data-action=\"theme-default\"]').click()");
+  for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
+  report.themeImportCleared = (await held())['appearance.theme'] === null;
+  report.themeImport = report.themeImportHeld && report.themeImportDrawn && report.themeImportReported && report.themeImportCleared;
+  if (!report.themeImport) console.error('theme import: ' + JSON.stringify({ imported, held: report.themeImportHeld, reported: report.themeImportReported, cleared: report.themeImportCleared }));
 
   // Notices: an update state raises a native notice over the same bridge the message notices use, and a type the
   // server has switched off raises none. The shell records every notice it is asked to show.
@@ -340,10 +388,18 @@ async function runSmoke(w) {
   }
   report.phoneFits = phoneFits;
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
-  await pause(250);
+  await waitFor('window.innerWidth === 375', 5000);
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
   report.phoneSend = await js("(() => { const b = document.querySelector('app-composer button.send'); if (!b) return false; const s = getComputedStyle(b); const box = b.getBoundingClientRect(); const size = Math.min(box.width, box.height); const glyph = parseFloat(s.fontSize); return glyph >= 20 && glyph < size && parseInt(s.fontWeight, 10) >= 600 && size >= 36; })()");
-  report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
+  // The open drawer is read until it has settled, as the closed one is below. One read straight after the resize failed
+  // on the macOS arm64 runner while the screenshot taken next shows the drawer open, and the single boolean could not
+  // say which part it was, so each part is reported when the drawer never settles open.
+  const drawerParts = () => js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); return { back: getComputedStyle(document.querySelector('app-conversation .conv-back')).display, width: r.width, inner: window.innerWidth, scrim: getComputedStyle(document.querySelector('.scrim')).visibility, pane: document.querySelector('.shell').dataset.pane }; })()");
+  const drawerOpen = (d) => d.back !== 'none' && d.width > 0 && d.width < d.inner && d.scrim === 'visible';
+  let drawer = await drawerParts();
+  for (const t0 = Date.now(); !drawerOpen(drawer) && Date.now() - t0 < 3000; drawer = await drawerParts()) await pause(100);
+  report.phoneDrawer = drawerOpen(drawer);
+  if (!report.phoneDrawer) console.error('phone drawer: ' + JSON.stringify(drawer));
   await shot('07-phone-list.png');
   // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
@@ -438,6 +494,9 @@ function createWindow() {
   });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://bundle/')) e.preventDefault(); });
   win.on('closed', () => { win = null; });
+  win.webContents.on('did-finish-load', () => {
+    if (lastUpdateState && win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', lastUpdateState);
+  });
   if (SMOKE) {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     runSmoke(win).catch((e) => { console.error('smoke failed: ' + (e && e.message)); app.exit(1); });
@@ -463,7 +522,10 @@ app.whenReady().then(() => {
       packaged: app.isPackaged,
       appImage: Boolean(process.env.APPIMAGE),
       // The page owns the notice and the banner, so updates use the same bridge path the new message notices use.
-      onState: (state) => { if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state); },
+      onState: (state) => {
+        lastUpdateState = state;
+        if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state);
+      },
       logError: (message) => console.error(message),
     });
     app.once('before-quit', () => updateControl.stop());

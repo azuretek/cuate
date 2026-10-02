@@ -27,6 +27,7 @@
     "webhook.reloaded": { "level": "notice", "msg": "webhook endpoints reloaded", "fields": { "endpoints": "number", "active": "number" } },
     "export.written": { "level": "notice", "msg": "export written", "fields": { "mode": "string", "chats": "number", "messages": "number", "chatless": "number", "attachments": "number", "bytes": "number", "pages": "number", "ms": "number" } },
     "export.page": { "level": "debug", "msg": "export swept a page", "fields": { "mode": "string", "page": "number", "since_rowid": "number", "next_rowid": "number", "messages": "number", "ms": "number" } },
+    "export.abandoned": { "level": "notice", "msg": "export stopped: its caller went away", "fields": { "mode": "string", "pages": "number", "messages": "number", "ms": "number" } },
     "backup.written": { "level": "notice", "msg": "backup written", "fields": { "files": "number", "bytes": "number" } },
     "backup.restored": { "level": "notice", "msg": "backup restored", "fields": { "files": "number", "bytes": "number" } },
     "ui.state": { "level": "notice", "msg": "connection state", "fields": { "state": "string" } },

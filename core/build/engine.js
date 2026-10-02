@@ -21,6 +21,7 @@ var engine = (() => {
   // core/app/engine.js
   var engine_exports = {};
   __export(engine_exports, {
+    ATTACH_ACTIONS: () => ATTACH_ACTIONS,
     BUILD_SPEC: () => BUILD_SPEC,
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
@@ -81,6 +82,7 @@ var engine = (() => {
     graphemes: () => graphemes,
     groupMessages: () => groupMessages,
     groupSections: () => groupSections,
+    importSummary: () => importSummary,
     importTweakcn: () => importTweakcn,
     initials: () => initials,
     insertEmoji: () => insertEmoji,
@@ -89,6 +91,7 @@ var engine = (() => {
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
+    localAttachment: () => localAttachment,
     manualOrder: () => manualOrder,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
@@ -96,6 +99,7 @@ var engine = (() => {
     matchesSearch: () => matchesSearch,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
+    messageNotice: () => messageNotice,
     moveChat: () => moveChat,
     moveGroup: () => moveGroup,
     newTraceparent: () => newTraceparent,
@@ -120,16 +124,20 @@ var engine = (() => {
     settingsFields: () => settingsFields,
     settingsGroups: () => settingsGroups,
     settlesOpen: () => settlesOpen,
+    sizeLabel: () => sizeLabel,
     sortChats: () => sortChats,
+    stageCheck: () => stageCheck,
     stalledNotice: () => stalledNotice,
     stripInlineObjects: () => stripInlineObjects,
     summarizeReactions: () => summarizeReactions,
     themeName: () => themeName,
     themeVars: () => themeVars,
+    toBase64: () => toBase64,
     tokensCss: () => tokensCss,
     transferDetail: () => transferDetail,
     updateBanner: () => updateBanner,
     updateNotice: () => updateNotice,
+    updateNoticeKey: () => updateNoticeKey,
     validate: () => validate,
     verificationCheck: () => verificationCheck
   });
@@ -213,7 +221,8 @@ var engine = (() => {
       info: () => call("GET", "/api/v1/info"),
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
-      send: (chatId, { text, clientKey }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, clientKey }),
+      send: (chatId, { text, file, clientKey }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, file ? { text, file, clientKey } : { text, clientKey }),
+      upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
@@ -627,6 +636,45 @@ var engine = (() => {
       }
     }
   };
+
+  // core/app/rules/attach.js
+  var ATTACH_ACTIONS = [
+    { id: "media", label: "Photo or video", accept: "image/*,video/*" },
+    { id: "file", label: "File", accept: "" }
+  ];
+  var UNITS = ["B", "KB", "MB", "GB"];
+  function sizeLabel(bytes) {
+    let n = Math.max(0, Number(bytes) || 0);
+    let u = 0;
+    while (n >= 1024 && u < UNITS.length - 1) {
+      n /= 1024;
+      u += 1;
+    }
+    return (u === 0 || n >= 10 ? String(Math.round(n)) : n.toFixed(1)) + " " + UNITS[u];
+  }
+  function stageCheck(file, maxBytes) {
+    if (!file || !(Number(file.size) > 0)) return { ok: false, reason: "That file is empty." };
+    if (Number(maxBytes) > 0 && file.size > maxBytes) return { ok: false, reason: "That file is " + sizeLabel(file.size) + "; the server takes up to " + sizeLabel(maxBytes) + "." };
+    return { ok: true };
+  }
+  var ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  function toBase64(bytes) {
+    const out = [];
+    let i = 0;
+    for (; i + 2 < bytes.length; i += 3) {
+      const n = bytes[i] << 16 | bytes[i + 1] << 8 | bytes[i + 2];
+      out.push(ALPHABET[n >> 18 & 63] + ALPHABET[n >> 12 & 63] + ALPHABET[n >> 6 & 63] + ALPHABET[n & 63]);
+    }
+    if (i < bytes.length) {
+      const rest = bytes.length - i;
+      const n = bytes[i] << 16 | (rest === 2 ? bytes[i + 1] << 8 : 0);
+      out.push(ALPHABET[n >> 18 & 63] + ALPHABET[n >> 12 & 63] + (rest === 2 ? ALPHABET[n >> 6 & 63] : "=") + "=");
+    }
+    return out.join("");
+  }
+  function localAttachment(file) {
+    return { id: "local", name: String(file.name || "file"), mime: String(file.type || "application/octet-stream"), bytes: Number(file.size) || 0, sticker: false, missing: false, local: true };
+  }
 
   // core/app/rules/engine-imsg.js
   var TAPBACKS = /* @__PURE__ */ new Set(["love", "like", "dislike", "laugh", "emphasis", "question"]);
@@ -1244,6 +1292,10 @@ var engine = (() => {
     if (!SETTINGS_SCHEMA.keys[key]) return false;
     return settingValue({ key, ...SETTINGS_SCHEMA.keys[key] }, settings) === true;
   }
+  function updateNoticeKey(state, version) {
+    if (state !== "available" && state !== "ready") return null;
+    return state + ":" + (version ? String(version) : "");
+  }
   function updateNotice(state, version, detail = null) {
     const v = version ? String(version) : "";
     const why = detail ? String(detail) : null;
@@ -1251,6 +1303,10 @@ var engine = (() => {
     if (state === "ready") return { type: "updateReady", title: "Update ready", body: "Restart the app to install the downloaded update." };
     if (state === "error") return { type: "error", title: "Update failed", body: why || "The update could not be checked for or downloaded." };
     return null;
+  }
+  function messageNotice(title, m) {
+    const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
+    return { title, body: m.text || (count > 1 ? count + " attachments" : "Attachment") };
   }
 
   // core/app/rules/theme.js
@@ -1370,6 +1426,13 @@ var engine = (() => {
       }
     }
     return { theme, accepted, refused };
+  }
+  function importSummary({ accepted = [], refused = [] } = {}) {
+    const carried = new Set(accepted.filter((a) => !a.includes(" -> "))).size;
+    const left = [...new Set(refused)];
+    if (carried === 0) return { ok: false, text: "Nothing in that text is a tweakcn theme this app can carry." };
+    const lead = "Imported " + carried + (carried === 1 ? " value." : " values.");
+    return { ok: true, text: left.length ? lead + " Refused: " + left.join(", ") + "." : lead + " Nothing refused." };
   }
 
   // core/app/rules/time.js

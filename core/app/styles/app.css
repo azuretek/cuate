@@ -98,6 +98,17 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
 .emoji-cell:hover { background: var(--color-bg-sunken); }
 .emoji-empty { flex: 1; min-height: 0; padding: var(--space-3); text-align: center; }
+/* The attach menu: a short list opening upward beside the attach button, the reference's shape, not a sheet. */
+.attach-menu { position: absolute; left: var(--space-4); bottom: 100%; display: flex; flex-direction: column; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); z-index: 3; }
+.attach-item { border: 0; background: none; color: var(--color-fg); text-align: left; white-space: nowrap; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; }
+.attach-item:hover, .attach-item:focus-visible { background: var(--color-bg-sunken); outline: none; }
+/* A staged file sits above the field until it is sent or removed. */
+.composer-staged { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4) 0; }
+.staged-file { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); }
+.staged-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.staged-remove { flex: none; border: 0; background: none; color: var(--color-fg-muted); border-radius: var(--radius-pill); padding: 0 var(--space-2); cursor: pointer; }
+.staged-remove:hover { background: var(--color-bg-sunken); }
+.staged-problem { color: var(--color-danger); }
 
 
 .onboarding-wrap { height: 100%; display: grid; place-items: center; padding: var(--space-5); }
@@ -128,6 +139,11 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .setting-group-label + .setting-row { border-top: 0; }
 .setting-control { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); }
 .setting-control:focus { outline: none; border-color: var(--color-accent); }
+/* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
+.theme-import { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.theme-import-text { font-family: var(--font-mono); font-size: var(--font-size-sm); resize: vertical; }
+.theme-import-action { align-self: flex-start; }
+.theme-import-note { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); overflow-wrap: anywhere; }
 .conv-back { display: none; background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 
 /* The scrim behind the phone's drawer. Hidden wherever the sidebar is a column rather than a drawer. */
