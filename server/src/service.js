@@ -372,6 +372,25 @@ export async function applyIfInstalled({ dataDir, config, print = console.log, h
   return lastEvent(tailText(P.log), 'server.start', run) || {};
 }
 
+/**
+ * After a hooks change: tell a service that runs from this data folder to read its hook endpoints again (SIGHUP), so
+ * no client is dropped, and return the reload line it wrote. Null when no service runs from it here.
+ */
+export async function reloadIfInstalled({ dataDir, home = os.homedir(), seconds = 10 }) {
+  if (process.platform !== 'darwin') return null;
+  const P = servicePaths(home);
+  if (!existsSync(P.plist) || !readFileSync(P.plist, 'utf8').includes('<string>' + xml(dataDir) + '</string>')) return null;
+  if (!launchdState().loaded) return null;
+  const prev = lastEvent(tailText(P.log), 'webhook.reloaded');
+  const r = sh('/bin/launchctl', ['kill', 'SIGHUP', target()], { timeout: 15000 });
+  if (r.code !== 0) throw new Error('launchctl kill SIGHUP failed: ' + (r.err || r.out));
+  for (const t0 = Date.now(); Date.now() - t0 < seconds * 1000; await sleep(250)) {
+    const seen = lastEvent(tailText(P.log), 'webhook.reloaded');
+    if (seen && (!prev || seen.ts !== prev.ts)) return seen;
+  }
+  throw new Error('the service was sent SIGHUP but wrote no webhook.reloaded line within ' + seconds + ' seconds: run service restart');
+}
+
 /** Does a server answer, and read, for this token? One line per step, and never the token. */
 export async function check({ url, token, print = console.log }) {
   const base = url.replace(/\/+$/, '');
