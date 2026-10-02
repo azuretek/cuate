@@ -17,6 +17,7 @@
   --font-size-md: 14px;
   --font-size-lg: 16px;
   --font-size-xl: 20px;
+  --font-size-send: calc(var(--size-avatar) * 0.62);
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
   --font-weight-regular: 400;
   --font-weight-medium: 500;

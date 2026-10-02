@@ -64,6 +64,25 @@ test('the scrollbars are one set, on the containers that scroll', () => {
   for (const f of walk('core/app/components')) assert.equal(/scrollbar/i.test(read(f)), false, f + ' styles a scrollbar');
 });
 
+test('the send arrow takes its size and weight from tokens', () => {
+  // The arrow fills its circle by scaling with the button rather than by a size
+  // written into the markup: its font size is derived from the button's own size
+  // token and its weight is the bold token, so both follow a change to the button.
+  // The glyph itself stays an arrow in the template and carries no style of its own.
+  const tokens = json('core/spec/tokens.json');
+  const size = tokens.font['size-send'];
+  assert.equal(typeof size, 'string', 'the send glyph has a size token');
+  assert.match(size, /var\(--size-avatar\)/, 'the glyph scales with the button');
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = /\.send\s*\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the .send rule exists');
+  assert.match(rule[1], /font-size:\s*var\(--font-size-send\)/, 'the glyph size comes from its token');
+  assert.match(rule[1], /font-weight:\s*var\(--font-weight-bold\)/, 'the glyph weight comes from the bold token');
+  const markup = read('core/app/components/app-composer.js');
+  assert.ok(markup.includes('class="send"') && markup.includes('u2191'), 'the button still carries the arrow glyph');
+  assert.equal(/style=/.test(markup), false, 'the glyph carries no inline style');
+});
+
 test('the product name lives only where naming.json says', () => {
   const naming = json('core/spec/naming.json');
   const re = new RegExp(naming.slug, 'i');
