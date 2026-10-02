@@ -115,7 +115,7 @@ jobs:
         timeout-minutes: 10
         run: |
           set -eo pipefail
-          bash scripts/ci/install-display-packages.sh xvfb dbus-x11 gnome-keyring libsecret-1-0 fonts-noto-color-emoji
+          bash scripts/ci/install-display-packages.sh xvfb dbus-x11 gnome-keyring libsecret-1-0 fonts-noto-color-emoji imagemagick
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           eval "$(dbus-launch --sh-syntax)"
           echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
@@ -148,6 +148,24 @@ jobs:
         if: runner.os != 'Linux'
         timeout-minutes: 6
         run: pnpm --filter desktop exec electron scripts/prove-window-chrome.mjs --shots "${{ runner.temp }}/proof-window-chrome"
+      # The tray's own proof (desktop/scripts/prove-tray.mjs, issue 115): the menu the icon carries, as Electron resolves
+      # it, checked for its order; that menu captured as the platform draws it; and on macOS the template icon in the
+      # light and the dark menu bar. The captures go up as an artifact for the pull request.
+      - name: Prove the tray (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 4
+        run: xvfb-run -a -s "-screen 0 1280x800x24" pnpm --filter desktop exec electron scripts/prove-tray.mjs --shots "${{ runner.temp }}/proof-tray"
+      - name: Prove the tray (macOS, Windows)
+        if: runner.os != 'Linux'
+        timeout-minutes: 4
+        run: pnpm --filter desktop exec electron scripts/prove-tray.mjs --shots "${{ runner.temp }}/proof-tray"
+      - name: Keep the tray proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tray-proof-${{ matrix.os }}
+          path: ${{ runner.temp }}/proof-tray
+          if-no-files-found: warn
       - name: Keep the window chrome proof
         if: always()
         uses: actions/upload-artifact@v4
