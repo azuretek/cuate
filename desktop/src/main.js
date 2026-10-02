@@ -276,12 +276,19 @@ async function runSmoke(w) {
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
   const skinInput = (v) => "document.querySelector('app-settings input[data-key=\"appearance.skin\"][value=\"" + v + "\"]')";
+  // The page disables its controls while a write is in flight, and a click on a disabled radio does nothing (a
+  // dispatched change on the old select went through regardless), so a pick waits for the control to take input. A
+  // pick made while the previous write was still answering is what timed out on ubuntu (run 37066896432).
+  const clickSkin = async (v) => {
+    await waitFor('Boolean(' + skinInput(v) + ') && !' + skinInput(v) + '.disabled', 10000);
+    await js(skinInput(v) + '.click()');
+  };
   await waitFor("Boolean(document.querySelector('app-settings .segmented[data-key=\"appearance.skin\"]'))");
   const shown = await js("document.querySelector('app-settings input[data-key=\"appearance.skin\"]:checked')?.value");
   report.settingsRead = shown === ((await held())['appearance.skin'] || 'system');
   report.skinSwitch = await js("[...document.querySelectorAll('app-settings .segmented[data-key=\"appearance.skin\"] .segment')].map((l) => l.textContent.trim()).join('|')") === 'System|Light|Dark'
     && await js("!document.querySelector('app-settings select[data-key=\"appearance.skin\"]')");
-  await js(skinInput('dark') + '.click()');
+  await clickSkin('dark');
   for (let i = 0; i < 50 && (await held())['appearance.skin'] !== 'dark'; i += 1) await pause(200);
   report.settingsWrote = (await held())['appearance.skin'] === 'dark';
   // This step flaked on macOS (run 37000805003): the page's own answer to the skin write above landed after a change
@@ -333,7 +340,7 @@ async function runSmoke(w) {
   if (!report.surface) console.error('surface mismatches: ' + JSON.stringify(surfaceFound));
   // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
   // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
-  const pickSkin = (skin) => js(skinInput(skin) + '.click()');
+  const pickSkin = (skin) => clickSkin(skin);
   await putSettings({ 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
   await pickSkin('light');
   await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
@@ -356,6 +363,7 @@ async function runSmoke(w) {
   await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#e0a070'", 10000);
   report.themeImportDrawn = true;
   report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('chart-1'); })()");
+  await waitFor("!document.querySelector('app-settings [data-action=\"theme-default\"]').disabled", 10000);
   await js("document.querySelector('app-settings [data-action=\"theme-default\"]').click()");
   for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
   report.themeImportCleared = (await held())['appearance.theme'] === null;
