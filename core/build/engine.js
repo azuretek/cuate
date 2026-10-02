@@ -67,6 +67,7 @@ var engine = (() => {
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
+    matchesSearch: () => matchesSearch,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     moveChat: () => moveChat,
@@ -427,9 +428,12 @@ var engine = (() => {
   function chatSearchText(chat) {
     return [chatTitle(chat), (chat.participants || []).join(" "), chat.lastMessage && chat.lastMessage.text || ""].join(" ").toLowerCase();
   }
+  function matchesSearch(chat, query) {
+    const q = String(query || "").trim().toLowerCase();
+    return !q || chatSearchText(chat).includes(q);
+  }
   function filterChats(chats, filters = {}, { placement = {} } = {}) {
     const f = { ...emptyFilters(), ...filters };
-    const q = String(f.text || "").trim().toLowerCase();
     return chats.filter((c) => {
       if (f.unread && !(c.unread > 0)) return false;
       if (f.group) {
@@ -438,7 +442,7 @@ var engine = (() => {
       }
       if (f.kind === "direct" && c.isGroup) return false;
       if (f.kind === "group" && !c.isGroup) return false;
-      if (q && !chatSearchText(c).includes(q)) return false;
+      if (!matchesSearch(c, f.text)) return false;
       return true;
     });
   }

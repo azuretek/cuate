@@ -91,6 +91,27 @@ async function runSmoke(w) {
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
+  // The chats header is a search field, a filter icon and a gear, and no heading text or Settings text button.
+  report.header = await js("(() => { const h = document.querySelector('.sidebar-head'); if (!h) return false; const gone = !h.querySelector('.title') && !h.querySelector('.text-button') && !h.querySelector('h1'); return Boolean(h.querySelector('.chat-search') && h.querySelector('.filter-button') && h.querySelector('.gear-button') && gone); })()");
+  // Typing narrows the list live, by the chat's name and by its last message.
+  await js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = 'weekend'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await waitFor("document.querySelectorAll('.chat-row').length === 1 && document.querySelector('.chat-row .chat-name')?.textContent === 'Weekend plans'");
+  report.headerSearchName = true;
+  await js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = 'thank'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await waitFor("document.querySelectorAll('.chat-row').length === 1 && document.querySelector('.chat-row .chat-name')?.textContent === '+15555550142'");
+  report.headerSearchMessage = true;
+  await js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await waitFor("document.querySelectorAll('.chat-row').length >= 3");
+  // The filter icon opens a dropdown holding the filters, the filter in force shows as a clearable chip, and clearing
+  // the chip lifts it.
+  await js("document.querySelector('.sidebar-head .filter-button').click()");
+  await waitFor("Boolean(document.querySelector('.filter-menu'))");
+  await js("[...document.querySelectorAll('.filter-menu .chip')].find((c) => c.textContent.trim() === 'Unread').click()");
+  report.headerFilter = await js("Boolean(document.querySelector('.filter-menu .chip[aria-pressed=true]')) && Boolean(document.querySelector('.active-chip'))");
+  await js("document.querySelector('.active-chip .chip-clear').click()");
+  await waitFor("!document.querySelector('.active-chip')");
+  await js("document.querySelector('.sidebar-head .filter-button').click()");
+  report.header = report.header && report.headerSearchName && report.headerSearchMessage && report.headerFilter;
   nativeTheme.themeSource = 'light';
   await pause(400);
   await shot('01-conversation-light.png');
@@ -119,7 +140,7 @@ async function runSmoke(w) {
   const held = async () => (await (await fetch(srv + '/api/v1/settings', { headers: auth })).json()).values || {};
   const cdp = (method, params) => wc.debugger.sendCommand(method, params);
 
-  await js("document.querySelector('.sidebar-head .text-button').click()");
+  await js("document.querySelector('.sidebar-head .gear-button').click()");
   await waitFor("Boolean(document.querySelector('app-settings select[data-key=\"appearance.skin\"]'))");
   const shown = await js("document.querySelector('app-settings select[data-key=\"appearance.skin\"]').value");
   report.settingsRead = shown === ((await held())['appearance.skin'] || 'system');
@@ -235,7 +256,7 @@ async function runSmoke(w) {
   await pause(200);
 
   // Sign out lives on the settings page now.
-  await js("document.querySelector('.sidebar-head .text-button').click()");
+  await js("document.querySelector('.sidebar-head .gear-button').click()");
   await waitFor("Boolean(document.querySelector('app-settings [data-action=\"signout\"]'))");
   await js("document.querySelector('app-settings [data-action=\"signout\"]').click()");
   await waitFor("Boolean(document.querySelector('app-onboarding form'))");

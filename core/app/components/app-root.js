@@ -1,7 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
-import { orderChats, applyMessageToChats, chatTitle, emptyFilters } from '../rules/chats.js';
+import { orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
@@ -30,7 +30,7 @@ class AppRoot extends KitElement {
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
     // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
-    filters: { state: true },
+    filters: { state: true }, filterOpen: { state: true },
   };
 
   constructor() {
@@ -56,6 +56,7 @@ class AppRoot extends KitElement {
     this.client = null;
     this.drag = null;
     this.filters = emptyFilters();
+    this.filterOpen = false;
     // The custom properties last written from a theme, so a change removes the ones it no longer sets.
     this.themeApplied = [];
     this.schemeQuery = null;
@@ -433,6 +434,63 @@ class AppRoot extends KitElement {
     return Array.isArray(o) ? o : [];
   }
 
+  // The header is a search field, a filter menu and the gear that opens settings, and no label text at all. Filtering
+  // is a way of looking, so its state and its controls live on the page; the list only draws what it is handed.
+  setFilters(patch) {
+    this.filters = { ...this.filters, ...patch };
+  }
+
+  // Clearing one filter leaves the others alone.
+  clearFilter(key) {
+    const value = key === 'text' ? '' : key === 'unread' ? false : null;
+    this.setFilters({ [key]: value });
+  }
+
+  // The filters in force, drawn so a person sees what is narrowing the list and can clear one alone.
+  activeFilters() {
+    const f = this.filters || emptyFilters();
+    const chips = [];
+    if (f.unread) chips.push({ key: 'unread', label: 'Unread' });
+    if (f.kind) chips.push({ key: 'kind', label: f.kind === 'direct' ? 'Direct' : 'Group chats' });
+    if (f.group) {
+      const g = this.chatGroups().find((x) => x.id === f.group);
+      chips.push({ key: 'group', label: g ? g.name : 'Ungrouped' });
+    }
+    if (f.text) chips.push({ key: 'text', label: 'Search: ' + f.text });
+    if (!chips.length) return nothing;
+    return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${() => this.clearFilter(c.key)}>×</button></span>`)}</div>`;
+  }
+
+  // The dropdown the filter icon opens: everything filterChats supports, which is unread, direct, group chats and the
+  // person's own groups. A filter that is on reads as pressed, and pressing it again turns it off.
+  filterMenu() {
+    const f = this.filters || emptyFilters();
+    const groups = this.chatGroups();
+    const toggle = (key, value) => this.setFilters({ [key]: f[key] === value ? null : value });
+    return html`<div class="filter-menu" role="group" aria-label="Filter conversations">
+      <div class="filter-menu-row">
+        <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${() => this.setFilters({ unread: !f.unread })}>Unread</button>
+        <button type="button" class="chip" aria-pressed=${f.kind === 'direct' ? 'true' : 'false'} @click=${() => toggle('kind', 'direct')}>Direct</button>
+        <button type="button" class="chip" aria-pressed=${f.kind === 'group' ? 'true' : 'false'} @click=${() => toggle('kind', 'group')}>Group chats</button>
+      </div>
+      <div class="filter-menu-row">
+        <button type="button" class="chip" aria-pressed=${!f.group ? 'true' : 'false'} @click=${() => this.setFilters({ group: null })}>All groups</button>
+        ${groups.map((g) => html`<button type="button" class="chip" aria-pressed=${f.group === g.id ? 'true' : 'false'} @click=${() => toggle('group', g.id)}>${g.name}</button>`)}
+        <button type="button" class="chip" aria-pressed=${f.group === UNGROUPED ? 'true' : 'false'} @click=${() => toggle('group', UNGROUPED)}>Ungrouped</button>
+      </div>
+    </div>`;
+  }
+
+  sidebarHead() {
+    const f = this.filters || emptyFilters();
+    return html`<header class="sidebar-head">
+      <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })}>
+      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${() => { this.filterOpen = !this.filterOpen; }}>≡</button>
+      <button type="button" class="gear-button" aria-label="Settings" @click=${() => this.openSettings()}>⚙</button>
+      ${this.filterOpen ? this.filterMenu() : nothing}
+    </header>`;
+  }
+
   // The chat list's arrangement is written to the server in one patch, so a group and what it holds land together.
   async setSettings(patch) {
     if (!this.client || !patch) return;
@@ -472,15 +530,15 @@ class AppRoot extends KitElement {
     const sentence = connectionSentence(this.conn);
     return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown}>
       <aside class="sidebar" aria-label="Conversations">
-        <header class="sidebar-head"><h1 class="title">Chats</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
+        ${this.sidebarHead()}
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
+        ${this.activeFilters()}
         <app-chat-list .chats=${this.chats} .selected=${this.openChatId}
           .sort=${this.settings['chats.sort'] || 'recent'} .groups=${this.chatGroups()}
           .placement=${this.chatPlacement()} .order=${this.chatOrder()} .filters=${this.filters}
           @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
           @sort=${(e) => this.setSetting({ key: 'chats.sort', value: e.detail.sort })}
-          @filter=${(e) => { this.filters = e.detail.filters; }}
           @chatsettings=${(e) => this.setSettings(e.detail.patch)}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}

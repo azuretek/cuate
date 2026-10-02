@@ -16,7 +16,12 @@ app-root { display: block; height: 100%; }
 
 .shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
-.sidebar-head { display: flex; align-items: center; justify-content: space-between; height: var(--size-header); padding: 0 var(--space-4); flex: none; }
+.sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: var(--size-header); padding: 0 var(--space-4); flex: none; }
+.filter-button, .gear-button { flex: none; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.filter-button:hover, .gear-button:hover { background: var(--color-bg-sunken); }
+.filter-button[aria-expanded="true"] { background: var(--color-selection); color: var(--color-fg); }
+.filter-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 4; }
+.filter-menu-row { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .text-button { background: none; border: 0; color: var(--color-accent); cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 .text-button:hover { background: var(--color-bg-sunken); }
 .banner { margin: 0 var(--space-3) var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-banner); font-size: var(--font-size-sm); }
@@ -165,11 +170,11 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
   .shell[data-pane] .sidebar,
   .shell[data-pane] .scrim { transition: none; }
 }
-/* The chat list draws its own tools: the sort control, the filters in force, the search field and the groups. Every
-   colour and length comes from the tokens, as everywhere else. */
+/* The chat list draws its own tools: the sort control and the groups. The search field, the filter menu and the
+   settings gear draw in the page header, where the filters live. Every colour and length comes from the tokens. */
 .list-tools { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
 .list-tools-row { display: flex; align-items: center; gap: var(--space-2); }
-.sort-select, .kind-select, .group-filter, .row-group, .chat-search, .new-group-name, .group-rename { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
+.sort-select, .row-group, .chat-search, .new-group-name, .group-rename { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
 .chat-search { flex: 1; }
 .chip { background: var(--color-bg-raised); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); }
