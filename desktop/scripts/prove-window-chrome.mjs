@@ -75,6 +75,9 @@ async function draw(BrowserWindow, testCase) {
   const ready = await wc.executeJavaScript('new Promise((resolve) => { const done = () => Boolean(document.querySelector(".conv-head") && document.querySelector(".sidebar-head")); const t0 = Date.now(); const tick = () => { if (done()) return resolve(true); if (Date.now() - t0 > 5000) return resolve(false); setTimeout(tick, 20); }; tick(); })');
   if (!ready) throw new Error('the shell did not render the sidebar and contact header for ' + testCase.name);
   const measured = await wc.executeJavaScript(MEASURE);
+  // Capture the measured frame, not a stale paint: capturePage returns what was last painted, and the shell renders a
+  // moment before it is composited, so wait for two animation frames first.
+  await wc.executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))');
   const image = await wc.capturePage();
   window.destroy();
   return { measured, png: image.toPNG() };
@@ -114,6 +117,9 @@ async function main(app, BrowserWindow, protocol) {
     app.setPath('userData', PROFILE);
     app.disableHardwareAcceleration();
     await app.whenReady();
+    // Each case closes its window before the next one opens; without this, destroying the last window quits the app on
+    // Windows and Linux (macOS keeps running), so only the first case would ever be drawn.
+    app.on('window-all-closed', () => {});
     protocol.handle('app', serve);
     fs.mkdirSync(SHOTS, { recursive: true });
     for (const testCase of CASES) {
