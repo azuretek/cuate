@@ -21,6 +21,7 @@ var engine = (() => {
   // core/app/engine.js
   var engine_exports = {};
   __export(engine_exports, {
+    BUILD_SPEC: () => BUILD_SPEC,
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
@@ -40,17 +41,24 @@ var engine = (() => {
     STALL_MS: () => STALL_MS,
     THEME_GROUPS: () => THEME_GROUPS,
     UNGROUPED: () => UNGROUPED,
+    UNKNOWN: () => UNKNOWN,
+    aboutModel: () => aboutModel,
     addGroup: () => addGroup,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     autoDownloadEnabled: () => autoDownloadEnabled,
     availableBanner: () => availableBanner,
+    bugReportBlock: () => bugReportBlock,
+    buildNumberOf: () => buildNumberOf,
     capability: () => capability,
+    channelOf: () => channelOf,
     chatPreview: () => chatPreview,
     chatSearchText: () => chatSearchText,
     chatTitle: () => chatTitle,
     checksumMatches: () => checksumMatches,
+    clientReport: () => clientReport,
     coerceSetting: () => coerceSetting,
+    commitState: () => commitState,
     connectionSentence: () => connectionSentence,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
@@ -76,6 +84,7 @@ var engine = (() => {
     initials: () => initials,
     insertEmoji: () => insertEmoji,
     installPolicy: () => installPolicy,
+    installSource: () => installSource,
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
@@ -93,12 +102,14 @@ var engine = (() => {
     openapiDocument: () => openapiDocument,
     orderChats: () => orderChats,
     parseTraceparent: () => parseTraceparent,
+    pick: () => pick,
     placeChat: () => placeChat,
     policy: () => policy,
     progressFor: () => progressFor,
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     renameGroup: () => renameGroup,
+    reportRows: () => reportRows,
     resolveScheme: () => resolveScheme,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
@@ -428,6 +439,191 @@ var engine = (() => {
     lines.push(':root[data-scheme="light"] {', "  color-scheme: light;", "}", "");
     return lines.join("\n");
   }
+
+  // core/kit/rules/build.js
+  var UNKNOWN = "Unknown";
+  var missing = (v) => v === void 0 || v === null || v === "";
+  function channelOf(version) {
+    return /-/.test(String(version || "")) ? "dev" : "stable";
+  }
+  function buildNumberOf(version) {
+    const m = /(?:^|-)dev\.(\d+)(?:\.|$)/.exec(String(version || ""));
+    return m ? m[1] : null;
+  }
+  function installSource({ packaged, appImage, platform } = {}) {
+    if (!packaged) return "source";
+    if (appImage) return "AppImage";
+    if (platform === "darwin") return "disk image";
+    if (platform === "win32") return "installer";
+    return "package";
+  }
+  function clientReport(facts = {}) {
+    const version = facts.version;
+    const channel = facts.channel || channelOf(version);
+    const versions = facts.versions || {};
+    return {
+      product: facts.product,
+      version,
+      channel,
+      build: buildNumberOf(version),
+      commit: facts.commit || null,
+      builtAt: facts.builtAt || null,
+      electron: versions.electron || null,
+      chromium: versions.chrome || null,
+      node: versions.node || null,
+      platform: facts.platform || null,
+      arch: facts.arch || null,
+      packaged: Boolean(facts.packaged),
+      installSource: installSource(facts),
+      updateChannel: channel === "dev" ? "dev" : "latest"
+    };
+  }
+  function pick(source, dotted) {
+    return String(dotted).split(".").reduce((value, key) => value === void 0 || value === null ? value : value[key], source);
+  }
+  function reportRows(spec, half, source) {
+    const fields = spec && spec.halves && spec.halves[half] && spec.halves[half].fields || [];
+    return fields.map(({ key, label }) => {
+      const value = pick(source || {}, key);
+      return { key, label, value: missing(value) ? UNKNOWN : String(value) };
+    });
+  }
+  function commitState(report, serverReport) {
+    const client = report && report.commit ? String(report.commit) : null;
+    const server = serverReport && serverReport.serverCommit ? String(serverReport.serverCommit) : null;
+    const short = (value) => value.slice(0, 10);
+    if (client && server && client !== server) {
+      return { state: "mismatch", text: "The client and server are on different commits: the client is on " + short(client) + ", the server on " + short(server) + "." };
+    }
+    if (client && server) return { state: "match", text: "The client and server are on the same commit (" + short(client) + ")." };
+    return { state: "unknown", text: "The client and server commits cannot be compared." };
+  }
+  function aboutModel(spec, report, serverReport) {
+    return {
+      clientRows: reportRows(spec, "client", report || {}),
+      serverRows: reportRows(spec, "server", serverReport || {}),
+      commit: commitState(report, serverReport)
+    };
+  }
+  function bugReportBlock(spec, report, serverReport, product) {
+    const lines = [(product ? product : "Client") + " bug report"];
+    const section = (title, rows) => {
+      lines.push("", title);
+      for (const row of rows) lines.push("  " + row.label + ": " + row.value);
+    };
+    section("Client", reportRows(spec, "client", report || {}));
+    section("Server", reportRows(spec, "server", serverReport || {}));
+    lines.push("", "Compare", "  " + commitState(report, serverReport).text);
+    return lines.join("\n") + "\n";
+  }
+
+  // core/app/rules/build-spec.js
+  var BUILD_SPEC = {
+    "description": "The one owner of the build report the About page draws, and which half owns every value. The page renders one row per field from the half that owns it: the client's own build from the shell, the server's from the server. The desktop shell and the server each read this file, and the page reads its generated mirror, so a value is never written twice and a value can never come from the wrong half. core/test/build.test.js fails when either happens.",
+    "versionFile": "core/spec/version.json",
+    "halves": {
+      "client": {
+        "owner": "shell",
+        "source": "app.info",
+        "fields": [
+          {
+            "key": "version",
+            "label": "Client version"
+          },
+          {
+            "key": "channel",
+            "label": "Channel"
+          },
+          {
+            "key": "build",
+            "label": "Build"
+          },
+          {
+            "key": "commit",
+            "label": "Commit"
+          },
+          {
+            "key": "builtAt",
+            "label": "Built"
+          },
+          {
+            "key": "electron",
+            "label": "Electron"
+          },
+          {
+            "key": "chromium",
+            "label": "Chromium"
+          },
+          {
+            "key": "node",
+            "label": "Node"
+          },
+          {
+            "key": "platform",
+            "label": "Platform"
+          },
+          {
+            "key": "arch",
+            "label": "Architecture"
+          },
+          {
+            "key": "packaged",
+            "label": "Packaged"
+          },
+          {
+            "key": "installSource",
+            "label": "Installed from"
+          },
+          {
+            "key": "updateChannel",
+            "label": "Update channel"
+          }
+        ]
+      },
+      "server": {
+        "owner": "server",
+        "source": "GET /api/v1/info",
+        "fields": [
+          {
+            "key": "serverVersion",
+            "label": "Server version"
+          },
+          {
+            "key": "serverChannel",
+            "label": "Server channel"
+          },
+          {
+            "key": "serverBuild",
+            "label": "Server build"
+          },
+          {
+            "key": "serverCommit",
+            "label": "Server commit"
+          },
+          {
+            "key": "serverBuiltAt",
+            "label": "Server built"
+          },
+          {
+            "key": "engine.kind",
+            "label": "Engine"
+          },
+          {
+            "key": "engine.version",
+            "label": "Engine version"
+          },
+          {
+            "key": "serverPlatform",
+            "label": "Server platform"
+          },
+          {
+            "key": "apiVersion",
+            "label": "API version"
+          }
+        ]
+      }
+    }
+  };
 
   // core/app/rules/engine-imsg.js
   var TAPBACKS = /* @__PURE__ */ new Set(["love", "like", "dislike", "laugh", "emphasis", "question"]);

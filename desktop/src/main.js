@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { clientReport } from '../../core/kit/rules/build.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates } from './updates.js';
@@ -14,7 +15,15 @@ const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.re
 const naming = JSON.parse(readFileSync(path.join(CORE, 'spec/naming.json'), 'utf8'));
 const bridgeSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/host-bridge.json'), 'utf8'));
 const tokenSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/tokens.json'), 'utf8'));
+const versionSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/version.json'), 'utf8'));
 const version = app.getVersion();
+// The packaging step stamps the commit and the build date into the app's own package.json; a source run carries none.
+function buildStamp() {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'));
+    return { commit: pkg.buildCommit || null, builtAt: pkg.buildTime || null };
+  } catch { return {}; }
+}
 const SMOKE = process.env.SMOKE_OUT || '';
 // Every notice the shell is asked to show while smoking, so the smoke can prove one fired and one was suppressed.
 const smokeNotices = [];
@@ -40,7 +49,23 @@ const handlers = createHandlers({
     new Notification({ title, body }).show();
     return true;
   },
-  info: () => ({ product: naming.product, version, platform: process.platform }),
+  // The client's own half of the build report: the version the bundle carries, the runtime versions only the shell
+  // knows, and the commit and build date the packaging step stamped into the app. Nothing here reads the server.
+  info: () => {
+    const stamp = buildStamp();
+    return clientReport({
+      product: naming.product,
+      version,
+      channel: versionSpec.channel,
+      commit: stamp.commit || null,
+      builtAt: stamp.builtAt || null,
+      versions: process.versions,
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged,
+      appImage: Boolean(process.env.APPIMAGE),
+    });
+  },
   openExternal: (url) => {
     if (!/^https?:\/\//i.test(url)) return false;
     shell.openExternal(url);
@@ -289,7 +314,8 @@ async function runSmoke(w) {
   await waitFor("Boolean(document.querySelector('app-about'))");
   await pause(200);
   await shot('06-about.png');
-  report.about = await js("[...document.querySelectorAll('app-about .setting-row')].some((r) => r.textContent.includes('Server version'))");
+  // The client's own build and the server's, each from its own half, plus the one action that copies the lot.
+  report.about = await js("(() => { const rows = [...document.querySelectorAll('app-about .setting-row')].map((r) => r.textContent); return rows.some((t) => t.includes('Client version')) && rows.some((t) => t.includes('Server version')) && rows.some((t) => t.includes('Electron')) && Boolean(document.querySelector('app-about .about-copy')); })()");
   await js("document.querySelector('app-about .back').click()");
   await waitFor("Boolean(document.querySelector('app-settings'))");
   await js("document.querySelector('app-settings .back').click()");
