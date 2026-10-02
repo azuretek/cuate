@@ -6,6 +6,7 @@ import { boot, waitFor, openSocket } from './helpers.js';
 import { apiSpec, naming } from '../src/paths.js';
 import { validate } from '../../core/kit/rules/schema.js';
 import { createApiClient } from '../../core/kit/api.js';
+import { settingsGroups } from '../../core/app/rules/settings.js';
 
 const conforms = (v, type) => assert.deepEqual(validate(v, type, apiSpec.models), []);
 const route = (s) => '/api/v1/chats/' + s + '/messages';
@@ -471,6 +472,21 @@ test('a setting written by one device is read back by another', async () => {
   assert.equal((await s.put('/api/v1/settings', s.tokens.tooling, { values: { 'appearance.skin': 'light' } })).status, 403, 'a tooling token cannot change settings');
 });
 
+test('every notice switch and the automatic download setting is held on the server', async () => {
+  const a = s.store.createToken('device', 'notice device a').token;
+  const b = s.store.createToken('device', 'notice device b').token;
+  // The keys come from the settings schema's own sections, so a switch added there is held to this test too.
+  const keys = settingsGroups().filter((g) => g.id === 'notifications' || g.id === 'updates').flatMap((g) => g.fields.map((f) => f.key));
+  assert.ok(keys.includes('notifications.updateAvailable') && keys.includes('updates.autoDownload'), 'the sections name the switches');
+  for (const value of [false, true]) {
+    const values = Object.fromEntries(keys.map((k) => [k, k === 'updates.autoDownload' ? value : !value]));
+    assert.equal((await s.put('/api/v1/settings', a, { values })).status, 200);
+    // Read back from the server by another device, never from the writer's own copy.
+    const read = await (await s.get('/api/v1/settings', b)).json();
+    for (const k of keys) assert.equal(read.values[k], values[k], k + ' round-trips through the server');
+  }
+});
+
 test('a chat arrangement is held on the server and read back on a reconnect', async () => {
   const a = s.store.createToken('device', 'arrangement device a').token;
   const b = s.store.createToken('device', 'arrangement device b').token;
@@ -486,6 +502,16 @@ test('a chat arrangement is held on the server and read back on a reconnect', as
   assert.deepEqual(read.values['chats.groups'], groups);
   assert.deepEqual(read.values['chats.placement'], placement);
   assert.deepEqual(read.values['chats.order'], order);
+});
+
+test('a theme is held on the server as one setting, read back by another device and cleared with null', async () => {
+  const a = s.store.createToken('device', 'theme device a').token;
+  const b = s.store.createToken('device', 'theme device b').token;
+  const theme = { name: 'imported', source: 'tweakcn', color: { light: { accent: 'oklch(0.5 0.1 40)' }, dark: { accent: 'oklch(0.8 0.1 40)' } }, radius: { md: '0.5rem' } };
+  assert.equal((await s.put('/api/v1/settings', a, { values: { 'appearance.theme': theme } })).status, 200);
+  assert.deepEqual((await (await s.get('/api/v1/settings', b)).json()).values['appearance.theme'], theme, 'every client reads the theme the server holds');
+  assert.equal((await s.put('/api/v1/settings', b, { values: { 'appearance.theme': null } })).status, 200);
+  assert.equal((await (await s.get('/api/v1/settings', a)).json()).values['appearance.theme'], null, 'null puts every client back on the default tokens');
 });
 
 test('a settings change is broadcast over the event stream', async () => {

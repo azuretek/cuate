@@ -40,6 +40,10 @@ if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 let win = null;
 // Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
 let updateControl = null;
+// The last update state the shell reported. The check at start can finish before the page is listening, and a reload
+// starts a page that heard nothing, so the state is told again once the page has loaded; the page announces a release
+// once, so hearing it twice raises one notice.
+let lastUpdateState = null;
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
@@ -250,8 +254,10 @@ async function runSmoke(w) {
   report.settingsWrote = (await held())['appearance.skin'] === 'dark';
   // This step flaked on macOS (run 37000805003): the page's own answer to the skin write above landed after this
   // change's event and put the old density back. The page now takes only the written keys from an answer
-  // (settingsAfterWrite), so a change made elsewhere survives a late answer.
-  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  // (settingsAfterWrite), so a change made elsewhere survives a late answer, and this step is the live check of that.
+  // A refused write would leave the wait below timing out on a value that was never stored, so it fails here instead.
+  const densityWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  if (!densityWrite.ok) throw new Error('the server refused the density write: ' + densityWrite.status);
   await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
@@ -290,6 +296,25 @@ async function runSmoke(w) {
   await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
   report.themeDark = true;
   report.theme = report.themeLight && report.themeDark;
+
+  // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
+  // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default
+  // clears it at the server. Values are checked at the server and in what the page resolves, not in the page's copy.
+  const importCss = ':root { --primary: #8a3b12; --chart-1: #000000; }\n.dark { --primary: #e0a070; }';
+  await js(`(() => { const s = document.querySelector('app-settings'); const n = s.querySelector('.theme-import-name'); n.value = 'smoke import'; n.dispatchEvent(new Event('input', { bubbles: true })); const t = s.querySelector('.theme-import-text'); t.value = ${JSON.stringify(importCss)}; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await waitFor("!document.querySelector('app-settings .theme-import-action').disabled");
+  await js("document.querySelector('app-settings .theme-import-action').click()");
+  for (let i = 0; i < 50 && (await held())['appearance.theme']?.name !== 'smoke import'; i += 1) await pause(200);
+  const imported = (await held())['appearance.theme'];
+  report.themeImportHeld = Boolean(imported) && imported.source === 'tweakcn' && imported.name === 'smoke import';
+  await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#e0a070'", 10000);
+  report.themeImportDrawn = true;
+  report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('chart-1'); })()");
+  await js("document.querySelector('app-settings [data-action=\"theme-default\"]').click()");
+  for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
+  report.themeImportCleared = (await held())['appearance.theme'] === null;
+  report.themeImport = report.themeImportHeld && report.themeImportDrawn && report.themeImportReported && report.themeImportCleared;
+  if (!report.themeImport) console.error('theme import: ' + JSON.stringify({ imported, held: report.themeImportHeld, reported: report.themeImportReported, cleared: report.themeImportCleared }));
 
   // Notices: an update state raises a native notice over the same bridge the message notices use, and a type the
   // server has switched off raises none. The shell records every notice it is asked to show.
@@ -363,10 +388,18 @@ async function runSmoke(w) {
   }
   report.phoneFits = phoneFits;
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
-  await pause(250);
+  await waitFor('window.innerWidth === 375', 5000);
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
   report.phoneSend = await js("(() => { const b = document.querySelector('app-composer button.send'); if (!b) return false; const s = getComputedStyle(b); const box = b.getBoundingClientRect(); const size = Math.min(box.width, box.height); const glyph = parseFloat(s.fontSize); return glyph >= 20 && glyph < size && parseInt(s.fontWeight, 10) >= 600 && size >= 36; })()");
-  report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
+  // The open drawer is read until it has settled, as the closed one is below. One read straight after the resize failed
+  // on the macOS arm64 runner while the screenshot taken next shows the drawer open, and the single boolean could not
+  // say which part it was, so each part is reported when the drawer never settles open.
+  const drawerParts = () => js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); return { back: getComputedStyle(document.querySelector('app-conversation .conv-back')).display, width: r.width, inner: window.innerWidth, scrim: getComputedStyle(document.querySelector('.scrim')).visibility, pane: document.querySelector('.shell').dataset.pane }; })()");
+  const drawerOpen = (d) => d.back !== 'none' && d.width > 0 && d.width < d.inner && d.scrim === 'visible';
+  let drawer = await drawerParts();
+  for (const t0 = Date.now(); !drawerOpen(drawer) && Date.now() - t0 < 3000; drawer = await drawerParts()) await pause(100);
+  report.phoneDrawer = drawerOpen(drawer);
+  if (!report.phoneDrawer) console.error('phone drawer: ' + JSON.stringify(drawer));
   await shot('07-phone-list.png');
   // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
@@ -461,6 +494,9 @@ function createWindow() {
   });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://bundle/')) e.preventDefault(); });
   win.on('closed', () => { win = null; });
+  win.webContents.on('did-finish-load', () => {
+    if (lastUpdateState && win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', lastUpdateState);
+  });
   if (SMOKE) {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     runSmoke(win).catch((e) => { console.error('smoke failed: ' + (e && e.message)); app.exit(1); });
@@ -486,7 +522,10 @@ app.whenReady().then(() => {
       packaged: app.isPackaged,
       appImage: Boolean(process.env.APPIMAGE),
       // The page owns the notice and the banner, so updates use the same bridge path the new message notices use.
-      onState: (state) => { if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state); },
+      onState: (state) => {
+        lastUpdateState = state;
+        if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state);
+      },
       logError: (message) => console.error(message),
     });
     app.once('before-quit', () => updateControl.stop());
