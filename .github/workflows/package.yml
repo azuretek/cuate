@@ -63,7 +63,7 @@ jobs:
           - os: windows-11-arm
             platform: win
             arch: arm64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: linux
             arch: x64
           - os: ubuntu-24.04-arm
@@ -118,11 +118,15 @@ jobs:
       - name: Package Linux or Windows
         if: runner.os != 'macOS'
         run: pnpm --filter desktop package --${{ matrix.platform }} --${{ matrix.arch }}
+      # The step that flaked, measured on run 36888349385: an unbounded apt-get
+      # held this leg for forty-four minutes until the job's own timeout cancelled
+      # it. Package setup now goes through one bounded script, so a stalled mirror
+      # fails the step in minutes and the leg is never the thing that hangs.
       - name: Virtual display
         if: runner.os == 'Linux'
+        timeout-minutes: 12
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
+          bash scripts/ci/install-display-packages.sh xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Packaged Linux boot smoke
         if: runner.os == 'Linux'

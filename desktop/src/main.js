@@ -137,9 +137,21 @@ async function runSmoke(w) {
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
 
+  // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
+  // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
+  const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
+  const pickSkin = (skin) => js(`(() => { const s = document.querySelector('app-settings select[data-key="appearance.skin"]'); s.value = ${JSON.stringify(skin)}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await putSettings({ 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
+  await pickSkin('light');
+  await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
+  report.themeLight = true;
+  await pickSkin('dark');
+  await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
+  report.themeDark = true;
+  report.theme = report.themeLight && report.themeDark;
+
   // Notices: an update state raises a native notice over the same bridge the message notices use, and a type the
   // server has switched off raises none. The shell records every notice it is asked to show.
-  const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
   smokeNotices.length = 0;
   wc.send('bridge:event:update.state', { state: 'available', version: '9.9.9' });
   for (let i = 0; i < 50 && !smokeNotices.some((n) => n.title === 'Update available'); i += 1) await pause(100);
@@ -162,6 +174,7 @@ async function runSmoke(w) {
   report.updateBannerCleared = await js("!document.querySelector('.banner.update')");
   report.updates = report.updateBanner && report.updateBannerCleared;
 
+  await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05-settings.png');
@@ -195,13 +208,60 @@ async function runSmoke(w) {
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
   report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
   await shot('07-phone-list.png');
+  // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
   await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'");
   await pause(400); // the drawer slides on a 160ms transition; measure the settled position, not a frame of it.
   report.phone = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const scrim = document.querySelector('.scrim'); return r.right <= 0 && (!scrim || getComputedStyle(scrim).visibility === 'hidden'); })()");
   await shot('08-phone-conversation.png');
-  await js("document.querySelector('app-conversation .conv-back').click()");
-  await waitFor("document.querySelector('.shell')?.dataset.pane === 'list'");
+
+  // The gesture: the drawer follows the finger from the left edge, settles by where the finger left it, and takes no
+  // drag that began in the middle of the conversation. A drag is a pointerdown on the shell, then moves and an up on
+  // the window, which is where the component listens while a drag is live.
+  const pane = () => js("document.querySelector('.shell').dataset.pane");
+  const sidebarX = () => js("new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.shell .sidebar')).transform).m41");
+  const down = (x) => js(`(() => { document.querySelector('.shell').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: ${x}, clientY: 400, button: 0, buttons: 1 })); return true; })()`);
+  const windowPointer = (type, x, buttons) => js(`(() => { window.dispatchEvent(new PointerEvent('${type}', { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: ${x}, clientY: 400, button: 0, buttons: ${buttons} })); return true; })()`);
+
+  // A drag that starts in the conversation's middle is not the drawer: the pane stays on the conversation.
+  await down(200);
+  await windowPointer('pointermove', 280, 1);
+  await windowPointer('pointerup', 280, 0);
+  await pause(300);
+  report.phoneEdgeOnly = (await pane()) === 'conversation';
+
+  // A short edge drag settles back: it never reaches half the drawer's width, so it returns to the conversation.
+  await down(4);
+  await windowPointer('pointermove', 44, 1);
+  await windowPointer('pointerup', 44, 0);
+  await pause(300);
+  report.phoneSettle = (await pane()) === 'conversation';
+
+  // A longer edge drag carries the drawer with it. Halfway across the panel it is strictly between the two ends,
+  // which is what "follows the finger" means, and past the threshold it settles open.
+  await down(4);
+  await windowPointer('pointermove', 120, 1);
+  const mid = await sidebarX();
+  await windowPointer('pointermove', 220, 1);
+  await windowPointer('pointerup', 220, 0);
+  await pause(400);
+  const drawerWidth = await js("document.querySelector('.shell .sidebar').getBoundingClientRect().width");
+  report.phoneTracks = mid > -drawerWidth && mid < 0;
+  report.phoneEdgeDrag = (await pane()) === 'list' && Math.abs(await sidebarX()) < 1;
+
+  // Reduced motion: the finger still moves the panel, but the settle runs no animation. Emulated here so the path is
+  // checked rather than assumed.
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await pause(150);
+  await down(200);
+  await windowPointer('pointermove', 170, 1);
+  const reducedMid = await sidebarX();
+  await windowPointer('pointerup', 170, 0);
+  await pause(300);
+  const reduced = await js("parseFloat(getComputedStyle(document.querySelector('.shell .sidebar')).transitionDuration) === 0");
+  report.phoneReduced = reduced && reducedMid > -drawerWidth && reducedMid < 0 && (await pane()) === 'list';
+  await cdp('Emulation.setEmulatedMedia', { media: '', features: [] });
+  await pause(150);
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(200);
 

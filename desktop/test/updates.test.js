@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { channelOf, startUpdates } from '../src/updates.js';
 import { checksumMatches, installPolicy } from '../../core/app/rules/updates.js';
 
@@ -12,10 +13,25 @@ const make = () => {
 };
 const collect = () => { const states = []; return { states, onState: (s) => states.push(s) }; };
 const quiet = { logError: assert.fail, setTimer: () => 0, clearTimer: () => {} };
+// The states the shell may send are the bridge spec's, so a state renamed on one side fails here rather than going
+// quiet on the page.
+const DECLARED_STATES = JSON.parse(readFileSync(new URL('../../core/spec/host-bridge.json', import.meta.url), 'utf8')).events['update.state'].states;
 
 test('prereleases follow dev and stable builds follow latest', () => {
   assert.equal(channelOf('1.0.1-dev.10.abcdef0123'), 'dev');
   assert.equal(channelOf('1.0.0'), 'latest');
+});
+
+test('every state the shell emits is declared in the bridge spec', async () => {
+  const updater = make();
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: true, onState, ...quiet });
+  await Promise.resolve();
+  updater.emit('update-available', { version: '1.2.3' });
+  updater.emit('download-progress', { percent: 10, transferred: 1, total: 10, bytesPerSecond: 1 });
+  updater.emit('update-downloaded', { version: '1.2.3' });
+  for (const s of states) assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
+  ctl.stop();
 });
 
 test('a source run does not check at all', async () => {

@@ -1,11 +1,13 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
-import { orderChats, applyMessageToChats, chatTitle } from '../rules/chats.js';
+import { orderChats, applyMessageToChats, chatTitle, emptyFilters } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, autoDownloadEnabled } from '../rules/notifications.js';
 import { updateBanner } from '../rules/updates.js';
+import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
+import { resolveScheme, themeVars } from '../rules/theme.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -33,6 +35,8 @@ class AppRoot extends KitElement {
     // Lit writes this.update for any reactive property of that name, which shadows LitElement's own update() method
     // and the element throws "this.update is not a function" on its next render.
     updateStatus: { state: true },
+    // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
+    filters: { state: true },
   };
 
   constructor() {
@@ -60,12 +64,22 @@ class AppRoot extends KitElement {
     this.updateStatus = null;
     this.pending = new Map();
     this.client = null;
+    this.drag = null;
+    this.filters = emptyFilters();
+    // The custom properties last written from a theme, so a change removes the ones it no longer sets.
+    this.themeApplied = [];
+    this.schemeQuery = null;
     // The shell's update states arrive here; the page, which holds the server's settings, decides the notice.
     this.offUpdate = null;
   }
 
   connectedCallback() {
     super.connectedCallback();
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      this.schemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      this.onSchemeChange = () => this.applyTheme();
+      this.schemeQuery.addEventListener('change', this.onSchemeChange);
+    }
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.on === 'function') {
       this.offUpdate = window.bridge.on('update.state', (data) => this.onUpdate(data || {}));
     }
@@ -74,9 +88,21 @@ class AppRoot extends KitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    if (this.schemeQuery && this.onSchemeChange) this.schemeQuery.removeEventListener('change', this.onSchemeChange);
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
   }
 
+  // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
+  // chosen on any device is what this page draws, and light and dark both come from it. No client carries its own copy.
+  applyTheme() {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const scheme = resolveScheme(this.settings['appearance.skin'], Boolean(this.schemeQuery && this.schemeQuery.matches));
+    root.dataset.scheme = scheme;
+    for (const [name] of this.themeApplied) root.style.removeProperty(name);
+    this.themeApplied = themeVars(this.settings['appearance.theme'], scheme);
+    for (const [name, value] of this.themeApplied) root.style.setProperty(name, value);
+  }
   bridge(name, args) {
     return window.bridge.call(name, args);
   }
@@ -118,6 +144,7 @@ class AppRoot extends KitElement {
       if (this.chats.length) await this.open(this.chats[0].id);
       this.settings = await this.readSettings();
       this.applyUpdateSetting();
+      this.applyTheme();
       this.dataset.state = 'ready';
     } catch (e) {
       client.close();
@@ -251,6 +278,7 @@ class AppRoot extends KitElement {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
       this.applyUpdateSetting();
+      this.applyTheme();
     }
   }
 
@@ -271,7 +299,6 @@ class AppRoot extends KitElement {
     if (typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function') return;
     this.bridge('updates.configure', { autoDownload: autoDownloadEnabled(this.settings) }).catch(() => {});
   }
-
   // A confirmed outgoing message replaces the bubble drawn when Send was pressed.
   reconcile(m) {
     if (!m.fromMe) return;
@@ -337,6 +364,75 @@ class AppRoot extends KitElement {
     if (this.openChatId) this.listOpen = false;
   }
 
+  // The phone's drawer is dragged, not tapped: a drag from the left edge opens it, a drag back closes it, and the
+  // panel and the scrim follow the finger between them. The rules live in rules/drawer.js; this only drives them.
+  onPointerDown = (e) => {
+    if (this.phase !== 'ready' || this.view !== 'messages') return;
+    const sidebar = this.querySelector('.sidebar');
+    if (!sidebar || getComputedStyle(sidebar).position !== 'fixed') return;   // the drawer exists only on the phone
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const open = this.listOpen;
+    if (!open && !isEdgeStart(e.clientX)) return;   // only an edge drag opens the list
+    this.drag = { shell: e.currentTarget, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, open, active: false, width: 0 };
+    window.addEventListener('pointermove', this.onPointerMove, { passive: false });
+    window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onPointerCancel);
+  };
+
+  onPointerMove = (e) => {
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.active) {
+      if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+      if (!isHorizontal(dx, dy)) { this.endDrag(); return; }   // the scroll or the selection keeps the gesture
+      d.active = true;
+      d.width = this.drawerWidth();
+      d.shell.dataset.drawer = 'drag';
+    }
+    e.preventDefault();
+    d.shell.style.setProperty('--drawer-progress', String(progressFor({ open: d.open, startX: d.startX, x: e.clientX, width: d.width })));
+  };
+
+  onPointerUp = (e) => {
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (d.active) this.settleDrawer(d, Number(d.shell.style.getPropertyValue('--drawer-progress')) || 0);
+    this.endDrag();
+  };
+
+  onPointerCancel = (e) => {
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    // A cancelled drag (the browser took the pointer) returns to where it started rather than deciding.
+    if (d.active) this.settleDrawer(d, d.open ? 1 : 0);
+    this.endDrag();
+  };
+
+  // The finger is up: hand the panel's position back to the stylesheet, which animates it from where the finger left
+  // it to where it settled. Clearing the drag flag and the inline position together lets the transition run.
+  settleDrawer(d, progress) {
+    const open = settlesOpen(progress);
+    d.shell.style.removeProperty('--drawer-progress');
+    delete d.shell.dataset.drawer;
+    d.shell.dataset.pane = open ? 'list' : 'conversation';
+    this.listOpen = open;
+  }
+
+  endDrag() {
+    this.drag = null;
+    window.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onPointerCancel);
+  }
+
+  drawerWidth() {
+    const el = this.querySelector('.sidebar');
+    const w = el ? el.getBoundingClientRect().width : 0;
+    return w > 0 ? w : window.innerWidth;
+  }
+
   // A setting is written to the server first; the server's answer, not this page, becomes what the page draws, and a
   // rejected write is rolled back so the control never disagrees with the server.
   async setSetting({ key, value }) {
@@ -349,6 +445,39 @@ class AppRoot extends KitElement {
       const { values } = await this.client.settingsWrite({ [key]: value });
       this.settings = values || this.settings;
       this.applyUpdateSetting();
+    } catch (e) {
+      this.settings = before;
+      this.settingsProblem = this.describe(e);
+    } finally {
+      this.settingsBusy = false;
+    }
+  }
+
+  chatGroups() {
+    const g = this.settings['chats.groups'];
+    return Array.isArray(g) ? g : [];
+  }
+
+  chatPlacement() {
+    const p = this.settings['chats.placement'];
+    return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+  }
+
+  chatOrder() {
+    const o = this.settings['chats.order'];
+    return Array.isArray(o) ? o : [];
+  }
+
+  // The chat list's arrangement is written to the server in one patch, so a group and what it holds land together.
+  async setSettings(patch) {
+    if (!this.client || !patch) return;
+    const before = this.settings;
+    this.settings = { ...this.settings, ...patch };
+    this.settingsBusy = true;
+    this.settingsProblem = '';
+    try {
+      const { values } = await this.client.settingsWrite(patch);
+      this.settings = values || this.settings;
     } catch (e) {
       this.settings = before;
       this.settingsProblem = this.describe(e);
@@ -377,12 +506,18 @@ class AppRoot extends KitElement {
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
     const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail }) : null;
-    return html`<div class="shell" data-pane=${this.pane()}>
+    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown}>
       <aside class="sidebar" aria-label="Conversations">
         <header class="sidebar-head"><h1 class="title">Chats</h1><button class="text-button" @click=${() => this.openSettings()}>Settings</button></header>
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
-        <app-chat-list .chats=${this.chats} .selected=${this.openChatId} @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}></app-chat-list>
+        <app-chat-list .chats=${this.chats} .selected=${this.openChatId}
+          .sort=${this.settings['chats.sort'] || 'recent'} .groups=${this.chatGroups()}
+          .placement=${this.chatPlacement()} .order=${this.chatOrder()} .filters=${this.filters}
+          @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
+          @sort=${(e) => this.setSetting({ key: 'chats.sort', value: e.detail.sort })}
+          @filter=${(e) => { this.filters = e.detail.filters; }}
+          @chatsettings=${(e) => this.setSettings(e.detail.patch)}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
       <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}</div>` : nothing}${this.mainView(chat)}</main>

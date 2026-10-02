@@ -1,19 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, SORT_ORDERS, UNGROUPED } from '../app/rules/chats.js';
+import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji } from '../app/rules/emoji.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
-import { NOTICE_TYPES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
+import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
 import { formatTraceparent, parseTraceparent, newTraceparent } from '../kit/rules/trace.js';
 import { tokensCss } from '../kit/rules/tokens.js';
 import { createLogger } from '../kit/log.js';
-import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji } from '../app/rules/emoji.js';
 
 const spec = (p) => JSON.parse(readFileSync(new URL('../spec/' + p, import.meta.url), 'utf8'));
 let n = 0;
@@ -170,14 +171,75 @@ test('the logger emits declared events only, scrubbed, and keeps a flight record
 
 test('the token stylesheet comes from the token spec', () => {
   const css = tokensCss(spec('tokens.json'));
-  assert.match(css, /--color-bg: #ffffff;/);
+  assert.match(css, /--color-bg: #faf9f7;/);
   assert.match(css, /prefers-color-scheme: dark/);
   assert.match(css, /--space-4: 16px;/);
+  assert.match(css, /:root\[data-scheme="dark"\]/, 'an explicit dark skin wins over the system');
+  assert.match(css, /:root:not\(\[data-scheme="light"\]\)/, 'an explicit light skin cancels the system dark block');
+  assert.match(css, /--shadow-sm: 0 1px 2px/, 'elevation comes from the tokens');
+});
+
+test('a theme turns into custom properties for the scheme in force', () => {
+  assert.equal(resolveScheme('dark', false), 'dark', 'an explicit choice wins over the system');
+  assert.equal(resolveScheme('light', true), 'light');
+  assert.equal(resolveScheme('system', true), 'dark', 'the system decides when the choice is system');
+  assert.equal(resolveScheme(undefined, false), 'light');
+  assert.equal(resolveScheme('future', true), 'dark', 'an unknown choice falls back to the system, not a refusal');
+  assert.equal(cssVarName('color', 'bg'), '--color-bg');
+  assert.equal(cssVarName('radius', 'md'), '--radius-md');
+  const theme = { color: { light: { accent: '#111111' }, dark: { accent: '#eeeeee' } }, radius: { md: '9px' } };
+  assert.deepEqual(themeVars(theme, 'light'), [['--radius-md', '9px'], ['--color-accent', '#111111']], 'the scheme picks its own colours');
+  assert.deepEqual(themeVars(theme, 'dark'), [['--radius-md', '9px'], ['--color-accent', '#eeeeee']]);
+  assert.deepEqual(themeVars(null, 'light'), [], 'no theme writes nothing, so tokens.css stands');
+  assert.equal(themeName(theme), '');
+  assert.equal(themeName({ name: 'elegant luxury' }), 'elegant luxury');
+});
+
+test('a tweakcn theme is imported, and every name it cannot carry is refused out loud', () => {
+  const css = [
+    ':root {',
+    '  --background: oklch(1 0 0);',
+    '  --foreground: oklch(0.145 0 0);',
+    '  --primary: oklch(0.205 0 0);',
+    '  --primary-foreground: oklch(0.985 0 0);',
+    '  --accent: oklch(0.97 0 0);',
+    '  --border: oklch(0.922 0 0);',
+    '  --chart-1: oklch(0.646 0.222 41.116);',
+    '  --radius: 0.625rem;',
+    '  --font-sans: Geist, sans-serif;',
+    '  --sidebar-background: oklch(0.985 0 0);',
+    '}',
+    '.dark {',
+    '  --background: oklch(0.145 0 0);',
+    '  --primary: oklch(0.922 0 0);',
+    '  --primary-foreground: oklch(0.205 0 0);',
+    '}',
+  ].join('\n');
+  const { theme, accepted, refused } = importTweakcn(css, { name: 'elegant luxury' });
+  assert.equal(theme.name, 'elegant luxury');
+  assert.equal(theme.source, 'tweakcn');
+  assert.equal(theme.color.light.bg, 'oklch(1 0 0)');
+  assert.equal(theme.color.light.accent, 'oklch(0.205 0 0)', 'primary is the accent');
+  assert.equal(theme.color.light['bubble-me'], 'oklch(0.205 0 0)', 'a sent bubble follows the accent');
+  assert.equal(theme.color.light.selection, 'oklch(0.97 0 0)', 'the tweakcn accent is the selection highlight');
+  assert.equal(theme.color.dark.bg, 'oklch(0.145 0 0)', 'the .dark block fills dark');
+  assert.equal(theme.radius.md, '0.625rem');
+  assert.equal(theme.font.family, 'Geist, sans-serif');
+  assert.ok(accepted.includes('primary'));
+  assert.ok(refused.includes('chart-1'), 'a name with no token is refused');
+  assert.ok(refused.includes('sidebar-background'));
+  assert.ok(!accepted.includes('chart-1'));
+  assert.deepEqual(importTweakcn('not a theme').refused, [], 'input with no tokens refuses nothing rather than throwing');
+  assert.deepEqual(importTweakcn('not a theme').theme.color.light, {});
 });
 
 test('the settings page draws the schema and writes the value a control gives', () => {
   const fields = settingsFields();
   assert.deepEqual(fields.slice(0, 3).map((f) => f.key), ['appearance.skin', 'appearance.textSize', 'appearance.density']);
+  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textSize', 'appearance.density', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload'], 'every key the schema declares lands in one section, once, in the schema order');
+  const groupIds = settingsGroups().map((g) => g.id);
+  for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
+  for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
   assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates'], 'the page draws one section per group');
   assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload'], 'the updates section holds the download preference');
@@ -201,12 +263,89 @@ test('every notice type has its own switch and a notice only fires when it is on
   assert.equal(noticeEnabled(all, 'nope'), false, 'an unknown type raises nothing');
 });
 
+test('the bridge spec owns the update states, and every one is either a notice or called silent', () => {
+  const spec = JSON.parse(readFileSync(new URL('../spec/host-bridge.json', import.meta.url), 'utf8'));
+  const declared = spec.events['update.state'].states;
+  assert.ok(declared.length > 0, 'the spec declares the states the shell may send');
+  for (const state of declared) assert.ok(NOTICE_UPDATE_STATES.includes(state) || SILENT_UPDATE_STATES.includes(state), state + ' is declared in the spec, so the rules must name it');
+  for (const state of [...NOTICE_UPDATE_STATES, ...SILENT_UPDATE_STATES]) assert.ok(declared.includes(state), state + ' is named by the rules, so the spec must declare it');
+  for (const state of NOTICE_UPDATE_STATES) assert.ok(updateNotice(state), state + ' raises a notice');
+  for (const state of SILENT_UPDATE_STATES) assert.equal(updateNotice(state), null, state + ' raises nothing on purpose');
+});
+
 test('an update state carries the notice it raises, and a state with none raises nothing', () => {
   assert.deepEqual(updateNotice('available', '1.2.3'), { type: 'updateAvailable', title: 'Update available', body: 'Version 1.2.3 is available to download.' });
   assert.equal(updateNotice('available', null).type, 'updateAvailable');
   assert.equal(updateNotice('ready', '1.2.3').type, 'updateReady');
   assert.equal(updateNotice('error').type, 'error');
   assert.equal(updateNotice('checking'), null);
+});
+
+test('the list sorts by activity, unread, name and the manual order the server holds', () => {
+  const chats = [
+    { id: '1', name: 'Bea', lastMessageAt: '2026-01-03T00:00:00.000Z', unread: 0, isGroup: false },
+    { id: '2', name: 'Al', lastMessageAt: '2026-01-01T00:00:00.000Z', unread: 3, isGroup: true },
+    { id: '3', name: 'Cy', lastMessageAt: '2026-01-02T00:00:00.000Z', unread: 1, isGroup: false },
+    { id: '4', name: 'Di', lastMessageAt: null, unread: 0, isGroup: false },
+  ];
+  assert.deepEqual(sortChats(chats, { sort: 'recent' }).map((c) => c.id), ['1', '3', '2', '4']);
+  // Unread first, and the unread ones keep their own activity order rather than the order they arrived.
+  assert.deepEqual(sortChats(chats, { sort: 'unread' }).map((c) => c.id), ['3', '2', '1', '4']);
+  assert.deepEqual(sortChats(chats, { sort: 'name' }).map((c) => c.id), ['2', '1', '3', '4']);
+  assert.deepEqual(sortChats(chats, { sort: 'manual', order: ['4', '2'] }).map((c) => c.id), ['4', '2', '1', '3']);
+  assert.deepEqual(SORT_ORDERS, ['recent', 'unread', 'name', 'manual']);
+});
+
+test('filters compose, clear one at a time, and search names and last messages', () => {
+  const chats = [
+    { id: '1', name: 'Bea', isGroup: false, unread: 2, participants: ['bea@example.com'], lastMessageAt: '2026-01-03T00:00:00.000Z', lastMessage: { text: 'see you at the lake', fromMe: false, sentAt: '2026-01-03T00:00:00.000Z', attachments: 0 } },
+    { id: '2', name: 'Weekend', isGroup: true, unread: 0, participants: ['a@example.com', 'b@example.com'], lastMessageAt: '2026-01-01T00:00:00.000Z', lastMessage: { text: 'plans', fromMe: true, sentAt: '2026-01-01T00:00:00.000Z', attachments: 0 } },
+    { id: '3', name: '', isGroup: false, unread: 1, participants: ['+15555550142'], lastMessageAt: '2026-01-02T00:00:00.000Z', lastMessage: null },
+  ];
+  const placement = { '1': 'g1', '2': 'g1' };
+  const by = (f) => filterChats(chats, { ...emptyFilters(), ...f }, { placement }).map((c) => c.id);
+  assert.deepEqual(by({}), ['1', '2', '3']);
+  assert.deepEqual(by({ unread: true }), ['1', '3'], 'only unread');
+  assert.deepEqual(by({ group: 'g1' }), ['1', '2'], 'a named group');
+  assert.deepEqual(by({ group: UNGROUPED }), ['3'], 'the chats in no group');
+  assert.deepEqual(by({ kind: 'direct' }), ['1', '3']);
+  assert.deepEqual(by({ kind: 'group' }), ['2']);
+  assert.deepEqual(by({ text: 'lake' }), ['1'], 'searches the last message text');
+  assert.deepEqual(by({ text: 'weekend' }), ['2'], 'searches the name');
+  assert.deepEqual(by({ unread: true, kind: 'direct' }), ['1', '3'], 'two filters narrow together');
+  assert.deepEqual(by({ unread: true, kind: 'group' }), [], 'a filter matching nothing returns nothing');
+  assert.ok(chatSearchText(chats[0]).includes('lake'));
+});
+
+test('groups keep their own order, draw as sections, and never lose an ungrouped chat', () => {
+  const groups = [{ id: 'g1', name: 'Family' }, { id: 'g2', name: 'Work' }];
+  const chats = [
+    { id: '1', name: 'A', lastMessageAt: '2026-01-03T00:00:00.000Z' },
+    { id: '2', name: 'B', lastMessageAt: '2026-01-02T00:00:00.000Z' },
+    { id: '3', name: 'C', lastMessageAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  const sections = groupSections(chats, { groups, placement: { '2': 'g2', '3': 'gone' } });
+  assert.deepEqual(sections.map((s) => s.id), ['g1', 'g2', UNGROUPED]);
+  assert.deepEqual(sections.map((s) => s.chats.map((c) => c.id)), [[], ['2'], ['1', '3']], 'a chat whose group is gone is ungrouped, not lost');
+  assert.equal(renameGroup(groups, 'g1', 'Close family')[0].name, 'Close family');
+  assert.deepEqual(moveGroup(groups, 'g1', 1).map((g) => g.id), ['g2', 'g1']);
+  assert.deepEqual(moveGroup(groups, 'g2', 1).map((g) => g.id), ['g1', 'g2'], 'a move past the end is a no-op');
+  assert.deepEqual(addGroup([], { id: 'g9', name: '  New  ' }), [{ id: 'g9', name: 'New' }]);
+  assert.deepEqual(placeChat({ '1': 'g1' }, '1', UNGROUPED), {}, 'moving a chat out drops its placement');
+  assert.deepEqual(placeChat({}, '1', 'g2'), { '1': 'g2' });
+});
+
+test('the manual order covers every chat and a move swaps one step', () => {
+  const chats = [
+    { id: 'a', lastMessageAt: '2026-01-03T00:00:00.000Z' },
+    { id: 'b', lastMessageAt: '2026-01-02T00:00:00.000Z' },
+    { id: 'c', lastMessageAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  assert.deepEqual(manualOrder(chats, ['c']), ['c', 'a', 'b'], 'a stored head keeps its place and the rest follow activity');
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'b', -1), ['b', 'a', 'c']);
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c'], 'the first chat cannot move up');
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'c', 1), ['a', 'b', 'c']);
+  assert.deepEqual(moveChat(['a', 'b', 'c'], 'z', 1), ['a', 'b', 'c']);
 });
 
 test('the emoji picker searches by name, keeps categories, and inserts whole characters', () => {
