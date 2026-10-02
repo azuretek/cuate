@@ -1,16 +1,34 @@
-// Pure: the settings page's rules. The schema declares every setting the page shows, its label, its control and its
-// default. The server holds the values (server/src/settings.js stores any key it is given), so the page reads and
-// writes them there rather than keeping local state, and a key the schema does not declare is left for a later item.
+// Pure: the settings page's rules. The schema declares every setting the page shows, its label, its control, its
+// group and its default. The server holds the values (server/src/settings.js stores any key it is given), so the page
+// reads and writes them there rather than keeping local state, and a key the schema does not declare is left for a
+// later item. The groups give the page its sections, so there is no second list to keep in step.
 export const SETTINGS_SCHEMA = {
+  groups: [
+    { id: 'appearance', label: 'Appearance' },
+    { id: 'notifications', label: 'Notifications' },
+  ],
   keys: {
-    'appearance.skin': { label: 'Appearance', type: 'choice', options: ['system', 'light', 'dark'], default: 'system' },
-    'appearance.textSize': { label: 'Text size', type: 'number', min: 11, max: 20, step: 1, default: 14 },
-    'appearance.density': { label: 'Density', type: 'choice', options: ['comfortable', 'compact'], default: 'comfortable' },
+    'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'choice', options: ['system', 'light', 'dark'], default: 'system' },
+    'appearance.textSize': { group: 'appearance', label: 'Text size', type: 'number', min: 11, max: 20, step: 1, default: 14 },
+    'appearance.density': { group: 'appearance', label: 'Density', type: 'choice', options: ['comfortable', 'compact'], default: 'comfortable' },
+    // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
+    'notifications.newMessage': { group: 'notifications', label: 'New messages', type: 'toggle', default: true },
+    'notifications.updateAvailable': { group: 'notifications', label: 'Update available', type: 'toggle', default: true },
+    'notifications.updateReady': { group: 'notifications', label: 'Update ready to install', type: 'toggle', default: true },
+    'notifications.errors': { group: 'notifications', label: 'Update errors', type: 'toggle', default: true },
   },
 };
 
 export function settingsFields(schema = SETTINGS_SCHEMA) {
   return Object.entries(schema.keys).map(([key, spec]) => ({ key, ...spec }));
+}
+
+// The fields grouped for the page, in the schema's group order. A field with no group falls into the first group.
+export function settingsGroups(schema = SETTINGS_SCHEMA) {
+  const fields = settingsFields(schema);
+  const groups = schema.groups || [];
+  const fallback = groups.length ? groups[0].id : null;
+  return groups.map((g) => ({ id: g.id, label: g.label, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
 }
 
 // The value to show for a key: what the server holds, else the schema's default.
