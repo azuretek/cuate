@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates } from './updates.js';
 
@@ -12,6 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
 const naming = JSON.parse(readFileSync(path.join(CORE, 'spec/naming.json'), 'utf8'));
 const bridgeSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/host-bridge.json'), 'utf8'));
+const tokenSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/tokens.json'), 'utf8'));
 const version = app.getVersion();
 const SMOKE = process.env.SMOKE_OUT || '';
 // Every notice the shell is asked to show while smoking, so the smoke can prove one fired and one was suppressed.
@@ -134,6 +136,28 @@ async function runSmoke(w) {
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
 
+  // The rendered surface: the values the page RESOLVES must be the ones the one spec holds, in each scheme. The
+  // colour scheme follows the platform's, so the shell drives nativeTheme and the page is read back. A platform whose
+  // chrome did not take the tokens, or a scheme a change only half applied, fails here and names the scheme and the
+  // token rather than being assumed to match the platform it was written on.
+  // The scheme the page resolves follows the platform only while the skin is 'system',
+  // and the settings step above pinned that skin to dark. Put it back, and wait for the
+  // page to report a scheme it resolved, so a pinned skin cannot make every light token
+  // read dark and fail a check about the scheme the platform is driving.
+  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.skin': 'system' } }) });
+  await waitFor("document.documentElement.dataset.scheme === 'light' || document.documentElement.dataset.scheme === 'dark'");
+  const surface = async (scheme) => {
+    const expected = expectedTokens(tokenSpec, scheme);
+    nativeTheme.themeSource = scheme;
+    await waitFor(`document.documentElement.dataset.scheme === ${JSON.stringify(scheme)}`);
+    const resolved = await js(`(() => { const s = getComputedStyle(document.documentElement); const out = {}; for (const n of ${JSON.stringify(Object.keys(expected))}) out[n] = s.getPropertyValue(n).trim(); return out; })()`);
+    return tokenMismatches({ expected, resolved });
+  };
+  const surfaceFound = { light: await surface('light'), dark: await surface('dark') };
+  report.surfaceLight = surfaceFound.light.length === 0;
+  report.surfaceDark = surfaceFound.dark.length === 0;
+  report.surface = report.surfaceLight && report.surfaceDark;
+  if (!report.surface) console.error('surface mismatches: ' + JSON.stringify(surfaceFound));
   // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
   // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
   const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });

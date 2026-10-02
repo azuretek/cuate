@@ -64,7 +64,7 @@ await new Promise((resolve) => {
 });
 rmSync(data, { recursive: true, force: true });
 rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
-const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.live && report.sent && report.settings && report.theme && report.notices && report.about && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding;
+const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.live && report.sent && report.settings && report.theme && report.notices && report.about && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding && report.surface;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
   process.exit(1);
