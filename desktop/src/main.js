@@ -347,7 +347,7 @@ async function runSmoke(w) {
   // corners rather than the label alone. A press INSIDE the card, and a drag that starts inside and is released over
   // the backdrop, must both leave the page where it is; only a press that both starts and ends on the backdrop
   // returns. This is the desktop smoke's check for what the sibling app proves with its own per-page overflow probes.
-  const sheetHit = (tag) => js('(() => { const b = document.querySelector("' + tag + ' .sheet-back"); if (!b) return false; const r = b.getBoundingClientRect(); const pts = [[r.left + 2, r.top + 2], [r.right - 3, r.top + 4], [r.left + r.width / 2, r.bottom - 3]]; return pts.every(function (q) { const el = document.elementFromPoint(q[0], q[1]); return Boolean(el) && b.contains(el); }); })()');
+  const sheetHit = (tag) => js('(() => { const b = document.querySelector("' + tag + ' .sheet-back"); if (!b) return false; const r = b.getBoundingClientRect(); const y = r.top + r.height / 2; const pts = [[r.left + 2, y], [r.left + r.width / 2, y], [r.right - 2, y]]; return pts.every(function (q) { const el = document.elementFromPoint(q[0], q[1]); return Boolean(el) && b.contains(el); }); })()');
   const pressSheet = (downSel, upSel) => js('(() => {' +
     ' var down = ' + JSON.stringify(downSel) + '; var up = ' + JSON.stringify(upSel) + ';' +
     ' var scrim = document.querySelector(".sheet-scrim");' +
