@@ -39,6 +39,8 @@
   --size-picker-h: 320px;
   --size-emoji: 32px;
   --size-picker-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  --size-window-bar: 32px;
+  --size-window-control: 46px;
   --motion-fast: 100ms;
   --motion-normal: 180ms;
   --motion-spin: 900ms;
@@ -70,6 +72,7 @@
   --color-banner: rgba(146, 64, 14, 0.10);
   --color-unread: #bd4531;
   --color-scrim: rgba(0, 0, 0, 0.44);
+  --color-danger-fg: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) {
@@ -93,6 +96,7 @@
     --color-banner: rgba(245, 158, 11, 0.12);
     --color-unread: #ff5c5c;
     --color-scrim: rgba(0, 0, 0, 0.44);
+    --color-danger-fg: #0e1015;
   }
 }
 :root[data-scheme="dark"] {
@@ -117,6 +121,7 @@
   --color-banner: rgba(245, 158, 11, 0.12);
   --color-unread: #ff5c5c;
   --color-scrim: rgba(0, 0, 0, 0.44);
+  --color-danger-fg: #0e1015;
 }
 :root[data-scheme="light"] {
   color-scheme: light;
