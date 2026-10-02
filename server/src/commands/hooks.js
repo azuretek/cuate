@@ -3,9 +3,10 @@
 // endpoints again (SIGHUP) rather than restarted, so no client is dropped. A secret and a key are printed once, when
 // they are made, for the receiver to store; neither is ever logged or listed.
 import { loadConfig, saveConfig } from '../config.js';
-import { ALL_EVENTS, DEFAULT_EVENTS, eventNames, isLoopback, newKeyMaterial } from '../webhooks.js';
+import { ALL_EVENTS, DEFAULT_EVENTS, TEST_EVENT, createWebhooks, eventNames, isLoopback, newKeyMaterial } from '../webhooks.js';
+import { logSpec, naming, serverVersion } from '../paths.js';
 
-const USAGE = 'usage: hooks list | add ID URL [--events a,b|*] [--plaintext] | remove ID | enable ID | disable ID | rotate ID [--retire]';
+const USAGE = 'usage: hooks list | add ID URL [--events a,b|*] [--plaintext] | remove ID | enable ID | disable ID | rotate ID [--retire] | test ID [--event TYPE]';
 const newKid = () => 'k' + Date.now().toString(36);
 
 export default {
@@ -96,6 +97,26 @@ export default {
       print('hook ' + id + ' rotated. Deliveries are signed with the new and the previous secret, and encrypted with the new key, until hooks rotate ' + id + ' --retire. These are shown once; store them with the receiver now:');
       shown(secret, key);
       return reload('hook ' + id + ' is rotated');
+    }
+    // One synthetic delivery to the named hook, sent by this process through the same module, signing, encryption,
+    // retries and log events a live one uses, so a receiver can be proved without waiting for a real event.
+    if (sub === 'test') {
+      const e = find();
+      if (e.active === false) die('hook ' + id + ' is switched off' + (e.disabledReason ? ' (' + e.disabledReason + ')' : '') + ': run hooks enable ' + id + ' first');
+      const names = eventNames();
+      if (flags.event === true || (flags.event !== undefined && !names.includes(String(flags.event)))) die('--event takes one of ' + names.join(', '));
+      const shape = flags.event === undefined ? null : String(flags.event);
+      const { createLogger } = await import('../../../core/kit/log.js');
+      const { createLogSink } = await import('../syslog.js');
+      const logger = createLogger({ spec: logSpec, app: naming.slug + '-server', version: serverVersion, run: 'hooktest', pid: process.pid, sink: createLogSink({ spec: logSpec, app: naming.slug + '-server' }), now: Date.now, level: process.env.LOG_LEVEL || config.log.level });
+      const hooks = createWebhooks({ endpoints: [e], log: logger.child('webhook') });
+      print('sending ' + TEST_EVENT + (shape ? ' shaped as ' + shape : '') + ' to hook ' + id + ' at ' + e.url);
+      const out = await hooks.test(id, { shape });
+      hooks.close();
+      const tries = out.attempts + (out.attempts === 1 ? ' attempt' : ' attempts');
+      if (!out.ok) die('hook ' + id + ' did not accept the test delivery: ' + (out.status != null ? 'status ' + out.status : out.error) + ' after ' + tries);
+      print('hook ' + id + ' accepted the test delivery: status ' + out.status + ' after ' + tries);
+      return;
     }
     die(USAGE);
   },
