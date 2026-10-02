@@ -2,6 +2,15 @@
 // declares. The server imports it; its fake engine speaks the same JSON, so tests exercise this path end to end.
 const TAPBACKS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
 
+// A message that belongs to no chat. The engine reports it with chat id 0, and a Messages database keys its chats from
+// ROWID 1, so no chat list ever names 0 (issue 48). A consumer that must place every message in a conversation leaves
+// such a message out rather than carry one whose chat it cannot name.
+export const NO_CHAT_ID = '0';
+
+// The chat a row names, with a row that names none (0, null or absent) reported as NO_CHAT_ID, so the adapter and every
+// consumer agree on the one value that means no chat.
+const chatOf = (m) => (m.chat_id ? String(m.chat_id) : NO_CHAT_ID);
+
 const iso = (s) => {
   const t = Date.parse(s);
   return Number.isFinite(t) ? new Date(t).toISOString() : null;
@@ -52,7 +61,7 @@ export function mapMessage(m, { attachmentId }) {
   const fromMe = Boolean(m.is_from_me);
   return {
     id: m.guid ? String(m.guid) : 'row:' + m.id,
-    chatId: String(m.chat_id),
+    chatId: chatOf(m),
     fromMe,
     sender: fromMe ? null : m.sender || null,
     senderName: fromMe ? null : m.sender_name || null,
@@ -70,7 +79,7 @@ export function mapReaction(m) {
   if (!m.is_reaction || !m.reacted_to_guid) return null;
   const fromMe = Boolean(m.is_from_me);
   return {
-    chatId: String(m.chat_id),
+    chatId: chatOf(m),
     targetId: stripTarget(m.reacted_to_guid),
     type: TAPBACKS.has(m.reaction_type) ? m.reaction_type : 'emoji',
     emoji: m.reaction_emoji || null,
