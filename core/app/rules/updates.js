@@ -128,12 +128,36 @@ export function failedBanner({ detail = null } = {}) {
   return { message: 'The update could not be downloaded.', detail: detail || 'Nothing was installed. You can try again.' };
 }
 
+// The action that only clears the banner. It names no bridge command: the page handles it itself.
+export const DISMISS = 'dismiss';
+
+// The banner when a check someone asked for found nothing newer than this build.
+export function currentBanner({ version = null } = {}) {
+  return { message: 'You are on the latest version.', detail: version ? 'Version ' + version + ' is the newest release.' : 'There is no newer release.' };
+}
+
+// The banner when this build cannot update itself, so a check someone asked for has nothing to run. The reason is the
+// capability's own, so the page says why rather than pretending a check ran.
+export function unsupportedBanner({ detail = null } = {}) {
+  const why = detail ? String(detail) : 'this build has no update path';
+  return { message: 'This build does not update itself.', detail: why.charAt(0).toUpperCase() + why.slice(1) + '.' };
+}
+
 // The banner an update state draws in the app, or null for a state that draws none. 'available', 'ready' and 'error'
 // also raise a native notice, through the same path the message notices use; the banner is what carries the action, so
 // the notice announces and the banner is where a person acts. 'downloading' and 'stalled' draw only the banner, because
 // a native notice cannot show a moving bar. The action names the bridge command the page calls, so what the button does
 // is decided here and tested with no shell, no network and no Electron.
 export function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
+  // A check someone asked for from the tray: it says it is looking, then how it ended. The two answers that end it with
+  // nothing to do carry a dismiss rather than a bridge command, because there is nothing for the shell to do.
+  if (state === 'checking') return { message: 'Checking for updates.', detail: '', percent: null, action: null };
+  if (state === 'current') {
+    return { ...currentBanner({ version }), percent: null, action: { command: DISMISS, label: 'OK' } };
+  }
+  if (state === 'unsupported') {
+    return { ...unsupportedBanner({ detail }), percent: null, action: { command: DISMISS, label: 'OK' } };
+  }
   if (state === 'available') {
     if (!canInstall) return null; // a platform that cannot install is told about the release by its notice alone
     return { ...availableBanner({ version }), percent: null, action: { command: 'updates.download', label: 'Download' } };

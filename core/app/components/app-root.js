@@ -11,7 +11,8 @@ import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice } from '../rules/notifications.js';
-import { updateBanner } from '../rules/updates.js';
+import { updateBanner, DISMISS } from '../rules/updates.js';
+import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
@@ -113,6 +114,9 @@ class AppRoot extends KitElement {
     this.host = {};
     this.maximized = false;
     this.offWindow = null;
+    // The shell's tray asks for a screen over app.open; one asked for before the app is ready is answered once it is.
+    this.offOpen = null;
+    this.heldScreen = null;
   }
 
   connectedCallback() {
@@ -132,6 +136,7 @@ class AppRoot extends KitElement {
       // The window's maximized state comes from the shell, so the platform's own double-click and the control's own
       // toggle redraw the same glyph.
       this.offWindow = window.bridge.on('window.state', (data) => { this.maximized = Boolean(data && data.maximized); });
+      this.offOpen = window.bridge.on('app.open', (data) => this.openScreen(data && data.screen));
     }
     this.boot();
   }
@@ -141,6 +146,7 @@ class AppRoot extends KitElement {
     if (this.schemeQuery && this.onSchemeChange) this.schemeQuery.removeEventListener('change', this.onSchemeChange);
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }
+    if (this.offOpen) { this.offOpen(); this.offOpen = null; }
   }
 
   // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
@@ -207,6 +213,7 @@ class AppRoot extends KitElement {
       this.phase = 'ready';
       client.connect();
       this.releaseHeldUpdate();
+      this.releaseHeldScreen();
       if (this.chats.length) await this.open(this.chats[0].id);
       this.dataset.state = 'ready';
     } catch (e) {
@@ -448,6 +455,23 @@ class AppRoot extends KitElement {
   closeView() {
     this.pendingSheet = null;
     this.leaveSheet();
+  }
+
+  // A screen the shell asked for (the tray's Settings, About and Check for updates). The shell has already raised the
+  // window; rules/screens.js says what the page shows, and the sheets open through the same path the gear does.
+  openScreen(screen) {
+    const target = screenFor(screen, { phase: this.phase });
+    if (target === 'hold') { this.heldScreen = screen; return; }
+    this.heldScreen = null;
+    if (target === 'settings') this.openSettings();
+    else if (target === 'about') this.openAbout();
+    else if (target === 'main' && this.sheetShowing) this.closeView();
+  }
+
+  releaseHeldScreen() {
+    const screen = this.heldScreen;
+    this.heldScreen = null;
+    if (screen) this.openScreen(screen);
   }
 
   // The backdrop beside the card is the second way back, and it only takes a press that both begins and ends on it:
@@ -866,6 +890,7 @@ class AppRoot extends KitElement {
   // rules drew into the banner, so the button and what it does cannot drift; a refusal leaves the banner as it is.
   async updateAction(command) {
     if (!command) return;
+    if (command === DISMISS) { this.updateStatus = null; return; }
     try { await this.bridge(command, {}); } catch { /* the shell refused; the banner keeps the state it last drew */ }
   }
 

@@ -28,3 +28,4 @@ export * from './rules/theme.js';
 export * from './rules/time.js';
 export * from './rules/updates.js';
 export * from './rules/bar-layout.js';
+export * from './rules/screens.js';

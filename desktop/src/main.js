@@ -1,6 +1,6 @@
 // The desktop shell: one window hosting core's app page over app://bundle, plus the host bridge. Nothing about the
 // app lives here; the name comes from core/spec/naming.json.
-import { app, BrowserWindow, protocol, ipcMain, Menu, safeStorage, Notification, shell, nativeTheme } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain, Menu, Tray, nativeImage, safeStorage, Notification, shell, nativeTheme } from 'electron';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -11,7 +11,8 @@ import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
-import { startUpdates } from './updates.js';
+import { startUpdates, checkForUpdates } from './updates.js';
+import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
@@ -47,6 +48,23 @@ let updateControl = null;
 // starts a page that heard nothing, so the state is told again once the page has loaded; the page announces a release
 // once, so hearing it twice raises one notice.
 let lastUpdateState = null;
+// Every update state goes to the page the same way, whether the schedule's check, the tray's or a build that cannot
+// update saying so.
+const reportUpdate = (state) => {
+  lastUpdateState = state;
+  if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state);
+};
+const updateFacts = () => ({ platform: process.platform, packaged: app.isPackaged, appImage: Boolean(process.env.APPIMAGE) });
+// The tray, and the menu it carries. Closing the window hides it there; see tray.js.
+let tray = null;
+let trayMenu = null;
+const lifecycle = createLifecycle({
+  getWindow: () => win,
+  createWindow: () => createWindow(),
+  send: (w, name, payload) => w.webContents.send('bridge:event:' + name, payload),
+  quitApp: () => app.quit(),
+  checkUpdates: () => checkForUpdates(updateControl, updateFacts(), reportUpdate),
+});
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
@@ -171,7 +189,17 @@ async function runSmoke(w) {
   if (barLayout.drawn) report.windowBar = report.windowBar && bar.controls && bar.labelled && bar.groupRegion === 'no-drag' && bar.group.right <= bar.head.right + 0.5;
   else report.windowBar = report.windowBar && !bar.controls;
   if (!report.windowBar) console.error('window chrome: ' + JSON.stringify({ bar, barLayout }));
-  report.menuRemoved = Menu.getApplicationMenu() === null;
+  // No application menu on Windows and Linux (issue 109); on macOS the minimal one, whose Quit carries Cmd+Q.
+  const appMenu = Menu.getApplicationMenu();
+  if (process.platform === 'darwin') {
+    const quitItem = appMenu && appMenu.getMenuItemById('quit');
+    const editRoles = appMenu && appMenu.items[1] && appMenu.items[1].submenu ? appMenu.items[1].submenu.items.map((i) => String(i.role).toLowerCase()) : [];
+    report.appMenu = Boolean(appMenu) && appMenu.items.length === 2 && Boolean(quitItem) && quitItem.accelerator === 'Command+Q'
+      && Boolean(appMenu.getMenuItemById('settings')) && Boolean(appMenu.getMenuItemById('about')) && ['copy', 'paste', 'cut', 'selectall'].every((r) => editRoles.includes(r));
+    if (!report.appMenu) console.error('app menu: ' + JSON.stringify({ items: appMenu ? appMenu.items.map((i) => i.label) : null, quit: quitItem ? quitItem.accelerator : null, editRoles }));
+  } else {
+    report.appMenu = appMenu === null;
+  }
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
@@ -216,6 +244,67 @@ async function runSmoke(w) {
   }
   await pause(300);
   await shot('03-after-send.png');
+
+  // Close goes to the tray (issue 115). A send is started and the window closed before it lands, through the control the
+  // platform's user would press: the close in the contact header on Windows and Linux, the native close on macOS. The
+  // window must hide rather than close, the app keep running, the server answer a request from outside while it is
+  // hidden, the page's own event stream keep delivering, and the send finish.
+  const traySrv = process.env.SMOKE_SERVER_URL;
+  const trayAuth = { authorization: 'Bearer ' + process.env.SMOKE_TOKEN, 'content-type': 'application/json' };
+  const IN_FLIGHT = 'Sent as the window closed';
+  const visibleWithin = async (want, ms = 5000) => {
+    for (const t0 = Date.now(); w.isVisible() !== want && Date.now() - t0 < ms;) await pause(100);
+    return w.isVisible() === want;
+  };
+  const closeWindow = barLayout.drawn
+    ? () => js("(() => { document.querySelector('.conv-head .window-control.close').click(); return true; })()")
+    : () => { w.close(); };
+  await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${JSON.stringify(IN_FLIGHT)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  await closeWindow();
+  const hid = await visibleWithin(false);
+  const kept = !w.isDestroyed() && !lifecycle.quitting;
+  const answered = (await fetch(traySrv + '/api/v1/settings', { headers: trayAuth })).ok;
+  await fetch(traySrv + '/api/v1/settings', { method: 'PUT', headers: trayAuth, body: JSON.stringify({ values: { 'notifications.updateReady': false } }) });
+  await waitFor("document.querySelector('app-root')?.settings?.['notifications.updateReady'] === false", 15000);
+  const streamed = !w.isVisible();
+  await fetch(traySrv + '/api/v1/settings', { method: 'PUT', headers: trayAuth, body: JSON.stringify({ values: { 'notifications.updateReady': true } }) });
+  await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes(${JSON.stringify(IN_FLIGHT)}) && !r.dataset.id.startsWith('local:'))`, 20000);
+  const finished = !w.isVisible();
+  const closeChecks = { hid, kept, answered, streamed, finished };
+  report.closeToTray = Object.values(closeChecks).every(Boolean);
+  console.log('close to tray: ' + JSON.stringify(closeChecks));
+
+  // The tray's menu opens screens in the app. Each item is clicked on the real tray menu, the one the icon carries, and
+  // each must raise the window first: shown from hidden, restored from minimised. Check for updates runs the existing
+  // check, and its outcome is drawn where the scheduled check reports, the update banner; a run from source cannot
+  // update itself, so it says that in the app.
+  const trayItem = (id) => trayMenu.getMenuItemById(id);
+  const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
+  trayItem('settings').click();
+  const settingsRaised = await visibleWithin(true);
+  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))", 10000);
+  w.minimize();
+  for (const t0 = Date.now(); !w.isMinimized() && Date.now() - t0 < 3000;) await pause(100);
+  const minimised = w.isMinimized();
+  trayItem('about').click();
+  await waitFor("Boolean(document.querySelector('app-about .sheet-back'))", 10000);
+  const aboutRaised = w.isVisible() && !w.isMinimized();
+  w.close();
+  const hidAgain = await visibleWithin(false);
+  trayItem('checkUpdates').click();
+  const updatesRaised = await visibleWithin(true);
+  await waitFor("!document.querySelector('.sheet') && (document.querySelector('.banner.update')?.textContent || '').includes('does not update itself')", 10000);
+  await pause(300);
+  await shot('04-tray-check-updates.png');
+  await js("document.querySelector('.banner.update .banner-action').click()");
+  await waitFor("!document.querySelector('.banner.update')", 5000);
+  w.close();
+  await visibleWithin(false);
+  trayItem('show').click();
+  const trayShown = await visibleWithin(true);
+  const trayChecks = { order: trayOrder === 'show|settings|about|checkUpdates|quit', settingsRaised, aboutRaised, hidAgain, updatesRaised, shown: trayShown, quitting: !lifecycle.quitting };
+  report.tray = Object.values(trayChecks).every(Boolean);
+  console.log('tray: ' + JSON.stringify({ checks: trayChecks, minimised }));
 
   // The emoji panel: the grid draws first, the search field and the categories sit below it, and the panel keeps one
   // height, so typing a query narrows the grid without moving the composer or the grid's top edge. The order the eye
@@ -440,9 +529,16 @@ async function runSmoke(w) {
   wc.send('bridge:event:update.state', { state: 'error', version: '9.9.9', detail: 'The download was interrupted.', canInstall: true });
   await waitFor("Boolean(document.querySelector('.banner.update'))", 10000);
   report.updateFailure = await js("(() => { const b = document.querySelector('.banner.update'); return Boolean(b) && b.textContent.includes('interrupted') && Boolean(b.querySelector('.banner-action')); })()");
+  // A new check replaces the failure with the check in progress, which offers nothing to press, and a check that finds
+  // nothing newer says so and is dismissed in the page, which clears the banner.
   wc.send('bridge:event:update.state', { state: 'checking' });
+  await waitFor("(document.querySelector('.banner.update')?.textContent || '').includes('Checking for updates') && !document.querySelector('.banner.update .banner-action')", 10000);
+  wc.send('bridge:event:update.state', { state: 'current', version: '0.0.0', canInstall: true });
+  await waitFor("(document.querySelector('.banner.update')?.textContent || '').includes('latest version')", 10000);
+  smokeCalls.length = 0;
+  await js("document.querySelector('.banner.update .banner-action').click()");
   await pause(300);
-  report.updateBannerCleared = await js("!document.querySelector('.banner.update')");
+  report.updateBannerCleared = await js("!document.querySelector('.banner.update')") && smokeCalls.length === 0;
   report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared;
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
@@ -649,26 +745,46 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://bundle/')) e.preventDefault(); });
+  // Closing hides the window to the tray and the app keeps running; only a quit closes it (tray.js).
+  win.on('close', (e) => lifecycle.onClose(e));
   win.on('closed', () => { win = null; });
   win.webContents.on('did-finish-load', () => {
     if (lastUpdateState && win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', lastUpdateState);
+    lifecycle.loaded();
   });
   if (SMOKE) {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     runSmoke(win).catch((e) => { console.error('smoke failed: ' + (e && e.message)); app.exit(1); });
   }
   win.loadURL('app://bundle/app/index.html');
+  return win;
+}
+
+// The tray icon and its menu. On Windows and Linux a click on the icon raises the window; macOS opens the menu on a
+// click, as its menu bar does for every item there.
+function createTray() {
+  const icon = trayIcon(process.platform);
+  const image = nativeImage.createFromPath(path.join(here, 'assets', 'tray', icon.file));
+  if (icon.template) image.setTemplateImage(true);
+  tray = new Tray(image);
+  tray.setToolTip(naming.product);
+  trayMenu = Menu.buildFromTemplate(trayTemplate({ appName: naming.product, commands: lifecycle.commands() }));
+  tray.setContextMenu(trayMenu);
+  if (process.platform !== 'darwin') tray.on('click', () => lifecycle.show());
 }
 
 app.whenReady().then(() => {
-  // No application menu on any platform: the window draws its own bar, and no File, Edit, View or Window bar appears.
-  Menu.setApplicationMenu(null);
+  // No application menu on Windows and Linux: the window draws its own bar, and no File, Edit, View or Window bar appears.
+  // macOS keeps the minimal one its menu bar needs for Cmd+Q, Settings and copy and paste; its Quit is the tray's Quit.
+  const appMenu = appMenuTemplate({ platform: process.platform, appName: naming.product, commands: lifecycle.commands() });
+  Menu.setApplicationMenu(appMenu ? Menu.buildFromTemplate(appMenu) : null);
   protocol.handle('app', serve);
   if (SMOKE && process.env.SMOKE_SERVER_URL) {
     secure.set('server.url', process.env.SMOKE_SERVER_URL);
     secure.set('server.token', process.env.SMOKE_TOKEN || '');
   }
   createWindow();
+  createTray();
   if (app.isPackaged && !SMOKE) {
     updateControl = startUpdates({
       updater: updaterPackage.autoUpdater,
@@ -678,15 +794,22 @@ app.whenReady().then(() => {
       packaged: app.isPackaged,
       appImage: Boolean(process.env.APPIMAGE),
       // The page owns the notice and the banner, so updates use the same bridge path the new message notices use.
-      onState: (state) => {
-        lastUpdateState = state;
-        if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state);
-      },
+      onState: reportUpdate,
       logError: (message) => console.error(message),
+      // An update's restart is a quit, so the window that hides on close lets it through.
+      onQuit: () => lifecycle.markQuitting(),
     });
     app.once('before-quit', () => updateControl.stop());
   }
-  app.on('activate', () => { if (!win) createWindow(); });
+  // The Dock icon, and a second launch, raise the window the tray holds.
+  app.on('activate', () => lifecycle.show());
+  app.on('second-instance', () => lifecycle.show());
 });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin' || SMOKE) app.quit(); });
+// A quit the platform asks for (the Dock's Quit, a log out, an update's restart) lets the window close; the tray's Quit
+// marks it the same way before it asks.
+app.on('before-quit', () => lifecycle.markQuitting());
+
+// Closing the window never reaches here, because it hides; the window is only destroyed while quitting. The handler is
+// kept so Electron's default, quitting once every window has closed, can never be the way the app ends.
+app.on('window-all-closed', () => { if (SMOKE) app.quit(); });
