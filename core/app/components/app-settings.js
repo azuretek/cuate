@@ -1,7 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
-import { settingsFields, settingsGroups, settingValue, coerceSetting } from '../rules/settings.js';
-import { importTweakcn, importSummary, themeName } from '../rules/theme.js';
+import { settingsFields, settingsGroups, settingValue, coerceSetting, optionLabel } from '../rules/settings.js';
+import { importTheme, importSummary, addTheme, themeChoices, swatchVars, SWATCH_TOKENS } from '../rules/theme.js';
 import './app-sheet.js';
 
 // The one line the page says about itself, under its title.
@@ -16,7 +16,10 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 // with a divider between them. The page and its chrome (the full-width back strip, the title, the description) are
 // drawn by app-sheet, which both this page and About use.
 class AppSettings extends KitElement {
-  static properties = { values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, importText: { state: true }, importName: { state: true }, importNote: { state: true } };
+  static properties = {
+    values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {}, urlBusy: {},
+    importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
+  };
 
   constructor() {
     super();
@@ -27,6 +30,17 @@ class AppSettings extends KitElement {
     this.importText = '';
     this.importName = '';
     this.importNote = '';
+    this.importUrl = '';
+    // The scheme the app resolved, so each theme card shows the colours that scheme would draw.
+    this.scheme = 'light';
+    // What the last URL import said, and whether one is in flight; app-root owns the call and sets both.
+    this.urlNote = '';
+    this.urlBusy = false;
+  }
+
+  // Called by app-root when a URL import lands, so the field empties only on success and keeps a URL that failed.
+  urlImported() {
+    this.importUrl = '';
   }
 
   fire(name, detail) {
@@ -59,6 +73,20 @@ class AppSettings extends KitElement {
         ${field.options.map((o) => html`<option value=${o} ?selected=${o === value}>${o}</option>`)}
       </select>`;
     }
+    if (field.type === 'segmented') {
+      // A three-position switch: one radio per choice under one name, drawn as a track with a thumb that slides to
+      // the choice in force. data-at says which position the thumb sits at, so the CSS needs no width of its own.
+      const at = Math.max(0, field.options.indexOf(value));
+      return html`<div class="segmented setting-control-wide" role="radiogroup" aria-label=${field.label} data-key=${field.key} data-at=${at} style=${'--segments: ' + field.options.length + '; --at: ' + at}>
+        <span class="segment-thumb" aria-hidden="true"></span>
+        ${field.options.map((o) => html`<label class="segment"><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${o === value} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
+      </div>`;
+    }
+    if (field.type === 'scale') {
+      return html`<div class="scale-choices" role="radiogroup" aria-label=${field.label} data-key=${field.key}>
+        ${field.options.map((o) => html`<label class="scale-choice"><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${Number(o) === Number(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
+      </div>`;
+    }
     if (field.type === 'toggle') {
       return html`<input type="checkbox" class="setting-control" data-key=${field.key} ?checked=${value === true} ?disabled=${disabled} @change=${(e) => this.onToggle(e)}>`;
     }
@@ -68,15 +96,31 @@ class AppSettings extends KitElement {
     return html`<input type="text" class="setting-control" data-key=${field.key} .value=${String(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>`;
   }
 
-  // A pasted tweakcn export is converted here and written to the server under appearance.theme like any other setting,
-  // so the server holds it and every client draws it from the event stream. What the import refused is said on the page.
+  // A pasted tweakcn export is converted here, added to the themes the server holds and put in force in one write,
+  // so every client draws it from the event stream and offers it in the picker. What the import refused is said on
+  // the page.
   onImport() {
-    const result = importTweakcn(this.importText, { name: this.importName.trim() || 'Imported theme' });
+    const result = importTheme(this.importText, { name: this.importName.trim() || 'Imported theme' });
     const summary = importSummary(result);
     this.importNote = summary.text;
     if (!summary.ok) return;
+    const added = addTheme(this.values && this.values['appearance.themes'], result.theme);
+    if (!added.ok) { this.importNote = added.reason; return; }
     this.importText = '';
-    this.fire('setting', { key: 'appearance.theme', value: result.theme });
+    this.fire('settings', { 'appearance.themes': added.themes, 'appearance.theme': added.theme });
+  }
+
+  // A theme URL is fetched and converted by the server (POST /api/v1/themes), which adds it to the picker and
+  // answers with what it carried and refused. The page only asks; app-root makes the call and reports back.
+  onImportUrl() {
+    const url = this.importUrl.trim();
+    if (!url) return;
+    this.fire('theme-import', { url });
+  }
+
+  pick(card) {
+    this.importNote = '';
+    this.fire('setting', { key: 'appearance.theme', value: card.theme });
   }
 
   onThemeDefault() {
@@ -84,15 +128,45 @@ class AppSettings extends KitElement {
     this.fire('setting', { key: 'appearance.theme', value: null });
   }
 
+  // Each card carries the colours of the theme it offers, set on the card itself as the same custom properties the
+  // root takes, so the swatches and the card's own surface are drawn exactly as the theme would draw the app. A card
+  // also carries data-palette="default", so a colour the theme leaves out shows the default rather than the theme in
+  // force on the root. Set with setProperty, never written into a style attribute as text.
+  updated(changed) {
+    super.updated?.(changed);
+    const choices = themeChoices(this.values || {});
+    for (const card of this.querySelectorAll('.theme-card[data-theme-id]')) {
+      const choice = choices.find((c) => c.id === card.dataset.themeId);
+      for (const name of [...card.style]) if (name.startsWith('--color-')) card.style.removeProperty(name);
+      for (const [name, value] of swatchVars(choice && choice.theme, this.scheme)) card.style.setProperty(name, value);
+    }
+  }
+
+  // The picker: a grid of cards, the default palette first, each showing its own colours, with the one in force marked.
+  picker() {
+    const cards = themeChoices(this.values || {});
+    return html`<div class="theme-grid" role="radiogroup" aria-label="Theme">
+      ${cards.map((card) => html`<button type="button" class="theme-card" role="radio" aria-checked=${card.selected ? 'true' : 'false'} data-palette="default" data-theme-id=${card.id}
+          data-action=${card.theme ? 'theme-pick' : 'theme-default'} ?disabled=${this.busy} @click=${() => (card.theme ? this.pick(card) : this.onThemeDefault())}>
+        <span class="theme-swatches" aria-hidden="true">${SWATCH_TOKENS.map((t) => html`<span class="theme-swatch" data-token=${t}></span>`)}</span>
+        <span class="theme-card-name">${card.name}</span>
+      </button>`)}
+    </div>`;
+  }
+
   // The theme rows belong to the Appearance section and draw inside its surface, so the section holds one subject
   // rather than two headings for one thing.
   theme() {
-    const current = themeName(this.values && this.values['appearance.theme']);
-    const held = Boolean(this.values && this.values['appearance.theme']);
-    return html`<div class="setting-row"><span class="setting-label">Theme</span><span class="setting-value theme-current">${current || (held ? 'Custom' : 'Default')}</span>
-        ${held ? html`<button class="text-button" data-action="theme-default" ?disabled=${this.busy} @click=${() => this.onThemeDefault()}>Use default</button>` : nothing}</div>
+    return html`<div class="setting-row setting-row-stack"><span class="setting-label">Theme</span>${this.picker()}</div>
+      <div class="setting-row theme-import theme-url">
+        <span class="setting-label">Import a theme from a URL</span>
+        <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/r/themes/..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy || this.urlBusy}
+          @input=${(e) => { this.importUrl = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') this.onImportUrl(); }}>
+        <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${this.busy || this.urlBusy || !this.importUrl.trim()} @click=${() => this.onImportUrl()}>${this.urlBusy ? 'Importing' : 'Import'}</button>
+        ${this.urlNote ? html`<p class="theme-import-note theme-url-note" role="status">${this.urlNote}</p>` : nothing}
+      </div>
       <div class="setting-row theme-import">
-        <span class="setting-label">Import a tweakcn theme</span>
+        <span class="setting-label">Or paste a tweakcn theme</span>
         <input type="text" class="setting-control theme-import-name" placeholder="Theme name" aria-label="Theme name" .value=${this.importName} ?disabled=${this.busy} @input=${(e) => { this.importName = e.currentTarget.value; }}>
         <textarea class="setting-control theme-import-text" rows="6" placeholder="Paste the theme's CSS" aria-label="Theme CSS" .value=${this.importText} ?disabled=${this.busy} @input=${(e) => { this.importText = e.currentTarget.value; }}></textarea>
         <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${this.busy || !this.importText.trim()} @click=${() => this.onImport()}>Import</button>
@@ -100,12 +174,20 @@ class AppSettings extends KitElement {
       </div>`;
   }
 
+  // A row of radios is not wrapped in a label (a label holds one control); it is a row whose radiogroup is named by the
+  // field's label. The percentage choices sit under their label rather than beside it, so seven of them fit a phone.
+  row(field) {
+    if (field.type === 'segmented') return html`<div class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</div>`;
+    if (field.type === 'scale') return html`<div class="setting-row setting-row-stack"><span class="setting-label">${field.label}</span>${this.control(field)}</div>`;
+    return html`<label class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</label>`;
+  }
+
   section(group) {
     return html`<section class="sheet-section">
       <h3 class="sheet-section-title">${group.label}</h3>
       ${group.description ? html`<p class="sheet-section-desc">${group.description}</p>` : nothing}
       <div class="sheet-rows">
-        ${group.fields.map((field) => html`<label class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</label>`)}
+        ${group.fields.map((field) => this.row(field))}
         ${group.id === 'appearance' ? this.theme() : nothing}
       </div>
     </section>`;

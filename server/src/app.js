@@ -53,7 +53,7 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, webhookOptions = {} }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, webhookOptions = {}, themeFetch = globalThis.fetch }) {
   const routes = compile(apiSpec.routes);
   const send = createSender({ engine, store, config, log });
   const previews = new Map();
@@ -198,6 +198,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     webhooks,
     mac,
     restarts,
+    // How a theme URL is fetched; injected so a test can stand in for the network.
+    themeFetch,
   };
   const handlers = await loadRoutes(apiSpec.routes);
   for (const r of apiSpec.routes) if (!handlers.has(r.id)) throw new Error('no handler for route ' + r.id);
