@@ -45,7 +45,7 @@ jobs:
       - run: node scripts/release/collect.mjs artifacts release-assets
       - env:
           VERSION: ${{ inputs.version }}
-        run: node scripts/release/assets.mjs release-assets "$VERSION"
+        run: node scripts/release/assets.mjs release-assets "$VERSION" --desktop
   build:
     strategy:
       fail-fast: false

@@ -380,6 +380,44 @@ async function runSmoke(w) {
   const cdp = (method, params) => wc.debugger.sendCommand(method, params);
   const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
 
+  // The sidebar's Add group control stays on one line (issue 122): at the smallest window the shell allows and at every
+  // text size from 50% to 300%, the label renders as one line, in full at 100%, and shortens with an ellipsis rather
+  // than wrapping where the row is too narrow for it. The line count is read from the label's own text boxes and
+  // checked against the button's height, so a wrap fails here on whichever platform drew it.
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  const [minW, minH] = w.getMinimumSize();
+  await cdp('Emulation.setDeviceMetricsOverride', { width: minW, height: minH, deviceScaleFactor: 1, mobile: false });
+  const addGroupLine = () => js(`(() => {
+    const b = document.querySelector('.add-group .add-group-button');
+    if (!b) return null;
+    const s = getComputedStyle(b);
+    const size = parseFloat(s.fontSize);
+    const line = parseFloat(s.lineHeight) || size * 1.2;
+    const inner = b.getBoundingClientRect().height - ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((n, k) => n + (parseFloat(s[k]) || 0), 0);
+    const range = document.createRange();
+    range.selectNodeContents(b);
+    const lines = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size;
+    return { size, line, inner, lines, full: b.scrollWidth <= b.clientWidth, label: b.textContent.trim(), title: b.title, wide: window.innerWidth };
+  })()`);
+  const addGroupSizes = {};
+  const labelPx = "parseFloat(getComputedStyle(document.querySelector('.add-group .add-group-button')).fontSize)";
+  const plainLabel = await js(labelPx);
+  for (const scale of [50, 100, 200, 300]) {
+    const scaleSet = await putSettings({ 'appearance.textScale': scale });
+    if (!scaleSet.ok) throw new Error('the server refused the text size write: ' + scaleSet.status);
+    await waitFor('Math.abs(' + labelPx + ' - ' + (plainLabel * scale / 100) + ') < 0.6', 10000);
+    await pause(200);
+    const m = await addGroupLine();
+    addGroupSizes[scale] = m;
+    if (scale !== 50) await shot('10-add-group-' + scale + '.png');
+  }
+  await putSettings({ 'appearance.textScale': 100 });
+  await waitFor('Math.abs(' + labelPx + ' - ' + plainLabel + ') < 0.6', 10000);
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  report.addGroup = Object.values(addGroupSizes).every((m) => m && m.lines === 1 && m.inner < m.line * 1.5 && m.label === 'Add group' && m.title === 'Add group' && m.wide === minW)
+    && addGroupSizes[100].full;
+  console.log('add group: ' + JSON.stringify({ minW, minH, sizes: addGroupSizes }));
+
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
   const skinInput = (v) => "document.querySelector('app-settings input[data-key=\"appearance.skin\"][value=\"" + v + "\"]')";

@@ -249,7 +249,13 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .active-filters { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .active-chip { display: inline-flex; align-items: center; gap: var(--space-1); background: var(--color-selection); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-2); font-size: var(--font-size-sm); }
 .chip-clear { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-sm); line-height: 1; padding: 0 var(--space-1); }
+/* Add group stays on one line at every width and text size (issue 122). The name field gives way first: its basis is
+   nothing, so the label takes the width it needs and the field takes the rest. Where the label alone would need more
+   than half the row (a large text size in the fixed-width sidebar), it shortens with an ellipsis, as the chat names in
+   the same column do, and its title still carries the whole label. */
 .add-group { display: flex; align-items: center; gap: var(--space-2); }
+.add-group .new-group-name { flex: 1 1 0; }
+.add-group-button { flex: 0 1 auto; max-width: 50%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-sections { display: flex; flex-direction: column; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
 .section-name { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
