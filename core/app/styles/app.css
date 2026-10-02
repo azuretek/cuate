@@ -249,11 +249,16 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
   body.surface--leaving .sheet, body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-fast) ease-out both; }
 }
 
-/* The chat list's sort control sits beside the filter in the page header, its edit button beside it. The list's own
-   tools row keeps only the group row; the sort choices open under the icon. Every value is a token. */
-.sort-button, .edit-button { flex: none; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
-.sort-button:hover, .edit-button:hover { background: var(--color-bg-sunken); }
-.sort-button[aria-expanded="true"], .edit-button[aria-pressed="true"] { background: var(--color-selection); color: var(--color-fg); }
+/* The chat list's sort control sits beside the filter in the page header, its edit button beside it. Both are a
+   designed surface rather than a bare glyph: a tinted pill with a subtle border, a shadow for depth, a hover state
+   that takes the accent and a pressed state that fills with it, so the pair reads as deliberate controls against the
+   header's raised surface in both appearances. The list's own tools row keeps only the group row; the sort choices
+   open under the icon. Every value is a token. */
+.sort-button, .edit-button { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: var(--space-6); background: var(--color-bg-sunken); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); box-shadow: var(--shadow-sm); transition: background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease); }
+.sort-button:hover, .edit-button:hover { background: var(--color-selection); border-color: var(--color-accent); color: var(--color-accent); }
+.sort-button:active, .edit-button:active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-fg); }
+.sort-button:focus-visible, .edit-button:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
+.sort-button[aria-expanded="true"], .edit-button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); box-shadow: var(--shadow-md); }
 .sort-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 4; }
 .sort-choice { display: flex; align-items: center; gap: var(--space-2); background: none; border: 0; color: var(--color-fg); text-align: left; cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 .sort-choice:hover { background: var(--color-bg-sunken); }

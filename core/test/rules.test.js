@@ -487,6 +487,19 @@ test('a delete cannot complete without the confirm gate, and it only hides the c
   assert.deepEqual(forgetChats(['1', '9'], { '1': 'g1', '9': 'g2' }, ['1']), { order: ['9'], placement: { '9': 'g2' } }, 'a hidden chat leaves the order and the placement too');
 });
 
+test('the group actions act on the first press, and the confirm modal is the only delete gate', () => {
+  // Adding and creating return the next arrangement directly: neither carries a pending step, so nothing stands
+  // between the press and the result.
+  assert.deepEqual(addChatsToGroup({}, ['1'], 'g1'), { '1': 'g1' });
+  const made = groupFromSelection([], {}, ['1'], { id: 'g2', name: 'Family' });
+  assert.deepEqual(made.groups, [{ id: 'g2', name: 'Family' }]);
+  assert.equal(Object.hasOwn(made, 'step') || Object.hasOwn(made.groups[0], 'step'), false, 'a group action is its result, not a pending step');
+  // The delete gate is the only gate: an object that never went through requestDelete cannot resolve, however it is
+  // confirmed.
+  assert.equal(resolveDelete(requestDelete(['1']), false), null, 'the first press resolves nothing');
+  assert.equal(resolveDelete({ ids: ['1'] }, true), null, 'an object that skipped the gate never resolves');
+});
+
 test('a refused write rolls back only the keys it named', () => {
   const before = { 'appearance.skin': 'system' };
   const current = { 'appearance.skin': 'dark', 'appearance.density': 'compact', 'chats.order': ['a'] };
