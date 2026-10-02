@@ -27,6 +27,9 @@ function buildStamp() {
 const SMOKE = process.env.SMOKE_OUT || '';
 // Every notice the shell is asked to show while smoking, so the smoke can prove one fired and one was suppressed.
 const smokeNotices = [];
+// Every bridge command the page calls while smoking, so the smoke can prove the banner's action called the command it
+// says it does rather than trusting the button's label.
+const smokeCalls = [];
 
 app.setName(naming.product);
 if (SMOKE) app.setPath('userData', path.join(SMOKE, 'user-data'));
@@ -69,6 +72,8 @@ const handlers = createHandlers({
     return true;
   },
   configureUpdates: (autoDownload) => (updateControl ? updateControl.setAutoDownload(autoDownload) : false),
+  downloadUpdates: () => (updateControl ? updateControl.download() : false),
+  installUpdate: () => (updateControl ? updateControl.install() : false),
   // The window bar's controls: the page asks, and only the shell touches the BrowserWindow. On a platform with no
   // window the phones answer false, so the one bridge spec serves every shell.
   windowControls: {
@@ -85,6 +90,7 @@ const handlers = createHandlers({
 ipcMain.handle('bridge', (event, name, args) => {
   if (!win || event.sender !== win.webContents) throw new Error('bridge call from an unknown page');
   if (!Object.hasOwn(bridgeSpec.commands, name) || !Object.hasOwn(handlers, name)) throw new Error('undeclared bridge command: ' + name);
+  if (SMOKE) smokeCalls.push(name);
   return handlers[name](args && typeof args === 'object' ? args : {});
 });
 
@@ -272,14 +278,31 @@ async function runSmoke(w) {
   await putSettings({ 'notifications.updateAvailable': true });
   report.notices = report.noticeFired && report.noticeSuppressed;
 
-  // The download state draws the progress as an in-app banner, because a native notice cannot show a moving bar.
-  wc.send('bridge:event:update.state', { state: 'downloading', version: '9.9.9', percent: 0.5, detail: '5.0 MB of 12 MB' });
+  // The update banner runs the whole flow in the app: an available state offers the download, the button's action
+  // calls the bridge command it says it does, the download shows its progress, ready offers the restart, and a failure
+  // says so. The shell records every bridge command the page calls, so the assertion reads the command actually sent.
+  const bannerCommand = () => js("(() => { const b = document.querySelector('.banner.update .banner-action'); if (!b) return null; const c = b.dataset.command; b.click(); return c; })()");
+  const called = async (name) => { for (let i = 0; i < 50 && !smokeCalls.includes(name); i += 1) await pause(100); return smokeCalls.includes(name); };
+  smokeCalls.length = 0;
+  wc.send('bridge:event:update.state', { state: 'available', version: '9.9.9', canInstall: true });
+  await waitFor("Boolean(document.querySelector('.banner.update .banner-action'))", 10000);
+  const downloadCommand = await bannerCommand();
+  report.updateDownloadAction = downloadCommand === 'updates.download' && (await called('updates.download'));
+  wc.send('bridge:event:update.state', { state: 'downloading', version: '9.9.9', percent: 0.5, detail: '5.0 MB of 12 MB', canInstall: true });
   await waitFor("Boolean(document.querySelector('.banner.update .update-progress'))", 10000);
   report.updateBanner = await js("(() => { const p = document.querySelector('.update-progress'); return Boolean(p) && Number(p.value) > 0 && Number(p.value) < 1; })()");
-  wc.send('bridge:event:update.state', { state: 'ready', version: '9.9.9' });
+  smokeCalls.length = 0;
+  wc.send('bridge:event:update.state', { state: 'ready', version: '9.9.9', canInstall: true });
+  await waitFor("Boolean(document.querySelector('.banner.update .banner-action'))", 10000);
+  const installCommand = await bannerCommand();
+  report.updateInstallAction = installCommand === 'updates.install' && (await called('updates.install'));
+  wc.send('bridge:event:update.state', { state: 'error', version: '9.9.9', detail: 'The download was interrupted.', canInstall: true });
+  await waitFor("Boolean(document.querySelector('.banner.update'))", 10000);
+  report.updateFailure = await js("(() => { const b = document.querySelector('.banner.update'); return Boolean(b) && b.textContent.includes('interrupted') && Boolean(b.querySelector('.banner-action')); })()");
+  wc.send('bridge:event:update.state', { state: 'checking' });
   await pause(300);
   report.updateBannerCleared = await js("!document.querySelector('.banner.update')");
-  report.updates = report.updateBanner && report.updateBannerCleared;
+  report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared;
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
   nativeTheme.themeSource = 'light';

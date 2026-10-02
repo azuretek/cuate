@@ -8,12 +8,14 @@
     "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
     "open.external": { "args": { "url": "string" }, "returns": "boolean" },
     "updates.configure": { "args": { "autoDownload": "boolean" }, "returns": "boolean" },
+    "updates.download": { "args": {}, "returns": "boolean" },
+    "updates.install": { "args": {}, "returns": "boolean" },
     "window.minimize": { "args": {}, "returns": "boolean" },
     "window.toggleMaximize": { "args": {}, "returns": "boolean" },
     "window.close": { "args": {}, "returns": "boolean" }
   },
   "events": {
-    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error"] },
+    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error"] },
     "window.state": { "args": { "maximized": "boolean" }, "returns": "void" }
   }
 }
