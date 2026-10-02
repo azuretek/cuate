@@ -36,6 +36,10 @@ const HELP = `usage: node server/src/main.js <command> [--data DIR]
   token list                                                       list tokens (never the tokens themselves)
   token revoke ID                                                  revoke a token
   sending on|off                                                   switch sending (it starts off); restarts the service
+  hooks list                                                       list the hook endpoints (never their secrets or keys)
+  hooks add ID URL [--events a,b|*] [--plaintext]                  add an endpoint; prints its secret and key, once
+  hooks remove|enable|disable ID                                   remove, switch on or switch off an endpoint
+  hooks rotate ID [--retire]                                       new secret and key, the old kept until --retire
   doctor                                                           check the engine and the Mac
   run                                                              start the server
   check [--url URL]                                                with a token on stdin: does a server answer and read
