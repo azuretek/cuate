@@ -39,6 +39,15 @@ function mapInlineReaction(r) {
   return { type: TAPBACKS.has(type) ? type : 'emoji', emoji: r.reaction_emoji || r.emoji || null, fromMe, sender: fromMe ? null : r.sender || null };
 }
 
+// iMessage writes U+FFFC where an inline object sits, meaning an emoji sent as an image or a sticker, which arrives
+// as an attachment of its own. The character has no glyph, so printing it drew a box in the message and in the list
+// preview (issue #80). It is a placeholder, never content.
+const INLINE_OBJECT = /\uFFFC/g;
+
+export function stripInlineObjects(text) {
+  return typeof text === 'string' ? text.replace(INLINE_OBJECT, '') : '';
+}
+
 export function mapMessage(m, { attachmentId }) {
   const fromMe = Boolean(m.is_from_me);
   return {
@@ -47,7 +56,7 @@ export function mapMessage(m, { attachmentId }) {
     fromMe,
     sender: fromMe ? null : m.sender || null,
     senderName: fromMe ? null : m.sender_name || null,
-    text: typeof m.text === 'string' ? m.text : '',
+    text: stripInlineObjects(m.text),
     sentAt: iso(m.created_at) || '1970-01-01T00:00:00.000Z',
     replyTo: m.reply_to_guid || m.thread_originator_guid || null,
     read: fromMe || typeof m.is_read !== 'boolean' ? null : m.is_read,

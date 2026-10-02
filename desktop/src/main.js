@@ -1,6 +1,6 @@
 // The desktop shell: one window hosting core's app page over app://bundle, plus the host bridge. Nothing about the
 // app lives here; the name comes from core/spec/naming.json.
-import { app, BrowserWindow, protocol, ipcMain, safeStorage, Notification, shell, nativeTheme } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain, Menu, safeStorage, Notification, shell, nativeTheme } from 'electron';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +44,17 @@ const handlers = createHandlers({
     return true;
   },
   configureUpdates: (autoDownload) => (updateControl ? updateControl.setAutoDownload(autoDownload) : false),
+  // The window bar's controls: the page asks, and only the shell touches the BrowserWindow. On a platform with no
+  // window the phones answer false, so the one bridge spec serves every shell.
+  windowControls: {
+    minimize: () => { if (!win || win.isDestroyed()) return false; win.minimize(); return true; },
+    toggleMaximize: () => {
+      if (!win || win.isDestroyed()) return false;
+      if (win.isMaximized()) win.unmaximize(); else win.maximize();
+      return win.isMaximized();
+    },
+    close: () => { if (!win || win.isDestroyed()) return false; win.close(); return true; },
+  },
 });
 
 ipcMain.handle('bridge', (event, name, args) => {
@@ -96,6 +107,9 @@ async function runSmoke(w) {
   const report = { info: await js("window.bridge.call('app.info')"), packaged: app.isPackaged };
   await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.bubble-row').length > 0");
   await pause(600);
+  // The window bar, not a platform frame: our title area and three controls are drawn, and no application menu exists.
+  report.windowBar = await js("(() => { const bar = document.querySelector('.window-bar'); if (!bar) return false; const c = [...bar.querySelectorAll('.window-control')]; return c.length === 3 && c.every((b) => (b.getAttribute('aria-label') || '').length > 0); })()");
+  report.menuRemoved = Menu.getApplicationMenu() === null;
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
@@ -140,6 +154,29 @@ async function runSmoke(w) {
   }
   await pause(300);
   await shot('03-after-send.png');
+
+  // The emoji panel: the grid draws first, the search field and the categories sit below it, and the panel keeps one
+  // height, so typing a query narrows the grid without moving the composer or the grid's top edge. The order the eye
+  // reads is the order the keyboard walks: the grid, then the field, then the tabs.
+  await js("document.querySelector('app-composer button.tool').click()");
+  await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-grid'))");
+  await pause(250);
+  const emojiBefore = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); const panel = picker.querySelector('.emoji-picker'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid.getBoundingClientRect().top, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length, active: picker.querySelectorAll('.emoji-tab.active').length, order: [...panel.children].map((n) => n.className) }; })()");
+  await js("(() => { const f = document.querySelector('app-emoji-picker .emoji-search'); f.value = 'heart'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await pause(250);
+  const emojiAfter = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid ? grid.getBoundingClientRect().top : null, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length }; })()");
+  const emojiOrder = emojiBefore.order.join('|');
+  const emojiPanelChecks = {
+    order: emojiOrder.indexOf('emoji-grid') >= 0 && emojiOrder.indexOf('emoji-grid') < emojiOrder.indexOf('emoji-search') && emojiOrder.indexOf('emoji-search') < emojiOrder.indexOf('emoji-tabs'),
+    active: emojiBefore.active === 1,
+    tabs: emojiBefore.tabs > 4 && emojiAfter.tabs === emojiBefore.tabs,
+    narrowed: emojiBefore.rows > emojiAfter.rows && emojiAfter.rows > 0,
+    gridHeld: Math.abs(emojiBefore.gridTop - emojiAfter.gridTop) < 1,
+    composerHeld: Math.abs(emojiBefore.composerTop - emojiAfter.composerTop) < 1,
+  };
+  report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
+  console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, order: emojiOrder }));
+  await js("document.querySelector('app-composer button.tool').click()");
 
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
@@ -332,10 +369,15 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: naming.product,
+    // No platform frame: core draws the bar and its three controls, so the title area is ours on every platform.
+    frame: false,
     icon: path.join(here, '../build/icon.png'),
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   win.on('page-title-updated', (e) => e.preventDefault());
+  // The bar's restore glyph follows the window wherever the change came from, a control or the platform's double-click.
+  win.on('maximize', () => { if (!win.isDestroyed()) win.webContents.send('bridge:event:window.state', { maximized: true }); });
+  win.on('unmaximize', () => { if (!win.isDestroyed()) win.webContents.send('bridge:event:window.state', { maximized: false }); });
   win.webContents.setWindowOpenHandler(({ url }) => {
     handlers['open.external']({ url });
     return { action: 'deny' };
@@ -350,6 +392,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // No application menu on any platform: the window draws its own bar, and no File, Edit, View or Window bar appears.
+  Menu.setApplicationMenu(null);
   protocol.handle('app', serve);
   if (SMOKE && process.env.SMOKE_SERVER_URL) {
     secure.set('server.url', process.env.SMOKE_SERVER_URL);
