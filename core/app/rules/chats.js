@@ -2,6 +2,10 @@
 // arrangement lives here, so a group never changes which chats or messages exist.
 export const SORT_ORDERS = ['recent', 'unread', 'name', 'manual'];
 
+// The sort choices named the way a person reads them. The page header's sort control and the list's own order share
+// this one map, so a button's label and the order it asks for cannot drift.
+export const SORT_LABELS = { recent: 'Recent activity', unread: 'Unread first', name: 'Name', manual: 'Manual order' };
+
 // A chat placed in no group is drawn under this pseudo-group, so nothing disappears when it is left out of one.
 export const UNGROUPED = 'ungrouped';
 
@@ -165,4 +169,83 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   const out = chats.slice();
   out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
   return { chats: orderChats(out), known: true };
+}
+
+// The edit mode's own rules: which rows are checked and what a selection does. Everything here is pure, so the list
+// draws the selection and the page acts on it, and the confirm gate is tested without a browser.
+
+// Checking a row toggles it. The checked list is a plain array so it crosses an event and a setting as data.
+export function toggleChecked(checked = [], id) {
+  return checked.includes(id) ? checked.filter((x) => x !== id) : [...checked, id];
+}
+
+// Select-all turns every named row on, or clears exactly those rows and leaves any others checked.
+export function setAllChecked(checked = [], ids = [], on) {
+  if (on) return [...new Set([...checked, ...ids])];
+  return checked.filter((id) => !ids.includes(id));
+}
+
+export function allChecked(checked = [], ids = []) {
+  return ids.length > 0 && ids.every((id) => checked.includes(id));
+}
+
+// The count of checked rows that are actually on screen, which is what the header shows and the confirm modal names.
+export function checkedCount(checked = [], ids = []) {
+  return ids.filter((id) => checked.includes(id)).length;
+}
+
+// Adding a selection to a group is the single-row placement applied to each id.
+export function addChatsToGroup(placement = {}, ids = [], groupId) {
+  return ids.reduce((acc, id) => placeChat(acc, id, groupId), { ...placement });
+}
+
+// A brand new group takes the selection with it, so both changes travel in one settings patch.
+export function groupFromSelection(groups = [], placement = {}, ids = [], { id, name } = {}) {
+  return { groups: addGroup(groups, { id, name }), placement: addChatsToGroup(placement, ids, id) };
+}
+
+// A group leaves the list and every placement that pointed at it goes with it, so no chat keeps a group that is gone.
+export function removeGroup(groups = [], id) {
+  return groups.filter((g) => g.id !== id);
+}
+
+export function clearGroupPlacement(placement = {}, groupId) {
+  const out = {};
+  for (const [chatId, g] of Object.entries(placement)) if (g !== groupId) out[chatId] = g;
+  return out;
+}
+
+// Delete is a client-side hide: a chat leaves this client's list and nothing on the server is touched. The hidden
+// ids are a setting, so every device one person uses draws the same list.
+export function hideChats(hidden = [], ids = []) {
+  return [...new Set([...hidden, ...ids])];
+}
+
+// A hidden chat also leaves the manual order and the placement, so what is drawn and what is kept stay in step.
+export function forgetChats(order = [], placement = {}, ids = []) {
+  const gone = new Set(ids);
+  const outPlacement = {};
+  for (const [chatId, g] of Object.entries(placement)) if (!gone.has(chatId)) outPlacement[chatId] = g;
+  return { order: order.filter((id) => !gone.has(id)), placement: outPlacement };
+}
+
+// The confirm gate. A delete request opens the modal with the ids it names and nothing else, and only a second,
+// explicit confirmation resolves it: nothing reaches the hide without the second press. An empty selection cannot
+// open the gate at all.
+export const DELETE_STEPS = { idle: 'idle', confirming: 'confirming' };
+
+export function requestDelete(ids = []) {
+  const unique = [...new Set(ids)];
+  return unique.length ? { ids: unique, step: DELETE_STEPS.confirming } : null;
+}
+
+export function requestDeleteGroup(id, name) {
+  return id ? { kind: 'group', id, name: String(name || 'this group'), step: DELETE_STEPS.confirming } : null;
+}
+
+// The second, explicit press. It resolves any pending delete, a selection of chats or a single group, and nothing
+// else does, so no delete reaches its action on one press.
+export function resolveDelete(pending, confirmed) {
+  if (!pending || pending.step !== DELETE_STEPS.confirming || confirmed !== true) return null;
+  return pending;
 }

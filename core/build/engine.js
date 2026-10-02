@@ -23,6 +23,7 @@ var engine = (() => {
   __export(engine_exports, {
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
     BUILD_SPEC: () => BUILD_SPEC,
+    DELETE_STEPS: () => DELETE_STEPS,
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
@@ -39,13 +40,16 @@ var engine = (() => {
     SETTLE: () => SETTLE,
     SILENT_UPDATE_STATES: () => SILENT_UPDATE_STATES,
     SLOP: () => SLOP,
+    SORT_LABELS: () => SORT_LABELS,
     SORT_ORDERS: () => SORT_ORDERS,
     STALL_MS: () => STALL_MS,
     THEME_GROUPS: () => THEME_GROUPS,
     UNGROUPED: () => UNGROUPED,
     UNKNOWN: () => UNKNOWN,
     aboutModel: () => aboutModel,
+    addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
+    allChecked: () => allChecked,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     autoDownloadEnabled: () => autoDownloadEnabled,
@@ -57,7 +61,9 @@ var engine = (() => {
     chatPreview: () => chatPreview,
     chatSearchText: () => chatSearchText,
     chatTitle: () => chatTitle,
+    checkedCount: () => checkedCount,
     checksumMatches: () => checksumMatches,
+    clearGroupPlacement: () => clearGroupPlacement,
     clientReport: () => clientReport,
     coerceSetting: () => coerceSetting,
     commitState: () => commitState,
@@ -75,13 +81,16 @@ var engine = (() => {
     emptyFilters: () => emptyFilters,
     failedBanner: () => failedBanner,
     filterChats: () => filterChats,
+    forgetChats: () => forgetChats,
     formatListTime: () => formatListTime,
     formatSeparator: () => formatSeparator,
     formatTraceparent: () => formatTraceparent,
     frequentEmoji: () => frequentEmoji,
     graphemes: () => graphemes,
+    groupFromSelection: () => groupFromSelection,
     groupMessages: () => groupMessages,
     groupSections: () => groupSections,
+    hideChats: () => hideChats,
     importSummary: () => importSummary,
     importTweakcn: () => importTweakcn,
     initials: () => initials,
@@ -113,11 +122,16 @@ var engine = (() => {
     progressFor: () => progressFor,
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
+    removeGroup: () => removeGroup,
     renameGroup: () => renameGroup,
     reportRows: () => reportRows,
+    requestDelete: () => requestDelete,
+    requestDeleteGroup: () => requestDeleteGroup,
+    resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
+    setAllChecked: () => setAllChecked,
     settingValue: () => settingValue,
     settingsAfterRefusal: () => settingsAfterRefusal,
     settingsAfterWrite: () => settingsAfterWrite,
@@ -133,6 +147,7 @@ var engine = (() => {
     themeName: () => themeName,
     themeVars: () => themeVars,
     toBase64: () => toBase64,
+    toggleChecked: () => toggleChecked,
     tokensCss: () => tokensCss,
     transferDetail: () => transferDetail,
     updateBanner: () => updateBanner,
@@ -749,6 +764,7 @@ var engine = (() => {
 
   // core/app/rules/chats.js
   var SORT_ORDERS = ["recent", "unread", "name", "manual"];
+  var SORT_LABELS = { recent: "Recent activity", unread: "Unread first", name: "Name", manual: "Manual order" };
   var UNGROUPED = "ungrouped";
   function emptyFilters() {
     return { unread: false, group: null, kind: null, text: "" };
@@ -869,6 +885,54 @@ var engine = (() => {
     const out = chats.slice();
     out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
     return { chats: orderChats(out), known: true };
+  }
+  function toggleChecked(checked = [], id) {
+    return checked.includes(id) ? checked.filter((x) => x !== id) : [...checked, id];
+  }
+  function setAllChecked(checked = [], ids = [], on) {
+    if (on) return [.../* @__PURE__ */ new Set([...checked, ...ids])];
+    return checked.filter((id) => !ids.includes(id));
+  }
+  function allChecked(checked = [], ids = []) {
+    return ids.length > 0 && ids.every((id) => checked.includes(id));
+  }
+  function checkedCount(checked = [], ids = []) {
+    return ids.filter((id) => checked.includes(id)).length;
+  }
+  function addChatsToGroup(placement = {}, ids = [], groupId) {
+    return ids.reduce((acc, id) => placeChat(acc, id, groupId), { ...placement });
+  }
+  function groupFromSelection(groups = [], placement = {}, ids = [], { id, name } = {}) {
+    return { groups: addGroup(groups, { id, name }), placement: addChatsToGroup(placement, ids, id) };
+  }
+  function removeGroup(groups = [], id) {
+    return groups.filter((g) => g.id !== id);
+  }
+  function clearGroupPlacement(placement = {}, groupId) {
+    const out = {};
+    for (const [chatId, g] of Object.entries(placement)) if (g !== groupId) out[chatId] = g;
+    return out;
+  }
+  function hideChats(hidden = [], ids = []) {
+    return [.../* @__PURE__ */ new Set([...hidden, ...ids])];
+  }
+  function forgetChats(order = [], placement = {}, ids = []) {
+    const gone = new Set(ids);
+    const outPlacement = {};
+    for (const [chatId, g] of Object.entries(placement)) if (!gone.has(chatId)) outPlacement[chatId] = g;
+    return { order: order.filter((id) => !gone.has(id)), placement: outPlacement };
+  }
+  var DELETE_STEPS = { idle: "idle", confirming: "confirming" };
+  function requestDelete(ids = []) {
+    const unique = [...new Set(ids)];
+    return unique.length ? { ids: unique, step: DELETE_STEPS.confirming } : null;
+  }
+  function requestDeleteGroup(id, name) {
+    return id ? { kind: "group", id, name: String(name || "this group"), step: DELETE_STEPS.confirming } : null;
+  }
+  function resolveDelete(pending, confirmed) {
+    if (!pending || pending.step !== DELETE_STEPS.confirming || confirmed !== true) return null;
+    return pending;
   }
 
   // core/app/rules/emoji.js
