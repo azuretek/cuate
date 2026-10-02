@@ -112,6 +112,17 @@ function check(testCase, measured) {
   }
 }
 
+// The scratch profile is Electron's own userData folder, and on Windows the running app still holds files in it, so
+// removing it before exit fails with EPERM after every check has passed. The verdict is the checks', not the cleanup's:
+// a profile left in the runner's temp folder is logged and the exit code is unchanged.
+function removeProfile() {
+  try {
+    fs.rmSync(PROFILE, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+  } catch (error) {
+    console.warn('left the scratch profile at ' + PROFILE + ' (' + (error && error.code) + ')');
+  }
+}
+
 async function main(app, BrowserWindow, protocol) {
   try {
     app.setPath('userData', PROFILE);
@@ -130,7 +141,7 @@ async function main(app, BrowserWindow, protocol) {
     console.log('');
     console.log(failures.length ? 'PROOF FAILED (' + failures.length + ')' : 'PROOF OK');
     console.log('shots in ' + SHOTS);
-    fs.rmSync(PROFILE, { recursive: true, force: true });
+    removeProfile();
     app.exit(failures.length ? 1 : 0);
   } catch (error) {
     console.error(error);
