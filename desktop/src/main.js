@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates } from './updates.js';
 
@@ -12,6 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
 const naming = JSON.parse(readFileSync(path.join(CORE, 'spec/naming.json'), 'utf8'));
 const bridgeSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/host-bridge.json'), 'utf8'));
+const tokenSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/tokens.json'), 'utf8'));
 const version = app.getVersion();
 const SMOKE = process.env.SMOKE_OUT || '';
 // Every notice the shell is asked to show while smoking, so the smoke can prove one fired and one was suppressed.
@@ -24,6 +26,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
+// Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
+let updateControl = null;
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
@@ -39,6 +43,7 @@ const handlers = createHandlers({
     shell.openExternal(url);
     return true;
   },
+  configureUpdates: (autoDownload) => (updateControl ? updateControl.setAutoDownload(autoDownload) : false),
 });
 
 ipcMain.handle('bridge', (event, name, args) => {
@@ -134,6 +139,28 @@ async function runSmoke(w) {
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
 
+  // The rendered surface: the values the page RESOLVES must be the ones the one spec holds, in each scheme. The
+  // colour scheme follows the platform's, so the shell drives nativeTheme and the page is read back. A platform whose
+  // chrome did not take the tokens, or a scheme a change only half applied, fails here and names the scheme and the
+  // token rather than being assumed to match the platform it was written on.
+  // The scheme the page resolves follows the platform only while the skin is 'system',
+  // and the settings step above pinned that skin to dark. Put it back, and wait for the
+  // page to report a scheme it resolved, so a pinned skin cannot make every light token
+  // read dark and fail a check about the scheme the platform is driving.
+  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.skin': 'system' } }) });
+  await waitFor("document.documentElement.dataset.scheme === 'light' || document.documentElement.dataset.scheme === 'dark'");
+  const surface = async (scheme) => {
+    const expected = expectedTokens(tokenSpec, scheme);
+    nativeTheme.themeSource = scheme;
+    await waitFor(`document.documentElement.dataset.scheme === ${JSON.stringify(scheme)}`);
+    const resolved = await js(`(() => { const s = getComputedStyle(document.documentElement); const out = {}; for (const n of ${JSON.stringify(Object.keys(expected))}) out[n] = s.getPropertyValue(n).trim(); return out; })()`);
+    return tokenMismatches({ expected, resolved });
+  };
+  const surfaceFound = { light: await surface('light'), dark: await surface('dark') };
+  report.surfaceLight = surfaceFound.light.length === 0;
+  report.surfaceDark = surfaceFound.dark.length === 0;
+  report.surface = report.surfaceLight && report.surfaceDark;
+  if (!report.surface) console.error('surface mismatches: ' + JSON.stringify(surfaceFound));
   // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
   // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
   const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
@@ -161,6 +188,16 @@ async function runSmoke(w) {
   report.noticeSuppressed = smokeNotices.length === 0;
   await putSettings({ 'notifications.updateAvailable': true });
   report.notices = report.noticeFired && report.noticeSuppressed;
+
+  // The download state draws the progress as an in-app banner, because a native notice cannot show a moving bar.
+  wc.send('bridge:event:update.state', { state: 'downloading', version: '9.9.9', percent: 0.5, detail: '5.0 MB of 12 MB' });
+  await waitFor("Boolean(document.querySelector('.banner.update .update-progress'))", 10000);
+  report.updateBanner = await js("(() => { const p = document.querySelector('.update-progress'); return Boolean(p) && Number(p.value) > 0 && Number(p.value) < 1; })()");
+  wc.send('bridge:event:update.state', { state: 'ready', version: '9.9.9' });
+  await pause(300);
+  report.updateBannerCleared = await js("!document.querySelector('.banner.update')");
+  report.updates = report.updateBanner && report.updateBannerCleared;
+
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
   nativeTheme.themeSource = 'light';
   await pause(300);
@@ -298,14 +335,18 @@ app.whenReady().then(() => {
   }
   createWindow();
   if (app.isPackaged && !SMOKE) {
-    const stop = startUpdates({
+    updateControl = startUpdates({
       updater: updaterPackage.autoUpdater,
       version,
-      // The page owns the notice, so updates use the same bridge path the new message notices use.
+      // The platform facts and the download preference decide what this build may do; the page supplies the setting.
+      platform: process.platform,
+      packaged: app.isPackaged,
+      appImage: Boolean(process.env.APPIMAGE),
+      // The page owns the notice and the banner, so updates use the same bridge path the new message notices use.
       onState: (state) => { if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state); },
       logError: (message) => console.error(message),
     });
-    app.once('before-quit', stop);
+    app.once('before-quit', () => updateControl.stop());
   }
   app.on('activate', () => { if (!win) createWindow(); });
 });

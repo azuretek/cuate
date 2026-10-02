@@ -6,6 +6,7 @@ export const SETTINGS_SCHEMA = {
   groups: [
     { id: 'appearance', label: 'Appearance' },
     { id: 'notifications', label: 'Notifications' },
+    { id: 'updates', label: 'Updates' },
   ],
   keys: {
     'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'choice', options: ['system', 'light', 'dark'], default: 'system' },
@@ -16,6 +17,10 @@ export const SETTINGS_SCHEMA = {
     'notifications.updateAvailable': { group: 'notifications', label: 'Update available', type: 'toggle', default: true },
     'notifications.updateReady': { group: 'notifications', label: 'Update ready to install', type: 'toggle', default: true },
     'notifications.errors': { group: 'notifications', label: 'Update errors', type: 'toggle', default: true },
+    // Whether a release a check finds is fetched and applied with no further prompt. Off until someone turns it on: a
+    // download nobody asked for spends someone's bandwidth, and the setting is how they asked. The check still runs
+    // with it off, because knowing a release exists is what makes installing by hand possible.
+    'updates.autoDownload': { group: 'updates', label: 'Download updates automatically', type: 'toggle', default: false },
   },
 };
 

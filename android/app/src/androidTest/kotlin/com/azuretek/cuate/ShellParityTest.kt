@@ -38,6 +38,7 @@ class ShellParityTest {
             "app.info",
             "notify",
             "open.external",
+            "updates.configure",
         )
         assertEquals(declared, HostBridge.commandNames(context.assets))
     }
