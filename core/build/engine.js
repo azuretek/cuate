@@ -492,8 +492,16 @@ var engine = (() => {
     else delete out[chatId];
     return out;
   }
+  var CHAT_IDENTIFIER = /^chat[0-9]+$/i;
   function chatTitle(chat) {
-    return (chat.name || "").trim() || (chat.participants || []).join(", ") || "Unknown";
+    const name = String(chat.name || "").trim();
+    if (name && !CHAT_IDENTIFIER.test(name)) return name;
+    const people = (chat.participants || []).map((p) => String(p).trim()).filter(Boolean);
+    if (people.length === 1) return people[0];
+    if (people.length === 2) return people[0] + " and " + people[1];
+    if (people.length === 3) return people[0] + ", " + people[1] + " and 1 other";
+    if (people.length > 3) return people[0] + ", " + people[1] + " and " + (people.length - 2) + " others";
+    return chat.isGroup ? "Group chat" : "Unknown";
   }
   function chatPreview(chat) {
     const m = chat.lastMessage;

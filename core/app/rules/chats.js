@@ -112,8 +112,20 @@ export function placeChat(placement, chatId, groupId) {
   return out;
 }
 
+// A group nobody has named reaches us with the chat's own identifier as its name, so the list read
+// "chat323392484988469066" where it should read the people in it (issue #80). An identifier is not a name, so those
+// fall through to the participants, joined the way a person would say them, and then to a plain label.
+const CHAT_IDENTIFIER = /^chat[0-9]+$/i;
+
 export function chatTitle(chat) {
-  return (chat.name || '').trim() || (chat.participants || []).join(', ') || 'Unknown';
+  const name = String(chat.name || '').trim();
+  if (name && !CHAT_IDENTIFIER.test(name)) return name;
+  const people = (chat.participants || []).map((p) => String(p).trim()).filter(Boolean);
+  if (people.length === 1) return people[0];
+  if (people.length === 2) return people[0] + ' and ' + people[1];
+  if (people.length === 3) return people[0] + ', ' + people[1] + ' and 1 other';
+  if (people.length > 3) return people[0] + ', ' + people[1] + ' and ' + (people.length - 2) + ' others';
+  return chat.isGroup ? 'Group chat' : 'Unknown';
 }
 
 export function chatPreview(chat) {
