@@ -5,7 +5,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
+import { controlLayout } from '../../core/app/rules/bar-layout.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates } from './updates.js';
@@ -142,8 +144,32 @@ async function runSmoke(w) {
   const report = { info: await js("window.bridge.call('app.info')"), packaged: app.isPackaged };
   await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.bubble-row').length > 0");
   await pause(600);
-  // The window bar, not a platform frame: our title area and three controls are drawn, and no application menu exists.
-  report.windowBar = await js("(() => { const bar = document.querySelector('.window-bar'); if (!bar) return false; const c = [...bar.querySelectorAll('.window-control')]; return c.length === 3 && c.every((b) => (b.getAttribute('aria-label') || '').length > 0); })()");
+  // No window bar: the app's surfaces reach the top edge and the top strip drags. The platform's arrangement is core's
+  // own rules, so the smoke reads the DOM back and holds it to that answer: macOS keeps its traffic lights and leaves
+  // room for them, while Windows and Linux draw min, max, close at the right of the contact header. Nothing renders the
+  // product name, a bar or an icon over the top.
+  const bar = await js(`(() => {
+    if (document.querySelector('.window-bar') || document.querySelector('.window-title') || document.querySelector('.window-icon')) return null;
+    const side = document.querySelector('.sidebar-head');
+    const head = document.querySelector('.conv-head');
+    if (!side || !head) return null;
+    const group = head.querySelector('.window-controls');
+    const c = group ? [...group.querySelectorAll('.window-control')] : [];
+    const region = (el) => (el ? getComputedStyle(el).getPropertyValue('-webkit-app-region').trim() : null);
+    const rect = (el) => { const b = el.getBoundingClientRect(); return { top: b.top, left: b.left, right: b.right, height: b.height }; };
+    return {
+      sidebarTop: rect(side).top, headTop: rect(head).top, sideRegion: region(side), headRegion: region(head),
+      controls: Boolean(group), groupRegion: region(group), labelled: c.every((el) => (el.getAttribute('aria-label') || '').length > 0),
+      order: c.map((el) => el.className.split(' ').find((k) => ['minimize', 'maximize', 'close'].includes(k))),
+      head: rect(head), group: group ? rect(group) : null,
+    };
+  })()`);
+  const barLayout = controlLayout({ platform: process.platform });
+  report.windowBar = Boolean(bar) && bar.sidebarTop === 0 && bar.headTop === 0 && bar.sideRegion === 'drag' && bar.headRegion === 'drag'
+    && JSON.stringify(bar.order) === JSON.stringify(barLayout.drawn ? barLayout.order : []);
+  if (barLayout.drawn) report.windowBar = report.windowBar && bar.controls && bar.labelled && bar.groupRegion === 'no-drag' && bar.group.right <= bar.head.right + 0.5;
+  else report.windowBar = report.windowBar && !bar.controls;
+  if (!report.windowBar) console.error('window chrome: ' + JSON.stringify({ bar, barLayout }));
   report.menuRemoved = Menu.getApplicationMenu() === null;
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
@@ -361,17 +387,84 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05-settings.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('05b-settings-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
 
-  // About: every value comes from the server's info route.
-  await js("document.querySelector('app-settings [data-action=\"about\"]').click()");
-  await waitFor("Boolean(document.querySelector('app-about'))");
+  // The sheet's shape: the whole top strip is the back control, and the ways back are the strip, Escape and a press
+  // on the backdrop. The hit area is read with elementFromPoint, so it is the real click target at the strip's own
+  // corners rather than the label alone. A press INSIDE the card, and a drag that starts inside and is released over
+  // the backdrop, must both leave the page where it is; only a press that both starts and ends on the backdrop
+  // returns. This is the desktop smoke's check for what the sibling app proves with its own per-page overflow probes.
+  const sheetHit = (tag) => js('(() => { const b = document.querySelector("' + tag + ' .sheet-back"); if (!b) return false; const r = b.getBoundingClientRect(); const y = r.top + r.height / 2; const pts = [[r.left + 2, y], [r.left + r.width / 2, y], [r.right - 2, y]]; return pts.every(function (q) { const el = document.elementFromPoint(q[0], q[1]); return Boolean(el) && b.contains(el); }); })()');
+  const pressSheet = (downSel, upSel) => js('(() => {' +
+    ' var down = ' + JSON.stringify(downSel) + '; var up = ' + JSON.stringify(upSel) + ';' +
+    ' var scrim = document.querySelector(".sheet-scrim");' +
+    ' var card = document.querySelector(".sheet");' +
+    ' var sr = scrim.getBoundingClientRect(); var cr = card.getBoundingClientRect();' +
+    ' var at = function (sel) { return sel === "backdrop" ? [sr.left + 6, sr.top + 6] : [cr.left + 14, cr.top + 14]; };' +
+    ' var a = at(down); var b = at(up);' +
+    ' var ev = function (type, q, buttons) { return new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 21, pointerType: "mouse", isPrimary: true, clientX: q[0], clientY: q[1], button: 0, buttons: buttons }); };' +
+    ' (down === "backdrop" ? scrim : card).dispatchEvent(ev("pointerdown", a, 1));' +
+    ' (up === "backdrop" ? scrim : card).dispatchEvent(ev("pointerup", b, 0));' +
+    ' return true; })()');
+  const sheetVisible = () => js("Boolean(document.querySelector('.sheet'))");
+  const sideways = async () => js("(() => { const d = document.documentElement; return { inner: window.innerWidth, doc: d.scrollWidth, body: document.body.scrollWidth }; })()");
+
+  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  report.sheetHitArea = await sheetHit('app-settings');
+  await pressSheet('card', 'card');
+  await pause(200);
+  report.sheetInsideKeeps = await sheetVisible();
+  await pressSheet('card', 'backdrop');
+  await pause(200);
+  report.sheetDragKeeps = await sheetVisible();
+  await pressSheet('backdrop', 'backdrop');
+  await waitFor("!document.querySelector('.sheet')", 10000);
+  report.sheetBackdropReturns = !(await sheetVisible());
+
+  // Escape is the keyboard's own way back, and the strip names the key that does it.
+  await js("document.querySelector('.sidebar-head .gear-button').click()");
+  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  await waitFor("!document.querySelector('.sheet')", 10000);
+  report.sheetEscapeReturns = !(await sheetVisible());
+
+  // The card is only as wide as its content needs: at a narrow window the page and the card must not scroll sideways.
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await js("document.querySelector('.sidebar-head .gear-button').click()");
+  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 400, height: 720, deviceScaleFactor: 1, mobile: false });
+  await pause(300);
+  const narrowSettings = await sideways();
+  report.sheetWidthSettings = narrowSettings.doc <= narrowSettings.inner && narrowSettings.body <= narrowSettings.inner;
+
+  // About: every value comes from the server's info route, and it shares the sheet's chrome.
+  await js("document.querySelector('app-settings [data-action=about]').click()");
+  await waitFor("Boolean(document.querySelector('app-about .sheet-back'))");
+  await pause(1000);
+  report.sheetHitAreaAbout = await sheetHit('app-about');
+  const narrowAbout = await sideways();
+  report.sheetWidthAbout = narrowAbout.doc <= narrowAbout.inner && narrowAbout.body <= narrowAbout.inner;
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  await pause(300);
+  nativeTheme.themeSource = 'light';
   await pause(200);
   await shot('06-about.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('06b-about-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
   // The client's own build and the server's, each from its own half, plus the one action that copies the lot.
   report.about = await js("(() => { const rows = [...document.querySelectorAll('app-about .setting-row')].map((r) => r.textContent); return rows.some((t) => t.includes('Client version')) && rows.some((t) => t.includes('Server version')) && rows.some((t) => t.includes('Electron')) && Boolean(document.querySelector('app-about .about-copy')); })()");
-  await js("document.querySelector('app-about .back').click()");
+  report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
+  if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
+  await js("document.querySelector('app-about .sheet-back').click()");
   await waitFor("Boolean(document.querySelector('app-settings'))");
-  await js("document.querySelector('app-settings .back').click()");
+  await js("document.querySelector('app-settings .sheet-back').click()");
   await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
 
   // The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
@@ -479,8 +572,9 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: naming.product,
-    // No platform frame: core draws the bar and its three controls, so the title area is ours on every platform.
-    frame: false,
+    // The platform's own chrome: macOS keeps its traffic lights (the bar leaves them room), Windows and Linux draw no
+    // platform frame at all, because core draws the bar and its controls there. See window-chrome.js.
+    ...windowOptions(process.platform),
     icon: path.join(here, '../build/icon.png'),
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
