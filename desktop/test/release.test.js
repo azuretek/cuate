@@ -7,7 +7,9 @@ import path from 'node:path';
 import { parse, stringify } from 'yaml';
 import { classify, changedFiles } from '../../scripts/release/changes.mjs';
 import { versionOf } from '../../scripts/release/version.mjs';
-import { expectedAssets, verifyAssets } from '../../scripts/release/assets.mjs';
+import { expectedAssets, verifyAssets, verifyDesktopAssets } from '../../scripts/release/assets.mjs';
+import { buildServerArtifact, serverAssetNames, sourceFiles, verifyServerAssets } from '../../scripts/release/server-artifact.mjs';
+import { digestText, manifestOf, readTarball, sha256, writeTarball } from '../../server/src/artifact.js';
 import { collect } from '../../scripts/release/collect.mjs';
 import { publish, prunePlan } from '../../scripts/release/release.mjs';
 import config from '../electron-builder.mjs';
@@ -16,10 +18,14 @@ const sha = 'abcdef0123'.repeat(4);
 const version = versionOf('0.1.0', 8, sha);
 
 test('non-shipped paths never release, unknown and shipped paths do', () => {
-  for (const file of ['docs/a.txt', 'README.md', 'desktop/README.md', '.github/workflows/release.yml', '.githooks/pre-push', 'scripts/release/version.mjs', 'LICENSE', '.gitignore', 'server/src/main.js']) assert.equal(classify([file]).release, false, file);
+  for (const file of ['docs/a.txt', 'README.md', 'desktop/README.md', '.github/workflows/release.yml', '.githooks/pre-push', 'scripts/release/version.mjs', 'LICENSE', '.gitignore']) assert.equal(classify([file]).release, false, file);
   for (const file of ['core/app/main.js', 'desktop/src/main.js', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'new-platform/app']) assert.equal(classify([file]).release, true, file);
   assert.equal(classify([]).release, false);
   assert.equal(classify(['docs/a.md', 'core/a.js']).release, true);
+});
+test('a server-only change releases', () => {
+  for (const file of ['server/src/main.js', 'server/package.json', 'server/test/cli.test.js']) assert.equal(classify([file]).release, true, file);
+  assert.deepEqual(classify(['docs/server.md', 'server/src/send.js']).shipped, ['server/src/send.js']);
 });
 test('diff includes deletions and both sides of renames, dispatch uses release range', () => {
   const calls = [];
@@ -42,11 +48,25 @@ test('builder identity and install policy come from the naming spec', () => {
   assert.equal(config.nsis.allowElevation, false);
   assert.equal(config.extraResources[0].to, 'core');
 });
+// A small server artifact for the fixture version: the checks are the real ones, the files are stand-ins.
+function serverFixture(dir) {
+  const names = serverAssetNames(version);
+  const files = [
+    { path: 'server/stamp.json', data: Buffer.from(JSON.stringify({ version, commit: sha })) },
+    { path: 'server/src/main.js', data: Buffer.from('// main\n') },
+  ];
+  const tarball = writeTarball(files, 1700000000);
+  writeFileSync(path.join(dir, names.tarball), tarball);
+  writeFileSync(path.join(dir, names.digest), digestText(tarball, names.tarball));
+  writeFileSync(path.join(dir, names.manifest), JSON.stringify(manifestOf({ name: naming.slug + '-server', version, commit: sha, node: '>=22.13', files })));
+  return names;
+}
 function fixture(t) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'release-assets-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const names = expectedAssets(version);
-  for (const name of names) writeFileSync(path.join(dir, name), name);
+  const server = Object.values(serverFixture(dir));
+  for (const name of names) if (!server.includes(name)) writeFileSync(path.join(dir, name), name);
   const asset = names.find((name) => name.endsWith('.exe'));
   for (const name of names.filter((name) => name.endsWith('.yml'))) {
     const files = names.filter((file) => name === 'dev.yml' ? file.endsWith('.exe') : name === 'dev-mac.yml' ? file.endsWith('.zip') : name === 'dev-linux.yml' ? file.endsWith('x86_64.AppImage') : file.endsWith('arm64.AppImage')).map((url) => { const bytes = readFileSync(path.join(dir, url)); return { url, size: bytes.length, sha512: createHash('sha512').update(bytes).digest('base64') }; });
@@ -120,7 +140,7 @@ test('all six native packaging legs and their tests gate the sole publisher', ()
   assert.equal(packaging.jobs.build.strategy.matrix.include.length, 6);
   // The publisher needs the platforms gate beside the build: a test build may not
   // publish from a run whose phone or desktop leg was red.
-  assert.deepEqual(workflow.jobs.release.needs, ['prepare', 'platforms', 'build']);
+  assert.deepEqual(workflow.jobs.release.needs, ['prepare', 'platforms', 'build', 'server']);
   assert.match(workflow.jobs.release.if, /needs\.platforms\.result == 'success'/);
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
   assert.deepEqual(workflow.on.push.branches, ['main']);
@@ -164,4 +184,66 @@ test('an abandoned draft for this tag is cleared before re-uploading over it', (
   const create = calls.findIndex((args) => args[1] === 'create');
   assert.ok(del >= 0, 'the abandoned draft is deleted');
   assert.ok(create > del, 'the delete happens before the create');
+});
+
+test('the publisher verifies the server assets with the desktop ones and refuses a tampered one', (t) => {
+  const { dir } = fixture(t);
+  const names = serverAssetNames(version);
+  const assets = verifyAssets(dir, version, { commit: sha });
+  for (const name of Object.values(names)) assert.ok(assets.includes(name), name);
+  assert.throws(() => verifyAssets(dir, version, { commit: 'f'.repeat(40) }), /names commit/);
+  const tarball = path.join(dir, names.tarball);
+  const good = readFileSync(tarball);
+  writeFileSync(tarball, Buffer.concat([good, Buffer.from('x')]));
+  assert.throws(() => verifyAssets(dir, version), /tarball digest mismatch/);
+  const calls = [];
+  assert.throws(() => publish({ dir, version, sha, gh: (args) => { calls.push(args); return '[]'; }, apply: true }), /tarball digest mismatch/);
+  assert.equal(calls.length, 0, 'nothing reaches GitHub from a tampered set');
+  writeFileSync(tarball, good);
+  rmSync(path.join(dir, names.manifest));
+  assert.throws(() => verifyAssets(dir, version), /Missing or empty asset/);
+  assert.equal(verifyDesktopAssets(dir, version).length, expectedAssets(version).length - 3, 'the desktop half alone does not look at the server');
+});
+
+test('a real server build lists every file it packs, each with a matching digest', (t) => {
+  const out = mkdtempSync(path.join(os.tmpdir(), 'server-build-'));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  const env = { ...process.env };
+  delete env.BUILD_VERSION;
+  const { names, manifest } = buildServerArtifact({ out, env, log: () => {} });
+  const { files } = verifyServerAssets(out, manifest.version, { commit: manifest.commit });
+  const packed = readTarball(readFileSync(path.join(out, names.tarball)));
+  assert.equal(packed.size, manifest.files.length);
+  for (const entry of manifest.files) assert.equal(sha256(packed.get(entry.path)), entry.sha256, entry.path);
+  for (const source of sourceFiles()) assert.ok(files.has(source), 'the tracked source ships: ' + source);
+  assert.ok(files.has('server/stamp.json') && files.has('server/node_modules/ws/package.json'), 'the stamp and the production dependencies ship');
+  assert.ok(![...files.keys()].some((p) => /^(core|server)\/test\//.test(p)), 'tests do not ship');
+  assert.equal(manifest.node, JSON.parse(readFileSync(new URL('../../package.json', import.meta.url))).engines.node);
+  assert.equal(JSON.parse(files.get('server/stamp.json')).version, manifest.version);
+});
+
+test('the server artifact is built from the release version, tested, and holds the publisher', () => {
+  const release = parse(readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  const ci = parse(readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  const server = parse(readFileSync(new URL('../../.github/workflows/server-artifact.yml', import.meta.url), 'utf8'));
+  const root = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url)));
+  assert.equal(release.jobs.server.uses, './.github/workflows/server-artifact.yml');
+  assert.equal(release.jobs.server.with.version, release.jobs.build.with.version, 'one version for the server and the desktop');
+  assert.equal(release.jobs.server.if, release.jobs.build.if);
+  assert.ok(release.jobs.release.steps.some((step) => step.with?.name === 'server-release' && step.with?.path === 'release-assets'));
+  assert.equal(server.jobs.server.env.BUILD_VERSION, '$' + '{{ inputs.version }}');
+  const runs = server.jobs.server.steps.map((step) => step.run || '');
+  const at = (re) => runs.findIndex((run) => re.test(run));
+  assert.ok(at(/server\/test/) >= 0 && at(/server\/test/) < at(/server-artifact\.mjs build/), 'the server is tested before it is built');
+  assert.ok(at(/server-artifact\.mjs verify/) > at(/server-artifact\.mjs build/));
+  assert.ok(at(/server-artifact\.mjs smoke/) > at(/server-artifact\.mjs verify/));
+  assert.ok(!JSON.stringify(server).includes('secrets.') && !JSON.stringify(server).includes('GH_TOKEN'));
+  // The platforms gate names ci, whose test leg runs the server's tests and whose server leg builds this artifact,
+  // so a server that fails either holds the release.
+  assert.match(release.jobs.platforms.with.platforms, /\bci\b/);
+  assert.match(root.scripts.test, /server\/test\/\*\.test\.js/);
+  assert.ok(ci.jobs.test.steps.some((step) => step.run === 'pnpm run test'));
+  assert.equal(ci.jobs.server.uses, './.github/workflows/server-artifact.yml');
+  assert.ok(ci.jobs.gate.needs.includes('server'));
+  assert.ok(ci.jobs.gate.steps[0].run.includes('needs.server.result'));
 });

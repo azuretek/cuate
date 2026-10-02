@@ -21,7 +21,7 @@ test('publication allows only main push/manual, independent of a shipped-path ve
       const env = { GITHUB_REF: ref, GITHUB_EVENT_NAME: event_name };
       assert.equal(publicationAllowed(env), allowed);
       if (!allowed) assert.throws(() => assertPublicationAllowed(env), /requires/);
-      for (const job of ['prepare', 'build', 'release']) assert.equal(condition(release.jobs[job].if, { ref, event_name }), allowed, job + ': ' + event_name + ' ' + ref);
+      for (const job of ['prepare', 'build', 'server', 'release']) assert.equal(condition(release.jobs[job].if, { ref, event_name }), allowed, job + ': ' + event_name + ' ' + ref);
     }
   }
 });

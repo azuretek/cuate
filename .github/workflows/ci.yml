@@ -188,6 +188,14 @@ jobs:
     with:
       signed: false
       version: ${{ needs.package-version.outputs.version }}
+  # The server artifact a test release would carry, built, verified and booted from this commit, so a pull request
+  # that breaks the server's packaging fails here rather than at publication.
+  server:
+    name: server artifact
+    needs: package-version
+    uses: ./.github/workflows/server-artifact.yml
+    with:
+      version: ${{ needs.package-version.outputs.version }}
   package-version:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -226,7 +234,7 @@ jobs:
 
   gate:
     name: gate
-    needs: [test, desktop, packaging, platforms]
+    needs: [test, desktop, packaging, server, platforms]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -235,11 +243,11 @@ jobs:
       - name: Every leg passed
         run: |
           failed=''
-          for leg in "test=${{ needs.test.result }}" "desktop=${{ needs.desktop.result }}" "packaging=${{ needs.packaging.result }}" "platforms=${{ needs.platforms.result }}"; do
+          for leg in "test=${{ needs.test.result }}" "desktop=${{ needs.desktop.result }}" "packaging=${{ needs.packaging.result }}" "server=${{ needs.server.result }}" "platforms=${{ needs.platforms.result }}"; do
             [ "${leg#*=}" = success ] || failed="$failed ${leg%%=*} (${leg#*=})"
           done
           if [ -n "$failed" ]; then
             echo "::error title=gate::the gate fails because a leg it needs did not pass:$failed. The cause is in that leg."
             exit 1
           fi
-          echo 'every leg the gate needs passed: test, desktop, packaging, platforms'
+          echo 'every leg the gate needs passed: test, desktop, packaging, server, platforms'

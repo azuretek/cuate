@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
+import { serverAssets, verifyServerAssets } from './server-artifact.mjs';
 const naming = JSON.parse(readFileSync(new URL('../../core/spec/naming.json', import.meta.url)));
-export function expectedAssets(version) {
+// The desktop half: installers, blockmaps and update feeds from the six packaging legs.
+export function desktopAssets(version) {
   const stem = naming.slug + '-desktop-' + version + '-';
   return [
     ...['arm64', 'x64'].flatMap((arch) => ['dmg', 'zip', 'exe'].flatMap((ext) => [stem + arch + '.' + ext, stem + arch + '.' + ext + '.blockmap'])),
@@ -12,8 +14,11 @@ export function expectedAssets(version) {
     'dev.yml', 'dev-mac.yml', 'dev-linux.yml', 'dev-linux-arm64.yml',
   ];
 }
-export function verifyAssets(dir, version) {
-  const expected = expectedAssets(version);
+// Every asset a test release carries: the desktop half and the server's tarball, manifest and digest, all built
+// from one commit and one version.
+export const expectedAssets = (version) => [...desktopAssets(version), ...serverAssets(version)];
+export function verifyDesktopAssets(dir, version) {
+  const expected = desktopAssets(version);
   const names = readdirSync(dir);
   for (const name of expected) {
     if (!names.includes(name) || !statSync(path.join(dir, name)).size) throw new Error('Missing or empty asset: ' + name);
@@ -33,4 +38,15 @@ export function verifyAssets(dir, version) {
   }
   return expected;
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) console.log(JSON.stringify(verifyAssets(process.argv[2], process.argv[3])));
+// The publisher's whole check: the desktop half as above, then the server's digest, manifest and every file in its
+// tarball (server/src/artifact.js). commit, when given, must be the commit the server's manifest names.
+export function verifyAssets(dir, version, { commit } = {}) {
+  verifyDesktopAssets(dir, version);
+  verifyServerAssets(dir, version, { commit });
+  return expectedAssets(version);
+}
+// --desktop checks the desktop half alone: package.yml's completeness job sees only the six packaging legs.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const check = process.argv.includes('--desktop') ? verifyDesktopAssets : verifyAssets;
+  console.log(JSON.stringify(check(process.argv[2], process.argv[3])));
+}

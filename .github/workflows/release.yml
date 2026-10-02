@@ -1,4 +1,4 @@
-name: desktop test release
+name: test release
 
 # ★ The trigger and concurrency conditions, set against the sibling app's release
 # path this workflow is copied from. Two differences are deliberate and named
@@ -83,11 +83,20 @@ jobs:
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+  # The server artifact, from the same commit and the same prepared version as the desktop packages. It runs the
+  # server's own tests first, and the publisher needs it, so a server that fails its tests holds the whole release.
+  server:
+    needs: prepare
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
+    uses: ./.github/workflows/server-artifact.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
   release:
     needs:
       - prepare
       - platforms
       - build
+      - server
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' && needs.platforms.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -109,6 +118,10 @@ jobs:
           pattern: installers-*
           path: artifacts
       - run: node scripts/release/collect.mjs artifacts release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-release
+          path: release-assets
       - name: Verify all assets, draft, attach, verify remote digests, publish, retain ten
         env:
           GH_TOKEN: ${{ github.token }}
