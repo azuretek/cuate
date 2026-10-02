@@ -95,6 +95,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             settle(id: id, ok: true, value: notify(args))
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
+        case "updates.configure":
+            // No self-updater on iOS, so there is nothing to configure; the page ignores the answer.
+            settle(id: id, ok: true, value: false)
         default:
             settle(id: id, ok: false, value: "undeclared bridge command: " + name)
         }
