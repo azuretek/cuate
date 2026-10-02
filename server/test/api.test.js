@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { boot, waitFor, openSocket } from './helpers.js';
-import { apiSpec, naming } from '../src/paths.js';
+import { apiSpec, naming, serverVersion, serverCommit } from '../src/paths.js';
 import { validate } from '../../core/kit/rules/schema.js';
 import { createApiClient } from '../../core/kit/api.js';
 import { settingsGroups } from '../../core/app/rules/settings.js';
@@ -44,7 +44,11 @@ test('a first socket reloads a snapshot when an event arrived before authenticat
 test('health answers without a token', async () => {
   const r = await s.get('/healthz');
   assert.equal(r.status, 200);
-  conforms(await r.json(), 'Health');
+  const body = await r.json();
+  conforms(body, 'Health');
+  // The stamp, so an updater can tell which version answered without holding a token.
+  assert.equal(body.version, serverVersion);
+  assert.equal(body.commit, serverCommit);
 });
 
 test('every other route needs a token, and only in the Authorization header', async () => {

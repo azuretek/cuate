@@ -128,6 +128,7 @@ var engine = (() => {
     sortChats: () => sortChats,
     stageCheck: () => stageCheck,
     stalledNotice: () => stalledNotice,
+    stampProblem: () => stampProblem,
     stripInlineObjects: () => stripInlineObjects,
     summarizeReactions: () => summarizeReactions,
     themeName: () => themeName,
@@ -461,6 +462,16 @@ var engine = (() => {
   function buildNumberOf(version) {
     const m = /(?:^|-)dev\.(\d+)(?:\.|$)/.exec(String(version || ""));
     return m ? m[1] : null;
+  }
+  function stampProblem(stamp) {
+    if (!stamp || typeof stamp !== "object") return "the stamp is not an object";
+    const { version, commit, channel, builtAt } = stamp;
+    if (!/^\d+\.\d+\.\d+(-dev\.\d+\.[a-f0-9]{10})?$/.test(String(version))) return "the version is not a release version: " + version;
+    if (!/^[a-f0-9]{40}$/.test(String(commit))) return "the commit is not a full commit id";
+    if (channelOf(version) === "dev" && !version.endsWith("." + commit.slice(0, 10))) return "the version does not name the commit";
+    if (channel !== channelOf(version)) return "the channel does not match the version";
+    if (missing(builtAt)) return "the build time is missing";
+    return null;
   }
   function installSource({ packaged, appImage, platform } = {}) {
     if (!packaged) return "source";
