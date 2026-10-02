@@ -529,7 +529,7 @@ async function runSmoke(w) {
     wheel: afterWheel !== afterRight,
     smallImageCentred: geometry.width * afterPlus < geometry.stageWidth && smallPan === 0,
     panOverflows: geometry.width * panScale > geometry.stageWidth && geometry.width * dragScale > geometry.stageWidth,
-    keys: afterReset === 1 && afterPlus > 1 && Number(panAfter) < Number(panBefore) && afterMinus < panScale,
+    keys: afterReset === 1 && afterPlus > 1 && Number(panAfter) > Number(panBefore) && afterMinus < panScale,
     mouseDrag: mouseTo > mouseFrom,
     pinch: afterPinch > 1.9 && afterPinch < 2.1,
     drag: Number(dragTo) > Number(dragFrom),
