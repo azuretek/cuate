@@ -741,6 +741,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -760,6 +761,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -779,6 +781,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -798,6 +801,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -817,6 +821,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
@@ -836,6 +841,7 @@
       "post": {
         "requestBody": {
           "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
           "content": {
             "application/json": {
               "schema": {
