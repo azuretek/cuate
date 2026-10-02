@@ -50,3 +50,10 @@ export function updateNotice(state, version, detail = null) {
   if (state === 'error') return { type: 'error', title: 'Update failed', body: why || 'The update could not be checked for or downloaded.' };
   return null;
 }
+
+// The native notice for an incoming message: the chat's title, and the message's own text exactly as it arrived, so
+// an emoji reads in the notice as it does in the conversation. A message with no text names its attachment instead.
+export function messageNotice(title, m) {
+  const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
+  return { title, body: m.text || (count > 1 ? count + ' attachments' : 'Attachment') };
+}
