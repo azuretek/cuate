@@ -340,10 +340,18 @@ async function runSmoke(w) {
   }
   report.phoneFits = phoneFits;
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
-  await pause(250);
+  await waitFor('window.innerWidth === 375', 5000);
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
   report.phoneSend = await js("(() => { const b = document.querySelector('app-composer button.send'); if (!b) return false; const s = getComputedStyle(b); const box = b.getBoundingClientRect(); const size = Math.min(box.width, box.height); const glyph = parseFloat(s.fontSize); return glyph >= 20 && glyph < size && parseInt(s.fontWeight, 10) >= 600 && size >= 36; })()");
-  report.phoneDrawer = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const back = getComputedStyle(document.querySelector('app-conversation .conv-back')).display !== 'none'; const scrim = getComputedStyle(document.querySelector('.scrim')); return back && r.width > 0 && r.width < window.innerWidth && scrim.visibility === 'visible'; })()");
+  // The open drawer is read until it has settled, as the closed one is below. One read straight after the resize failed
+  // on the macOS arm64 runner while the screenshot taken next shows the drawer open, and the single boolean could not
+  // say which part it was, so each part is reported when the drawer never settles open.
+  const drawerParts = () => js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); return { back: getComputedStyle(document.querySelector('app-conversation .conv-back')).display, width: r.width, inner: window.innerWidth, scrim: getComputedStyle(document.querySelector('.scrim')).visibility, pane: document.querySelector('.shell').dataset.pane }; })()");
+  const drawerOpen = (d) => d.back !== 'none' && d.width > 0 && d.width < d.inner && d.scrim === 'visible';
+  let drawer = await drawerParts();
+  for (const t0 = Date.now(); !drawerOpen(drawer) && Date.now() - t0 < 3000; drawer = await drawerParts()) await pause(100);
+  report.phoneDrawer = drawerOpen(drawer);
+  if (!report.phoneDrawer) console.error('phone drawer: ' + JSON.stringify(drawer));
   await shot('07-phone-list.png');
   // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
