@@ -7,7 +7,7 @@ import './app-composer.js';
 import './app-attachment.js';
 
 class AppConversation extends KitElement {
-  static properties = { chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, loadingOlder: {}, sending: {}, client: { attribute: false } };
+  static properties = { chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, loadingOlder: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false } };
 
   constructor() {
     super();
@@ -84,7 +84,7 @@ class AppConversation extends KitElement {
         ${this.hasMore ? html`<button class="load-older" ?disabled=${this.loadingOlder} @click=${() => this.fire('older')}>${this.loadingOlder ? 'Loading\u2026' : 'Load earlier messages'}</button>` : nothing}
         ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms)))}
       </div>
-      <app-composer .disabled=${!this.sending} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} @send=${(e) => this.fire('send', e.detail)}></app-composer>`;
+      <app-composer .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} @send=${(e) => this.fire('send', e.detail)}></app-composer>`;
   }
 }
 

@@ -13,6 +13,7 @@ export default {
       epoch,
       engine: engine.info(),
       sending: config.sending.enabled,
+      uploadMaxBytes: apiSpec.uploads.maxBytes,
     });
   },
 };

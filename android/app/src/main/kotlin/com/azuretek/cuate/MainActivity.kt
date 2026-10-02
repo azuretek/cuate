@@ -1,12 +1,17 @@
 package com.azuretek.cuate
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -32,11 +37,14 @@ class MainActivity : Activity() {
         /** The asset loader's own origin, so no network is involved in loading the page. */
         const val ASSET_ROOT = "/assets/"
         const val START_URL = "https://appassets.androidplatform.net" + ASSET_ROOT + "app/index.html"
+        /** The request code for the system file picker the composer's attach menu opens. */
+        const val PICK_FILE = 41
     }
 
     private lateinit var webView: WebView
     private lateinit var cover: LinearLayout
     private lateinit var coverMessage: TextView
+    private var pickCallback: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,6 +59,7 @@ class MainActivity : Activity() {
             settings.mediaPlaybackRequiresUserGesture = false
             addJavascriptInterface(bridge, HostBridge.INTERFACE_NAME)
             webViewClient = ShellClient()
+            webChromeClient = PickerClient()
         }
 
         coverMessage = TextView(this).apply {
@@ -78,6 +87,21 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    /**
+     * A WebView draws nothing for a file input unless its host opens the picker, so the composer's attach menu
+     * would do nothing on Android without this. The system picker answers here, and the page receives the file.
+     */
+    @Deprecated("Activity result APIs need AndroidX activity; the shell is a plain Activity")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == PICK_FILE) {
+            pickCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
+            pickCallback = null
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     private fun fail(message: String) {
         cover.visibility = View.VISIBLE
         coverMessage.text = message
@@ -87,6 +111,23 @@ class MainActivity : Activity() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
     } catch (e: Exception) {
         "0"
+    }
+
+    /** Opens the system picker for a file input, with the page's own accept filter, and hands back what was picked. */
+    private inner class PickerClient : WebChromeClient() {
+        override fun onShowFileChooser(view: WebView?, callback: ValueCallback<Array<Uri>>?, params: FileChooserParams?): Boolean {
+            pickCallback?.onReceiveValue(null)
+            pickCallback = callback
+            val intent = params?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+            return try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, PICK_FILE)
+                true
+            } catch (e: ActivityNotFoundException) {
+                pickCallback = null
+                false
+            }
+        }
     }
 
     /** The web view host: one asset loader and one delegate for the page's lifecycle. */

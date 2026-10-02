@@ -12,6 +12,7 @@ What works today, and the test that proves each. Planned work is at the end.
 - Attachments by id, only from inside the Messages attachments folder: "attachments are served by id".
 - Marking a conversation read, so a chat read on one device clears on every device: "opening a conversation marks it read".
 - Sending text and files, off until switched on, rate limited, once per client key, with uncertain outcomes never retried: the send tests.
+- Uploading a file from the device (`POST /api/v1/attachments`, the bytes as base64 in the one JSON shape HTTP and MCP share), held in the data folder's `uploads` only until it has been sent and swept after `uploads.keepHours`, capped at `uploads.maxBytes` from the spec and reported in `info` so a client can refuse a file before reading it: "a file from the device uploads...", "an upload is refused when...".
 - Live events over one WebSocket (new messages and tapbacks), resumed after a reconnect: "live messages stream", "tapbacks stream".
 - Scoped tokens in the Authorization header only, stored hashed: "every other route needs a token", "a tooling token cannot send", `server/test/cli.test.js`.
 - The engine restarted when it dies: "the engine is restarted when it dies".
@@ -22,6 +23,7 @@ What works today, and the test that proves each. Planned work is at the end.
 
 - Connect with a server address and a device token, kept in the OS keychain: `desktop/test/bridge.test.js` and the desktop smoke.
 - The chat list, a conversation with sender runs, time separators, photos, tapbacks and delivery state, and sending: the desktop smoke (`desktop/scripts/smoke.mjs`) and `core/test/rules.test.js`.
+- The attach menu beside the emoji button: a short menu opening upward from the composer, a photo or video or any file staged above the field (or pasted), uploaded and sent with the text as its caption: the desktop smoke ("attach menu") and `core/test/rules.test.js`. Android opens the system picker for it from the shell's own chooser.
 - Live updates without a refresh, and OS notifications for incoming messages: the desktop smoke.
 - A notice when an update is available and one when it is downloaded and ready, both through the same bridge notice path the new message notices use, each with its own switch the server holds: `core/test/rules.test.js`, "every notice type has its own switch...", and the desktop smoke, which fires a notice and then silences one.
 - A notifications section in settings, one switch per notice type, written to the server so every client sees it: `core/test/rules.test.js`, "the settings page draws the schema...".

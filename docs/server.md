@@ -21,7 +21,7 @@ node server/src/main.js token create --scope device --name "my laptop"
 
 Switch sending on only once reading works from a device: `node server/src/main.js sending on`.
 
-The data folder defaults to `~/Library/Application Support/<name>-server`; pass `--data DIR` to any command to use another. It holds `config.json`, the token and send records (`state.db`), a secret for attachment ids, and a `diagnostics` folder for crash records.
+The data folder defaults to `~/Library/Application Support/<name>-server`; pass `--data DIR` to any command to use another. It holds `config.json`, the token and send records (`state.db`), a secret for attachment ids, an `uploads` folder holding a file a device sends until it has gone out (swept after a day), and a `diagnostics` folder for crash records.
 
 ## Tokens
 

@@ -3,8 +3,9 @@ import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
 import { orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
+import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
-import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled } from '../rules/notifications.js';
+import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice } from '../rules/notifications.js';
 import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
@@ -302,7 +303,7 @@ class AppRoot extends KitElement {
       if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
-        this.bridge('notify', { title, body: m.text || 'Attachment' }).catch(() => {});
+        this.bridge('notify', messageNotice(title, m)).catch(() => {});
       }
     } else if (name === 'reaction') {
       if (data.chatId === this.openChatId) this.messages = applyReaction(this.messages, data);
@@ -370,16 +371,19 @@ class AppRoot extends KitElement {
     this.messages = this.messages.map((x) => (x.id === localId ? { ...x, state, note } : x));
   }
 
-  async send(text) {
+  // A staged file is uploaded first and then sent by the id the server gives it, with the text as its caption, so the
+  // send itself keeps one client key and the server's once only rule whatever it carries.
+  async send({ text = '', file = null } = {}) {
     const chatId = this.openChatId;
     if (!chatId || !this.client) return;
     const clientKey = newKey();
     const localId = 'local:' + clientKey;
     this.pending.set(clientKey, { localId, chatId, text, messageId: null });
-    const local = { id: localId, chatId, fromMe: true, sender: null, senderName: null, text, sentAt: new Date().toISOString(), replyTo: null, read: null, attachments: [], reactions: [], state: 'sending' };
+    const local = { id: localId, chatId, fromMe: true, sender: null, senderName: null, text, sentAt: new Date().toISOString(), replyTo: null, read: null, attachments: file ? [localAttachment(file)] : [], reactions: [], state: 'sending' };
     this.messages = mergeMessages(this.messages, [local]);
     try {
-      const r = await this.client.send(chatId, { text, clientKey });
+      const upload = file ? await this.client.upload({ name: file.name || 'file', mime: file.type || undefined, data: toBase64(new Uint8Array(await file.arrayBuffer())) }) : null;
+      const r = await this.client.send(chatId, { text, file: upload ? upload.id : undefined, clientKey });
       const p = this.pending.get(clientKey);
       if (!p) return;
       if (r.status === 'uncertain') {
@@ -640,7 +644,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .client=${this.client} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 
