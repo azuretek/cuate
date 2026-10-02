@@ -47,21 +47,25 @@ class AppSettings extends KitElement {
     if (field) this.fire('setting', { key: field.key, value: coerceSetting(field, e.currentTarget.checked) });
   }
 
+  // Every handler here is an arrow that closes over THIS page, never a bare method reference: the template this
+  // method returns is drawn by app-sheet (this page's body is passed to it as .content), so lit binds a bare
+  // `@change=${this.onSelect}` to app-sheet as the render host, and `this.field` would not exist there. The arrows
+  // keep the page's own `this`, the same reason the buttons below wrap their handlers too.
   control(field) {
     const value = settingValue(field, this.values);
     const disabled = this.busy;
     if (field.type === 'choice') {
-      return html`<select class="setting-control" data-key=${field.key} ?disabled=${disabled} @change=${this.onSelect}>
+      return html`<select class="setting-control" data-key=${field.key} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>
         ${field.options.map((o) => html`<option value=${o} ?selected=${o === value}>${o}</option>`)}
       </select>`;
     }
     if (field.type === 'toggle') {
-      return html`<input type="checkbox" class="setting-control" data-key=${field.key} ?checked=${value === true} ?disabled=${disabled} @change=${this.onToggle}>`;
+      return html`<input type="checkbox" class="setting-control" data-key=${field.key} ?checked=${value === true} ?disabled=${disabled} @change=${(e) => this.onToggle(e)}>`;
     }
     if (field.type === 'number') {
-      return html`<input type="number" class="setting-control" data-key=${field.key} min=${field.min} max=${field.max} step=${field.step} .value=${String(value)} ?disabled=${disabled} @change=${this.onSelect}>`;
+      return html`<input type="number" class="setting-control" data-key=${field.key} min=${field.min} max=${field.max} step=${field.step} .value=${String(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>`;
     }
-    return html`<input type="text" class="setting-control" data-key=${field.key} .value=${String(value)} ?disabled=${disabled} @change=${this.onSelect}>`;
+    return html`<input type="text" class="setting-control" data-key=${field.key} .value=${String(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>`;
   }
 
   // A pasted tweakcn export is converted here and written to the server under appearance.theme like any other setting,
@@ -86,12 +90,12 @@ class AppSettings extends KitElement {
     const current = themeName(this.values && this.values['appearance.theme']);
     const held = Boolean(this.values && this.values['appearance.theme']);
     return html`<div class="setting-row"><span class="setting-label">Theme</span><span class="setting-value theme-current">${current || (held ? 'Custom' : 'Default')}</span>
-        ${held ? html`<button class="text-button" data-action="theme-default" ?disabled=${this.busy} @click=${this.onThemeDefault}>Use default</button>` : nothing}</div>
+        ${held ? html`<button class="text-button" data-action="theme-default" ?disabled=${this.busy} @click=${() => this.onThemeDefault()}>Use default</button>` : nothing}</div>
       <div class="setting-row theme-import">
         <span class="setting-label">Import a tweakcn theme</span>
         <input type="text" class="setting-control theme-import-name" placeholder="Theme name" aria-label="Theme name" .value=${this.importName} ?disabled=${this.busy} @input=${(e) => { this.importName = e.currentTarget.value; }}>
         <textarea class="setting-control theme-import-text" rows="6" placeholder="Paste the theme's CSS" aria-label="Theme CSS" .value=${this.importText} ?disabled=${this.busy} @input=${(e) => { this.importText = e.currentTarget.value; }}></textarea>
-        <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${this.busy || !this.importText.trim()} @click=${this.onImport}>Import</button>
+        <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${this.busy || !this.importText.trim()} @click=${() => this.onImport()}>Import</button>
         ${this.importNote ? html`<p class="theme-import-note" role="status">${this.importNote}</p>` : nothing}
       </div>`;
   }
