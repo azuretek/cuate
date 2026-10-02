@@ -128,11 +128,16 @@ export function chatTitle(chat) {
   return chat.isGroup ? 'Group chat' : 'Unknown';
 }
 
+import { stripInlineObjects } from './engine-imsg.js';
+
 export function chatPreview(chat) {
   const m = chat.lastMessage;
   if (!m) return '';
   const count = m.attachments || 0;
-  const body = m.text || (count === 1 ? '1 attachment' : count > 1 ? count + ' attachments' : '');
+  // A message that carries an inline object reads as the object, not as the placeholder character, and one with nothing
+  // readable left is the attachment it actually is (issue #80).
+  const text = stripInlineObjects(m.text).trim();
+  const body = text || (count === 1 ? '1 attachment' : count > 1 ? count + ' attachments' : '');
   return (m.fromMe ? 'You: ' : '') + body;
 }
 

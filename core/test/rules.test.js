@@ -36,6 +36,12 @@ test('chats order newest first and read well', () => {
   assert.equal(chatTitle({ id: 'x', name: 'chat500000001', isGroup: true, participants: [] }), 'Group chat');
   assert.equal(chatTitle({ id: 'x', name: '', participants: [] }), 'Unknown');
   assert.equal(chatPreview({ lastMessage: { text: '', fromMe: true, attachments: 2 } }), 'You: 2 attachments');
+  // iMessage writes U+FFFC where an inline object sits, meaning an emoji sent as an image. It has no glyph, so
+  // printing it drew a box in the list (issue #80): the object reads as itself, and one with nothing readable left
+  // is the attachment it actually is.
+  assert.equal(chatPreview({ lastMessage: { text: '\uFFFCSent! ', fromMe: true, attachments: 1 } }), 'You: Sent!');
+  assert.equal(chatPreview({ lastMessage: { text: '\uFFFC', fromMe: true, attachments: 1 } }), 'You: 1 attachment');
+  assert.equal(mapMessage({ id: 1, chat_id: '9', guid: 'g1', text: '\uFFFCSent! ', is_from_me: true, created_at: '2026-01-01T00:00:00.000Z' }, { attachmentId: () => 'a' }).text, 'Sent! ');
   assert.equal(chatPreview({ lastMessage: null }), '');
   assert.equal(initials('Avery Quinn'), 'AQ');
   assert.equal(initials('+15555550142'), '#');
