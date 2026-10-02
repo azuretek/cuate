@@ -116,6 +116,10 @@ Never publish the server to the internet, so never with `tailscale funnel`: it c
 
 `check` reads the token on standard input, never from an argument or the URL, and says whether the server answers, which versions and engine it runs, and whether it lists chats. Without `--url` it checks the server on this Mac.
 
+## Which version is running
+
+A built server carries a stamp, `server/stamp.json`, with the version and the commit it was built from. `scripts/gen-server-stamp.mjs` writes it from `scripts/release/version.mjs`, the same derivation the desktop, iOS and Android builds take their version from, so a server and the clients built from one commit report one version. The health route (`/healthz`, no token), `check` and the server half of About all report the stamp. A checkout carries no stamp: it reports the version in `core/spec/version.json` and the commit it has checked out. A stamp whose version does not name its commit stops the server at start rather than being reported, and `pnpm run build` fails on a stamp left from an earlier commit, so delete it in a checkout or run `pnpm run server-stamp` again.
+
 ## When something is wrong
 
 - `service status`, then `doctor`, which checks Node, the tokens, the engine and the database permission, sending, and the attachments folder, and says what to fix.

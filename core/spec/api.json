@@ -45,7 +45,7 @@
     "mac.state": "MacEvent"
   },
   "models": {
-    "Health": { "ok": "boolean" },
+    "Health": { "ok": "boolean", "version": "string", "commit": "string?" },
     "Info": { "product": "string", "apiVersion": "number", "serverVersion": "string", "serverChannel": "string", "serverBuild": "string?", "serverCommit": "string?", "serverBuiltAt": "string?", "serverPlatform": "string", "epoch": "string", "engine": "EngineInfo", "sending": "boolean", "uploadMaxBytes": "number" },
     "EngineInfo": { "kind": "string", "version": "string?", "ready": "boolean" },
     "ChatList": { "chats": "Chat[]" },

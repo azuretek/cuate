@@ -17,6 +17,20 @@ export function buildNumberOf(version) {
   return m ? m[1] : null;
 }
 
+// What is wrong with a server stamp (server/stamp.json, written by scripts/gen-server-stamp.mjs), or null when it is
+// sound. The server refuses to start on a stamp this rejects, and the generator's --check holds a written stamp to it,
+// so a version and a commit that do not belong together are never reported.
+export function stampProblem(stamp) {
+  if (!stamp || typeof stamp !== 'object') return 'the stamp is not an object';
+  const { version, commit, channel, builtAt } = stamp;
+  if (!/^\d+\.\d+\.\d+(-dev\.\d+\.[a-f0-9]{10})?$/.test(String(version))) return 'the version is not a release version: ' + version;
+  if (!/^[a-f0-9]{40}$/.test(String(commit))) return 'the commit is not a full commit id';
+  if (channelOf(version) === 'dev' && !version.endsWith('.' + commit.slice(0, 10))) return 'the version does not name the commit';
+  if (channel !== channelOf(version)) return 'the channel does not match the version';
+  if (missing(builtAt)) return 'the build time is missing';
+  return null;
+}
+
 // Where an install came from, from the facts the shell owns. A source run is not installed at all.
 export function installSource({ packaged, appImage, platform } = {}) {
   if (!packaged) return 'source';
