@@ -16,7 +16,7 @@
 // The menu's shape is the check, and it does.
 //
 //   xvfb-run -a node_modules/.bin/electron desktop/scripts/prove-tray.mjs [--shots DIR]
-import { app, BrowserWindow, Menu, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, Menu, Tray, nativeImage, screen } from 'electron';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -38,6 +38,7 @@ const pass = (label) => console.log('OK   ' + label);
 const fail = (label) => { console.log('FAIL ' + label); failures.push(label); };
 const note = (label) => { console.log('NOTE ' + label); notes.push(label); };
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const scale = () => screen.getPrimaryDisplay().scaleFactor || 1;
 
 // The whole screen, or a region of it, with the platform's own tool. Answers the file written, or null with a note.
 function capture(name, region = null) {
@@ -46,17 +47,20 @@ function capture(name, region = null) {
     if (process.platform === 'darwin') {
       execFileSync('screencapture', ['-x', ...(region ? ['-R' + [region.x, region.y, region.width, region.height].join(',')] : []), file], { timeout: 20000 });
     } else if (process.platform === 'win32') {
+      // Screen pixels: the region is in points, so it is scaled by the display's factor first.
       const ps = [
         'Add-Type -AssemblyName System.Windows.Forms, System.Drawing',
         '$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+        'if ($env:PROOF_REGION) { $r = $env:PROOF_REGION.Split(","); $b = New-Object System.Drawing.Rectangle ([int]$r[0]), ([int]$r[1]), ([int]$r[2]), ([int]$r[3]) }',
         '$i = New-Object System.Drawing.Bitmap $b.Width, $b.Height',
         '$g = [System.Drawing.Graphics]::FromImage($i)',
         '$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)',
         '$i.Save($env:PROOF_FILE, [System.Drawing.Imaging.ImageFormat]::Png)',
       ].join('; ');
-      execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 30000, env: { ...process.env, PROOF_FILE: file } });
+      const scaled = region ? [region.x, region.y, region.width, region.height].map((n) => Math.round(n * scale())).join(',') : '';
+      execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 30000, env: { ...process.env, PROOF_FILE: file, PROOF_REGION: scaled } });
     } else {
-      execFileSync('import', ['-window', 'root', file], { timeout: 20000 });
+      execFileSync('import', ['-window', 'root', ...(region ? ['-crop', region.width + 'x' + region.height + '+' + region.x + '+' + region.y, '+repage'] : []), file], { timeout: 20000 });
     }
   } catch (e) {
     note(name + ': no capture on this runner (' + String(e && e.message).split('\n')[0] + ')');
@@ -84,6 +88,8 @@ function describe(item) {
 }
 
 app.whenReady().then(async () => {
+  // The app has no application menu (issue 109), so the window the menu pops over carries none either.
+  Menu.setApplicationMenu(null);
   const clicked = [];
   const commands = Object.fromEntries(TRAY_ITEMS.map((id) => [id, () => clicked.push(id)]));
   const menu = Menu.buildFromTemplate(trayTemplate({ appName: naming.product, commands }));
@@ -122,6 +128,12 @@ app.whenReady().then(async () => {
       setDark(wasDark);
     } else note('the tray reported no bounds, so the menu bar was not captured');
   }
+  // Windows: the icon in the notification area, where the platform placed it (the overflow when the area is full).
+  if (process.platform === 'win32') {
+    const b = tray.getBounds();
+    if (b && b.width > 0) capture('tray-icon-win32.png', { x: Math.max(0, b.x - 80), y: Math.max(0, b.y - 8), width: b.width + 160, height: b.height + 16 });
+    else note('the tray reported no bounds, so the notification area was not captured');
+  }
 
   // The menu as the platform draws it: the tray's own menu, popped up over a small window so it opens without a click
   // on the icon, which a runner cannot make.
@@ -130,7 +142,9 @@ app.whenReady().then(async () => {
   await pause(500);
   menu.popup({ window: win, x: 16, y: 16 });
   await pause(1500);
-  capture('tray-menu-' + process.platform + '.png');
+  // Only the window and the menu over it: the rest of a runner's screen is the runner's, not the app's.
+  const wb = win.getBounds();
+  capture('tray-menu-' + process.platform + '.png', { x: Math.max(0, wb.x - 8), y: Math.max(0, wb.y - 8), width: wb.width + 16, height: wb.height + 16 });
   menu.closePopup(win);
   await pause(300);
   tray.destroy();
