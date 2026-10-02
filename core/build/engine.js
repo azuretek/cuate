@@ -33,6 +33,7 @@ var engine = (() => {
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
     NOTIFY: () => NOTIFY,
+    NO_CHAT_ID: () => NO_CHAT_ID,
     SCHEMES: () => SCHEMES,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
@@ -673,6 +674,8 @@ var engine = (() => {
 
   // core/app/rules/engine-imsg.js
   var TAPBACKS = /* @__PURE__ */ new Set(["love", "like", "dislike", "laugh", "emphasis", "question"]);
+  var NO_CHAT_ID = "0";
+  var chatOf = (m) => m.chat_id ? String(m.chat_id) : NO_CHAT_ID;
   var iso = (s) => {
     const t = Date.parse(s);
     return Number.isFinite(t) ? new Date(t).toISOString() : null;
@@ -714,7 +717,7 @@ var engine = (() => {
     const fromMe = Boolean(m.is_from_me);
     return {
       id: m.guid ? String(m.guid) : "row:" + m.id,
-      chatId: String(m.chat_id),
+      chatId: chatOf(m),
       fromMe,
       sender: fromMe ? null : m.sender || null,
       senderName: fromMe ? null : m.sender_name || null,
@@ -730,7 +733,7 @@ var engine = (() => {
     if (!m.is_reaction || !m.reacted_to_guid) return null;
     const fromMe = Boolean(m.is_from_me);
     return {
-      chatId: String(m.chat_id),
+      chatId: chatOf(m),
       targetId: stripTarget(m.reacted_to_guid),
       type: TAPBACKS.has(m.reaction_type) ? m.reaction_type : "emoji",
       emoji: m.reaction_emoji || null,
