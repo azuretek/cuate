@@ -165,3 +165,37 @@ test('a full export names every chat in a database larger than the client page b
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('an export leaves out a message that belongs to no chat, and records how many', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'export-nochat-'));
+  try {
+    const lines = [];
+    const logger = createLogger({ spec: logSpec, app: 'test', run: 'test', sink: (l) => lines.push(l), now: Date.now, level: 'debug', strict: true });
+    const chats = [{ id: '1', name: 'Avery Quinn', isGroup: false, service: 'iMessage', participants: [], lastMessageAt: null }];
+    // A message the engine reports with chat 0 belongs to no chat: the list never names it, and a real database on the
+    // Mac has such rows. The run carries the chat's message and leaves the chatless one out rather than fail or half
+    // name the document (issue 48).
+    const engine = {
+      chats: async () => chats,
+      after: async ({ sinceRowid }) => ({
+        messages: [
+          { id: 'm-1', chatId: '1', fromMe: false, sender: null, senderName: null, text: 'hello', sentAt: '2026-01-01T00:00:00.000Z', replyTo: null, read: null, attachments: [], reactions: [] },
+          { id: 'm-2', chatId: '0', fromMe: false, sender: null, senderName: null, text: 'no chat', sentAt: '2026-01-01T00:00:01.000Z', replyTo: null, read: null, attachments: [], reactions: [] },
+        ],
+        nextRowid: sinceRowid + 2,
+        hasMore: false,
+      }),
+    };
+    const exporter = createExporter({ engine, dataDir: dir, log: logger.child('export') });
+    const doc = await exporter.collect();
+    assert.deepEqual(validateExport(doc), [], 'the document conforms');
+    assert.equal(doc.messages.length, 1, 'the message that belongs to a chat is carried');
+    assert.equal(doc.messages[0].chatId, '1');
+    assert.ok(doc.messages.every((m) => doc.chats.some((c) => c.id === m.chatId)), 'every message names a chat');
+    await exporter.write(path.join(dir, 'out.json'));
+    assert.ok(lines.some((l) => l.event === 'export.written' && l.chatless === 1), 'the left-out message is counted');
+    assert.ok(!lines.some((l) => l.event === 'log.undeclared'), 'every event is declared');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
