@@ -172,3 +172,71 @@ test('nothing is installed unverified: a mismatched checksum refuses', () => {
 test('the install policy applies an update on quit', () => {
   assert.equal(installPolicy().on, 'quit');
 });
+
+test('a check someone asked for says it is checking, then that this build is current when nothing is newer', async () => {
+  const updater = make(); let checks = 0; updater.checkForUpdates = async () => { checks++; };
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: true, onState, ...quiet });
+  await Promise.resolve();
+  updater.emit('update-not-available', { version: '1.0.0' });
+  assert.equal(states.length, 0, 'the scheduled check stays quiet when nothing is newer');
+  assert.equal(ctl.check(), true);
+  assert.equal(states.at(-1).state, 'checking');
+  await Promise.resolve();
+  assert.equal(checks, 2, 'the same check the schedule runs');
+  updater.emit('update-not-available', { version: '1.0.0' });
+  assert.deepEqual(states.at(-1), { state: 'current', version: '1.0.0', canInstall: true });
+  for (const s of states) assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
+  ctl.stop();
+});
+
+test('a check someone asked for that finds a release reports it as the schedule does', async () => {
+  const updater = make();
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: false, onState, ...quiet });
+  await Promise.resolve();
+  ctl.check();
+  updater.emit('update-available', { version: '1.2.3' });
+  updater.emit('update-not-available', {});
+  assert.deepEqual(states.map((s) => s.state), ['checking', 'available'], 'a found release ends the asked-for check');
+  ctl.stop();
+});
+
+test('a check asked for once an update is downloaded says it is ready rather than checking again', async () => {
+  const updater = make(); let checks = 0; updater.checkForUpdates = async () => { checks++; };
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: true, onState, ...quiet });
+  await Promise.resolve();
+  updater.emit('update-downloaded', { version: '1.2.3' });
+  const before = checks;
+  ctl.check();
+  assert.equal(checks, before);
+  assert.equal(states.at(-1).state, 'ready');
+  assert.equal(states.at(-1).version, '1.2.3');
+  ctl.stop();
+});
+
+test('a build that cannot check answers a check with why, instead of doing nothing', () => {
+  const updater = make();
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'linux', packaged: true, appImage: false, onState, ...quiet });
+  assert.equal(ctl.check(), false);
+  assert.equal(states.at(-1).state, 'unsupported');
+  assert.match(states.at(-1).detail, /AppImage/);
+  ctl.stop();
+});
+
+test('install tells the shell it is quitting before the restart, so a window that hides on close lets it through', async () => {
+  const updater = make();
+  const order = [];
+  updater.quitAndInstall = () => order.push('quitAndInstall');
+  const { onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: true, onState, onQuit: () => order.push('onQuit'), ...quiet });
+  await Promise.resolve();
+  assert.equal(ctl.install(), false, 'nothing downloaded, nothing installed');
+  assert.deepEqual(order, [], 'a refused install does not mark the app quitting');
+  updater.emit('update-downloaded', { version: '1.2.3' });
+  assert.equal(ctl.install(), true);
+  assert.deepEqual(order, ['onQuit', 'quitAndInstall']);
+  ctl.stop();
+});

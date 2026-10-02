@@ -15,7 +15,8 @@
     "window.close": { "args": {}, "returns": "boolean" }
   },
   "events": {
-    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error"] },
-    "window.state": { "args": { "maximized": "boolean" }, "returns": "void" }
+    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },
+    "window.state": { "args": { "maximized": "boolean" }, "returns": "void" },
+    "app.open": { "args": { "screen": "string" }, "returns": "void", "screens": ["settings", "about", "updates"] }
   }
 }

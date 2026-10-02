@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   capability, policy, downloadProgress, transferDetail, downloadingNotice, stalledNotice,
-  verificationCheck, checksumMatches, installPolicy, updateBanner, availableBanner, readyBanner, failedBanner,
+  verificationCheck, checksumMatches, installPolicy, updateBanner, DISMISS, currentBanner, unsupportedBanner, availableBanner, readyBanner, failedBanner,
   INSTALL, MANUAL, NOTIFY, NONE, STALL_MS,
 } from '../app/rules/updates.js';
 
@@ -53,7 +53,8 @@ test('the download and stall banners say what is true at that moment', () => {
   assert.match(stalledNotice({ version: '1.2.3', stallMs: 45000 }).detail, /45 seconds/);
   assert.equal(updateBanner('downloading', { version: '1.2.3', percent: 0.5 }).percent, 0.5);
   assert.equal(updateBanner('stalled', { version: '1.2.3' }).percent, null);
-  assert.equal(updateBanner('checking', {}), null);
+  assert.equal(updateBanner('checking', {}).action, null, 'a check in progress offers nothing to do');
+  assert.equal(updateBanner('nonsense', {}), null);
 });
 
 test('the banner carries the action that takes a person from seeing a release to installing it', () => {
@@ -96,4 +97,19 @@ test('the verification check is named per platform, and a checksum refuses a bad
 test('an update is applied on quit, and the stall window is named', () => {
   assert.equal(installPolicy().on, 'quit');
   assert.equal(STALL_MS, 45000);
+});
+
+test('the answers to a check someone asked for are drawn in the banner and only dismiss', () => {
+  const checking = updateBanner('checking', {});
+  assert.equal(checking.message, 'Checking for updates.');
+  const current = updateBanner('current', { version: '1.2.3', canInstall: true });
+  assert.equal(current.message, 'You are on the latest version.');
+  assert.match(current.detail, /1\.2\.3/);
+  assert.deepEqual(current.action, { command: DISMISS, label: 'OK' });
+  const unsupported = updateBanner('unsupported', { detail: 'running from source' });
+  assert.equal(unsupported.message, 'This build does not update itself.');
+  assert.equal(unsupported.detail, 'Running from source.');
+  assert.deepEqual(unsupported.action, { command: DISMISS, label: 'OK' });
+  assert.equal(currentBanner().detail, 'There is no newer release.');
+  assert.equal(unsupportedBanner().detail, 'This build has no update path.');
 });

@@ -24,6 +24,7 @@ var engine = (() => {
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
     BUILD_SPEC: () => BUILD_SPEC,
     DELETE_STEPS: () => DELETE_STEPS,
+    DISMISS: () => DISMISS,
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
@@ -35,6 +36,7 @@ var engine = (() => {
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
     NOTIFY: () => NOTIFY,
     NO_CHAT_ID: () => NO_CHAT_ID,
+    OPEN_SCREENS: () => OPEN_SCREENS,
     SCHEMES: () => SCHEMES,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
@@ -75,6 +77,7 @@ var engine = (() => {
     createApiClient: () => createApiClient,
     createLogger: () => createLogger,
     cssVarName: () => cssVarName,
+    currentBanner: () => currentBanner,
     daysAgo: () => daysAgo,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
@@ -132,6 +135,7 @@ var engine = (() => {
     requestDeleteGroup: () => requestDeleteGroup,
     resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
+    screenFor: () => screenFor,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
     setAllChecked: () => setAllChecked,
@@ -153,6 +157,7 @@ var engine = (() => {
     toggleChecked: () => toggleChecked,
     tokensCss: () => tokensCss,
     transferDetail: () => transferDetail,
+    unsupportedBanner: () => unsupportedBanner,
     updateBanner: () => updateBanner,
     updateNotice: () => updateNotice,
     updateNoticeKey: () => updateNoticeKey,
@@ -1348,7 +1353,7 @@ var engine = (() => {
     error: "notifications.errors"
   };
   var NOTICE_UPDATE_STATES = ["available", "ready", "error"];
-  var SILENT_UPDATE_STATES = ["checking", "downloading", "stalled"];
+  var SILENT_UPDATE_STATES = ["checking", "downloading", "stalled", "current", "unsupported"];
   function noticeEnabled(settings, type) {
     const key = NOTICE_TYPES[type];
     if (!key || !SETTINGS_SCHEMA.keys[key]) return false;
@@ -1613,7 +1618,22 @@ var engine = (() => {
   function failedBanner({ detail = null } = {}) {
     return { message: "The update could not be downloaded.", detail: detail || "Nothing was installed. You can try again." };
   }
+  var DISMISS = "dismiss";
+  function currentBanner({ version = null } = {}) {
+    return { message: "You are on the latest version.", detail: version ? "Version " + version + " is the newest release." : "There is no newer release." };
+  }
+  function unsupportedBanner({ detail = null } = {}) {
+    const why = detail ? String(detail) : "this build has no update path";
+    return { message: "This build does not update itself.", detail: why.charAt(0).toUpperCase() + why.slice(1) + "." };
+  }
   function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
+    if (state === "checking") return { message: "Checking for updates.", detail: "", percent: null, action: null };
+    if (state === "current") {
+      return { ...currentBanner({ version }), percent: null, action: { command: DISMISS, label: "OK" } };
+    }
+    if (state === "unsupported") {
+      return { ...unsupportedBanner({ detail }), percent: null, action: { command: DISMISS, label: "OK" } };
+    }
     if (state === "available") {
       if (!canInstall) return null;
       return { ...availableBanner({ version }), percent: null, action: { command: "updates.download", label: "Download" } };
@@ -1641,6 +1661,15 @@ var engine = (() => {
     const os = String(platform || "").toLowerCase();
     if (os === "win32" || os === "linux") return { side: "right", order: WINDOW_CONTROLS.slice(), drawn: true };
     return { side: "left", order: [], drawn: false };
+  }
+
+  // core/app/rules/screens.js
+  var OPEN_SCREENS = ["settings", "about", "updates"];
+  function screenFor(screen, { phase }) {
+    if (!OPEN_SCREENS.includes(screen)) return null;
+    if (phase === "boot" || phase === "loading") return "hold";
+    if (phase !== "ready") return null;
+    return screen === "updates" ? "main" : screen;
   }
   return __toCommonJS(engine_exports);
 })();
