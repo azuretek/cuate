@@ -90,8 +90,11 @@ class HostBridge(
             )
             "notify" -> success(notify(args))
             "open.external" -> success(openExternal(args))
-            // No self-updater on Android, so there is nothing to configure; the page ignores the answer.
+            // No self-updater on Android, so there is nothing to configure, download or install; each answers false
+            // and the page offers no action. The one bridge spec still declares them for the desktop.
             "updates.configure" -> success(false)
+            "updates.download" -> success(false)
+            "updates.install" -> success(false)
             // A phone has no window to minimise, maximise or close, so the window commands answer false and the bar is
             // never drawn; the one bridge spec still declares them for the desktop.
             "window.minimize" -> success(false)

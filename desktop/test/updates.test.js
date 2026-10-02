@@ -30,7 +30,10 @@ test('every state the shell emits is declared in the bridge spec', async () => {
   updater.emit('update-available', { version: '1.2.3' });
   updater.emit('download-progress', { percent: 10, transferred: 1, total: 10, bytesPerSecond: 1 });
   updater.emit('update-downloaded', { version: '1.2.3' });
-  for (const s of states) assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
+  for (const s of states) {
+    assert.ok(DECLARED_STATES.includes(s.state), s.state + ' is declared in the bridge spec');
+    assert.equal(typeof s.canInstall, 'boolean', s.state + ' says whether the build can install, so the page offers no action it cannot take');
+  }
   ctl.stop();
 });
 
@@ -86,6 +89,46 @@ test('turning the setting on later fetches a release the check already found', a
   assert.equal(ctl.setAutoDownload(true), true);
   await Promise.resolve();
   assert.equal(updater.downloads, 1);
+  ctl.stop();
+});
+
+test('an explicit download runs even when automatic downloads are off, and install applies it on quit', async () => {
+  const updater = make();
+  updater.quitAndInstall = () => { updater.installs = (updater.installs || 0) + 1; };
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: false, onState, ...quiet });
+  await Promise.resolve();
+  updater.emit('update-available', { version: '1.2.3' });
+  assert.equal(states.at(-1).canInstall, true, 'the page is told the build can install, so it offers the action');
+  // The setting off means nothing is fetched on its own, but an explicit download is never blocked by it.
+  assert.equal(updater.downloads, undefined);
+  assert.equal(ctl.download(), true);
+  await Promise.resolve();
+  assert.equal(updater.downloads, 1);
+  // A second request while the transfer is still running starts no second transfer.
+  assert.equal(ctl.download(), true);
+  assert.equal(updater.downloads, 1);
+  // Nothing is installed before the download has landed and been verified.
+  assert.equal(ctl.install(), false);
+  updater.emit('update-downloaded', { version: '1.2.3' });
+  assert.equal(states.at(-1).state, 'ready');
+  assert.equal(ctl.install(), true);
+  assert.equal(updater.installs, 1);
+  ctl.stop();
+});
+
+test('a build that cannot install refuses the download and the install', async () => {
+  const updater = make();
+  updater.quitAndInstall = () => { updater.installs = (updater.installs || 0) + 1; };
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'linux', packaged: true, appImage: false, autoDownload: true, onState, ...quiet });
+  await Promise.resolve();
+  updater.emit('update-available', { version: '1.2.3' });
+  assert.equal(states.at(-1).canInstall, false);
+  assert.equal(ctl.download(), false);
+  assert.equal(ctl.install(), false);
+  assert.equal(updater.downloads, undefined);
+  assert.equal(updater.installs, undefined);
   ctl.stop();
 });
 

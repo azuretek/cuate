@@ -58,7 +58,7 @@ export function createSecureStore({ file, safeStorage, fs }) {
 // bar (the phones) still shares the one bridge spec.
 const noWindow = { minimize: () => false, toggleMaximize: () => false, close: () => false };
 
-export function createHandlers({ secure, notify, info, openExternal, configureUpdates = () => false, windowControls = noWindow }) {
+export function createHandlers({ secure, notify, info, openExternal, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -68,6 +68,10 @@ export function createHandlers({ secure, notify, info, openExternal, configureUp
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
     // The page holds the server's settings, so it tells the shell whether a found release may be fetched on its own.
     'updates.configure': async ({ autoDownload }) => configureUpdates(autoDownload === true),
+    // An explicit download and install, asked for by the page. Each answers whether the shell accepted it, so the page
+    // can leave the banner as it is rather than pretending an action the shell refused was taken.
+    'updates.download': async () => downloadUpdates(),
+    'updates.install': async () => installUpdate(),
     'window.minimize': async () => windowControls.minimize(),
     'window.toggleMaximize': async () => windowControls.toggleMaximize(),
     'window.close': async () => windowControls.close(),

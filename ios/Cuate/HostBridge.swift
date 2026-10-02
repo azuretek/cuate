@@ -96,7 +96,12 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
         case "updates.configure":
-            // No self-updater on iOS, so there is nothing to configure; the page ignores the answer.
+            // No self-updater on iOS, so there is nothing to configure, download or install; each answers false and
+            // the page offers no action. The one bridge spec still declares them for the desktop.
+            settle(id: id, ok: true, value: false)
+        case "updates.download":
+            settle(id: id, ok: true, value: false)
+        case "updates.install":
             settle(id: id, ok: true, value: false)
         // A phone has no window to minimise, maximise or close, so the window commands answer false and the bar is
         // never drawn; the one bridge spec still declares them for the desktop.
