@@ -88,7 +88,7 @@ function describe(item) {
 }
 
 app.whenReady().then(async () => {
-  // The app has no application menu (issue 109), so the window the menu pops over carries none either.
+  // The proof captures the tray alone, so the window the menu pops over carries no application menu.
   Menu.setApplicationMenu(null);
   const clicked = [];
   const commands = Object.fromEntries(TRAY_ITEMS.map((id) => [id, () => clicked.push(id)]));

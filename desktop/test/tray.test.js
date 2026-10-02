@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { createLifecycle, trayTemplate, trayIcon, trayLabels, TRAY_ITEMS, SCREENS } from '../src/tray.js';
+import { createLifecycle, trayTemplate, trayIcon, trayLabels, appMenuTemplate, TRAY_ITEMS, SCREENS } from '../src/tray.js';
 import { checkForUpdates } from '../src/updates.js';
 import { screenFor, OPEN_SCREENS } from '../../core/app/rules/screens.js';
 
@@ -126,6 +126,43 @@ test('the tray menu carries Open, Settings, About, Check for updates and Quit, e
   assert.throws(() => trayTemplate({ appName: 'App', commands: {} }), /no tray command/);
 });
 
+test('macOS has a minimal application menu, and Windows and Linux have none', () => {
+  const commands = Object.fromEntries(TRAY_ITEMS.map((id) => [id, () => {}]));
+  assert.equal(appMenuTemplate({ platform: 'win32', appName: 'App', commands }), null);
+  assert.equal(appMenuTemplate({ platform: 'linux', appName: 'App', commands }), null);
+  const t = appMenuTemplate({ platform: 'darwin', appName: 'App', commands });
+  assert.equal(t.length, 2, 'the app menu and Edit, nothing else');
+  const [appItems, edit] = t;
+  assert.equal(appItems.label, 'App');
+  const items = appItems.submenu.filter((i) => i.type !== 'separator');
+  assert.deepEqual(items.map((i) => i.id), ['about', 'settings', 'quit']);
+  assert.deepEqual(items.map((i) => i.label), ['About App', 'Settings\u2026', 'Quit App'], 'worded as the tray words them');
+  assert.equal(items.find((i) => i.id === 'quit').accelerator, 'Command+Q');
+  assert.equal(items.find((i) => i.id === 'settings').accelerator, 'Command+,');
+  assert.equal(edit.role, 'editMenu', 'the standard Edit menu, so copy and paste keep working');
+  assert.throws(() => appMenuTemplate({ platform: 'darwin', appName: 'App', commands: {} }), /no app menu command/);
+});
+
+test("the macOS menu's Quit and the tray's Quit call the same function", () => {
+  const calls = [];
+  const quit = () => calls.push('quit');
+  const commands = Object.fromEntries(TRAY_ITEMS.map((id) => [id, id === 'quit' ? quit : () => calls.push(id)]));
+  const trayQuit = trayTemplate({ appName: 'App', commands }).find((i) => i.id === 'quit');
+  const menuQuit = appMenuTemplate({ platform: 'darwin', appName: 'App', commands })[0].submenu.find((i) => i.id === 'quit');
+  trayQuit.click();
+  menuQuit.click();
+  assert.deepEqual(calls, ['quit', 'quit'], 'both reach the one quit command and nothing else');
+  // Built from the lifecycle, as main.js builds both: each Quit marks the app quitting and asks it to quit, once.
+  for (const pick of [(c) => trayTemplate({ appName: 'App', commands: c }), (c) => appMenuTemplate({ platform: 'darwin', appName: 'App', commands: c })[0].submenu]) {
+    const r = rig();
+    const commandsOf = r.life.commands();
+    assert.equal(commandsOf.quit, r.life.quit, 'the command is the lifecycle quit itself');
+    pick(commandsOf).find((i) => i.id === 'quit').click();
+    assert.equal(r.counts.quit, 1);
+    assert.equal(r.life.quitting, true);
+  }
+});
+
 test('the lifecycle supplies every tray command', () => {
   const r = rig();
   assert.deepEqual(Object.keys(r.life.commands()).sort(), [...TRAY_ITEMS].sort());
@@ -174,6 +211,7 @@ test('the shell wires close to the lifecycle, the tray to its template, and no o
   assert.match(main, /win\.on\('close', \(e\) => lifecycle\.onClose\(e\)\)/, 'the window close goes through the lifecycle');
   assert.match(main, /trayTemplate\(\{ appName: naming\.product, commands: lifecycle\.commands\(\) \}\)/, 'the tray menu is the lifecycle commands');
   assert.match(main, /app\.on\('before-quit', \(\) => lifecycle\.markQuitting\(\)\)/);
+  assert.match(main, /appMenuTemplate\(\{ platform: process\.platform, appName: naming\.product, commands: lifecycle\.commands\(\) \}\)/, 'the macOS application menu is the lifecycle commands too');
   const quits = main.split('\n').filter((l) => /app\.quit\(\)/.test(l)).map((l) => l.trim());
   assert.deepEqual(quits, [
     "if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();",

@@ -12,7 +12,7 @@ import { controlLayout } from '../../core/app/rules/bar-layout.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
-import { createLifecycle, trayTemplate, trayIcon } from './tray.js';
+import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
@@ -189,7 +189,17 @@ async function runSmoke(w) {
   if (barLayout.drawn) report.windowBar = report.windowBar && bar.controls && bar.labelled && bar.groupRegion === 'no-drag' && bar.group.right <= bar.head.right + 0.5;
   else report.windowBar = report.windowBar && !bar.controls;
   if (!report.windowBar) console.error('window chrome: ' + JSON.stringify({ bar, barLayout }));
-  report.menuRemoved = Menu.getApplicationMenu() === null;
+  // No application menu on Windows and Linux (issue 109); on macOS the minimal one, whose Quit carries Cmd+Q.
+  const appMenu = Menu.getApplicationMenu();
+  if (process.platform === 'darwin') {
+    const quitItem = appMenu && appMenu.getMenuItemById('quit');
+    const editRoles = appMenu && appMenu.items[1] && appMenu.items[1].submenu ? appMenu.items[1].submenu.items.map((i) => String(i.role).toLowerCase()) : [];
+    report.appMenu = Boolean(appMenu) && appMenu.items.length === 2 && Boolean(quitItem) && quitItem.accelerator === 'Command+Q'
+      && Boolean(appMenu.getMenuItemById('settings')) && Boolean(appMenu.getMenuItemById('about')) && ['copy', 'paste', 'cut', 'selectall'].every((r) => editRoles.includes(r));
+    if (!report.appMenu) console.error('app menu: ' + JSON.stringify({ items: appMenu ? appMenu.items.map((i) => i.label) : null, quit: quitItem ? quitItem.accelerator : null, editRoles }));
+  } else {
+    report.appMenu = appMenu === null;
+  }
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
@@ -764,8 +774,10 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
-  // No application menu on any platform: the window draws its own bar, and no File, Edit, View or Window bar appears.
-  Menu.setApplicationMenu(null);
+  // No application menu on Windows and Linux: the window draws its own bar, and no File, Edit, View or Window bar appears.
+  // macOS keeps the minimal one its menu bar needs for Cmd+Q, Settings and copy and paste; its Quit is the tray's Quit.
+  const appMenu = appMenuTemplate({ platform: process.platform, appName: naming.product, commands: lifecycle.commands() });
+  Menu.setApplicationMenu(appMenu ? Menu.buildFromTemplate(appMenu) : null);
   protocol.handle('app', serve);
   if (SMOKE && process.env.SMOKE_SERVER_URL) {
     secure.set('server.url', process.env.SMOKE_SERVER_URL);

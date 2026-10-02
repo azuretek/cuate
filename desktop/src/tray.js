@@ -39,6 +39,25 @@ export function trayTemplate({ appName, commands }) {
   return [item('show'), sep, item('settings'), item('about'), item('checkUpdates'), sep, item('quit')];
 }
 
+// The application menu. Windows and Linux carry none (issue 109): the window draws its own bar. macOS keeps the least
+// its menu bar needs, because that is where Cmd+Q, Cmd+, and the text shortcuts live there: with no menu Cmd+Q does
+// nothing, and copy and paste stop working in the text fields. Its About, Settings and Quit are the tray's own
+// commands, so the menu bar's Quit and the tray's Quit are one function and quit the same way.
+export function appMenuTemplate({ platform, appName, commands }) {
+  if (platform !== 'darwin') return null;
+  const labels = trayLabels(appName);
+  const item = (id, accelerator) => {
+    if (typeof commands[id] !== 'function') throw new Error('no app menu command "' + id + '"');
+    return accelerator ? { id, label: labels[id], accelerator, click: () => commands[id]() } : { id, label: labels[id], click: () => commands[id]() };
+  };
+  const sep = { type: 'separator' };
+  return [
+    { label: appName, submenu: [item('about'), sep, item('settings', 'Command+,'), sep, item('quit', 'Command+Q')] },
+    // The standard Edit menu: undo, redo, cut, copy, paste and select all, with their usual shortcuts.
+    { role: 'editMenu' },
+  ];
+}
+
 // The tray's image per platform, as a file under desktop/src/assets/tray. macOS takes a template image, a black
 // silhouette the menu bar redraws light or dark to suit itself (the name ends in Template, which is how Electron knows,
 // and the @2x file beside it serves Retina). Windows takes an ICO carrying every size the notification area asks for at
