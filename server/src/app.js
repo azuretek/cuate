@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
 import { createSender } from './send.js';
 import { createAttachments } from './attachments.js';
+import { createUploads } from './uploads.js';
 import { createSearch } from './search.js';
 import { createSettings } from './settings.js';
 import { loadRoutes } from './routes/index.js';
@@ -173,6 +174,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform,
     send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
+    uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),
     exporter,

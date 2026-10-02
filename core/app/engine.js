@@ -14,6 +14,7 @@ export { openapiDocument } from '../kit/rules/openapi.js';
 export { tokensCss } from '../kit/rules/tokens.js';
 export * from '../kit/rules/build.js';
 export * from './rules/build-spec.js';
+export * from './rules/attach.js';
 export * from './rules/chats.js';
 export * from './rules/emoji.js';
 export * from './rules/connection.js';

@@ -6,6 +6,7 @@
     "tooling": ["read", "search", "export", "metrics"],
     "admin": ["read", "send", "search", "export", "metrics", "admin", "settings"]
   },
+  "uploads": { "maxBytes": 104857600, "keepHours": 24 },
   "paging": {
     "chats": { "default": 200, "max": 500 },
     "messages": { "default": 50, "max": 200 },
@@ -19,6 +20,7 @@
     { "id": "chats", "method": "GET", "path": "/api/v1/chats", "scope": "read", "query": ["limit"], "returns": "ChatList" },
     { "id": "messages", "method": "GET", "path": "/api/v1/chats/:chatId/messages", "scope": "read", "query": ["limit", "before"], "returns": "MessageList" },
     { "id": "send", "method": "POST", "path": "/api/v1/chats/:chatId/messages", "scope": "send", "body": "SendRequest", "returns": "SendResult" },
+    { "id": "upload", "method": "POST", "path": "/api/v1/attachments", "scope": "send", "body": "UploadRequest", "returns": "Attachment" },
     { "id": "read", "method": "POST", "path": "/api/v1/chats/:chatId/read", "scope": "send", "returns": "ChatRead" },
     { "id": "attachment", "method": "GET", "path": "/api/v1/attachments/:attachmentId", "scope": "read", "query": ["format"], "returns": "binary" },
     { "id": "search", "method": "GET", "path": "/api/v1/search", "scope": "search", "query": ["q", "limit", "chatId"], "returns": "SearchResults" },
@@ -44,7 +46,7 @@
   },
   "models": {
     "Health": { "ok": "boolean" },
-    "Info": { "product": "string", "apiVersion": "number", "serverVersion": "string", "serverChannel": "string", "serverBuild": "string?", "serverCommit": "string?", "serverBuiltAt": "string?", "serverPlatform": "string", "epoch": "string", "engine": "EngineInfo", "sending": "boolean" },
+    "Info": { "product": "string", "apiVersion": "number", "serverVersion": "string", "serverChannel": "string", "serverBuild": "string?", "serverCommit": "string?", "serverBuiltAt": "string?", "serverPlatform": "string", "epoch": "string", "engine": "EngineInfo", "sending": "boolean", "uploadMaxBytes": "number" },
     "EngineInfo": { "kind": "string", "version": "string?", "ready": "boolean" },
     "ChatList": { "chats": "Chat[]" },
     "Chat": { "id": "string", "name": "string", "isGroup": "boolean", "service": "string", "participants": "string[]", "unread": "number", "lastMessageAt": "string?", "lastMessage": "Preview?" },
@@ -54,6 +56,7 @@
     "Attachment": { "id": "string", "name": "string", "mime": "string", "bytes": "number", "sticker": "boolean", "missing": "boolean" },
     "Reaction": { "type": "string", "emoji": "string?", "fromMe": "boolean", "sender": "string?" },
     "SendRequest": { "text": "string?", "file": "string?", "clientKey": "string" },
+    "UploadRequest": { "name": "string", "mime": "string?", "data": "string" },
     "SendResult": { "status": "string", "clientKey": "string", "messageId": "string?", "duplicate": "boolean?" },
     "ChatRead": { "chatId": "string", "unread": "number" },
     "SearchResults": { "query": "string", "results": "SearchResult[]" },

@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, matchesSearch, SORT_ORDERS, UNGROUPED } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji } from '../app/rules/emoji.js';
+import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal } from '../app/rules/settings.js';
-import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey } from '../app/rules/notifications.js';
+import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
@@ -428,6 +429,45 @@ test('the emoji picker searches by name, keeps categories, and inserts whole cha
   assert.deepEqual(frequentEmoji([]), []);
   assert.equal(isEmoji('\u2728'), true);
   assert.equal(isEmoji('x'), false);
+});
+
+test('the attach menu offers a photo or video and any file, in that order', () => {
+  assert.deepEqual(ATTACH_ACTIONS.map((a) => a.id), ['media', 'file']);
+  assert.equal(ATTACH_ACTIONS[0].accept, 'image/*,video/*');
+  assert.equal(ATTACH_ACTIONS[1].accept, '');
+});
+
+test('a staged file reads its size in words, and is refused when empty or past the server cap', () => {
+  assert.equal(sizeLabel(0), '0 B');
+  assert.equal(sizeLabel(1536), '1.5 KB');
+  assert.equal(sizeLabel(25 * 1024 * 1024), '25 MB');
+  assert.deepEqual(stageCheck({ size: 10 }, 100), { ok: true });
+  assert.equal(stageCheck({ size: 0 }, 100).ok, false);
+  const big = stageCheck({ size: 200 * 1024 * 1024 }, 100 * 1024 * 1024);
+  assert.equal(big.ok, false);
+  assert.match(big.reason, /200 MB.*100 MB/);
+  assert.deepEqual(stageCheck({ size: 10 }, undefined), { ok: true }, 'an older server that names no cap leaves the check to the server');
+});
+
+test('base64 matches the platform encoder for every remainder, emoji text included', () => {
+  for (const s of ['', 'a', 'ab', 'abc', 'abcd', 'hello \u{1F44B}\u{1F3FD} \u{1F1EF}\u{1F1F5}']) {
+    const bytes = new TextEncoder().encode(s);
+    assert.equal(toBase64(bytes), Buffer.from(bytes).toString('base64'), JSON.stringify(s));
+  }
+  const all = Uint8Array.from({ length: 256 }, (_, i) => i);
+  assert.equal(toBase64(all), Buffer.from(all).toString('base64'));
+});
+
+test('the local bubble shows the staged file by name until the server message replaces it', () => {
+  const a = localAttachment({ name: 'notes.pdf', type: 'application/pdf', size: 42 });
+  assert.deepEqual(a, { id: 'local', name: 'notes.pdf', mime: 'application/pdf', bytes: 42, sticker: false, missing: false, local: true });
+});
+
+test('a message notice carries the text exactly, emoji included, and names an attachment when there is no text', () => {
+  const text = 'hi \u{1F44B}\u{1F3FD} \u{1F1EF}\u{1F1F5}';
+  assert.deepEqual(messageNotice('Sam', { text, attachments: [] }), { title: 'Sam', body: text });
+  assert.equal(messageNotice('Sam', { text: '', attachments: [{}] }).body, 'Attachment');
+  assert.equal(messageNotice('Sam', { text: '', attachments: [{}, {}] }).body, '2 attachments');
 });
 
 // The flake on run 37000805003: the page wrote the skin, a change to the density made at the server arrived on the

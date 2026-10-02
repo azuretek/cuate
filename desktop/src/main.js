@@ -219,7 +219,7 @@ async function runSmoke(w) {
   // The emoji panel: the grid draws first, the search field and the categories sit below it, and the panel keeps one
   // height, so typing a query narrows the grid without moving the composer or the grid's top edge. The order the eye
   // reads is the order the keyboard walks: the grid, then the field, then the tabs.
-  await js("document.querySelector('app-composer button.tool').click()");
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
   await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-grid'))");
   await pause(250);
   const emojiBefore = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); const panel = picker.querySelector('.emoji-picker'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid.getBoundingClientRect().top, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length, active: picker.querySelectorAll('.emoji-tab.active').length, order: [...panel.children].map((n) => n.className) }; })()");
@@ -237,7 +237,32 @@ async function runSmoke(w) {
   };
   report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
   console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, order: emojiOrder }));
-  await js("document.querySelector('app-composer button.tool').click()");
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
+
+  // The attach menu (issue 72): the attach button sits beside the emoji button, opens a short menu upward from the
+  // composer rather than a sheet, and a file picked there stages above the field, uploads, and sends with its caption.
+  // The file is handed to the input the way the system picker would, since a smoke cannot drive the OS dialog.
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
+  await waitFor("Boolean(document.querySelector('app-composer .attach-menu'))");
+  const attachMenu = await js("(() => { const c = document.querySelector('app-composer'); const menu = c.querySelector('.attach-menu'); const tools = [...c.querySelectorAll('.composer-tools button.tool')].map((b) => b.getAttribute('aria-label')); return { tools, items: [...menu.querySelectorAll('[role=menuitem]')].map((b) => b.textContent.trim()), above: menu.getBoundingClientRect().bottom <= c.querySelector('form').getBoundingClientRect().top + 1, sheet: menu.getBoundingClientRect().width >= window.innerWidth }; })()");
+  await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
+  const ATTACH_CAPTION = 'smoke caption \u{1F44B}\u{1F3FD}';
+  await js(`(() => { const c = document.querySelector('app-composer'); const input = c.querySelector('input[type=file]'); const dt = new DataTransfer(); dt.items.add(new File(['synthetic smoke file'], 'smoke-note.txt', { type: 'text/plain' })); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
+  await waitFor("Boolean(document.querySelector('app-composer .staged-file'))");
+  const staged = await js("document.querySelector('app-composer .staged-name').textContent");
+  await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${JSON.stringify(ATTACH_CAPTION)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes(${JSON.stringify(ATTACH_CAPTION)}) && r.textContent.includes('smoke-note.txt') && !r.dataset.id.startsWith('local:'))`, 20000);
+  const attachChecks = {
+    beside: attachMenu.tools.join('|') === 'Attach|Emoji',
+    items: attachMenu.items.length === 2,
+    above: attachMenu.above,
+    notSheet: !attachMenu.sheet,
+    staged: staged === 'smoke-note.txt',
+    cleared: await js("!document.querySelector('app-composer .staged-file')"),
+  };
+  report.attachMenu = Object.values(attachChecks).every(Boolean);
+  console.log('attach menu: ' + JSON.stringify({ checks: attachChecks, menu: attachMenu }));
+  await shot('03b-after-file-send.png');
 
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
