@@ -8,7 +8,7 @@ import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
-import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -244,6 +244,18 @@ test('a tweakcn theme is imported, and every name it cannot carry is refused out
   assert.ok(!accepted.includes('chart-1'));
   assert.deepEqual(importTweakcn('not a theme').refused, [], 'input with no tokens refuses nothing rather than throwing');
   assert.deepEqual(importTweakcn('not a theme').theme.color.light, {});
+});
+
+test('an import says what it carried and names each refused value once, and an empty one is not stored', () => {
+  const css = ':root { --primary: #8a3b12; --chart-1: #000000; --radius: 0.5rem; }\n.dark { --primary: #e0a070; --chart-1: #ffffff; }';
+  const result = importTweakcn(css, { name: 'smoke' });
+  const summary = importSummary(result);
+  assert.equal(summary.ok, true);
+  assert.equal(summary.text, 'Imported 2 values. Refused: chart-1.', 'a name accepted in both blocks counts once, a refused one is named once, and a derived pair is not a value of its own');
+  assert.deepEqual(importSummary(importTweakcn(':root { --primary: #8a3b12; }')), { ok: true, text: 'Imported 1 value. Nothing refused.' });
+  assert.equal(importSummary(importTweakcn('not a theme')).ok, false, 'text with nothing to carry is not a theme');
+  assert.equal(importSummary(importTweakcn(':root { --chart-1: #000000; }')).ok, false, 'a theme of refused names only is not stored');
+  assert.equal(importSummary().ok, false);
 });
 
 test('the settings page draws the schema and writes the value a control gives', () => {

@@ -424,6 +424,16 @@ test('a chat arrangement is held on the server and read back on a reconnect', as
   assert.deepEqual(read.values['chats.order'], order);
 });
 
+test('a theme is held on the server as one setting, read back by another device and cleared with null', async () => {
+  const a = s.store.createToken('device', 'theme device a').token;
+  const b = s.store.createToken('device', 'theme device b').token;
+  const theme = { name: 'imported', source: 'tweakcn', color: { light: { accent: 'oklch(0.5 0.1 40)' }, dark: { accent: 'oklch(0.8 0.1 40)' } }, radius: { md: '0.5rem' } };
+  assert.equal((await s.put('/api/v1/settings', a, { values: { 'appearance.theme': theme } })).status, 200);
+  assert.deepEqual((await (await s.get('/api/v1/settings', b)).json()).values['appearance.theme'], theme, 'every client reads the theme the server holds');
+  assert.equal((await s.put('/api/v1/settings', b, { values: { 'appearance.theme': null } })).status, 200);
+  assert.equal((await (await s.get('/api/v1/settings', a)).json()).values['appearance.theme'], null, 'null puts every client back on the default tokens');
+});
+
 test('a settings change is broadcast over the event stream', async () => {
   const a = await openSocket(s.base);
   a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
