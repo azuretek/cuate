@@ -831,6 +831,21 @@
           "serverVersion": {
             "type": "string"
           },
+          "serverChannel": {
+            "type": "string"
+          },
+          "serverBuild": {
+            "type": "string"
+          },
+          "serverCommit": {
+            "type": "string"
+          },
+          "serverBuiltAt": {
+            "type": "string"
+          },
+          "serverPlatform": {
+            "type": "string"
+          },
           "epoch": {
             "type": "string"
           },
@@ -845,6 +860,8 @@
           "product",
           "apiVersion",
           "serverVersion",
+          "serverChannel",
+          "serverPlatform",
           "epoch",
           "engine",
           "sending"
