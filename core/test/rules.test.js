@@ -8,6 +8,7 @@ import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeRe
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal } from '../app/rules/settings.js';
+import { backdropReturns } from '../app/rules/sheet.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
@@ -268,6 +269,7 @@ test('the settings page draws the schema and writes the value a control gives', 
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
   for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups()) assert.ok(typeof g.description === 'string' && g.description.length > 0, g.id + ' carries a one-line description for its section');
   assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates'], 'the page draws one section per group');
   assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload'], 'the updates section holds the download preference');
@@ -280,6 +282,14 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
   assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false });
+});
+
+test('a press leaves the sheet only when it both starts and ends on the backdrop', () => {
+  assert.equal(backdropReturns(true, true), true, 'a press on the backdrop, down and up, goes back');
+  assert.equal(backdropReturns(true, false), false, 'a press that starts on the backdrop and ends inside the card does not');
+  assert.equal(backdropReturns(false, true), false, 'a drag that starts inside the card and is released over the backdrop does not throw the page away');
+  assert.equal(backdropReturns(false, false), false, 'a press inside the card is the page own');
+  assert.equal(backdropReturns(undefined, undefined), false);
 });
 
 test('every notice type has its own switch and a notice only fires when it is on', () => {

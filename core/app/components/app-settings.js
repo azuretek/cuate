@@ -2,10 +2,19 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { settingsFields, settingsGroups, settingValue, coerceSetting } from '../rules/settings.js';
 import { importTweakcn, importSummary, themeName } from '../rules/theme.js';
+import './app-sheet.js';
+
+// The one line the page says about itself, under its title.
+const INTRO = 'Choose how this app looks and which notices it raises.';
 
 // The settings page: it draws one section per group the schema declares and one control per key, reads what the
 // server holds and writes every change straight back to the server, so the value lands once and every device sees it,
 // the event stream included. The connection details and sign out live here now, not in the list header.
+//
+// Every section comes from settingsGroups(), so the schema is the one owner of the group list and the page keeps no
+// second one. Each group carries its own one-line description from the schema, and a group's rows sit on one surface
+// with a divider between them. The page and its chrome (the full-width back strip, the title, the description) are
+// drawn by app-sheet, which both this page and About use.
 class AppSettings extends KitElement {
   static properties = { values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, importText: { state: true }, importName: { state: true }, importNote: { state: true } };
 
@@ -38,21 +47,25 @@ class AppSettings extends KitElement {
     if (field) this.fire('setting', { key: field.key, value: coerceSetting(field, e.currentTarget.checked) });
   }
 
+  // Every handler here is an arrow that closes over THIS page, never a bare method reference: the template this
+  // method returns is drawn by app-sheet (this page's body is passed to it as .content), so lit binds a bare
+  // `@change=${this.onSelect}` to app-sheet as the render host, and `this.field` would not exist there. The arrows
+  // keep the page's own `this`, the same reason the buttons below wrap their handlers too.
   control(field) {
     const value = settingValue(field, this.values);
     const disabled = this.busy;
     if (field.type === 'choice') {
-      return html`<select class="setting-control" data-key=${field.key} ?disabled=${disabled} @change=${this.onSelect}>
+      return html`<select class="setting-control" data-key=${field.key} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>
         ${field.options.map((o) => html`<option value=${o} ?selected=${o === value}>${o}</option>`)}
       </select>`;
     }
     if (field.type === 'toggle') {
-      return html`<input type="checkbox" class="setting-control" data-key=${field.key} ?checked=${value === true} ?disabled=${disabled} @change=${this.onToggle}>`;
+      return html`<input type="checkbox" class="setting-control" data-key=${field.key} ?checked=${value === true} ?disabled=${disabled} @change=${(e) => this.onToggle(e)}>`;
     }
     if (field.type === 'number') {
-      return html`<input type="number" class="setting-control" data-key=${field.key} min=${field.min} max=${field.max} step=${field.step} .value=${String(value)} ?disabled=${disabled} @change=${this.onSelect}>`;
+      return html`<input type="number" class="setting-control" data-key=${field.key} min=${field.min} max=${field.max} step=${field.step} .value=${String(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>`;
     }
-    return html`<input type="text" class="setting-control" data-key=${field.key} .value=${String(value)} ?disabled=${disabled} @change=${this.onSelect}>`;
+    return html`<input type="text" class="setting-control" data-key=${field.key} .value=${String(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>`;
   }
 
   // A pasted tweakcn export is converted here and written to the server under appearance.theme like any other setting,
@@ -71,43 +84,50 @@ class AppSettings extends KitElement {
     this.fire('setting', { key: 'appearance.theme', value: null });
   }
 
+  // The theme rows belong to the Appearance section and draw inside its surface, so the section holds one subject
+  // rather than two headings for one thing.
   theme() {
     const current = themeName(this.values && this.values['appearance.theme']);
     const held = Boolean(this.values && this.values['appearance.theme']);
-    return html`<div class="setting-group" data-group="theme">
-      <h3 class="setting-group-label">Theme</h3>
-      <div class="setting-row"><span class="setting-label">Theme</span><span class="setting-value theme-current">${current || (held ? 'Custom' : 'Default')}</span>
-        ${held ? html`<button class="text-button" data-action="theme-default" ?disabled=${this.busy} @click=${this.onThemeDefault}>Use default</button>` : nothing}</div>
+    return html`<div class="setting-row"><span class="setting-label">Theme</span><span class="setting-value theme-current">${current || (held ? 'Custom' : 'Default')}</span>
+        ${held ? html`<button class="text-button" data-action="theme-default" ?disabled=${this.busy} @click=${() => this.onThemeDefault()}>Use default</button>` : nothing}</div>
       <div class="setting-row theme-import">
         <span class="setting-label">Import a tweakcn theme</span>
         <input type="text" class="setting-control theme-import-name" placeholder="Theme name" aria-label="Theme name" .value=${this.importName} ?disabled=${this.busy} @input=${(e) => { this.importName = e.currentTarget.value; }}>
         <textarea class="setting-control theme-import-text" rows="6" placeholder="Paste the theme's CSS" aria-label="Theme CSS" .value=${this.importText} ?disabled=${this.busy} @input=${(e) => { this.importText = e.currentTarget.value; }}></textarea>
-        <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${this.busy || !this.importText.trim()} @click=${this.onImport}>Import</button>
+        <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${this.busy || !this.importText.trim()} @click=${() => this.onImport()}>Import</button>
         ${this.importNote ? html`<p class="theme-import-note" role="status">${this.importNote}</p>` : nothing}
+      </div>`;
+  }
+
+  section(group) {
+    return html`<section class="sheet-section">
+      <h3 class="sheet-section-title">${group.label}</h3>
+      ${group.description ? html`<p class="sheet-section-desc">${group.description}</p>` : nothing}
+      <div class="sheet-rows">
+        ${group.fields.map((field) => html`<label class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</label>`)}
+        ${group.id === 'appearance' ? this.theme() : nothing}
       </div>
-    </div>`;
+    </section>`;
   }
 
-  group(section) {
-    return html`<div class="setting-group">
-      <h3 class="setting-group-label">${section.label}</h3>
-      ${section.fields.map((field) => html`<label class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</label>`)}
-    </div>`;
-  }
-
-  render() {
-    return html`<section class="page" aria-label="Settings">
-      <header class="page-head"><button class="back" aria-label="Back" @click=${() => this.fire('back')}>←</button><h2 class="page-title">Settings</h2></header>
+  body() {
+    return html`
       ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
-      <div class="page-body">
-        ${settingsGroups().map((group) => (group.id === 'appearance' ? [this.group(group), this.theme()] : this.group(group)))}
-        <div class="setting-group">
+      ${settingsGroups().map((group) => this.section(group))}
+      <section class="sheet-section">
+        <h3 class="sheet-section-title">This device</h3>
+        <p class="sheet-section-desc">The server this app talks to, and the way out of it.</p>
+        <div class="sheet-rows">
           <div class="setting-row"><span class="setting-label">Server</span><span class="setting-value">${this.serverUrl || 'Not connected'}</span></div>
           <div class="setting-row"><span class="setting-label">About</span><button class="text-button" data-action="about" @click=${() => this.fire('about')}>About this app</button></div>
           <div class="setting-row"><span class="setting-label">Connection</span><button class="text-button" data-action="signout" @click=${() => this.fire('signout')}>Sign out</button></div>
         </div>
-      </div>
-    </section>`;
+      </section>`;
+  }
+
+  render() {
+    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .content=${this.body()}></app-sheet>`;
   }
 }
 
