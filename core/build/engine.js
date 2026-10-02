@@ -81,6 +81,7 @@ var engine = (() => {
     graphemes: () => graphemes,
     groupMessages: () => groupMessages,
     groupSections: () => groupSections,
+    importSummary: () => importSummary,
     importTweakcn: () => importTweakcn,
     initials: () => initials,
     insertEmoji: () => insertEmoji,
@@ -1375,6 +1376,13 @@ var engine = (() => {
       }
     }
     return { theme, accepted, refused };
+  }
+  function importSummary({ accepted = [], refused = [] } = {}) {
+    const carried = new Set(accepted.filter((a) => !a.includes(" -> "))).size;
+    const left = [...new Set(refused)];
+    if (carried === 0) return { ok: false, text: "Nothing in that text is a tweakcn theme this app can carry." };
+    const lead = "Imported " + carried + (carried === 1 ? " value." : " values.");
+    return { ok: true, text: left.length ? lead + " Refused: " + left.join(", ") + "." : lead + " Nothing refused." };
   }
 
   // core/app/rules/time.js
