@@ -112,7 +112,7 @@ class AppChatList extends KitElement {
     return html`<div class="list-tools">
       <div class="add-group">
         <input class="new-group-name" type="text" placeholder="New group" aria-label="New group name" @keydown=${(e) => { if (e.key === 'Enter') this.createGroup(); }}>
-        <button type="button" class="text-button" @click=${() => this.createGroup()}>Add group</button>
+        <button type="button" class="text-button add-group-button" title="Add group" @click=${() => this.createGroup()}>Add group</button>
       </div>
     </div>`;
   }
