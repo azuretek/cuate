@@ -15,6 +15,7 @@ import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
+import { backdropReturns } from '../rules/sheet.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -78,6 +79,8 @@ class AppRoot extends KitElement {
     this.listOpen = true;
     this.sheetLeaving = false;
     this.pendingSheet = null;
+    // A press on the backdrop is a second way back only when it both starts and ends there (rules/sheet.js).
+    this.downOnBackdrop = false;
     this.settings = {};
     this.info = null;
     this.serverUrl = '';
@@ -440,6 +443,24 @@ class AppRoot extends KitElement {
     this.pendingSheet = null;
     this.leaveSheet();
   }
+
+  // The backdrop beside the card is the second way back, and it only takes a press that both begins and ends on it:
+  // a press inside the card is the page's own, and a drag that starts inside and is released over the backdrop (a
+  // selection dragged past the edge) is not a return. The rule lives in rules/sheet.js; these only read the targets.
+  onBackdropDown = (e) => {
+    this.downOnBackdrop = e.target === e.currentTarget;
+  };
+
+  onBackdropUp = (e) => {
+    const endsOnBackdrop = e.target === e.currentTarget;
+    const startsOnBackdrop = this.downOnBackdrop;
+    this.downOnBackdrop = false;
+    if (backdropReturns(startsOnBackdrop, endsOnBackdrop)) this.closeView();
+  };
+
+  onBackdropCancel = () => {
+    this.downOnBackdrop = false;
+  };
 
   leaveSheet() {
     if (!this.sheetLeaving) this.sheetLeaving = true;
@@ -896,7 +917,7 @@ class AppRoot extends KitElement {
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
       <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${() => this.updateAction(banner.action.command)}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
-      ${this.sheetShowing ? html`<div class="sheet-scrim" @click=${() => this.closeView()}></div><section class="sheet" role="dialog" aria-modal="true" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section>` : nothing}
+      ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
     </div>`;
   }
