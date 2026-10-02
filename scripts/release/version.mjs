@@ -19,7 +19,7 @@ export function versionOf(base, count, sha) {
 }
 export function run({ argv = [] } = {}) {
   const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
-  const base = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url))).version;
+  const base = JSON.parse(readFileSync(new URL('../../core/spec/version.json', import.meta.url))).version;
   const marketing = marketingOf(base);
   // --marketing prints only what a bundle can carry: an App Store version is three
   // dot separated integers, so the dev string stays in the app's own build field.

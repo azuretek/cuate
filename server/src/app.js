@@ -4,7 +4,7 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
-import { apiSpec, naming, serverVersion } from './paths.js';
+import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
 import { createSender } from './send.js';
 import { createAttachments } from './attachments.js';
 import { createSearch } from './search.js';
@@ -170,7 +170,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const webhooks = createWebhooks({ engine, endpoints: (config.webhooks && config.webhooks.endpoints) || [], log: log.child('webhook') });
   const ctx = {
-    json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, epoch, platform,
+    json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform,
     send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     search: createSearch({ engine, paging }),

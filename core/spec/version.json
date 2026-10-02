@@ -1,0 +1,5 @@
+{
+  "description": "The one source of the product's version. The server reads it at startup, the desktop build stamps it into the app, and scripts/release/version.mjs computes a build version from it, so the two halves are always built from one number and can be compared. A test build carries the next patch, the commit count and the commit; the two package.json files keep 0.0.0 and carry no version of their own.",
+  "version": "0.0.0",
+  "channel": "dev"
+}
