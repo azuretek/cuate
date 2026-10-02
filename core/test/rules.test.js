@@ -27,8 +27,21 @@ test('chats order newest first and read well', () => {
     { id: '3', name: 'C', participants: [], lastMessageAt: null },
   ];
   assert.deepEqual(orderChats(chats).map((c) => c.id), ['2', '1', '3']);
-  assert.equal(chatTitle(chats[1]), 'x@example.com, y@example.com');
+  assert.equal(chatTitle(chats[1]), 'x@example.com and y@example.com');
+  // A group nobody has named arrives with the chat identifier as its name, and read as a machine string in the list
+  // instead of the people in it (issue #80). A named group keeps its name.
+  assert.equal(chatTitle({ id: 'x', name: 'chat323392484988469066', isGroup: true, participants: ['Rafael Renhart', 'Evelyn Renhart', 'Kylie Brief'] }), 'Rafael Renhart, Evelyn Renhart and 1 other');
+  assert.equal(chatTitle({ id: 'x', name: 'chat500000001', isGroup: true, participants: ['Avery Quinn', 'Reign'] }), 'Avery Quinn and Reign');
+  assert.equal(chatTitle({ id: 'x', name: 'Weekend plans', isGroup: true, participants: ['Avery Quinn'] }), 'Weekend plans');
+  assert.equal(chatTitle({ id: 'x', name: 'chat500000001', isGroup: true, participants: [] }), 'Group chat');
+  assert.equal(chatTitle({ id: 'x', name: '', participants: [] }), 'Unknown');
   assert.equal(chatPreview({ lastMessage: { text: '', fromMe: true, attachments: 2 } }), 'You: 2 attachments');
+  // iMessage writes U+FFFC where an inline object sits, meaning an emoji sent as an image. It has no glyph, so
+  // printing it drew a box in the list (issue #80): the object reads as itself, and one with nothing readable left
+  // is the attachment it actually is.
+  assert.equal(chatPreview({ lastMessage: { text: '\uFFFCSent! ', fromMe: true, attachments: 1 } }), 'You: Sent!');
+  assert.equal(chatPreview({ lastMessage: { text: '\uFFFC', fromMe: true, attachments: 1 } }), 'You: 1 attachment');
+  assert.equal(mapMessage({ id: 1, chat_id: '9', guid: 'g1', text: '\uFFFCSent! ', is_from_me: true, created_at: '2026-01-01T00:00:00.000Z' }, { attachmentId: () => 'a' }).text, 'Sent! ');
   assert.equal(chatPreview({ lastMessage: null }), '');
   assert.equal(initials('Avery Quinn'), 'AQ');
   assert.equal(initials('+15555550142'), '#');
