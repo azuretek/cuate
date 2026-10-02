@@ -179,9 +179,16 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      # The gate fails only as a consequence of a leg it needs, so it names that leg: one red leg must not read as two
+      # independent defects.
       - name: Every leg passed
         run: |
-          test "${{ needs.test.result }}" = success
-          test "${{ needs.desktop.result }}" = success
-          test "${{ needs.packaging.result }}" = success
-          test "${{ needs.platforms.result }}" = success
+          failed=''
+          for leg in "test=${{ needs.test.result }}" "desktop=${{ needs.desktop.result }}" "packaging=${{ needs.packaging.result }}" "platforms=${{ needs.platforms.result }}"; do
+            [ "${leg#*=}" = success ] || failed="$failed ${leg%%=*} (${leg#*=})"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error title=gate::the gate fails because a leg it needs did not pass:$failed. The cause is in that leg."
+            exit 1
+          fi
+          echo 'every leg the gate needs passed: test, desktop, packaging, platforms'

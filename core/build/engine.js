@@ -116,6 +116,7 @@ var engine = (() => {
     settingValue: () => settingValue,
     settingsFields: () => settingsFields,
     settingsGroups: () => settingsGroups,
+    settleWrite: () => settleWrite,
     settlesOpen: () => settlesOpen,
     sortChats: () => sortChats,
     stalledNotice: () => stalledNotice,
@@ -1198,6 +1199,15 @@ var engine = (() => {
     if (field.type === "number") return Number(raw);
     if (field.type === "toggle") return raw === true || raw === "true";
     return String(raw);
+  }
+  function settleWrite(current, keys, source) {
+    if (!source) return current;
+    const out = { ...current };
+    for (const key of keys) {
+      if (Object.hasOwn(source, key)) out[key] = source[key];
+      else delete out[key];
+    }
+    return out;
   }
   function mergeSettings(values = {}, schema = SETTINGS_SCHEMA) {
     const out = {};

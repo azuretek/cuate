@@ -223,7 +223,10 @@ async function runSmoke(w) {
   await js("(() => { const s = document.querySelector('app-settings select[data-key=\"appearance.skin\"]'); s.value = 'dark'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
   for (let i = 0; i < 50 && (await held())['appearance.skin'] !== 'dark'; i += 1) await pause(200);
   report.settingsWrote = (await held())['appearance.skin'] === 'dark';
-  await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  // Written while the page's own skin write can still be in flight: the server holds 'dark' before the page has read
+  // the write's answer, so this is also the check that an older answer does not put the streamed value back.
+  const densityWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
+  if (!densityWrite.ok) throw new Error('the server refused the density write: ' + densityWrite.status);
   await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
   report.settingsStreamed = true;
   report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;

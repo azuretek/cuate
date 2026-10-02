@@ -8,6 +8,7 @@ import { noticeEnabled, updateNotice, autoDownloadEnabled } from '../rules/notif
 import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
+import { settleWrite } from '../rules/settings.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -498,10 +499,10 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
     try {
       const { values } = await this.client.settingsWrite({ [key]: value });
-      this.settings = values || this.settings;
+      this.settings = settleWrite(this.settings, [key], values);
       this.applyUpdateSetting();
     } catch (e) {
-      this.settings = before;
+      this.settings = settleWrite(this.settings, [key], before);
       this.settingsProblem = this.describe(e);
     } finally {
       this.settingsBusy = false;
@@ -589,9 +590,9 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
     try {
       const { values } = await this.client.settingsWrite(patch);
-      this.settings = values || this.settings;
+      this.settings = settleWrite(this.settings, Object.keys(patch), values);
     } catch (e) {
-      this.settings = before;
+      this.settings = settleWrite(this.settings, Object.keys(patch), before);
       this.settingsProblem = this.describe(e);
     } finally {
       this.settingsBusy = false;

@@ -47,6 +47,21 @@ export function coerceSetting(field, raw) {
   return String(raw);
 }
 
+// What a write settles for the keys it named, and only those. A write's answer is the whole store as the server held it
+// at that write, so it can be older than a change the event stream delivered while the write was in flight: taking the
+// answer whole put a key another device had just changed back to its old value, and the page then drew the old value
+// for good. The same holds for a refused write's rollback. Every other key keeps what the page holds, and the stream
+// keeps that current. A key the source does not hold is dropped, so the schema default shows for it.
+export function settleWrite(current, keys, source) {
+  if (!source) return current;
+  const out = { ...current };
+  for (const key of keys) {
+    if (Object.hasOwn(source, key)) out[key] = source[key];
+    else delete out[key];
+  }
+  return out;
+}
+
 export function mergeSettings(values = {}, schema = SETTINGS_SCHEMA) {
   const out = {};
   for (const field of settingsFields(schema)) out[field.key] = settingValue(field, values);

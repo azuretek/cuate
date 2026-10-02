@@ -6,7 +6,7 @@ import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, delete
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settleWrite } from '../app/rules/settings.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
@@ -265,6 +265,20 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
   assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false });
+});
+
+test('a write settles only the keys it named, so an older answer cannot undo a change the stream delivered', () => {
+  // The page writes the skin; before it reads the answer, another writer changes the density and the stream delivers it.
+  const sent = { 'appearance.skin': 'dark', 'appearance.density': 'comfortable' };
+  const streamed = { ...sent, 'appearance.density': 'compact' };
+  const answer = { 'appearance.skin': 'dark', 'appearance.density': 'comfortable' };
+  assert.deepEqual(settleWrite(streamed, ['appearance.skin'], answer), { 'appearance.skin': 'dark', 'appearance.density': 'compact' }, 'the streamed density survives the older answer');
+  assert.deepEqual(settleWrite(streamed, ['appearance.skin'], { 'appearance.skin': 'light', 'appearance.density': 'comfortable' }), { 'appearance.skin': 'light', 'appearance.density': 'compact' }, 'the server has the last word on the key the write named');
+  // A refused write rolls back its own keys and leaves a streamed change alone.
+  const before = { 'appearance.skin': 'system' };
+  assert.deepEqual(settleWrite(streamed, ['appearance.skin'], before), { 'appearance.skin': 'system', 'appearance.density': 'compact' }, 'a rollback restores only what the write changed');
+  assert.deepEqual(settleWrite({ 'chats.order': ['a'], x: 1 }, ['chats.order'], {}), { x: 1 }, 'a key the source does not hold falls back to the schema default');
+  assert.equal(settleWrite(streamed, ['appearance.skin'], undefined), streamed, 'no answer leaves the page as it is');
 });
 
 test('every notice type has its own switch and a notice only fires when it is on', () => {
