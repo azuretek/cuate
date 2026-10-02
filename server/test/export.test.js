@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { createLogger } from '../../core/kit/log.js';
@@ -9,8 +10,8 @@ import { createEngine } from '../src/engine/index.js';
 import { createFakeImsg } from '../src/engine/fake.js';
 import { makeAttachmentId } from '../src/ids.js';
 import { openStore } from '../src/store.js';
-import { createExporter, validateExport, exportSpec } from '../src/export.js';
-import { boot } from './helpers.js';
+import { createExporter, validateExport, exportSpec, EXPORT_RUNNING, EXPORT_ABANDONED } from '../src/export.js';
+import { boot, waitFor } from './helpers.js';
 
 function harness() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'export-test-'));
@@ -198,4 +199,90 @@ test('an export leaves out a message that belongs to no chat, and records how ma
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Issue 107: an export holds the engine for minutes on a real database, so one whose caller has gone must stop paging,
+// and a second one must be refused rather than compete with the first for the engine.
+const sweepPages = (world) => world.requests.filter((m) => m === 'messages.after').length;
+
+test('an export whose caller goes away stops at the page in flight, and frees the engine for the next one', async (t) => {
+  const h = harness();
+  t.after(() => h.close());
+  await h.start();
+  const exporter = createExporter({ engine: h.engine, dataDir: h.dir, log: h.logger.child('export'), pageSize: 1 });
+  h.world.behavior.afterDelayMs = 40;
+  const abandoned = new AbortController();
+  const run = exporter.collect({ signal: abandoned.signal });
+  await waitFor(() => sweepPages(h.world) === 1);
+  abandoned.abort();
+  await assert.rejects(run, (e) => e.code === EXPORT_ABANDONED);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(sweepPages(h.world), 1, 'no page is asked for after the caller went away');
+  assert.ok(h.lines.some((l) => l.event === 'export.abandoned' && l.pages === 1), 'the stop is logged with the pages it swept');
+  assert.equal(exporter.running(), false, 'the engine is free again');
+  h.world.behavior.afterDelayMs = 0;
+  assert.deepEqual(validateExport(await exporter.collect()), [], 'the next export runs and conforms');
+  assert.ok(!h.lines.some((l) => l.event === 'log.undeclared'), 'every event is declared');
+});
+
+test('a second export while one is sweeping is refused, and the first completes and conforms', async (t) => {
+  const h = harness();
+  t.after(() => h.close());
+  await h.start();
+  const exporter = createExporter({ engine: h.engine, dataDir: h.dir, log: h.logger.child('export'), pageSize: 4 });
+  h.world.behavior.afterDelayMs = 20;
+  const first = exporter.collect();
+  await waitFor(() => sweepPages(h.world) >= 1);
+  await assert.rejects(exporter.collect(), (e) => e.code === EXPORT_RUNNING);
+  await assert.rejects(exporter.write(path.join(h.dir, 'out.json')), (e) => e.code === EXPORT_RUNNING, 'a written export waits its turn too');
+  const doc = await first;
+  assert.deepEqual(validateExport(doc), [], 'the first export completes and conforms');
+  assert.equal(sweepPages(h.world), Math.ceil(doc.messages.length / 4), 'only the first export swept the engine');
+  assert.deepEqual(validateExport(await exporter.collect()), [], 'once it has finished the next one runs');
+});
+
+// A route-level history big enough for the server's own page size to need several pages.
+const growHistory = (world, n) => { for (let i = 0; i < n; i += 1) world.incoming(1, 'history ' + i); };
+
+test('the export route stops sweeping when its client disconnects, and the server goes on answering', async (t) => {
+  const s = await boot();
+  t.after(() => s.close());
+  growHistory(s.world, 1100);
+  s.world.behavior.afterDelayMs = 150;
+  const before = sweepPages(s.world);
+  const req = http.get(s.base + '/api/v1/export', { headers: { authorization: 'Bearer ' + s.tokens.tooling } });
+  req.on('error', () => {});
+  await waitFor(() => sweepPages(s.world) === before + 1);
+  req.destroy();
+  await waitFor(() => s.lines.some((l) => l.event === 'export.abandoned'));
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(sweepPages(s.world), before + 1, 'the sweep made no call after its client went away');
+  assert.ok(s.lines.some((l) => l.event === 'http.request' && l.route === 'export' && l.status === 499), 'the request is logged as closed by its client');
+  assert.ok(!s.lines.some((l) => l.event === 'http.error' && l.route === 'export'), 'an abandoned export is not a server error');
+  assert.equal((await s.get('/api/v1/chats', s.tokens.tooling)).status, 200, 'the chat list answers straight afterwards');
+  s.world.behavior.afterDelayMs = 0;
+  const next = await s.get('/api/v1/export', s.tokens.tooling);
+  assert.equal(next.status, 200, 'a new export runs once the abandoned one has stopped');
+  assert.deepEqual(validateExport(await next.json()), []);
+});
+
+test('the export route answers a concurrent export 409 export_running and keeps serving other requests', async (t) => {
+  const s = await boot();
+  t.after(() => s.close());
+  growHistory(s.world, 1100);
+  s.world.behavior.afterDelayMs = 150;
+  let settled = false;
+  const first = s.get('/api/v1/export', s.tokens.tooling).then((r) => { settled = true; return r; });
+  await waitFor(() => sweepPages(s.world) >= 1);
+  const second = await s.get('/api/v1/export?mode=since', s.tokens.tooling);
+  assert.equal(second.status, 409, 'the second export is refused');
+  assert.equal((await second.json()).error.code, 'export_running', 'with a status that says why');
+  assert.equal((await s.get('/api/v1/chats', s.tokens.tooling)).status, 200, 'the chat list answers while the export sweeps');
+  assert.equal(settled, false, 'the first export was still sweeping');
+  const r = await first;
+  assert.equal(r.status, 200, 'the first export completes');
+  const doc = await r.json();
+  assert.deepEqual(validateExport(doc), [], 'and conforms');
+  assert.ok(doc.messages.length > 1100, 'with the whole history');
+  assert.ok(!s.lines.some((l) => l.event === 'log.undeclared'), 'every event is declared');
 });

@@ -16,7 +16,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   let attempts = 0;
   let liveSent = false;
   const sends = [];
-  const behavior = { send: 'ok' };
+  // send: how a send answers. afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
+  const behavior = { send: 'ok', afterDelayMs: 0 };
   const transports = new Set();
 
   const lastAt = (chatId) => messages.filter((m) => m.chat_id === chatId && !m.is_reaction).reduce((a, m) => (m.created_at > a ? m.created_at : a), '');
@@ -97,7 +98,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
               if (m.is_reaction && !p.include_reactions) continue;
               out.push(withAttachments(m, p.attachments));
             }
-            return reply(req.id, { messages: out, next_rowid: next, has_more: rows.some((m) => m.id > next) });
+            const page = { messages: out, next_rowid: next, has_more: rows.some((m) => m.id > next) };
+            if (behavior.afterDelayMs > 0) { setTimeout(() => reply(req.id, page), behavior.afterDelayMs).unref(); return undefined; }
+            return reply(req.id, page);
           }
           case 'watch.subscribe':
             nextSub += 1;
