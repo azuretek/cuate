@@ -92,6 +92,11 @@ class HostBridge(
             "open.external" -> success(openExternal(args))
             // No self-updater on Android, so there is nothing to configure; the page ignores the answer.
             "updates.configure" -> success(false)
+            // A phone has no window to minimise, maximise or close, so the window commands answer false and the bar is
+            // never drawn; the one bridge spec still declares them for the desktop.
+            "window.minimize" -> success(false)
+            "window.toggleMaximize" -> success(false)
+            "window.close" -> success(false)
             else -> failure("undeclared bridge command: " + name)
         }
     }
