@@ -21,6 +21,12 @@ const normalizeUrl = (u) => {
   return /^https?:\/\//i.test(s) ? s : 'https://' + s;
 };
 
+// The window controls' glyphs, drawn in currentColor so a control follows the theme like every other mark.
+const ICON_MINIMIZE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" fill="none" stroke="currentColor" stroke-width="1"></path></svg>`;
+const ICON_MAXIMIZE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"></rect></svg>`;
+const ICON_RESTORE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 2.5V0.5h7v7h-2" fill="none" stroke="currentColor" stroke-width="1"></path><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"></rect></svg>`;
+const ICON_CLOSE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" fill="none" stroke="currentColor" stroke-width="1"></path></svg>`;
+
 class AppRoot extends KitElement {
   static properties = {
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
@@ -38,6 +44,9 @@ class AppRoot extends KitElement {
     // Lit writes this.update for any reactive property of that name, which shadows LitElement's own update() method
     // and the element throws "this.update is not a function" on its next render.
     updateStatus: { state: true },
+    // host is what the shell says it is (product, version, platform), so core can draw a window bar where the
+    // platform had a frame; maximized is the window's own state, which the shell reports.
+    host: { state: true }, maximized: { state: true },
     // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
     filters: { state: true }, filterOpen: { state: true },
   };
@@ -77,6 +86,10 @@ class AppRoot extends KitElement {
     this.schemeQuery = null;
     // The shell's update states arrive here; the page, which holds the server's settings, decides the notice.
     this.offUpdate = null;
+    // What the shell says it is (product, version, platform), and the window's own maximized state.
+    this.host = {};
+    this.maximized = false;
+    this.offWindow = null;
   }
 
   connectedCallback() {
@@ -86,8 +99,16 @@ class AppRoot extends KitElement {
       this.onSchemeChange = () => this.applyTheme();
       this.schemeQuery.addEventListener('change', this.onSchemeChange);
     }
+    // The shell names its platform and product before the page boots, so the bar is drawn with the first paint and
+    // only where a window exists. A phone answers call but installs no event stream, so the bar is desktop only.
+    if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
+      this.bridge('app.info').then((info) => { this.host = info || {}; }, () => {});
+    }
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.on === 'function') {
       this.offUpdate = window.bridge.on('update.state', (data) => this.onUpdate(data || {}));
+      // The window's maximized state comes from the shell, so the platform's own double-click and the control's own
+      // toggle redraw the same glyph.
+      this.offWindow = window.bridge.on('window.state', (data) => { this.maximized = Boolean(data && data.maximized); });
     }
     this.boot();
   }
@@ -96,6 +117,7 @@ class AppRoot extends KitElement {
     super.disconnectedCallback();
     if (this.schemeQuery && this.onSchemeChange) this.schemeQuery.removeEventListener('change', this.onSchemeChange);
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
+    if (this.offWindow) { this.offWindow(); this.offWindow = null; }
   }
 
   // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
@@ -594,12 +616,49 @@ class AppRoot extends KitElement {
       : html`<div class="empty">No conversation selected.</div>`;
   }
 
+  // The shell's product and platform; the window bar is drawn only where the platform had a frame.
+  isDesktop() {
+    return ['darwin', 'win32', 'linux'].includes(String(this.host && this.host.platform || '').toLowerCase());
+  }
+
+  // The three controls ask the shell; the shell owns the BrowserWindow and answers the new maximized state.
+  async windowAction(name) {
+    if (!['minimize', 'toggleMaximize', 'close'].includes(name)) return;
+    try {
+      const result = await this.bridge('window.' + name, {});
+      if (name === 'toggleMaximize') this.maximized = Boolean(result);
+    } catch { /* the shell refused the command; the bar keeps the state it last drew */ }
+  }
+
+  // Our own bar: the title area is the drag region and the controls opt out of it, so a drag moves the window and a
+  // click still acts. The controls come from tokens and sit on the side the platform drew them.
+  windowBar() {
+    const platform = String(this.host && this.host.platform || '').toLowerCase();
+    const product = this.host && this.host.product ? this.host.product : '';
+    const maximizeLabel = this.maximized ? 'Restore' : 'Maximize';
+    return html`<header class="window-bar" data-platform=${platform}>
+      <div class="window-title">${product}</div>
+      <div class="window-controls" role="group" aria-label="Window controls">
+        <button type="button" class="window-control minimize" aria-label="Minimize" title="Minimize" @click=${() => this.windowAction('minimize')}>${ICON_MINIMIZE}</button>
+        <button type="button" class="window-control maximize" aria-label=${maximizeLabel} title=${maximizeLabel} @click=${() => this.windowAction('toggleMaximize')}>${this.maximized ? ICON_RESTORE : ICON_MAXIMIZE}</button>
+        <button type="button" class="window-control close" aria-label="Close" title="Close" @click=${() => this.windowAction('close')}>${ICON_CLOSE}</button>
+      </div>
+    </header>`;
+  }
+
   // The one class the stylesheet keys off: it says a surface is leaving, so the sheet and its dim leave together.
   updated() {
     document.body.classList.toggle('surface--leaving', this.sheetLeaving === true);
   }
 
   render() {
+    return html`<div class="app-window">
+      ${this.isDesktop() ? this.windowBar() : nothing}
+      <div class="app-body">${this.body()}</div>
+    </div>`;
+  }
+
+  body() {
     if (this.phase === 'boot' || this.phase === 'loading') return html`<div class="splash" aria-busy="true"><div class="spinner" role="img" aria-label="Loading"></div></div>`;
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;

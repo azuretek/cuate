@@ -39,6 +39,9 @@ class ShellParityTest {
             "notify",
             "open.external",
             "updates.configure",
+            "window.minimize",
+            "window.toggleMaximize",
+            "window.close",
         )
         assertEquals(declared, HostBridge.commandNames(context.assets))
     }

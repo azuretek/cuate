@@ -98,6 +98,14 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         case "updates.configure":
             // No self-updater on iOS, so there is nothing to configure; the page ignores the answer.
             settle(id: id, ok: true, value: false)
+        // A phone has no window to minimise, maximise or close, so the window commands answer false and the bar is
+        // never drawn; the one bridge spec still declares them for the desktop.
+        case "window.minimize":
+            settle(id: id, ok: true, value: false)
+        case "window.toggleMaximize":
+            settle(id: id, ok: true, value: false)
+        case "window.close":
+            settle(id: id, ok: true, value: false)
         default:
             settle(id: id, ok: false, value: "undeclared bridge command: " + name)
         }
