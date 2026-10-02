@@ -162,6 +162,8 @@ test('the tray Check for updates with no updater (a run from source) answers in 
   const states = [];
   assert.equal(checkForUpdates(null, { platform: 'linux', packaged: false }, (s) => states.push(s)), false);
   assert.deepEqual(states, [{ state: 'unsupported', version: null, canInstall: false, detail: 'running from source' }]);
+  checkForUpdates(null, { platform: 'darwin', packaged: true }, (s) => states.push(s));
+  assert.equal(states.at(-1).detail, 'no updater is running in this session', 'a build that could update is not told it cannot by the platform');
   let checked = 0;
   assert.equal(checkForUpdates({ check: () => { checked += 1; return true; } }, { platform: 'linux', packaged: true }, () => assert.fail()), true);
   assert.equal(checked, 1, 'a running updater does the check itself');

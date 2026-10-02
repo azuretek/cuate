@@ -170,10 +170,14 @@ export function startUpdates({
   };
 }
 
-// The tray's Check for updates. A running updater checks; a build that never started one (a run from source) still
-// answers in the app, saying why it does not update itself, so the menu item is never a click that does nothing.
+// The tray's Check for updates. A running updater checks; a session that never started one still answers in the app,
+// saying why it does not update itself, so the menu item is never a click that does nothing. The reason is the
+// platform's when it cannot update at all (a run from source), and otherwise that no updater runs in this session (a
+// packaged smoke), so a build that could update is never told it cannot for the wrong reason.
 export function checkForUpdates(control, { platform, packaged, appImage = false }, onState) {
   if (control) return control.check();
-  onState({ state: 'unsupported', version: null, canInstall: false, detail: policy({ platform, packaged, appImage }).reason });
+  const plan = policy({ platform, packaged, appImage });
+  const detail = plan.check ? 'no updater is running in this session' : plan.reason;
+  onState({ state: 'unsupported', version: null, canInstall: false, detail });
   return false;
 }

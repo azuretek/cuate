@@ -457,9 +457,16 @@ async function runSmoke(w) {
   wc.send('bridge:event:update.state', { state: 'error', version: '9.9.9', detail: 'The download was interrupted.', canInstall: true });
   await waitFor("Boolean(document.querySelector('.banner.update'))", 10000);
   report.updateFailure = await js("(() => { const b = document.querySelector('.banner.update'); return Boolean(b) && b.textContent.includes('interrupted') && Boolean(b.querySelector('.banner-action')); })()");
+  // A new check replaces the failure with the check in progress, which offers nothing to press, and a check that finds
+  // nothing newer says so and is dismissed in the page, which clears the banner.
   wc.send('bridge:event:update.state', { state: 'checking' });
+  await waitFor("(document.querySelector('.banner.update')?.textContent || '').includes('Checking for updates') && !document.querySelector('.banner.update .banner-action')", 10000);
+  wc.send('bridge:event:update.state', { state: 'current', version: '0.0.0', canInstall: true });
+  await waitFor("(document.querySelector('.banner.update')?.textContent || '').includes('latest version')", 10000);
+  smokeCalls.length = 0;
+  await js("document.querySelector('.banner.update .banner-action').click()");
   await pause(300);
-  report.updateBannerCleared = await js("!document.querySelector('.banner.update')");
+  report.updateBannerCleared = await js("!document.querySelector('.banner.update')") && smokeCalls.length === 0;
   report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared;
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
