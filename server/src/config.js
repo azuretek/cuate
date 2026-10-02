@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { LOCK_METHODS, MAC_DEFAULTS } from './mac.js';
+import { ALL_EVENTS, DEFAULT_EVENTS, eventNames, isLoopback } from './webhooks.js';
 
 const LEVELS = ['debug', 'info', 'notice', 'warn', 'error', 'fatal'];
 
@@ -21,6 +22,16 @@ export const DEFAULTS = Object.freeze({
   webhooks: { endpoints: [] },
 });
 
+/** A hook endpoint with its defaults filled in. A 2d endpoint's single `secret` is read as its current secret. */
+function readEndpoint(e) {
+  if (!e || typeof e !== 'object') return e;
+  const { secret, ...rest } = e;
+  const out = { events: DEFAULT_EVENTS.slice(), encrypt: true, active: true, ...rest };
+  if (out.secrets === undefined && secret !== undefined) out.secrets = [secret];
+  return out;
+}
+const keyOk = (k) => Boolean(k) && typeof k.kid === 'string' && k.kid.length > 0 && typeof k.key === 'string' && /^[A-Za-z0-9_-]+$/.test(k.key) && Buffer.from(k.key, 'base64url').length === 32;
+
 /** A raw config's values without the undefined ones, so a flag nobody gave cannot erase a default. */
 const given = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
 
@@ -38,7 +49,7 @@ export function normalizeConfig(raw = {}) {
       lock: { ...DEFAULTS.mac.lock, ...given(raw.mac && raw.mac.lock) },
       messages: { ...DEFAULTS.mac.messages, ...given(raw.mac && raw.mac.messages) },
     },
-    webhooks: { endpoints: Array.isArray(webhookEndpoints) ? webhookEndpoints.map((e) => ({ ...e })) : webhookEndpoints },
+    webhooks: { endpoints: Array.isArray(webhookEndpoints) ? webhookEndpoints.map(readEndpoint) : webhookEndpoints },
   };
   const problems = [];
   if (!Number.isInteger(c.port) || c.port < 0 || c.port > 65535) problems.push('port must be a whole number from 0 to 65535');
@@ -70,17 +81,33 @@ export function normalizeConfig(raw = {}) {
   if (typeof c.mac.messages.manage !== 'boolean') problems.push('mac.messages.manage must be true or false');
   if (typeof c.mac.messages.app !== 'string' || !c.mac.messages.app) problems.push('mac.messages.app must be the name of the Messages program');
   if (c.mac.messages.managedBy !== null && typeof c.mac.messages.managedBy !== 'string') problems.push('mac.messages.managedBy must name the program that manages Messages, or null');
-  // Webhooks: one signed POST per live message to each endpoint, so a half-written endpoint is refused here rather
-  // than dropped at runtime.
+  // Hooks: one signed, encrypted POST per event to each endpoint that asks for it, so a half-written endpoint, or
+  // an event name the spec does not hold, is refused here rather than turning into a hook that never fires.
   if (!Array.isArray(c.webhooks.endpoints)) problems.push('webhooks.endpoints must be a list');
-  else c.webhooks.endpoints.forEach((e, i) => {
-    const at = 'webhooks.endpoints[' + i + ']';
-    if (typeof e.id !== 'string' || !e.id) problems.push(at + '.id must be a name');
-    if (typeof e.url !== 'string' || !/^https?:\/\//.test(e.url)) problems.push(at + '.url must be an http or https URL');
-    if (typeof e.secret !== 'string' || !e.secret) problems.push(at + '.secret must be a string');
-    if (e.events !== undefined && (!Array.isArray(e.events) || !e.events.every((x) => typeof x === 'string'))) problems.push(at + '.events must be a list of event names');
-    if (e.active !== undefined && typeof e.active !== 'boolean') problems.push(at + '.active must be true or false');
-  });
+  else {
+    const names = eventNames();
+    const seen = new Set();
+    c.webhooks.endpoints.forEach((e, i) => {
+      const at = 'webhooks.endpoints[' + i + ']';
+      if (!e || typeof e !== 'object') { problems.push(at + ' must be an object'); return; }
+      if (typeof e.id !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(e.id)) problems.push(at + '.id must be a name of letters, digits, dot, dash or underscore');
+      else if (seen.has(e.id)) problems.push(at + '.id ' + e.id + ' is used twice');
+      else seen.add(e.id);
+      const loopback = isLoopback(e.url);
+      if (typeof e.url !== 'string' || !/^https?:\/\//.test(e.url)) problems.push(at + '.url must be an http or https URL');
+      else if (!loopback && !/^https:\/\//.test(e.url)) problems.push(at + '.url must be https unless it is loopback');
+      if (!Array.isArray(e.secrets) || e.secrets.length < 1 || e.secrets.length > 2 || !e.secrets.every((s) => typeof s === 'string' && s.length >= 16)) problems.push(at + '.secrets must be the current secret, then at most one previous one');
+      if (typeof e.encrypt !== 'boolean') problems.push(at + '.encrypt must be true or false');
+      else if (!e.encrypt && !loopback) problems.push(at + '.encrypt can be off only for a loopback url');
+      if (e.keys !== undefined || e.encrypt !== false) {
+        if (!Array.isArray(e.keys) || e.keys.length < 1 || e.keys.length > 2 || !e.keys.every(keyOk)) problems.push(at + '.keys must be the current key, then at most one previous one, each a kid and a 32-byte base64url key');
+      }
+      if (!Array.isArray(e.events) || !e.events.length || !e.events.every((x) => typeof x === 'string')) problems.push(at + '.events must be a list of event names');
+      else for (const x of e.events) if (x !== ALL_EVENTS && !names.includes(x)) problems.push(at + '.events names ' + x + ', which is not an event: use one of ' + names.join(', ') + ', or ' + ALL_EVENTS);
+      if (typeof e.active !== 'boolean') problems.push(at + '.active must be true or false');
+      for (const k of ['disabledAt', 'disabledReason', 'lastError']) if (e[k] !== undefined && e[k] !== null && typeof e[k] !== 'string') problems.push(at + '.' + k + ' must be text or null');
+    });
+  }
   if (problems.length) throw Object.assign(new Error('config: ' + problems.join('; ')), { problems });
   return c;
 }
