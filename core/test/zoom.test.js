@@ -32,6 +32,15 @@ test('zoom opens at fit, and the scale never leaves fit and the maximum', () => 
   assert.deepEqual(v, { scale: 1, x: 0, y: 0 }, 'zooming out forever stops at fit, centred');
 });
 
+test('a small fixture stays centred at 2x and pans only once it overflows the stage', () => {
+  const box = { width: 480, height: 320, stageWidth: 1100, stageHeight: 720 };
+  const twice = zoomBy(zoomFit(), ZOOM_STEP, { x: 0, y: 0 }, box, 4);
+  assert.deepEqual(panBy(twice, 60, 60, box), twice);
+  const four = zoomBy(twice, ZOOM_STEP, { x: 0, y: 0 }, box, 4);
+  assert.deepEqual(panBy(four, 60, 60, box), { scale: 4, x: 60, y: 60 });
+  assert.deepEqual(panBy(four, 9999, 9999, box), { scale: 4, x: 410, y: 280 });
+});
+
 test('the maximum is four times fit, more for a large picture, never past sixteen', () => {
   assert.equal(zoomMax(1), 4, 'a picture shown at its own size still zooms four times');
   assert.equal(zoomMax(0.5), 4, 'a small picture drawn larger than itself');

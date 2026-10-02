@@ -422,6 +422,7 @@ async function runSmoke(w) {
   await pause(200);
   await js("(() => { window.__ctx = { fired: 0, prevented: 0 }; document.addEventListener('contextmenu', (e) => { window.__ctx.fired += 1; if (e.defaultPrevented) window.__ctx.prevented += 1; }); return true; })()");
   const fit = await scale();
+  const geometry = await js("(() => { const v = document.querySelector('app-image-viewer'); const i = v.picture(); return { ...v.box(), naturalWidth: i.naturalWidth, naturalHeight: i.naturalHeight }; })()");
   const c0 = await imageCentre();
   await mouse('left', c0.x + Math.round(c0.w / 6), c0.y);
   const afterLeft = await scale();
@@ -445,6 +446,13 @@ async function runSmoke(w) {
   await key('+');
   await pause(300);
   const afterPlus = await scale();
+  // The 480px fixture is still narrower than this stage at 2x. Test that it stays centred,
+  // then zoom again before requiring a pan; do not mistake the correct clamp for a lost input.
+  await key('ArrowLeft');
+  const smallPan = await js("document.querySelector('app-image-viewer').view.x");
+  await key('+');
+  await pause(300);
+  const panScale = await scale();
   const panBefore = await js("document.querySelector('app-image-viewer .viewer-image').style.getPropertyValue('--zoom-x')");
   await key('ArrowLeft');
   await pause(300);
@@ -452,6 +460,9 @@ async function runSmoke(w) {
   await key('-');
   await pause(300);
   const afterMinus = await scale();
+
+  await key('0');
+  await pause(300);
 
   // A finger: two touch pointers spread from 80 to 160 apart pinch to twice the scale; a one-finger drag then pans;
   // two quick taps go back to fit, and two more zoom in again about the tap.
@@ -464,6 +475,16 @@ async function runSmoke(w) {
   await touch('pointerup', 32, c1.x + 120, c1.y);
   await touch('pointerup', 31, c1.x - 40, c1.y);
   await pause(300);
+  // Keep the 2x pinch assertion, then make room to pan the small fixture.
+  await key('+');
+  await pause(300);
+  const dragScale = await scale();
+  const mouseFrom = await js("document.querySelector('app-image-viewer').view.x");
+  wc.sendInputEvent({ type: 'mouseDown', button: 'left', x: c1.x, y: c1.y, clickCount: 1 });
+  wc.sendInputEvent({ type: 'mouseMove', x: c1.x + 60, y: c1.y });
+  wc.sendInputEvent({ type: 'mouseUp', button: 'left', x: c1.x + 60, y: c1.y, clickCount: 1 });
+  await pause(300);
+  const mouseTo = await js("document.querySelector('app-image-viewer').view.x");
   const dragFrom = await js("document.querySelector('app-image-viewer .viewer-image').style.getPropertyValue('--zoom-x')");
   await touch('pointerdown', 31, c1.x, c1.y);
   await touch('pointermove', 31, c1.x + 30, c1.y);
@@ -506,14 +527,17 @@ async function runSmoke(w) {
     rightZoomsOut: afterRight < afterLeft,
     noContextMenu: electronMenus === 0 && ctx.fired === ctx.prevented,
     wheel: afterWheel !== afterRight,
-    keys: afterReset === 1 && afterPlus > 1 && panAfter !== panBefore && afterMinus < afterPlus,
+    smallImageCentred: geometry.width * afterPlus < geometry.stageWidth && smallPan === 0,
+    panOverflows: geometry.width * panScale > geometry.stageWidth && geometry.width * dragScale > geometry.stageWidth,
+    keys: afterReset === 1 && afterPlus > 1 && Number(panAfter) < Number(panBefore) && afterMinus < panScale,
+    mouseDrag: mouseTo > mouseFrom,
     pinch: afterPinch > 1.9 && afterPinch < 2.1,
-    drag: dragTo !== dragFrom,
+    drag: Number(dragTo) > Number(dragFrom),
     doubleTap: afterDoubleOut === 1 && afterDoubleIn > 1,
     escapeCloses, closeCloses, backdropCloses,
   };
   report.imageViewer = Object.values(imageViewerChecks).every(Boolean);
-  console.log('image viewer: ' + JSON.stringify({ checks: imageViewerChecks, backdrop, scales: { fit, afterLeft, afterRight, wheelOne, wheelTwo, afterReset, afterPlus, afterMinus, afterPinch, afterDoubleOut, afterDoubleIn }, pan: { panBefore, panAfter, dragFrom, dragTo }, ctx, electronMenus }));
+  console.log('image viewer: ' + JSON.stringify({ checks: imageViewerChecks, geometry, backdrop, scales: { fit, afterLeft, afterRight, wheelOne, wheelTwo, afterReset, afterPlus, afterMinus, afterPinch, afterDoubleOut, afterDoubleIn }, pan: { smallPan, panScale, panBefore, panAfter, dragScale, mouseFrom, mouseTo, dragFrom, dragTo }, ctx, electronMenus }));
 
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
