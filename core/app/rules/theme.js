@@ -139,3 +139,14 @@ export function importTweakcn(text, { name = 'tweakcn' } = {}) {
   }
   return { theme, accepted, refused };
 }
+
+// What an import tells the person who ran it: how many names it carried and every name it refused, once each, so a
+// theme that lost something says so on the page rather than only in a test. An import that carried nothing is not a
+// theme, and is reported as such so it is never stored.
+export function importSummary({ accepted = [], refused = [] } = {}) {
+  const carried = new Set(accepted.filter((a) => !a.includes(' -> '))).size;
+  const left = [...new Set(refused)];
+  if (carried === 0) return { ok: false, text: 'Nothing in that text is a tweakcn theme this app can carry.' };
+  const lead = 'Imported ' + carried + (carried === 1 ? ' value.' : ' values.');
+  return { ok: true, text: left.length ? lead + ' Refused: ' + left.join(', ') + '.' : lead + ' Nothing refused.' };
+}
