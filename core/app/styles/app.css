@@ -50,7 +50,7 @@ app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .empty { margin: auto; color: var(--color-fg-muted); }
 app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .conv-head { display: flex; align-items: center; gap: var(--space-3); height: var(--size-header); padding: 0 var(--space-4); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
-.conv-title { min-width: 0; }
+.conv-title { flex: 1; min-width: 0; }
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; }
 .load-older { align-self: center; margin-bottom: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
 .separator { align-self: center; margin: var(--space-4) 0 var(--space-2); font-size: var(--font-size-xs); color: var(--color-fg-muted); }
@@ -234,15 +234,24 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid {
   scrollbar-width: var(--size-scrollbar);
   scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
-/* The window bar: our own title area and controls where the platform's frame used to be. The bar itself is the drag
-   region and the controls opt out of it, so a drag moves the window while a click still acts. Every value is a token. */
+/* No window bar of our own: the app's surfaces run to the top edge. The top strip drags the window, macOS floats its
+   traffic lights over it, and Windows and Linux draw their window controls inside the contact header. Every value is a
+   token. */
 .app-window { display: flex; flex-direction: column; height: 100%; }
 .app-body { flex: 1; min-height: 0; }
-.window-bar { flex: none; display: flex; align-items: center; height: var(--size-window-bar); background: var(--color-bg-raised); border-bottom: var(--size-border) solid var(--color-border); user-select: none; -webkit-app-region: drag; }
-.window-title { flex: 1; min-width: 0; padding: 0 var(--space-3); font-size: var(--font-size-sm); color: var(--color-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.window-controls { display: flex; align-self: stretch; -webkit-app-region: no-drag; }
-.window-bar[data-platform="darwin"] .window-controls { order: -1; }
-.window-control { width: var(--size-window-control); display: grid; place-items: center; border: 0; background: none; color: var(--color-fg-muted); cursor: pointer; padding: 0; }
+/* The top strip is the window's drag surface: the two headers, with the controls and every other interactive thing in
+   them out of the drag region so a click still acts. */
+.sidebar-head, .conv-head { -webkit-app-region: drag; }
+.chat-search, .filter-button, .gear-button, .conv-back, .window-controls, .window-control { -webkit-app-region: no-drag; }
+/* macOS pushes the header content below the traffic lights, keeping the surface to the top edge. */
+.app-window[data-platform="darwin"] .sidebar-head,
+.app-window[data-platform="darwin"] .conv-head { height: calc(var(--size-header) + var(--size-window-strip)); padding-block-start: var(--size-window-strip); }
+/* The window controls, drawn in the contact header on Windows and Linux: pinned to its right at its full height, so
+   they read as part of that bar rather than a strip of their own. */
+.window-controls { display: flex; align-self: stretch; margin-inline-start: auto; -webkit-app-region: no-drag; }
+.window-control { width: var(--size-window-control); display: grid; place-items: center; border: 0; background: none; color: var(--color-fg-muted); cursor: pointer; padding: 0; -webkit-app-region: no-drag; }
+/* The close button is the widest, as Windows draws it. */
+.window-control.close { width: var(--size-window-control-close); }
 .window-control:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
 .window-control:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
 .window-control.close:hover { background: var(--color-danger); color: var(--color-danger-fg); }
