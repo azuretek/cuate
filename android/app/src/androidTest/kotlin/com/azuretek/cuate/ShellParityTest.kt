@@ -39,6 +39,8 @@ class ShellParityTest {
             "notify",
             "open.external",
             "updates.configure",
+            "updates.download",
+            "updates.install",
             "window.minimize",
             "window.toggleMaximize",
             "window.close",
