@@ -54,21 +54,7 @@ class AppChatList extends KitElement {
     }
   }
 
-  setFilter(patch) {
-    this.fire('filter', { filters: { ...this.f, ...patch } });
-  }
-
-  // Clearing one filter leaves the others alone.
-  clearFilter(key) {
-    const value = key === 'text' ? '' : key === 'unread' ? false : null;
-    this.setFilter({ [key]: value });
-  }
-
   onSort(e) { this.fire('sort', { sort: e.currentTarget.value }); }
-  onSearch(e) { this.setFilter({ text: e.currentTarget.value }); }
-  onKind(e) { this.setFilter({ kind: e.currentTarget.value || null }); }
-  onGroupFilter(e) { this.setFilter({ group: e.currentTarget.value || null }); }
-  toggleUnread() { this.setFilter({ unread: !this.f.unread }); }
 
   patch(settings) { this.fire('chatsettings', { patch: settings }); }
 
@@ -106,49 +92,19 @@ class AppChatList extends KitElement {
   setPlacement(chatId, groupId) { this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
   moveChatBy(chatId, delta) { this.patch({ 'chats.order': moveChat(manualOrder(this.chats, this.order), chatId, delta) }); }
 
-  // The filters in force, drawn in the list so a person sees what is narrowing it and can clear one alone.
-  activeFilters() {
-    const f = this.f;
-    const chips = [];
-    if (f.unread) chips.push({ key: 'unread', label: 'Unread' });
-    if (f.kind) chips.push({ key: 'kind', label: f.kind === 'direct' ? 'Direct' : 'Group chats' });
-    if (f.group) {
-      const g = (this.groups || []).find((x) => x.id === f.group);
-      chips.push({ key: 'group', label: g ? g.name : 'Ungrouped' });
-    }
-    if (f.text) chips.push({ key: 'text', label: 'Search: ' + f.text });
-    if (!chips.length) return nothing;
-    return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${() => this.clearFilter(c.key)}>×</button></span>`)}</div>`;
-  }
-
-  toolbar() {
-    const f = this.f;
-    const groups = this.groups || [];
+  // The list's own tools: the sort choice and the groups. The search field, the filter menu and the settings gear
+  // live in the page header above the list, where the filters themselves live.
+  tools() {
     return html`<div class="list-tools">
       <div class="list-tools-row">
         <select class="sort-select" aria-label="Sort conversations" @change=${this.onSort}>
           ${SORT_ORDERS.map((o) => html`<option value=${o} ?selected=${o === (this.sort || 'recent')}>${SORT_LABELS[o]}</option>`)}
-        </select>
-        <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${this.onSearch}>
-      </div>
-      <div class="list-tools-row">
-        <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${() => this.toggleUnread()}>Unread</button>
-        <select class="kind-select" aria-label="Conversation type" @change=${this.onKind}>
-          <option value="" ?selected=${!f.kind}>All conversations</option>
-          <option value="direct" ?selected=${f.kind === 'direct'}>Direct</option>
-          <option value="group" ?selected=${f.kind === 'group'}>Group chats</option>
-        </select>
-        <select class="group-filter" aria-label="Group" @change=${this.onGroupFilter}>
-          <option value="" ?selected=${!f.group}>All groups</option>
-          ${groups.map((g) => html`<option value=${g.id} ?selected=${f.group === g.id}>${g.name}</option>`)}
-          <option value=${UNGROUPED} ?selected=${f.group === UNGROUPED}>Ungrouped</option>
         </select>
       </div>
       <div class="add-group">
         <input class="new-group-name" type="text" placeholder="New group" aria-label="New group name" @keydown=${(e) => { if (e.key === 'Enter') this.createGroup(); }}>
         <button type="button" class="text-button" @click=${() => this.createGroup()}>Add group</button>
       </div>
-      ${this.activeFilters()}
     </div>`;
   }
 
@@ -208,7 +164,7 @@ class AppChatList extends KitElement {
     const visible = filterChats(sorted, this.f, { placement });
     const sections = groupSections(visible, { groups, placement });
     const split = groups.length > 0;
-    return html`${this.toolbar()}
+    return html`${this.tools()}
       ${visible.length === 0
         ? html`<p class="list-empty" role="status">No conversations match these filters.</p>`
         : html`<div class="chat-sections">${sections.map((s) => this.section(s, split, now, locale))}</div>`}`;

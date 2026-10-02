@@ -35,11 +35,17 @@ export function chatSearchText(chat) {
   return [chatTitle(chat), (chat.participants || []).join(' '), (chat.lastMessage && chat.lastMessage.text) || ''].join(' ').toLowerCase();
 }
 
+// The search predicate: an empty query matches everything, and a query matches when it appears anywhere in the text
+// a chat is searched by. It lives here, not in the element, so the element draws and never decides.
+export function matchesSearch(chat, query) {
+  const q = String(query || '').trim().toLowerCase();
+  return !q || chatSearchText(chat).includes(q);
+}
+
 // Filters compose: each one that is set narrows the list and clearing one leaves the others alone. The group filter
 // reads placement, where UNGROUPED means the chats that are in no group.
 export function filterChats(chats, filters = {}, { placement = {} } = {}) {
   const f = { ...emptyFilters(), ...filters };
-  const q = String(f.text || '').trim().toLowerCase();
   return chats.filter((c) => {
     if (f.unread && !(c.unread > 0)) return false;
     if (f.group) {
@@ -48,7 +54,7 @@ export function filterChats(chats, filters = {}, { placement = {} } = {}) {
     }
     if (f.kind === 'direct' && c.isGroup) return false;
     if (f.kind === 'group' && !c.isGroup) return false;
-    if (q && !chatSearchText(c).includes(q)) return false;
+    if (!matchesSearch(c, f.text)) return false;
     return true;
   });
 }

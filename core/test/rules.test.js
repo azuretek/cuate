@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, SORT_ORDERS, UNGROUPED } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, matchesSearch, SORT_ORDERS, UNGROUPED } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji } from '../app/rules/emoji.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
@@ -328,6 +328,18 @@ test('filters compose, clear one at a time, and search names and last messages',
   assert.deepEqual(by({ unread: true, kind: 'direct' }), ['1', '3'], 'two filters narrow together');
   assert.deepEqual(by({ unread: true, kind: 'group' }), [], 'a filter matching nothing returns nothing');
   assert.ok(chatSearchText(chats[0]).includes('lake'));
+});
+
+test('the search predicate reads the name, the participants and the last message', () => {
+  const chat = { id: '1', name: 'Bea', isGroup: false, participants: ['bea@example.com'], lastMessage: { text: 'see you at the lake', fromMe: false, attachments: 0 } };
+  assert.equal(matchesSearch(chat, ''), true, 'an empty query matches');
+  assert.equal(matchesSearch(chat, '   '), true, 'a blank query matches');
+  assert.equal(matchesSearch(chat, 'bea'), true, 'reads the name');
+  assert.equal(matchesSearch(chat, 'example.com'), true, 'reads the participants');
+  assert.equal(matchesSearch(chat, 'LAKE'), true, 'reads the last message, case-insensitively');
+  assert.equal(matchesSearch(chat, ' lake '), true, 'trims the query');
+  assert.equal(matchesSearch(chat, 'ocean'), false, 'a query that is nowhere does not match');
+  assert.equal(matchesSearch({ id: '2', name: 'Al', participants: [] }, 'al'), true, 'reads a chat with no last message');
 });
 
 test('groups keep their own order, draw as sections, and never lose an ungrouped chat', () => {
