@@ -3,11 +3,12 @@ import { KitElement } from '../../kit/element.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
+import { windowControlsHtml } from './window-controls.js';
 import './app-composer.js';
 import './app-attachment.js';
 
 class AppConversation extends KitElement {
-  static properties = { chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, loadingOlder: {}, sending: {}, client: { attribute: false } };
+  static properties = { chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, loadingOlder: {}, sending: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {} };
 
   constructor() {
     super();
@@ -15,6 +16,10 @@ class AppConversation extends KitElement {
     this.hasMore = false;
     this.loadingOlder = false;
     this.sending = false;
+    // What the contact header draws for the platform, and the window's own state for the middle button's glyph, both
+    // handed down from the page. A phone passes neither, so the header draws no window controls there.
+    this.windowControls = null;
+    this.maximized = false;
     this.stick = true;
   }
 
@@ -79,7 +84,7 @@ class AppConversation extends KitElement {
     const sms = this.chat.service === 'SMS' || this.chat.service === 'RCS';
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${() => this.fire('back')}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div></header>
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${() => this.fire('back')}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="messages" role="log" aria-live="polite" @scroll=${this.onScroll} @media-loaded=${this.onMedia}>
         ${this.hasMore ? html`<button class="load-older" ?disabled=${this.loadingOlder} @click=${() => this.fire('older')}>${this.loadingOlder ? 'Loading\u2026' : 'Load earlier messages'}</button>` : nothing}
         ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms)))}

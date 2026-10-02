@@ -5,7 +5,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
+import { controlLayout } from '../../core/app/rules/bar-layout.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates } from './updates.js';
@@ -142,8 +144,32 @@ async function runSmoke(w) {
   const report = { info: await js("window.bridge.call('app.info')"), packaged: app.isPackaged };
   await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.bubble-row').length > 0");
   await pause(600);
-  // The window bar, not a platform frame: our title area and three controls are drawn, and no application menu exists.
-  report.windowBar = await js("(() => { const bar = document.querySelector('.window-bar'); if (!bar) return false; const c = [...bar.querySelectorAll('.window-control')]; return c.length === 3 && c.every((b) => (b.getAttribute('aria-label') || '').length > 0); })()");
+  // No window bar: the app's surfaces reach the top edge and the top strip drags. The platform's arrangement is core's
+  // own rules, so the smoke reads the DOM back and holds it to that answer: macOS keeps its traffic lights and leaves
+  // room for them, while Windows and Linux draw min, max, close at the right of the contact header. Nothing renders the
+  // product name, a bar or an icon over the top.
+  const bar = await js(`(() => {
+    if (document.querySelector('.window-bar') || document.querySelector('.window-title') || document.querySelector('.window-icon')) return null;
+    const side = document.querySelector('.sidebar-head');
+    const head = document.querySelector('.conv-head');
+    if (!side || !head) return null;
+    const group = head.querySelector('.window-controls');
+    const c = group ? [...group.querySelectorAll('.window-control')] : [];
+    const region = (el) => (el ? getComputedStyle(el).getPropertyValue('-webkit-app-region').trim() : null);
+    const rect = (el) => { const b = el.getBoundingClientRect(); return { top: b.top, left: b.left, right: b.right, height: b.height }; };
+    return {
+      sidebarTop: rect(side).top, headTop: rect(head).top, sideRegion: region(side), headRegion: region(head),
+      controls: Boolean(group), groupRegion: region(group), labelled: c.every((el) => (el.getAttribute('aria-label') || '').length > 0),
+      order: c.map((el) => el.className.split(' ').find((k) => ['minimize', 'maximize', 'close'].includes(k))),
+      head: rect(head), group: group ? rect(group) : null,
+    };
+  })()`);
+  const barLayout = controlLayout({ platform: process.platform });
+  report.windowBar = Boolean(bar) && bar.sidebarTop === 0 && bar.headTop === 0 && bar.sideRegion === 'drag' && bar.headRegion === 'drag'
+    && JSON.stringify(bar.order) === JSON.stringify(barLayout.drawn ? barLayout.order : []);
+  if (barLayout.drawn) report.windowBar = report.windowBar && bar.controls && bar.labelled && bar.groupRegion === 'no-drag' && bar.group.right <= bar.head.right + 0.5;
+  else report.windowBar = report.windowBar && !bar.controls;
+  if (!report.windowBar) console.error('window chrome: ' + JSON.stringify({ bar, barLayout }));
   report.menuRemoved = Menu.getApplicationMenu() === null;
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
@@ -454,8 +480,9 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: naming.product,
-    // No platform frame: core draws the bar and its three controls, so the title area is ours on every platform.
-    frame: false,
+    // The platform's own chrome: macOS keeps its traffic lights (the bar leaves them room), Windows and Linux draw no
+    // platform frame at all, because core draws the bar and its controls there. See window-chrome.js.
+    ...windowOptions(process.platform),
     icon: path.join(here, '../build/icon.png'),
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });

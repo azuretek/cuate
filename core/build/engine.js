@@ -43,6 +43,7 @@ var engine = (() => {
     THEME_GROUPS: () => THEME_GROUPS,
     UNGROUPED: () => UNGROUPED,
     UNKNOWN: () => UNKNOWN,
+    WINDOW_CONTROLS: () => WINDOW_CONTROLS,
     aboutModel: () => aboutModel,
     addGroup: () => addGroup,
     applyMessageToChats: () => applyMessageToChats,
@@ -61,6 +62,7 @@ var engine = (() => {
     coerceSetting: () => coerceSetting,
     commitState: () => commitState,
     connectionSentence: () => connectionSentence,
+    controlLayout: () => controlLayout,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
     createLogger: () => createLogger,
@@ -1511,6 +1513,14 @@ var engine = (() => {
       return { ...failedBanner({ detail }), percent: null, action: canInstall ? { command: "updates.download", label: "Try again" } : null };
     }
     return null;
+  }
+
+  // core/app/rules/bar-layout.js
+  var WINDOW_CONTROLS = ["minimize", "maximize", "close"];
+  function controlLayout({ platform } = {}) {
+    const os = String(platform || "").toLowerCase();
+    if (os === "win32" || os === "linux") return { side: "right", order: WINDOW_CONTROLS.slice(), drawn: true };
+    return { side: "left", order: [], drawn: false };
   }
   return __toCommonJS(engine_exports);
 })();

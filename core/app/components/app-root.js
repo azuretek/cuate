@@ -7,6 +7,7 @@ import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled } from '../rules/notifications.js';
 import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
+import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import './app-onboarding.js';
@@ -21,12 +22,6 @@ const normalizeUrl = (u) => {
   const s = String(u || '').trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(s) ? s : 'https://' + s;
 };
-
-// The window controls' glyphs, drawn in currentColor so a control follows the theme like every other mark.
-const ICON_MINIMIZE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" fill="none" stroke="currentColor" stroke-width="1"></path></svg>`;
-const ICON_MAXIMIZE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"></rect></svg>`;
-const ICON_RESTORE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 2.5V0.5h7v7h-2" fill="none" stroke="currentColor" stroke-width="1"></path><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"></rect></svg>`;
-const ICON_CLOSE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" fill="none" stroke="currentColor" stroke-width="1"></path></svg>`;
 
 class AppRoot extends KitElement {
   static properties = {
@@ -640,11 +635,11 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .client=${this.client} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 
-  // The shell's product and platform; the window bar is drawn only where the platform had a frame.
+  // The shell's product and platform; the app draws window chrome only where the platform has a window.
   isDesktop() {
     return ['darwin', 'win32', 'linux'].includes(String(this.host && this.host.platform || '').toLowerCase());
   }
@@ -656,29 +651,23 @@ class AppRoot extends KitElement {
     try { await this.bridge(command, {}); } catch { /* the shell refused; the banner keeps the state it last drew */ }
   }
 
-  // The three controls ask the shell; the shell owns the BrowserWindow and answers the new maximized state.
+  // The three controls ask the shell; the shell owns the BrowserWindow and answers the new maximized state. The
+  // contact header names the middle button maximize, the one shape that changes, so it is mapped to the shell's own
+  // toggleMaximize command.
   async windowAction(name) {
-    if (!['minimize', 'toggleMaximize', 'close'].includes(name)) return;
+    const command = name === 'maximize' ? 'toggleMaximize' : name;
+    if (!['minimize', 'toggleMaximize', 'close'].includes(command)) return;
     try {
-      const result = await this.bridge('window.' + name, {});
-      if (name === 'toggleMaximize') this.maximized = Boolean(result);
+      const result = await this.bridge('window.' + command, {});
+      if (command === 'toggleMaximize') this.maximized = Boolean(result);
     } catch { /* the shell refused the command; the bar keeps the state it last drew */ }
   }
 
-  // Our own bar: the title area is the drag region and the controls opt out of it, so a drag moves the window and a
-  // click still acts. The controls come from tokens and sit on the side the platform drew them.
-  windowBar() {
-    const platform = String(this.host && this.host.platform || '').toLowerCase();
-    const product = this.host && this.host.product ? this.host.product : '';
-    const maximizeLabel = this.maximized ? 'Restore' : 'Maximize';
-    return html`<header class="window-bar" data-platform=${platform}>
-      <div class="window-title">${product}</div>
-      <div class="window-controls" role="group" aria-label="Window controls">
-        <button type="button" class="window-control minimize" aria-label="Minimize" title="Minimize" @click=${() => this.windowAction('minimize')}>${ICON_MINIMIZE}</button>
-        <button type="button" class="window-control maximize" aria-label=${maximizeLabel} title=${maximizeLabel} @click=${() => this.windowAction('toggleMaximize')}>${this.maximized ? ICON_RESTORE : ICON_MAXIMIZE}</button>
-        <button type="button" class="window-control close" aria-label="Close" title="Close" @click=${() => this.windowAction('close')}>${ICON_CLOSE}</button>
-      </div>
-    </header>`;
+  // What the contact header draws: nothing where the platform keeps its own window buttons (macOS), and our controls
+  // at the right on Windows and Linux, in the platform's order. The side and the order are rules/bar-layout.js.
+  windowControls() {
+    if (!this.isDesktop()) return null;
+    return controlLayout({ platform: String(this.host && this.host.platform || '').toLowerCase() });
   }
 
   // The one class the stylesheet keys off: it says a surface is leaving, so the sheet and its dim leave together.
@@ -687,8 +676,11 @@ class AppRoot extends KitElement {
   }
 
   render() {
-    return html`<div class="app-window">
-      ${this.isDesktop() ? this.windowBar() : nothing}
+    const platform = String(this.host && this.host.platform || '').toLowerCase();
+    // No bar, no title and no icon: the app's surfaces run to the top edge of the window. macOS floats its traffic
+    // lights over the top left, so the stylesheet pushes the content below down; every other platform draws its window
+    // controls in the contact header instead (see mainView).
+    return html`<div class="app-window" data-platform=${platform}>
       <div class="app-body">${this.body()}</div>
     </div>`;
   }
