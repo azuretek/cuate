@@ -6,10 +6,10 @@ import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, delete
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settleWrite } from '../app/rules/settings.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal } from '../app/rules/settings.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
-import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
 import { formatTraceparent, parseTraceparent, newTraceparent } from '../kit/rules/trace.js';
@@ -135,6 +135,8 @@ test('the imsg mapping produces exactly the declared model', () => {
   assert.equal(r.targetId, 'G-7');
   assert.equal(r.add, false);
   assert.equal(mapReaction({ id: 1, chat_id: 1 }), null);
+  // A row that names no chat (issue 48) maps to the one value that means no chat, whatever form the engine gave it.
+  for (const chat_id of [0, null, undefined]) assert.equal(mapMessage({ id: 10, chat_id, text: '', created_at: '2026-01-15T10:00:00Z' }, { attachmentId: () => 'x' }).chatId, NO_CHAT_ID);
 });
 
 test('the schema validator is strict', () => {
@@ -265,20 +267,6 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
   assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false });
-});
-
-test('a write settles only the keys it named, so an older answer cannot undo a change the stream delivered', () => {
-  // The page writes the skin; before it reads the answer, another writer changes the density and the stream delivers it.
-  const sent = { 'appearance.skin': 'dark', 'appearance.density': 'comfortable' };
-  const streamed = { ...sent, 'appearance.density': 'compact' };
-  const answer = { 'appearance.skin': 'dark', 'appearance.density': 'comfortable' };
-  assert.deepEqual(settleWrite(streamed, ['appearance.skin'], answer), { 'appearance.skin': 'dark', 'appearance.density': 'compact' }, 'the streamed density survives the older answer');
-  assert.deepEqual(settleWrite(streamed, ['appearance.skin'], { 'appearance.skin': 'light', 'appearance.density': 'comfortable' }), { 'appearance.skin': 'light', 'appearance.density': 'compact' }, 'the server has the last word on the key the write named');
-  // A refused write rolls back its own keys and leaves a streamed change alone.
-  const before = { 'appearance.skin': 'system' };
-  assert.deepEqual(settleWrite(streamed, ['appearance.skin'], before), { 'appearance.skin': 'system', 'appearance.density': 'compact' }, 'a rollback restores only what the write changed');
-  assert.deepEqual(settleWrite({ 'chats.order': ['a'], x: 1 }, ['chats.order'], {}), { x: 1 }, 'a key the source does not hold falls back to the schema default');
-  assert.equal(settleWrite(streamed, ['appearance.skin'], undefined), streamed, 'no answer leaves the page as it is');
 });
 
 test('every notice type has its own switch and a notice only fires when it is on', () => {
@@ -420,4 +408,23 @@ test('the emoji picker searches by name, keeps categories, and inserts whole cha
   assert.deepEqual(frequentEmoji([]), []);
   assert.equal(isEmoji('\u2728'), true);
   assert.equal(isEmoji('x'), false);
+});
+
+// The flake on run 37000805003: the page wrote the skin, a change to the density made at the server arrived on the
+// event stream, and then the skin write's answer (the whole store as it was before the density changed) landed and
+// was drawn wholesale, so the density went back to comfortable. The answer is taken for the written keys only.
+test('a late write answer never rolls back a change the event stream already delivered', () => {
+  const written = { 'appearance.skin': 'dark' };
+  const staleAnswer = { 'appearance.skin': 'dark', 'appearance.density': 'comfortable' };
+  const afterStream = { 'appearance.skin': 'dark', 'appearance.density': 'compact' };
+  assert.equal(staleAnswer['appearance.density'], 'comfortable', 'drawing the answer wholesale is what lost the change');
+  assert.deepEqual(settingsAfterWrite(afterStream, written, staleAnswer), afterStream, 'the streamed density survives the late answer');
+  assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, { 'appearance.skin': 'light' }), { 'appearance.skin': 'light' }, 'the server, not the page, decides a written key');
+  assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, undefined), { 'appearance.skin': 'dark' }, 'an empty answer keeps what the page holds');
+});
+
+test('a refused write rolls back only the keys it named', () => {
+  const before = { 'appearance.skin': 'system' };
+  const current = { 'appearance.skin': 'dark', 'appearance.density': 'compact', 'chats.order': ['a'] };
+  assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.density': 'compact' }, 'the named keys return to what they held, and one that did not exist is removed');
 });

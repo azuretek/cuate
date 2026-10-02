@@ -47,16 +47,26 @@ export function coerceSetting(field, raw) {
   return String(raw);
 }
 
-// What a write settles for the keys it named, and only those. A write's answer is the whole store as the server held it
-// at that write, so it can be older than a change the event stream delivered while the write was in flight: taking the
-// answer whole put a key another device had just changed back to its old value, and the page then drew the old value
-// for good. The same holds for a refused write's rollback. Every other key keeps what the page holds, and the stream
-// keeps that current. A key the source does not hold is dropped, so the schema default shows for it.
-export function settleWrite(current, keys, source) {
-  if (!source) return current;
+// A write's answer is the server's whole store at the moment it wrote, so it can be older than a change the event
+// stream has already delivered: the answer and the event travel on separate connections and either can land first.
+// Only the keys this write named are taken from the answer, and every other key keeps what the page already holds,
+// so a slow answer never rolls a newer change back. The flake this fixes: the desktop smoke on macOS (run
+// 37000805003) wrote one setting from the page, changed another at the server, and the page's own late answer put
+// the old value of the second one back, so the page never showed the change.
+export function settingsAfterWrite(current, patch, answer) {
   const out = { ...current };
-  for (const key of keys) {
-    if (Object.hasOwn(source, key)) out[key] = source[key];
+  for (const key of Object.keys(patch || {})) {
+    if (answer && Object.hasOwn(answer, key)) out[key] = answer[key];
+  }
+  return out;
+}
+
+// A refused write rolls back only the keys it named, to what they held before it, and keeps anything that arrived
+// while it was in flight.
+export function settingsAfterRefusal(current, before, patch) {
+  const out = { ...current };
+  for (const key of Object.keys(patch || {})) {
+    if (before && Object.hasOwn(before, key)) out[key] = before[key];
     else delete out[key];
   }
   return out;
