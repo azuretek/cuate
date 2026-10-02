@@ -200,3 +200,24 @@ app-chat-list, .messages, .page, .sheet, .emoji-row, .emoji-grid {
   scrollbar-width: var(--size-scrollbar);
   scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
+
+/* Settings and About arrive and leave like an iOS sheet: up from the bottom edge over a fading scrim, and back
+   down on close. Chela's own stylesheet moves them exactly this way, on these values, so a reader who uses both
+   apps sees one design rather than two. Nothing here names a colour or a length of its own: the dim is the token
+   the drawer's scrim already uses, and every duration and curve is a motion token. */
+@keyframes surface-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes surface-sheet-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+
+.sheet-scrim { position: fixed; inset: 0; z-index: 3; background: var(--color-scrim); animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+.sheet { position: fixed; inset: auto 0 0 0; z-index: 4; max-height: var(--size-sheet-max); overflow: auto; background: var(--color-bg-raised); border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); animation: surface-sheet-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+/* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. */
+body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+/* Reduced motion keeps the change and drops the travel: the same plain fade Chela uses, arriving over the normal
+   duration and leaving over the fast one, so leaving stays quicker than arriving. */
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .sheet-scrim { animation: surface-scrim-in var(--motion-normal) ease-out both; }
+  body.surface--leaving .sheet, body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-fast) ease-out both; }
+}

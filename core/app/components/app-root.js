@@ -29,6 +29,9 @@ class AppRoot extends KitElement {
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
     // showing. view says which page the main pane draws (the conversation, settings or about).
     view: { state: true }, listOpen: { state: true },
+    // The sheet's leaving state has to be reactive: the departure is driven from body.surface--leaving, which updated()
+    // writes after a render, so a plain field would never repaint and the leave would never begin.
+    sheetLeaving: { state: true }, pendingSheet: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
     // The update the shell last reported, drawn as a banner while a download runs. The name must NOT be "update":
@@ -53,6 +56,8 @@ class AppRoot extends KitElement {
     this.sending = false;
     this.view = 'messages';
     this.listOpen = true;
+    this.sheetLeaving = false;
+    this.pendingSheet = null;
     this.settings = {};
     this.info = null;
     this.serverUrl = '';
@@ -347,16 +352,43 @@ class AppRoot extends KitElement {
   }
 
   openSettings() {
-    this.view = 'settings';
+    this.openSheet('settings');
     this.settingsProblem = '';
   }
 
   openAbout() {
-    this.view = 'about';
+    this.openSheet('about');
+  }
+
+  // Settings and About are ONE sheet surface, so the two pages can never be on screen together: asking for About
+  // while Settings is up runs Settings' page down and only then brings About's up. The motion and the dim are
+  // Chela's own conventions, so a reader who uses both apps sees one design rather than two; this only sequences.
+  openSheet(next) {
+    if (!this.sheetShowing) this.view = next;
+    else if (this.view !== next) { this.pendingSheet = next; this.leaveSheet(); }
   }
 
   closeView() {
-    this.view = 'messages';
+    this.pendingSheet = null;
+    this.leaveSheet();
+  }
+
+  leaveSheet() {
+    if (!this.sheetLeaving) this.sheetLeaving = true;
+  }
+
+  // The departure has finished, so the surface changes now: the next page arrives from the bottom edge, or the
+  // conversation does. Waiting for the event is what keeps a half-drawn page off the screen.
+  onSheetAnimationEnd = (e) => {
+    if (!this.sheetLeaving || e.target !== e.currentTarget) return;
+    this.sheetLeaving = false;
+    const next = this.pendingSheet;
+    this.pendingSheet = null;
+    this.view = next || 'messages';
+  };
+
+  get sheetShowing() {
+    return this.view === 'settings' || this.view === 'about';
   }
 
   // The drawer's scrim closes it, the same thing the conversation's back control does: show the pane behind it.
@@ -491,13 +523,22 @@ class AppRoot extends KitElement {
     return this.listOpen || !this.openChatId ? 'list' : 'conversation';
   }
 
-  mainView(chat) {
-    if (this.view === 'settings') return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem}
+  // The settings page and the about page are sheets, so they are drawn by sheetBody and never in the main pane.
+  sheetBody() {
+    if (this.view === 'about') return html`<app-about .info=${this.info} @back=${() => this.openSheet('settings')}></app-about>`;
+    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem}
       @setting=${(e) => this.setSetting(e.detail)} @signout=${() => this.signOut('')} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
-    if (this.view === 'about') return html`<app-about .info=${this.info} @back=${() => this.openSettings()}></app-about>`;
+  }
+
+  mainView(chat) {
     return chat
       ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .client=${this.client} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
+  }
+
+  // The one class the stylesheet keys off: it says a surface is leaving, so the sheet and its dim leave together.
+  updated() {
+    document.body.classList.toggle('surface--leaving', this.sheetLeaving === true);
   }
 
   render() {
@@ -521,6 +562,7 @@ class AppRoot extends KitElement {
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
       <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}</div>` : nothing}${this.mainView(chat)}</main>
+      ${this.sheetShowing ? html`<div class="sheet-scrim" @click=${() => this.closeView()}></div><section class="sheet" role="dialog" aria-modal="true" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section>` : nothing}
     </div>`;
   }
 }

@@ -33,6 +33,7 @@
   --size-dot: 10px;
   --size-border: 1px;
   --size-onboarding: 420px;
+  --size-sheet-max: 90vh;
   --size-drawer: min(86vw, 320px);
   --size-drawer-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
   --size-picker: 320px;
@@ -48,6 +49,9 @@
   --motion-drawer-out: 160ms;
   --motion-drawer-fade: 140ms;
   --motion-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-sheet-in: 500ms;
+  --motion-sheet-out: 400ms;
+  --motion-sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4);
