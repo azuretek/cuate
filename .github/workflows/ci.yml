@@ -136,6 +136,25 @@ jobs:
         env:
           SHOTS: ${{ runner.temp }}/shots
         run: node desktop/scripts/smoke.mjs
+      # The window chrome's own proof (desktop/scripts/prove-window-chrome.mjs): the app drawn for each platform from
+      # the one set of rules, measured for the side and the order the platform asks for and that nothing else is drawn
+      # over the top. Headless, on every desktop platform, so a placement that only looks right on the one it was
+      # written on fails a leg whose name says which platform. The captures go up as an artifact.
+      - name: Prove the window chrome's placement (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 6
+        run: xvfb-run -a -s "-screen 0 1280x800x24" pnpm --filter desktop exec electron scripts/prove-window-chrome.mjs --shots "${{ runner.temp }}/proof-window-chrome"
+      - name: Prove the window chrome's placement (macOS, Windows)
+        if: runner.os != 'Linux'
+        timeout-minutes: 6
+        run: pnpm --filter desktop exec electron scripts/prove-window-chrome.mjs --shots "${{ runner.temp }}/proof-window-chrome"
+      - name: Keep the window chrome proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: window-chrome-proof-${{ matrix.os }}
+          path: ${{ runner.temp }}/proof-window-chrome
+          if-no-files-found: warn
       - name: Keep the captures
         if: always()
         uses: actions/upload-artifact@v4

@@ -8,6 +8,7 @@
   "scripts": {
     "start": "electron .",
     "icons": "node scripts/icons.mjs",
+    "prove:window-chrome": "electron scripts/prove-window-chrome.mjs",
     "package": "electron-builder --config electron-builder.mjs --publish never"
   },
   "devDependencies": {
