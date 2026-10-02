@@ -22,3 +22,4 @@ export * from './rules/notifications.js';
 export * from './rules/settings.js';
 export * from './rules/theme.js';
 export * from './rules/time.js';
+export * from './rules/updates.js';

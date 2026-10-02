@@ -4,9 +4,10 @@ import { createApiClient } from '../../kit/api.js';
 import { orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
+import { noticeEnabled, updateNotice, autoDownloadEnabled } from '../rules/notifications.js';
+import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
-import { noticeEnabled, updateNotice } from '../rules/notifications.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -30,6 +31,10 @@ class AppRoot extends KitElement {
     view: { state: true }, listOpen: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
+    // The update the shell last reported, drawn as a banner while a download runs. The name must NOT be "update":
+    // Lit writes this.update for any reactive property of that name, which shadows LitElement's own update() method
+    // and the element throws "this.update is not a function" on its next render.
+    updateStatus: { state: true },
     // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
     filters: { state: true }, filterOpen: { state: true },
   };
@@ -53,6 +58,10 @@ class AppRoot extends KitElement {
     this.serverUrl = '';
     this.settingsBusy = false;
     this.settingsProblem = '';
+    // Never name this `update`: Lit's own lifecycle method is update(), and an own property of
+    // that name shadows it, so the element throws "this.update is not a function" on its next
+    // render and the app never becomes ready.
+    this.updateStatus = null;
     this.pending = new Map();
     this.client = null;
     this.drag = null;
@@ -95,7 +104,6 @@ class AppRoot extends KitElement {
     this.themeApplied = themeVars(this.settings['appearance.theme'], scheme);
     for (const [name, value] of this.themeApplied) root.style.setProperty(name, value);
   }
-
   bridge(name, args) {
     return window.bridge.call(name, args);
   }
@@ -136,6 +144,7 @@ class AppRoot extends KitElement {
       client.connect();
       if (this.chats.length) await this.open(this.chats[0].id);
       this.settings = await this.readSettings();
+      this.applyUpdateSetting();
       this.applyTheme();
       this.dataset.state = 'ready';
     } catch (e) {
@@ -269,17 +278,28 @@ class AppRoot extends KitElement {
     } else if (name === 'settings.changed') {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
+      this.applyUpdateSetting();
       this.applyTheme();
     }
   }
 
   // An update the shell reports becomes a notice through the same bridge as a message, unless its own switch is off.
-  onUpdate({ state, version }) {
-    const notice = updateNotice(state, version);
+  // The download and stall states draw no native notice (a notice cannot show a moving bar), so they become the
+  // in-app banner instead, which is where the progress is visible on a platform whose notices cannot update.
+  onUpdate(data) {
+    const { state, version, percent, detail } = data || {};
+    this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null } : null;
+    const notice = updateNotice(state, version, detail);
     if (!notice || !noticeEnabled(this.settings, notice.type)) return;
     this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
   }
 
+  // The page holds the server's settings, so it is the page that tells the shell whether a found release may be
+  // fetched and applied on its own. A setting the server has never seen keeps the schema default (off).
+  applyUpdateSetting() {
+    if (typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function') return;
+    this.bridge('updates.configure', { autoDownload: autoDownloadEnabled(this.settings) }).catch(() => {});
+  }
   // A confirmed outgoing message replaces the bubble drawn when Send was pressed.
   reconcile(m) {
     if (!m.fromMe) return;
@@ -425,6 +445,7 @@ class AppRoot extends KitElement {
     try {
       const { values } = await this.client.settingsWrite({ [key]: value });
       this.settings = values || this.settings;
+      this.applyUpdateSetting();
     } catch (e) {
       this.settings = before;
       this.settingsProblem = this.describe(e);
@@ -542,6 +563,7 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
+    const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail }) : null;
     return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
@@ -556,7 +578,7 @@ class AppRoot extends KitElement {
           @chatsettings=${(e) => this.setSettings(e.detail.patch)}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
-      <main class="main">${this.mainView(chat)}</main>
+      <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}</div>` : nothing}${this.mainView(chat)}</main>
     </div>`;
   }
 }
