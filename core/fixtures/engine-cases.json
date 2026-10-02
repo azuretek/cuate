@@ -132,7 +132,7 @@
           "lastMessageAt": "2026-01-03T00:00:00.000Z"
         }
       ],
-      "expect": "\"ana@example.com, bo@example.com\""
+      "expect": "\"ana@example.com and bo@example.com\""
     },
     {
       "id": "chats.preview",
