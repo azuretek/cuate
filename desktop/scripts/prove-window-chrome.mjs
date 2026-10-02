@@ -3,8 +3,9 @@
 // Windows and Linux draw min, max, close at the right of the contact header).
 //
 // The app is core's own page (core/app/components/app-root.js), drawn from the arrangement core/app/rules/bar-layout.js
-// answers for a platform. This loads the real page over the app://bundle protocol, stubs the shell bridge so it is drawn
-// without a server, hands in the host and a chat so the shell renders, then measures what the page drew. It runs
+// answers for a platform. This loads the real page over the app://bundle protocol with a stub shell bridge installed as
+// the window's preload (scripts/lib/proof-bridge-preload.cjs), so the page boots with no server and no error, hands in
+// the host and a fixture chat so the shell renders, then measures what the page drew. It runs
 // headlessly (under xvfb-run on Linux) and never opens on a desktop a person is using.
 //
 //   xvfb-run -a node_modules/.bin/electron desktop/scripts/prove-window-chrome.mjs [--shots DIR]
@@ -22,6 +23,7 @@ const naming = JSON.parse(fs.readFileSync(path.join(CORE, 'spec', 'naming.json')
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'window-chrome-proof-'));
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? process.argv[shotsAt + 1] : path.join(HERE, '..', '..', 'docs', 'proof', 'desktop');
+const PRELOAD = path.join(HERE, 'lib', 'proof-bridge-preload.cjs');
 
 const failures = [];
 const pass = (label) => console.log('OK   ' + label);
@@ -50,6 +52,7 @@ const MEASURE = [
   "    controls: Boolean(group), order: controls.map((el) => el.className.split(' ').find((k) => ['minimize', 'maximize', 'close'].includes(k))),",
   "    labelled: controls.every((el) => (el.getAttribute('aria-label') || '').length > 0),",
   "    head: rect(head), group: group ? rect(group) : null,",
+  "    alerts: [...document.querySelectorAll('[role=\"alert\"], .problem')].map((el) => el.textContent.trim()),",
   "  };",
   "})()",
 ].join('\n');
@@ -61,14 +64,18 @@ function serve(request) {
   return new Response(fs.readFileSync(file), { headers: { 'content-type': mimeFor(file) } });
 }
 
-// Draw the shell for one case in the real page: stub the shell bridge so it is drawn with no server, hand in the host
-// and a chat so the sidebar and the conversation header render, then read the geometry back and capture the top strip.
+// Draw the shell for one case in the real page: the preload installs the stub shell bridge before any page script runs,
+// so the page boots with no server and no error; once its boot has settled, hand in the host and a fixture chat so the
+// sidebar and the conversation header render, then read the geometry back and capture the top strip.
 async function draw(BrowserWindow, testCase) {
-  const window = new BrowserWindow({ width: 900, height: 150, show: true, frame: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const host = { product: naming.product, platform: testCase.platform };
+  const window = new BrowserWindow({ width: 900, height: 150, show: true, frame: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: PRELOAD, additionalArguments: ['--proof-host=' + encodeURIComponent(JSON.stringify(host))] } });
   await window.loadURL('app://bundle/app/index.html');
   const wc = window.webContents;
-  const host = { product: naming.product, platform: testCase.platform };
-  await wc.executeJavaScript('window.bridge = { call: () => Promise.resolve(' + JSON.stringify(host) + '), on: () => () => {} }; true');
+  // The page's boot reads the saved server through the bridge; with none saved it settles on onboarding. Wait for that
+  // first, with a deadline, so the fixture state handed in next is not overwritten by a boot still in flight.
+  const booted = await wc.executeJavaScript('new Promise((resolve) => { const el = document.querySelector("app-root"); const t0 = Date.now(); const tick = () => { if (el && el.phase !== "boot") return resolve(el.phase); if (Date.now() - t0 > 5000) return resolve(null); setTimeout(tick, 20); }; tick(); })');
+  if (!booted) throw new Error('the page did not finish booting for ' + testCase.name);
   const state = '(() => { const el = document.querySelector("app-root"); el.host = ' + JSON.stringify(host) + '; el.phase = "ready"; el.chats = [{ id: "1", name: "Avery Quinn", participants: [], isGroup: false, unread: 0, lastMessageAt: null, lastMessage: null }]; el.openChatId = "1"; el.messages = []; return true; })()';
   await wc.executeJavaScript(state);
   // Wait for the shell to render, with a deadline so a page that never draws fails the proof instead of hanging it.
@@ -86,6 +93,8 @@ async function draw(BrowserWindow, testCase) {
 function check(testCase, measured) {
   const expected = controlLayout({ platform: testCase.platform });
   const tag = testCase.name + ': ';
+  if (measured.alerts.length === 0) pass(tag + 'no error banner is drawn');
+  else fail(tag + 'the page draws an error: ' + measured.alerts.join(' | '));
   for (const [what, present] of [['a bar of its own', measured.bar], ['a title', measured.title], ['an icon', measured.icon]]) {
     if (present) fail(tag + 'the page still draws ' + what);
     else pass(tag + 'no ' + what);
