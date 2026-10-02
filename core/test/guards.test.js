@@ -54,6 +54,16 @@ test('component CSS carries no literal colours or lengths', () => {
   }
 });
 
+test('the scrollbars are one set, on the containers that scroll', () => {
+  // One set for the whole app, on the scroll containers rather than a component each, and no ::-webkit-scrollbar:
+  // a width there turns an overlay scrollbar into a classic one, which ends the overlay behaviour a platform draws
+  // its own bar with. A component that carried the styling itself would be a second set, so both fail here.
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.equal((css.match(/scrollbar-(?:width|color)\s*:/g) || []).length, 2, 'the scrollbar styling is one set');
+  assert.equal(/::-webkit-scrollbar/.test(css), false, 'a platform drawing overlay scrollbars keeps them');
+  for (const f of walk('core/app/components')) assert.equal(/scrollbar/i.test(read(f)), false, f + ' styles a scrollbar');
+});
+
 test('the send arrow takes its size and weight from tokens', () => {
   // The arrow fills its circle by scaling with the button rather than by a size
   // written into the markup: its font size is derived from the button's own size

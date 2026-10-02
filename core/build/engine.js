@@ -47,6 +47,7 @@ var engine = (() => {
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     autoDownloadEnabled: () => autoDownloadEnabled,
+    availableBanner: () => availableBanner,
     bugReportBlock: () => bugReportBlock,
     buildNumberOf: () => buildNumberOf,
     capability: () => capability,
@@ -70,6 +71,7 @@ var engine = (() => {
     downloadingNotice: () => downloadingNotice,
     emojiInCategory: () => emojiInCategory,
     emptyFilters: () => emptyFilters,
+    failedBanner: () => failedBanner,
     filterChats: () => filterChats,
     formatListTime: () => formatListTime,
     formatSeparator: () => formatSeparator,
@@ -105,6 +107,7 @@ var engine = (() => {
     policy: () => policy,
     progressFor: () => progressFor,
     reactionGlyph: () => reactionGlyph,
+    readyBanner: () => readyBanner,
     renameGroup: () => renameGroup,
     reportRows: () => reportRows,
     resolveScheme: () => resolveScheme,
@@ -1444,14 +1447,35 @@ var engine = (() => {
   function installPolicy() {
     return { on: "quit", why: "the download is applied when the app next quits, so an update never interrupts what a person is doing" };
   }
-  function updateBanner(state, { version = null, percent = null, detail = null } = {}) {
+  function availableBanner({ version = null } = {}) {
+    const what = version ? "Version " + version : "An update";
+    return { message: what + " is available.", detail: "Download it now, or turn on automatic downloads and it is fetched on its own." };
+  }
+  function readyBanner({ version = null } = {}) {
+    const what = version ? "Version " + version : "The update";
+    return { message: what + " is ready to install.", detail: "Restart the app to install it, or it installs the next time the app quits." };
+  }
+  function failedBanner({ detail = null } = {}) {
+    return { message: "The update could not be downloaded.", detail: detail || "Nothing was installed. You can try again." };
+  }
+  function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
+    if (state === "available") {
+      if (!canInstall) return null;
+      return { ...availableBanner({ version }), percent: null, action: { command: "updates.download", label: "Download" } };
+    }
     if (state === "downloading") {
       const n = downloadingNotice({ version, transfer: detail });
-      return { message: n.message, detail: n.detail, percent };
+      return { message: n.message, detail: n.detail, percent, action: null };
     }
     if (state === "stalled") {
       const n = stalledNotice({ version });
-      return { message: n.message, detail: n.detail, percent: null };
+      return { message: n.message, detail: n.detail, percent: null, action: null };
+    }
+    if (state === "ready") {
+      return { ...readyBanner({ version }), percent: null, action: { command: "updates.install", label: "Restart and install" } };
+    }
+    if (state === "error") {
+      return { ...failedBanner({ detail }), percent: null, action: canInstall ? { command: "updates.download", label: "Try again" } : null };
     }
     return null;
   }

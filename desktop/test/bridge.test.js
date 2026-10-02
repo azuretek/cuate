@@ -14,6 +14,24 @@ test('the desktop shell implements exactly the declared bridge commands', () => 
   assert.deepEqual(Object.keys(h).sort(), Object.keys(spec.commands).sort());
 });
 
+test('the update download and install commands call through and answer what the shell did', async () => {
+  const calls = [];
+  const h = createHandlers({
+    secure: {}, notify: () => true, info: () => ({}), openExternal: () => true,
+    downloadUpdates: () => { calls.push('download'); return true; },
+    installUpdate: () => { calls.push('install'); return false; },
+  });
+  assert.equal(await h['updates.download']({}), true);
+  assert.equal(await h['updates.install']({}), false);
+  assert.deepEqual(calls, ['download', 'install']);
+});
+
+test('with no updater the update commands answer false rather than throwing', async () => {
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true });
+  assert.equal(await h['updates.download']({}), false);
+  assert.equal(await h['updates.install']({}), false);
+});
+
 test('secure storage encrypts at rest and refuses bad keys and values', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'bridge-'));
   const file = path.join(dir, 'store.json');

@@ -108,16 +108,49 @@ export function installPolicy() {
   return { on: 'quit', why: 'the download is applied when the app next quits, so an update never interrupts what a person is doing' };
 }
 
+// The banner when a release is found and this build can install it. It carries the action that starts the download, so
+// a person can go from seeing the release to installing it without leaving the app, whatever the automatic-download
+// setting says. The version is optional so the copy stays true when the transport has not named it yet.
+export function availableBanner({ version = null } = {}) {
+  const what = version ? 'Version ' + version : 'An update';
+  return { message: what + ' is available.', detail: 'Download it now, or turn on automatic downloads and it is fetched on its own.' };
+}
+
+// The banner once the download has landed: the update is on disk and is applied when the app quits.
+export function readyBanner({ version = null } = {}) {
+  const what = version ? 'Version ' + version : 'The update';
+  return { message: what + ' is ready to install.', detail: 'Restart the app to install it, or it installs the next time the app quits.' };
+}
+
+// The banner when the download failed. The reason is optional and is already scrubbed by the shell; the copy never
+// pretends nothing happened, so a person sees the failure rather than an update that silently did nothing.
+export function failedBanner({ detail = null } = {}) {
+  return { message: 'The update could not be downloaded.', detail: detail || 'Nothing was installed. You can try again.' };
+}
+
 // The banner an update state draws in the app, or null for a state that draws none. 'available', 'ready' and 'error'
-// are native notices instead, through the same path the message notices use.
-export function updateBanner(state, { version = null, percent = null, detail = null } = {}) {
+// also raise a native notice, through the same path the message notices use; the banner is what carries the action, so
+// the notice announces and the banner is where a person acts. 'downloading' and 'stalled' draw only the banner, because
+// a native notice cannot show a moving bar. The action names the bridge command the page calls, so what the button does
+// is decided here and tested with no shell, no network and no Electron.
+export function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
+  if (state === 'available') {
+    if (!canInstall) return null; // a platform that cannot install is told about the release by its notice alone
+    return { ...availableBanner({ version }), percent: null, action: { command: 'updates.download', label: 'Download' } };
+  }
   if (state === 'downloading') {
     const n = downloadingNotice({ version, transfer: detail });
-    return { message: n.message, detail: n.detail, percent };
+    return { message: n.message, detail: n.detail, percent, action: null };
   }
   if (state === 'stalled') {
     const n = stalledNotice({ version });
-    return { message: n.message, detail: n.detail, percent: null };
+    return { message: n.message, detail: n.detail, percent: null, action: null };
+  }
+  if (state === 'ready') {
+    return { ...readyBanner({ version }), percent: null, action: { command: 'updates.install', label: 'Restart and install' } };
+  }
+  if (state === 'error') {
+    return { ...failedBanner({ detail }), percent: null, action: canInstall ? { command: 'updates.download', label: 'Try again' } : null };
   }
   return null;
 }
