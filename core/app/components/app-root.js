@@ -9,6 +9,7 @@ import { noticeEnabled, updateNotice, autoDownloadEnabled, messageNotice } from 
 import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
+import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -492,20 +493,22 @@ class AppRoot extends KitElement {
     return w > 0 ? w : window.innerWidth;
   }
 
-  // A setting is written to the server first; the server's answer, not this page, becomes what the page draws, and a
-  // rejected write is rolled back so the control never disagrees with the server.
+  // A setting is written to the server first; the server's answer for that key, not this page, becomes what the page
+  // draws, and a rejected write is rolled back so the control never disagrees with the server. Keys the write did not
+  // name keep what the event stream last delivered (settingsAfterWrite says why).
   async setSetting({ key, value }) {
     if (!this.client) return;
     const before = this.settings;
-    this.settings = { ...this.settings, [key]: value };
+    const patch = { [key]: value };
+    this.settings = { ...this.settings, ...patch };
     this.settingsBusy = true;
     this.settingsProblem = '';
     try {
-      const { values } = await this.client.settingsWrite({ [key]: value });
-      this.settings = values || this.settings;
+      const { values } = await this.client.settingsWrite(patch);
+      this.settings = settingsAfterWrite(this.settings, patch, values);
       this.applyUpdateSetting();
     } catch (e) {
-      this.settings = before;
+      this.settings = settingsAfterRefusal(this.settings, before, patch);
       this.settingsProblem = this.describe(e);
     } finally {
       this.settingsBusy = false;
@@ -593,9 +596,9 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
     try {
       const { values } = await this.client.settingsWrite(patch);
-      this.settings = values || this.settings;
+      this.settings = settingsAfterWrite(this.settings, patch, values);
     } catch (e) {
-      this.settings = before;
+      this.settings = settingsAfterRefusal(this.settings, before, patch);
       this.settingsProblem = this.describe(e);
     } finally {
       this.settingsBusy = false;
