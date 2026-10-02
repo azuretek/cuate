@@ -49,6 +49,7 @@ var engine = (() => {
     applyReaction: () => applyReaction,
     autoDownloadEnabled: () => autoDownloadEnabled,
     availableBanner: () => availableBanner,
+    backdropReturns: () => backdropReturns,
     bugReportBlock: () => bugReportBlock,
     buildNumberOf: () => buildNumberOf,
     capability: () => capability,
@@ -1170,9 +1171,9 @@ var engine = (() => {
   // core/app/rules/settings.js
   var SETTINGS_SCHEMA = {
     groups: [
-      { id: "appearance", label: "Appearance" },
-      { id: "notifications", label: "Notifications" },
-      { id: "updates", label: "Updates" }
+      { id: "appearance", label: "Appearance", description: "How the app looks and how much text it shows." },
+      { id: "notifications", label: "Notifications", description: "Which events raise a notice on this device." },
+      { id: "updates", label: "Updates", description: "How a release this app finds is fetched." }
     ],
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "choice", options: ["system", "light", "dark"], default: "system" },
@@ -1196,7 +1197,7 @@ var engine = (() => {
     const fields = settingsFields(schema);
     const groups = schema.groups || [];
     const fallback = groups.length ? groups[0].id : null;
-    return groups.map((g) => ({ id: g.id, label: g.label, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+    return groups.map((g) => ({ id: g.id, label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
   }
   function settingValue(field, values) {
     return values && Object.hasOwn(values, field.key) ? values[field.key] : field.default;
@@ -1257,6 +1258,11 @@ var engine = (() => {
     if (state === "ready") return { type: "updateReady", title: "Update ready", body: "Restart the app to install the downloaded update." };
     if (state === "error") return { type: "error", title: "Update failed", body: why || "The update could not be checked for or downloaded." };
     return null;
+  }
+
+  // core/app/rules/sheet.js
+  function backdropReturns(startsOnBackdrop, endsOnBackdrop) {
+    return startsOnBackdrop === true && endsOnBackdrop === true;
   }
 
   // core/app/rules/theme.js

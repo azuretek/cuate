@@ -110,24 +110,33 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .button.primary { background: var(--color-accent); color: var(--color-accent-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
-/* Settings and About draw in the main pane, one page each. */
-.page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
-.page-head { display: flex; align-items: center; gap: var(--space-2); height: var(--size-header); padding: 0 var(--space-4); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
-.page-title { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); margin: 0; }
-.back { background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
-.back:hover { background: var(--color-bg-sunken); }
-.about-compare { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
-.about-compare.mismatch { color: var(--color-danger); }
-.page-body { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); max-width: var(--size-onboarding); width: 100%; }
-.setting-group { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); box-shadow: var(--shadow-sm); overflow: hidden; }
-.setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-top: var(--size-border) solid var(--color-border); }
+/* Settings and About draw in the app's one sheet surface, on the same chrome: a top strip that is itself the back
+   control, the page's title and its one-line description, then its sections. The chrome is drawn by app-sheet, which
+   both pages use, so the two cannot drift into two different ways back. */
+app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
+.sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
+.sheet-back:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
+.sheet-back-icon { display: inline-flex; width: var(--size-back-icon); height: var(--size-back-icon); }
+.sheet-back-icon svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sheet-esc { margin-left: auto; padding: var(--space-1) var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-sunken); color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); text-transform: uppercase; }
+.sheet-head { flex: none; padding: var(--space-4) var(--space-4) var(--space-2); }
+.sheet-title { margin: 0; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); }
+.sheet-desc { margin: var(--space-1) 0 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
+.sheet-body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.sheet-section { display: flex; flex-direction: column; min-width: 0; }
+.sheet-section-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
+.sheet-section-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
+.sheet-rows { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); overflow: hidden; min-width: 0; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-top: var(--size-border) solid var(--color-border); min-width: 0; }
 .setting-row:first-child { border-top: 0; }
 .setting-label { color: var(--color-fg-muted); }
 .setting-value { overflow-wrap: anywhere; text-align: right; }
-.setting-group-label { margin: 0; padding: var(--space-2) var(--space-4) var(--space-1); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
-.setting-group-label + .setting-row { border-top: 0; }
-.setting-control { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); }
+.setting-control { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); max-width: 100%; min-width: 0; }
 .setting-control:focus { outline: none; border-color: var(--color-accent); }
+.about-compare { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
+.about-compare.mismatch { color: var(--color-danger); }
 /* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
 .theme-import { flex-direction: column; align-items: stretch; gap: var(--space-2); }
 .theme-import-text { font-family: var(--font-mono); font-size: var(--font-size-sm); resize: vertical; }
@@ -210,7 +219,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
    theme on their own. Only the two standard properties are used: a width on ::-webkit-scrollbar turns an overlay
    scrollbar into a classic one, so a platform that draws overlay scrollbars would stop, while scrollbar-width and
    scrollbar-color thin and tint the platform's own bar and leave that behaviour alone (issue 85). */
-app-chat-list, .messages, .page, .sheet, .emoji-row, .emoji-grid {
+app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid {
   scrollbar-width: var(--size-scrollbar);
   scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
@@ -237,8 +246,11 @@ app-chat-list, .messages, .page, .sheet, .emoji-row, .emoji-grid {
 @keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 
-.sheet-scrim { position: fixed; inset: 0; z-index: 3; background: var(--color-scrim); animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
-.sheet { position: fixed; inset: auto 0 0 0; z-index: 4; max-height: var(--size-sheet-max); overflow: auto; background: var(--color-bg-raised); border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); animation: surface-sheet-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+.sheet-scrim { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; padding: var(--space-4); background: var(--color-scrim); animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+/* The card is only as wide as its content needs, up to a sensible maximum, and it is centred in the backdrop rather
+   than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
+   window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
+.sheet { position: relative; z-index: 4; display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); animation: surface-sheet-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. */
 body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
 body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
