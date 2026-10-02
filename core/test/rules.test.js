@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, matchesSearch, SORT_ORDERS, UNGROUPED } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, matchesSearch, SORT_ORDERS, SORT_LABELS, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, DELETE_STEPS } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji } from '../app/rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal } from '../app/rules/settings.js';
+import { backdropReturns } from '../app/rules/sheet.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
@@ -268,6 +269,7 @@ test('the settings page draws the schema and writes the value a control gives', 
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
   for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups()) assert.ok(typeof g.description === 'string' && g.description.length > 0, g.id + ' carries a one-line description for its section');
   assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates'], 'the page draws one section per group');
   assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload'], 'the updates section holds the download preference');
@@ -280,6 +282,14 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
   assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false });
+});
+
+test('a press leaves the sheet only when it both starts and ends on the backdrop', () => {
+  assert.equal(backdropReturns(true, true), true, 'a press on the backdrop, down and up, goes back');
+  assert.equal(backdropReturns(true, false), false, 'a press that starts on the backdrop and ends inside the card does not');
+  assert.equal(backdropReturns(false, true), false, 'a drag that starts inside the card and is released over the backdrop does not throw the page away');
+  assert.equal(backdropReturns(false, false), false, 'a press inside the card is the page own');
+  assert.equal(backdropReturns(undefined, undefined), false);
 });
 
 test('every notice type has its own switch and a notice only fires when it is on', () => {
@@ -481,6 +491,63 @@ test('a late write answer never rolls back a change the event stream already del
   assert.deepEqual(settingsAfterWrite(afterStream, written, staleAnswer), afterStream, 'the streamed density survives the late answer');
   assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, { 'appearance.skin': 'light' }), { 'appearance.skin': 'light' }, 'the server, not the page, decides a written key');
   assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, undefined), { 'appearance.skin': 'dark' }, 'an empty answer keeps what the page holds');
+});
+
+test('the sort control names the four choices, and every order has a label', () => {
+  assert.deepEqual(SORT_ORDERS, ['recent', 'unread', 'name', 'manual']);
+  assert.deepEqual(SORT_ORDERS.map((o) => SORT_LABELS[o]), ['Recent activity', 'Unread first', 'Name', 'Manual order']);
+});
+
+test('a selection counts, selects all and clears together, and agrees with the rows on screen', () => {
+  const visible = ['1', '2', '3'];
+  assert.deepEqual(toggleChecked([], '1'), ['1']);
+  assert.deepEqual(toggleChecked(['1'], '1'), [], 'checking a checked row clears it');
+  assert.equal(allChecked([], visible), false);
+  assert.equal(allChecked(['1'], visible), false, 'a partial selection is not all');
+  assert.equal(allChecked(['1', '2', '3'], visible), true);
+  assert.deepEqual(setAllChecked(['9'], visible, true), ['9', '1', '2', '3'], 'select-all adds the on-screen rows and keeps the rest');
+  assert.deepEqual(setAllChecked(['1', '2', '9'], visible, false), ['9'], 'clearing takes the on-screen rows only');
+  assert.equal(checkedCount(['1', '9'], visible), 1, 'the count is the checked rows that are on screen');
+  assert.equal(checkedCount(['1', '2'], visible), 2);
+});
+
+test('a selection joins an existing group or starts a group of its own', () => {
+  const groups = [{ id: 'g1', name: 'Family' }];
+  assert.deepEqual(addChatsToGroup({ '9': 'g1' }, ['1', '2'], 'g1'), { '9': 'g1', '1': 'g1', '2': 'g1' });
+  assert.deepEqual(addChatsToGroup({ '1': 'g1' }, ['1'], UNGROUPED), {}, 'adding a selection to no group drops those placements');
+  const made = groupFromSelection(groups, { '9': 'g1' }, ['1', '2'], { id: 'g2', name: '  Weekend  ' });
+  assert.deepEqual(made.groups, [{ id: 'g1', name: 'Family' }, { id: 'g2', name: 'Weekend' }]);
+  assert.deepEqual(made.placement, { '9': 'g1', '1': 'g2', '2': 'g2' }, 'the new group takes the selection');
+  assert.deepEqual(removeGroup(groups, 'g1'), [], 'deleting a group drops the group entry');
+  assert.deepEqual(clearGroupPlacement({ '1': 'g1', '2': 'g1', '9': 'g2' }, 'g1'), { '9': 'g2' }, 'its placements go with it, the chats stay');
+});
+
+test('a delete cannot complete without the confirm gate, and it only hides the client entry', () => {
+  assert.equal(requestDelete([]), null, 'an empty selection cannot even open the gate');
+  const pending = requestDelete(['1', '1', '2']);
+  assert.deepEqual(pending, { ids: ['1', '2'], step: DELETE_STEPS.confirming });
+  assert.equal(resolveDelete(pending, false), null, 'the first press resolves nothing');
+  assert.equal(resolveDelete(pending, undefined), null);
+  assert.deepEqual(resolveDelete(pending, true), { ids: ['1', '2'], step: DELETE_STEPS.confirming }, 'only the second press resolves it');
+  assert.equal(resolveDelete(null, true), null);
+  const group = requestDeleteGroup('g1', 'Weekend');
+  assert.deepEqual(resolveDelete(group, true), { kind: 'group', id: 'g1', name: 'Weekend', step: DELETE_STEPS.confirming });
+  assert.equal(requestDeleteGroup(null, 'x'), null);
+  assert.deepEqual(hideChats(['9'], ['1', '2', '1']), ['9', '1', '2'], 'the hidden list is a set, in order');
+  assert.deepEqual(forgetChats(['1', '9'], { '1': 'g1', '9': 'g2' }, ['1']), { order: ['9'], placement: { '9': 'g2' } }, 'a hidden chat leaves the order and the placement too');
+});
+
+test('the group actions act on the first press, and the confirm modal is the only delete gate', () => {
+  // Adding and creating return the next arrangement directly: neither carries a pending step, so nothing stands
+  // between the press and the result.
+  assert.deepEqual(addChatsToGroup({}, ['1'], 'g1'), { '1': 'g1' });
+  const made = groupFromSelection([], {}, ['1'], { id: 'g2', name: 'Family' });
+  assert.deepEqual(made.groups, [{ id: 'g2', name: 'Family' }]);
+  assert.equal(Object.hasOwn(made, 'step') || Object.hasOwn(made.groups[0], 'step'), false, 'a group action is its result, not a pending step');
+  // The delete gate is the only gate: an object that never went through requestDelete cannot resolve, however it is
+  // confirmed.
+  assert.equal(resolveDelete(requestDelete(['1']), false), null, 'the first press resolves nothing');
+  assert.equal(resolveDelete({ ids: ['1'] }, true), null, 'an object that skipped the gate never resolves');
 });
 
 test('a refused write rolls back only the keys it named', () => {

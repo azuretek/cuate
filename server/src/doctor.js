@@ -71,6 +71,15 @@ export async function runDoctor({
     // claiming it is there.
     warn('sending drives Messages through AppleScript and needs Automation for Messages: macOS asks the first time a send runs, and a send refused as not authorized to send Apple events is fixed in System Settings, Privacy & Security, Automation, Messages');
   } else warn('sending is off: switch it on with the command "sending on"');
+  // Hooks: an endpoint the server switched off after it kept failing is named with why, since nothing else will say
+  // that its receiver has stopped hearing anything.
+  for (const e of (config.webhooks && config.webhooks.endpoints) || []) {
+    if (e.active !== false) ok('hook ' + e.id + ' is on, for ' + (e.events || []).join(','));
+    else {
+      const why = [e.disabledReason === 'give_ups' ? 'too many deliveries in a row were given up on' : e.disabledReason === 'no_delivery' ? 'nothing was delivered for a day' : e.disabledReason, e.disabledAt && 'at ' + e.disabledAt, e.lastError && 'last error ' + e.lastError].filter(Boolean).join(', ');
+      warn('hook ' + e.id + ' is switched off' + (why ? ' (' + why + ')' : '') + ': fix its receiver, then run hooks enable ' + e.id);
+    }
+  }
   if (platform === 'darwin' || config.attachmentsRoot) {
     try {
       accessSync(attachmentsRoot, constants.R_OK);

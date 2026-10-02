@@ -40,6 +40,9 @@
   --size-picker: 320px;
   --size-picker-h: 320px;
   --size-emoji: 32px;
+  --size-sheet: 460px;
+  --size-back: 32px;
+  --size-back-icon: 15px;
   --size-picker-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
   --size-window-strip: 32px;
   --size-window-control: 46px;

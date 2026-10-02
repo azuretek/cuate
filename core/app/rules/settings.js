@@ -4,9 +4,9 @@
 // later item. The groups give the page its sections, so there is no second list to keep in step.
 export const SETTINGS_SCHEMA = {
   groups: [
-    { id: 'appearance', label: 'Appearance' },
-    { id: 'notifications', label: 'Notifications' },
-    { id: 'updates', label: 'Updates' },
+    { id: 'appearance', label: 'Appearance', description: 'How the app looks and how much text it shows.' },
+    { id: 'notifications', label: 'Notifications', description: 'Which events raise a notice on this device.' },
+    { id: 'updates', label: 'Updates', description: 'How a release this app finds is fetched.' },
   ],
   keys: {
     'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'choice', options: ['system', 'light', 'dark'], default: 'system' },
@@ -33,7 +33,7 @@ export function settingsGroups(schema = SETTINGS_SCHEMA) {
   const fields = settingsFields(schema);
   const groups = schema.groups || [];
   const fallback = groups.length ? groups[0].id : null;
-  return groups.map((g) => ({ id: g.id, label: g.label, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+  return groups.map((g) => ({ id: g.id, label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
 }
 
 // The value to show for a key: what the server holds, else the schema's default.
