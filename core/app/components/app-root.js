@@ -4,7 +4,7 @@ import { createApiClient } from '../../kit/api.js';
 import { orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { connectionSentence } from '../rules/connection.js';
-import { noticeEnabled, updateNotice, autoDownloadEnabled } from '../rules/notifications.js';
+import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled } from '../rules/notifications.js';
 import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { resolveScheme, themeVars } from '../rules/theme.js';
@@ -86,6 +86,11 @@ class AppRoot extends KitElement {
     this.schemeQuery = null;
     // The shell's update states arrive here; the page, which holds the server's settings, decides the notice.
     this.offUpdate = null;
+    // Until the server's settings are read, a switch turned off there reads as its default (on), so an update state that
+    // arrives first is held and decided once they are. The notices already raised, so one release is announced once.
+    this.settingsRead = false;
+    this.heldUpdate = null;
+    this.noticedUpdates = new Set();
     // What the shell says it is (product, version, platform), and the window's own maximized state.
     this.host = {};
     this.maximized = false;
@@ -166,13 +171,17 @@ class AppRoot extends KitElement {
       this.info = info;
       this.serverUrl = url;
       this.sending = Boolean(info.sending);
+      // The settings are read before the event stream opens, so no notice, a message's or an update's, is decided
+      // against defaults the server has already overridden.
+      this.settings = await this.readSettings();
+      this.settingsRead = true;
+      this.applyUpdateSetting();
+      this.applyTheme();
       this.chats = orderChats(chats);
       this.phase = 'ready';
       client.connect();
+      this.releaseHeldUpdate();
       if (this.chats.length) await this.open(this.chats[0].id);
-      this.settings = await this.readSettings();
-      this.applyUpdateSetting();
-      this.applyTheme();
       this.dataset.state = 'ready';
     } catch (e) {
       client.close();
@@ -224,6 +233,7 @@ class AppRoot extends KitElement {
     this.messages = [];
     this.openChatId = null;
     this.settings = {};
+    this.settingsRead = false;
     this.view = 'messages';
     this.listOpen = true;
     delete this.dataset.state;
@@ -316,8 +326,23 @@ class AppRoot extends KitElement {
   onUpdate(data) {
     const { state, version, percent, detail, canInstall } = data || {};
     this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null, canInstall: Boolean(canInstall) } : null;
+    if (!this.settingsRead) { this.heldUpdate = data || null; return; }
+    this.noticeUpdate(data);
+  }
+
+  // The latest state that arrived before the settings did, decided now that they have.
+  releaseHeldUpdate() {
+    const held = this.heldUpdate;
+    this.heldUpdate = null;
+    if (held) this.noticeUpdate(held);
+  }
+
+  noticeUpdate({ state, version, detail } = {}) {
     const notice = updateNotice(state, version, detail);
     if (!notice || !noticeEnabled(this.settings, notice.type)) return;
+    const key = updateNoticeKey(state, version);
+    if (key && this.noticedUpdates.has(key)) return;
+    if (key) this.noticedUpdates.add(key);
     this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
   }
 

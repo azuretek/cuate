@@ -31,6 +31,14 @@ export function autoDownloadEnabled(settings) {
   return settingValue({ key, ...SETTINGS_SCHEMA.keys[key] }, settings) === true;
 }
 
+// The name one update notice is remembered by, so a release is announced once however many checks find it: the check
+// at start and every interval check after it report the same pending release, and a page reload hears the shell's last
+// state again. A failure has no key, so every failure is still said.
+export function updateNoticeKey(state, version) {
+  if (state !== 'available' && state !== 'ready') return null;
+  return state + ':' + (version ? String(version) : '');
+}
+
 // The notice an update state raises, or null when that state raises none. The copy lives here so every platform reads
 // it, and nothing about the update's transport leaks into it. A failure may carry a scrubbed reason, so a download
 // that failed or an install that was refused says so rather than failing quietly.
