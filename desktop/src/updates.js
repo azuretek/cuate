@@ -1,13 +1,17 @@
-// The host owns the timer and notifications; the updater owns transport, verification and installation.
+// The host owns the timer; the updater owns transport, verification and installation. Every state it reaches is told
+// to onState, and the page decides whether that becomes a notice, so updates use the same notice path as messages.
 export const channelOf = (version) => version.includes('-') ? 'dev' : 'latest';
-export function startUpdates({ updater, version, notify, logError, setTimer = setInterval, clearTimer = clearInterval }) {
+export function startUpdates({ updater, version, onState, logError, setTimer = setInterval, clearTimer = clearInterval }) {
   updater.channel = channelOf(version);
   updater.allowPrerelease = updater.channel === 'dev';
   updater.allowDowngrade = false;
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = true;
-  const downloaded = () => notify('Update ready', 'Restart the app to install the downloaded update.');
-  const error = () => logError('Update check or download failed');
+  const state = (next, info) => onState({ state: next, version: info && info.version ? String(info.version) : null });
+  const available = (info) => state('available', info);
+  const downloaded = (info) => state('ready', info);
+  const error = () => { state('error'); logError('Update check or download failed'); };
+  updater.on('update-available', available);
   updater.on('update-downloaded', downloaded);
   updater.on('error', error);
   let pending = false;
@@ -19,5 +23,5 @@ export function startUpdates({ updater, version, notify, logError, setTimer = se
   void check();
   const timer = setTimer(check, 4 * 60 * 60 * 1000);
   timer?.unref?.();
-  return () => { clearTimer(timer); updater.removeListener('update-downloaded', downloaded); updater.removeListener('error', error); };
+  return () => { clearTimer(timer); updater.removeListener('update-available', available); updater.removeListener('update-downloaded', downloaded); updater.removeListener('error', error); };
 }
