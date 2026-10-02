@@ -40,6 +40,10 @@ if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 let win = null;
 // Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
 let updateControl = null;
+// The last update state the shell reported. The check at start can finish before the page is listening, and a reload
+// starts a page that heard nothing, so the state is told again once the page has loaded; the page announces a release
+// once, so hearing it twice raises one notice.
+let lastUpdateState = null;
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
@@ -446,6 +450,9 @@ function createWindow() {
   });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://bundle/')) e.preventDefault(); });
   win.on('closed', () => { win = null; });
+  win.webContents.on('did-finish-load', () => {
+    if (lastUpdateState && win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', lastUpdateState);
+  });
   if (SMOKE) {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     runSmoke(win).catch((e) => { console.error('smoke failed: ' + (e && e.message)); app.exit(1); });
@@ -471,7 +478,10 @@ app.whenReady().then(() => {
       packaged: app.isPackaged,
       appImage: Boolean(process.env.APPIMAGE),
       // The page owns the notice and the banner, so updates use the same bridge path the new message notices use.
-      onState: (state) => { if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state); },
+      onState: (state) => {
+        lastUpdateState = state;
+        if (win && !win.isDestroyed()) win.webContents.send('bridge:event:update.state', state);
+      },
       logError: (message) => console.error(message),
     });
     app.once('before-quit', () => updateControl.stop());

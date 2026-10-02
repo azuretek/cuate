@@ -145,6 +145,23 @@ test('a failure is reported and the next check can retry', async () => {
   ctl.stop();
 });
 
+test('the check runs at start, before the interval, and the interval keeps its own cadence', async () => {
+  const updater = make(); let checks = 0; const timers = [];
+  updater.checkForUpdates = async () => { checks++; updater.emit('update-available', { version: '1.2.3' }); };
+  const { states, onState } = collect();
+  const ctl = startUpdates({ updater, version: '1.0.0', platform: 'darwin', packaged: true, autoDownload: false, onState, logError: assert.fail, setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimer: () => {} });
+  await Promise.resolve();
+  assert.equal(checks, 1, 'opening the app checks at once rather than waiting for the first tick');
+  assert.equal(states.at(-1).state, 'available', 'and a newer release is reported from that check');
+  const interval = timers.find((t) => t.ms >= 60 * 60 * 1000);
+  assert.ok(interval, 'an interval is still armed for an app left open');
+  await interval.fn();
+  assert.equal(checks, 2, 'the interval checks on its own cadence');
+  // Both checks report the same release; the page's notice key is what keeps that to one notice.
+  assert.deepEqual(states.filter((s) => s.state === 'available').map((s) => s.version), ['1.2.3', '1.2.3']);
+  ctl.stop();
+});
+
 test('nothing is installed unverified: a mismatched checksum refuses', () => {
   assert.equal(checksumMatches('abc123', 'abc123'), true);
   assert.equal(checksumMatches('abc123', 'def456'), false);

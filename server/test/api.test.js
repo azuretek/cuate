@@ -4,6 +4,7 @@ import { boot, waitFor, openSocket } from './helpers.js';
 import { apiSpec, naming } from '../src/paths.js';
 import { validate } from '../../core/kit/rules/schema.js';
 import { createApiClient } from '../../core/kit/api.js';
+import { settingsGroups } from '../../core/app/rules/settings.js';
 
 const conforms = (v, type) => assert.deepEqual(validate(v, type, apiSpec.models), []);
 const route = (s) => '/api/v1/chats/' + s + '/messages';
@@ -405,6 +406,21 @@ test('a setting written by one device is read back by another', async () => {
   assert.equal(read.values['appearance.textSize'], 15);
   assert.equal((await s.put('/api/v1/settings', a, { values: { 'Bad Key': 1 } })).status, 400);
   assert.equal((await s.put('/api/v1/settings', s.tokens.tooling, { values: { 'appearance.skin': 'light' } })).status, 403, 'a tooling token cannot change settings');
+});
+
+test('every notice switch and the automatic download setting is held on the server', async () => {
+  const a = s.store.createToken('device', 'notice device a').token;
+  const b = s.store.createToken('device', 'notice device b').token;
+  // The keys come from the settings schema's own sections, so a switch added there is held to this test too.
+  const keys = settingsGroups().filter((g) => g.id === 'notifications' || g.id === 'updates').flatMap((g) => g.fields.map((f) => f.key));
+  assert.ok(keys.includes('notifications.updateAvailable') && keys.includes('updates.autoDownload'), 'the sections name the switches');
+  for (const value of [false, true]) {
+    const values = Object.fromEntries(keys.map((k) => [k, k === 'updates.autoDownload' ? value : !value]));
+    assert.equal((await s.put('/api/v1/settings', a, { values })).status, 200);
+    // Read back from the server by another device, never from the writer's own copy.
+    const read = await (await s.get('/api/v1/settings', b)).json();
+    for (const k of keys) assert.equal(read.values[k], values[k], k + ' round-trips through the server');
+  }
 });
 
 test('a chat arrangement is held on the server and read back on a reconnect', async () => {

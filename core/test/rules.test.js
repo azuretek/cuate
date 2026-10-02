@@ -7,7 +7,7 @@ import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeRe
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal } from '../app/rules/settings.js';
-import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice } from '../app/rules/notifications.js';
+import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
@@ -294,6 +294,14 @@ test('an update state carries the notice it raises, and a state with none raises
   assert.equal(updateNotice('ready', '1.2.3').type, 'updateReady');
   assert.equal(updateNotice('error').type, 'error');
   assert.equal(updateNotice('checking'), null);
+});
+
+test('one release is announced once, however many checks report it', () => {
+  assert.equal(updateNoticeKey('available', '1.2.3'), updateNoticeKey('available', '1.2.3'), 'the start check and an interval check name the same notice');
+  assert.notEqual(updateNoticeKey('available', '1.2.3'), updateNoticeKey('available', '1.2.4'), 'a newer release is a new notice');
+  assert.notEqual(updateNoticeKey('available', '1.2.3'), updateNoticeKey('ready', '1.2.3'), 'ready is its own notice after available');
+  assert.equal(updateNoticeKey('error', '1.2.3'), null, 'every failure is still said');
+  for (const state of SILENT_UPDATE_STATES) assert.equal(updateNoticeKey(state, '1.2.3'), null, state + ' raises no notice to remember');
 });
 
 test('the list sorts by activity, unread, name and the manual order the server holds', () => {
