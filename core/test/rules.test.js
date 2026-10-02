@@ -7,10 +7,10 @@ import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal } from '../app/rules/settings.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel } from '../app/rules/settings.js';
 import { backdropReturns } from '../app/rules/sheet.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
-import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName } from '../app/rules/theme.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -264,8 +264,8 @@ test('an import says what it carried and names each refused value once, and an e
 
 test('the settings page draws the schema and writes the value a control gives', () => {
   const fields = settingsFields();
-  assert.deepEqual(fields.slice(0, 3).map((f) => f.key), ['appearance.skin', 'appearance.textSize', 'appearance.density']);
-  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textSize', 'appearance.density', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload'], 'every key the schema declares lands in one section, once, in the schema order');
+  assert.deepEqual(fields.slice(0, 2).map((f) => f.key), ['appearance.skin', 'appearance.textScale']);
+  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScale', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload'], 'every key the schema declares lands in one section, once, in the schema order');
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
   for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
@@ -275,13 +275,109 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload'], 'the updates section holds the download preference');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.autoDownload'), {}), false, 'automatic download is off until the server says otherwise');
   const skin = fields.find((f) => f.key === 'appearance.skin');
-  const size = fields.find((f) => f.key === 'appearance.textSize');
+  const size = fields.find((f) => f.key === 'appearance.textScale');
   assert.deepEqual(skin.options, ['system', 'light', 'dark']);
   assert.equal(settingValue(skin, {}), 'system', 'an unset key draws the schema default');
   assert.equal(settingValue(skin, { 'appearance.skin': 'dark' }), 'dark', 'the server value wins');
-  assert.equal(coerceSetting(size, '16'), 16, 'a number control sends a number, not a string');
+  assert.equal(coerceSetting(size, '150'), 150, 'a percentage control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
-  assert.deepEqual(mergeSettings({ 'appearance.textSize': 18 }), { 'appearance.skin': 'system', 'appearance.textSize': 18, 'appearance.density': 'comfortable', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false });
+  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false });
+});
+
+test('there is no density setting, and the skin and the text size are a switch and percentage choices (issue 112)', () => {
+  assert.equal(Object.hasOwn(SETTINGS_SCHEMA.keys, 'appearance.density'), false, 'density has left the schema');
+  assert.equal(Object.hasOwn(SETTINGS_SCHEMA.keys, 'appearance.textSize'), false, 'the 11 to 20 number field has left the schema');
+  assert.equal(settingsFields().some((f) => /density/i.test(f.key + f.label)), false, 'no field names density');
+  assert.equal(Object.hasOwn(mergeSettings({}), 'appearance.density'), false, 'merged settings carry no density');
+  const skin = settingsFields().find((f) => f.key === 'appearance.skin');
+  assert.equal(skin.type, 'segmented', 'the skin is a three-position switch, not a dropdown');
+  assert.deepEqual(skin.options.map((o) => optionLabel(skin, o)), ['System', 'Light', 'Dark']);
+  const size = settingsFields().find((f) => f.key === 'appearance.textScale');
+  assert.equal(size.type, 'scale');
+  assert.deepEqual(size.options, TEXT_SCALES);
+  assert.equal(size.default, 100, 'the default text size is today\'s rendering');
+  assert.equal(Math.min(...TEXT_SCALES), 50);
+  assert.equal(Math.max(...TEXT_SCALES), 300);
+  assert.deepEqual(size.options.map((o) => optionLabel(size, o)), ['50%', '75%', '100%', '125%', '150%', '200%', '300%']);
+});
+
+test('a text size percentage scales every type token, and 100% writes nothing', () => {
+  const base = { '--font-size-xs': '11px', '--font-size-sm': '12px', '--font-size-md': '14px', '--font-size-lg': '16px', '--font-size-xl': '20px' };
+  assert.deepEqual(textScaleVars(100, base), [], '100% renders exactly what the tokens say');
+  assert.deepEqual(textScaleVars(150, base), TYPE_SIZE_VARS.map((n) => [n, 'calc(' + base[n] + ' * 1.5)']));
+  assert.deepEqual(textScaleVars(50, base)[2], ['--font-size-md', 'calc(14px * 0.5)']);
+  assert.deepEqual(textScaleVars(300, base)[4], ['--font-size-xl', 'calc(20px * 3)']);
+  assert.deepEqual(textScaleVars(125, { '--font-size-md': '0.9rem' }), [['--font-size-md', 'calc(0.9rem * 1.25)']], 'a theme size is scaled as it resolved, and a size that resolved to nothing is left alone');
+  assert.equal(textScale(undefined), 100, 'unset reads as 100');
+  assert.equal(textScale(14), 100, 'a size stored under the old pixel field is never read as a percentage');
+  assert.equal(textScale('200'), 200);
+  assert.equal(textScale(110), 100, 'a value no control offers reads as 100, so the page can always be put back');
+  assert.deepEqual(textScaleVars(110, base), []);
+});
+
+test('a theme URL answer in tweakcn registry form converts through the same converter as a paste', () => {
+  const item = { name: 'amethyst-haze', title: 'Amethyst Haze', cssVars: {
+    theme: { 'font-sans': 'Geist, sans-serif', radius: '0.5rem', 'tracking-tight': 'calc(var(--tracking-normal) - 0.025em)' },
+    light: { background: 'oklch(0.97 0 0)', primary: 'oklch(0.61 0.07 299)', 'chart-1': 'oklch(0.6 0.07 299)' },
+    dark: { background: 'oklch(0.2 0 0)', primary: 'oklch(0.7 0.07 299)' },
+  } };
+  const out = importTheme(JSON.stringify(item));
+  assert.equal(out.theme.name, 'Amethyst Haze', 'the registry title names the theme');
+  assert.equal(out.theme.color.light.accent, 'oklch(0.61 0.07 299)');
+  assert.equal(out.theme.color.dark.bg, 'oklch(0.2 0 0)');
+  assert.equal(out.theme.radius.md, '0.5rem');
+  assert.equal(out.theme.font.family, 'Geist, sans-serif');
+  assert.ok(out.refused.includes('chart-1') && out.refused.includes('tracking-tight'), 'what it could not carry is named');
+  const css = ':root { --background: oklch(0.97 0 0); --primary: oklch(0.61 0.07 299); } .dark { --background: oklch(0.2 0 0); --primary: oklch(0.7 0.07 299); }';
+  assert.deepEqual(importTheme(css, { name: 'Amethyst Haze' }).theme.color, out.theme.color, 'a URL and a paste of the same theme agree');
+  assert.equal(importTheme(JSON.stringify(item), { name: 'Mine' }).theme.name, 'Mine', 'a given name wins');
+  assert.equal(importSummary(importTheme('{"name":"x","cssVars":{}}')).ok, false, 'a registry item that carries nothing is not a theme');
+  assert.equal(importSummary(importTheme('<html><body>Not found</body></html>')).ok, false, 'a page that is not a theme is not a theme');
+  assert.equal(importSummary(importTheme('{"not": "a theme"}')).ok, false);
+});
+
+test('a theme value that could end the declaration or reach the network is refused', () => {
+  for (const v of ['#fff', 'oklch(0.5 0.1 40)', 'rgba(0, 0, 0, 0.4)', '"Fira Code", monospace', '0.5rem']) assert.equal(safeValue(v), true, v);
+  for (const v of ['red; background: blue', 'url(https://example.com/x.png)', 'image-set("x.png" 1x)', '@import "x"', '}', 'a\\62', '', 'x'.repeat(201)]) assert.equal(safeValue(v), false, v);
+  const out = importTweakcn(':root { --primary: #8a3b12; --background: url(https://example.com/beacon); }');
+  assert.equal(out.theme.color.light.bg, undefined, 'the unsafe value is not carried');
+  assert.ok(out.refused.includes('background'), 'and is named as refused');
+  assert.deepEqual(themeVars({ color: { light: { accent: 'url(x)', bg: '#fff' } } }, 'light'), [['--color-bg', '#fff']], 'a stored value that is unsafe is not written onto the page');
+});
+
+test('the themes the server holds: added by id, bounded, and offered in the picker with the one in force marked', () => {
+  assert.equal(themeId('Amethyst Haze!'), 'amethyst-haze');
+  assert.equal(themeId(''), 'theme');
+  const a = { name: 'Amethyst Haze', source: 'tweakcn', color: { light: { accent: '#111111' }, dark: { accent: '#222222' } } };
+  const first = addTheme(undefined, a);
+  assert.equal(first.ok, true);
+  assert.equal(first.theme.id, 'amethyst-haze');
+  const again = addTheme(first.themes, { ...a, color: { light: { accent: '#333333' }, dark: {} } });
+  assert.equal(again.themes.length, 1, 'importing the same theme again replaces it');
+  assert.equal(again.replaced, true);
+  assert.equal(again.themes[0].color.light.accent, '#333333');
+  const full = Array.from({ length: MAX_THEMES }, (_, i) => ({ id: 't' + i, name: 't' + i }));
+  const over = addTheme(full, { name: 'one more' });
+  assert.equal(over.ok, false, 'the list is bounded');
+  assert.match(over.reason, /remove one/);
+  assert.deepEqual(removeTheme(first.themes, 'amethyst-haze'), []);
+  const cards = themeChoices({ 'appearance.themes': first.themes });
+  assert.deepEqual(cards.map((c) => [c.id, c.selected]), [['default', true], ['amethyst-haze', false]], 'the default palette is first, and in force when no theme is');
+  const chosen = themeChoices({ 'appearance.themes': first.themes, 'appearance.theme': first.theme });
+  assert.deepEqual(chosen.map((c) => c.selected), [false, true]);
+  const legacy = themeChoices({ 'appearance.theme': { name: 'pasted before the list', source: 'tweakcn', color: { light: {}, dark: {} } } });
+  assert.deepEqual(legacy.map((c) => [c.name, c.selected]), [['Default', false], ['pasted before the list', true]], 'a theme in force that is not in the list is still offered, and marked');
+  assert.deepEqual(swatchVars(a, 'dark'), [['--color-accent', '#222222']], 'a card shows the colours of the scheme in force');
+  assert.deepEqual(swatchVars(null, 'light'), [], 'the default card sets nothing, so the default palette shows');
+});
+
+test('the default palette is offered on any element that asks for it, in both schemes', () => {
+  const css = tokensCss(spec('tokens.json'));
+  const tokens = spec('tokens.json');
+  const block = (selector) => { const at = css.indexOf(selector + ' {'); return at < 0 ? '' : css.slice(at, css.indexOf('}', at)); };
+  assert.ok(block('[data-palette="default"]').includes('--color-accent: ' + tokens.color.light.accent + ';'), 'the light defaults');
+  assert.ok(block(':root[data-scheme="dark"] [data-palette="default"]').includes('--color-accent: ' + tokens.color.dark.accent + ';'), 'the dark defaults under an explicit dark skin');
+  assert.match(css, /:root\[data-scheme="dark"\] \[data-palette="default"\] \{[^}]*--color-accent: /);
 });
 
 test('a press leaves the sheet only when it both starts and ends on the backdrop', () => {
@@ -480,15 +576,16 @@ test('a message notice carries the text exactly, emoji included, and names an at
   assert.equal(messageNotice('Sam', { text: '', attachments: [{}, {}] }).body, '2 attachments');
 });
 
-// The flake on run 37000805003: the page wrote the skin, a change to the density made at the server arrived on the
-// event stream, and then the skin write's answer (the whole store as it was before the density changed) landed and
-// was drawn wholesale, so the density went back to comfortable. The answer is taken for the written keys only.
+// The flake on run 37000805003: the page wrote the skin, a change to another setting made at the server arrived on
+// the event stream, and then the skin write's answer (the whole store as it was before that change) landed and was
+// drawn wholesale, so the other setting went back. The answer is taken for the written keys only. (The other setting
+// was the density until issue 112 removed it; the text size stands in for it.)
 test('a late write answer never rolls back a change the event stream already delivered', () => {
   const written = { 'appearance.skin': 'dark' };
-  const staleAnswer = { 'appearance.skin': 'dark', 'appearance.density': 'comfortable' };
-  const afterStream = { 'appearance.skin': 'dark', 'appearance.density': 'compact' };
-  assert.equal(staleAnswer['appearance.density'], 'comfortable', 'drawing the answer wholesale is what lost the change');
-  assert.deepEqual(settingsAfterWrite(afterStream, written, staleAnswer), afterStream, 'the streamed density survives the late answer');
+  const staleAnswer = { 'appearance.skin': 'dark', 'appearance.textScale': 100 };
+  const afterStream = { 'appearance.skin': 'dark', 'appearance.textScale': 150 };
+  assert.equal(staleAnswer['appearance.textScale'], 100, 'drawing the answer wholesale is what lost the change');
+  assert.deepEqual(settingsAfterWrite(afterStream, written, staleAnswer), afterStream, 'the streamed text size survives the late answer');
   assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, { 'appearance.skin': 'light' }), { 'appearance.skin': 'light' }, 'the server, not the page, decides a written key');
   assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, undefined), { 'appearance.skin': 'dark' }, 'an empty answer keeps what the page holds');
 });
@@ -552,6 +649,6 @@ test('the group actions act on the first press, and the confirm modal is the onl
 
 test('a refused write rolls back only the keys it named', () => {
   const before = { 'appearance.skin': 'system' };
-  const current = { 'appearance.skin': 'dark', 'appearance.density': 'compact', 'chats.order': ['a'] };
-  assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.density': 'compact' }, 'the named keys return to what they held, and one that did not exist is removed');
+  const current = { 'appearance.skin': 'dark', 'appearance.textScale': 150, 'chats.order': ['a'] };
+  assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.textScale': 150 }, 'the named keys return to what they held, and one that did not exist is removed');
 });

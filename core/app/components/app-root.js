@@ -14,7 +14,7 @@ import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, mess
 import { updateBanner } from '../rules/updates.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
-import { resolveScheme, themeVars } from '../rules/theme.js';
+import { resolveScheme, themeVars, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { backdropReturns } from '../rules/sheet.js';
 import './app-onboarding.js';
@@ -44,6 +44,8 @@ class AppRoot extends KitElement {
     sheetLeaving: { state: true }, pendingSheet: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
+    // The scheme applyTheme resolved, handed to the settings page so each theme card shows that scheme's colours.
+    scheme: { state: true },
     // The update the shell last reported, drawn as a banner while a download runs. The name must NOT be "update":
     // Lit writes this.update for any reactive property of that name, which shadows LitElement's own update() method
     // and the element throws "this.update is not a function" on its next render.
@@ -81,6 +83,7 @@ class AppRoot extends KitElement {
     this.serverUrl = '';
     this.settingsBusy = false;
     this.settingsProblem = '';
+    this.scheme = 'light';
     // Never name this `update`: Lit's own lifecycle method is update(), and an own property of
     // that name shadows it, so the element throws "this.update is not a function" on its next
     // render and the app never becomes ready.
@@ -147,9 +150,17 @@ class AppRoot extends KitElement {
     const root = document.documentElement;
     const scheme = resolveScheme(this.settings['appearance.skin'], Boolean(this.schemeQuery && this.schemeQuery.matches));
     root.dataset.scheme = scheme;
+    this.scheme = scheme;
     for (const [name] of this.themeApplied) root.style.removeProperty(name);
-    this.themeApplied = themeVars(this.settings['appearance.theme'], scheme);
-    for (const [name, value] of this.themeApplied) root.style.setProperty(name, value);
+    const themed = themeVars(this.settings['appearance.theme'], scheme);
+    for (const [name, value] of themed) root.style.setProperty(name, value);
+    // Text size scales the type sizes the theme and the tokens resolve to, read back once the theme is in place, so a
+    // theme's own type sizes are scaled too. At 100% nothing is written and the tokens draw what they always did.
+    const style = getComputedStyle(root);
+    const base = Object.fromEntries(TYPE_SIZE_VARS.map((name) => [name, style.getPropertyValue(name)]));
+    const scaled = textScaleVars(this.settings['appearance.textScale'], base);
+    for (const [name, value] of scaled) root.style.setProperty(name, value);
+    this.themeApplied = [...themed, ...scaled];
   }
   bridge(name, args) {
     return window.bridge.call(name, args);
@@ -553,15 +564,40 @@ class AppRoot extends KitElement {
   // draws, and a rejected write is rolled back so the control never disagrees with the server. Keys the write did not
   // name keep what the event stream last delivered (settingsAfterWrite says why).
   async setSetting({ key, value }) {
-    if (!this.client) return;
+    return this.setSettings({ [key]: value });
+  }
+
+  // A theme URL is handed to the server, which fetches it, converts it and adds it to the held list. The answer's list
+  // is taken for that one key (the event stream brings it too), and the page says what was carried or why it was not.
+  async importThemeUrl({ url }) {
+    const page = this.querySelector('app-settings');
+    if (!this.client || !page) return;
+    page.urlBusy = true;
+    page.urlNote = '';
+    try {
+      const out = await this.client.themeImport({ url });
+      this.settings = settingsAfterWrite(this.settings, { 'appearance.themes': true }, out.values);
+      page.urlNote = (out.theme && out.theme.name ? out.theme.name + ': ' : '') + out.summary;
+      page.urlImported();
+    } catch (e) {
+      page.urlNote = this.describe(e);
+    } finally {
+      page.urlBusy = false;
+    }
+  }
+
+  // Several keys are written in one patch, so they land together: a chat group and what it holds, or an imported theme
+  // and the choice of it.
+  async setSettings(patch) {
+    if (!this.client || !patch) return;
     const before = this.settings;
-    const patch = { [key]: value };
     this.settings = { ...this.settings, ...patch };
     this.settingsBusy = true;
     this.settingsProblem = '';
     try {
       const { values } = await this.client.settingsWrite(patch);
       this.settings = settingsAfterWrite(this.settings, patch, values);
+      this.applyTheme();
       this.applyUpdateSetting();
     } catch (e) {
       this.settings = settingsAfterRefusal(this.settings, before, patch);
@@ -803,24 +839,6 @@ class AppRoot extends KitElement {
     </header>`;
   }
 
-  // The chat list's arrangement is written to the server in one patch, so a group and what it holds land together.
-  async setSettings(patch) {
-    if (!this.client || !patch) return;
-    const before = this.settings;
-    this.settings = { ...this.settings, ...patch };
-    this.settingsBusy = true;
-    this.settingsProblem = '';
-    try {
-      const { values } = await this.client.settingsWrite(patch);
-      this.settings = settingsAfterWrite(this.settings, patch, values);
-    } catch (e) {
-      this.settings = settingsAfterRefusal(this.settings, before, patch);
-      this.settingsProblem = this.describe(e);
-    } finally {
-      this.settingsBusy = false;
-    }
-  }
-
   pane() {
     if (this.view !== 'messages') return 'conversation';
     return this.listOpen || !this.openChatId ? 'list' : 'conversation';
@@ -829,8 +847,8 @@ class AppRoot extends KitElement {
   // The settings page and the about page are sheets, so they are drawn by sheetBody and never in the main pane.
   sheetBody() {
     if (this.view === 'about') return html`<app-about .info=${this.info} .host=${this.host} @back=${() => this.openSheet('settings')}></app-about>`;
-    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem}
-      @setting=${(e) => this.setSetting(e.detail)} @signout=${() => this.signOut('')} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
+    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme}
+      @setting=${(e) => this.setSetting(e.detail)} @settings=${(e) => this.setSettings(e.detail)} @theme-import=${(e) => this.importThemeUrl(e.detail)} @signout=${() => this.signOut('')} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
   }
 
   mainView(chat) {

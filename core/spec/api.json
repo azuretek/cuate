@@ -26,6 +26,7 @@
     { "id": "search", "method": "GET", "path": "/api/v1/search", "scope": "search", "query": ["q", "limit", "chatId"], "returns": "SearchResults" },
     { "id": "settings", "method": "GET", "path": "/api/v1/settings", "scope": "read", "returns": "Settings" },
     { "id": "settings-write", "method": "PUT", "path": "/api/v1/settings", "scope": "settings", "body": "SettingsPatch", "returns": "Settings" },
+    { "id": "theme-import", "method": "POST", "path": "/api/v1/themes", "scope": "settings", "body": "ThemeImportRequest", "returns": "ThemeImportResult" },
     { "id": "mac", "method": "GET", "path": "/api/v1/mac", "scope": "read", "returns": "MacState" },
     { "id": "mac-restart", "method": "POST", "path": "/api/v1/mac/restart", "scope": "admin", "body": "MacRestartRequest", "returns": "MacRestartResult" },
     { "id": "export", "method": "GET", "path": "/api/v1/export", "scope": "export", "query": ["mode"], "returns": "object" }
@@ -64,6 +65,8 @@
     "Settings": { "values": "object" },
     "SettingsPatch": { "values": "object" },
     "SettingsEvent": { "values": "object" },
+    "ThemeImportRequest": { "url": "string", "name": "string?" },
+    "ThemeImportResult": { "theme": "object", "accepted": "string[]", "refused": "string[]", "summary": "string", "values": "object" },
     "MacState": { "awake": "boolean", "locked": "boolean", "lockEnabled": "boolean", "lockMethod": "string", "messagesRunning": "boolean", "managedBy": "string?" },
     "MacRestartRequest": { "what": "string" },
     "MacRestartResult": { "what": "string", "restarted": "boolean", "reason": "string?" },

@@ -75,6 +75,7 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
     settings: () => call('GET', '/api/v1/settings'),
     settingsWrite: (values) => call('PUT', '/api/v1/settings', { values }),
+    themeImport: ({ url, name }) => call('POST', '/api/v1/themes', name ? { url, name } : { url }),
     async attachment(id, o = {}) {
       const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
       if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });

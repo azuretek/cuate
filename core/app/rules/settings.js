@@ -2,6 +2,13 @@
 // group and its default. The server holds the values (server/src/settings.js stores any key it is given), so the page
 // reads and writes them there rather than keeping local state, and a key the schema does not declare is left for a
 // later item. The groups give the page its sections, so there is no second list to keep in step.
+//
+// appearance.skin is a three-position switch (System, Light, Dark) rather than a dropdown, and text size is a
+// percentage of the type tokens from TEXT_SCALES, held under its own key so a size stored under the old 11 to 20 field
+// (appearance.textSize) is never read as a percentage. There is no density setting: it changed too little to be worth
+// a control (issue 112), and a later item can bring one back.
+import { TEXT_SCALES } from './theme.js';
+
 export const SETTINGS_SCHEMA = {
   groups: [
     { id: 'appearance', label: 'Appearance', description: 'How the app looks and how much text it shows.' },
@@ -9,9 +16,8 @@ export const SETTINGS_SCHEMA = {
     { id: 'updates', label: 'Updates', description: 'How a release this app finds is fetched.' },
   ],
   keys: {
-    'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'choice', options: ['system', 'light', 'dark'], default: 'system' },
-    'appearance.textSize': { group: 'appearance', label: 'Text size', type: 'number', min: 11, max: 20, step: 1, default: 14 },
-    'appearance.density': { group: 'appearance', label: 'Density', type: 'choice', options: ['comfortable', 'compact'], default: 'comfortable' },
+    'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'segmented', options: ['system', 'light', 'dark'], labels: { system: 'System', light: 'Light', dark: 'Dark' }, default: 'system' },
+    'appearance.textScale': { group: 'appearance', label: 'Text size', type: 'scale', options: TEXT_SCALES, default: 100 },
     // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
     'notifications.newMessage': { group: 'notifications', label: 'New messages', type: 'toggle', default: true },
     'notifications.updateAvailable': { group: 'notifications', label: 'Update available', type: 'toggle', default: true },
@@ -36,13 +42,20 @@ export function settingsGroups(schema = SETTINGS_SCHEMA) {
   return groups.map((g) => ({ id: g.id, label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
 }
 
+// The words a choice is drawn with: the schema's label for it, a percentage for a scale, else the value itself.
+export function optionLabel(field, option) {
+  if (field.labels && Object.hasOwn(field.labels, option)) return field.labels[option];
+  if (field.type === 'scale') return option + '%';
+  return String(option);
+}
+
 // The value to show for a key: what the server holds, else the schema's default.
 export function settingValue(field, values) {
   return values && Object.hasOwn(values, field.key) ? values[field.key] : field.default;
 }
 
 export function coerceSetting(field, raw) {
-  if (field.type === 'number') return Number(raw);
+  if (field.type === 'number' || field.type === 'scale') return Number(raw);
   if (field.type === 'toggle') return raw === true || raw === 'true';
   return String(raw);
 }

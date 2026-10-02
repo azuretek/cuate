@@ -34,7 +34,7 @@ function harness(page) {
   const about = page === 'about';
   const host = { product: 'The app', version: '1.0.1-dev.291.810552323b', commit: '810552323b', builtAt: '2026-09-20 03:34Z', versions: { electron: '44.4.1', chrome: '152.0.7977.78', node: '22.13.0' }, platform: 'linux', arch: 'x64', packaged: true };
   const info = { product: 'The app', serverVersion: '1.0.0', apiVersion: 1, engine: { kind: 'fake', version: '1.0.0' }, sending: true, epoch: 'abcdef0123' };
-  const values = { 'appearance.skin': 'system', 'appearance.textSize': 14, 'appearance.density': 'comfortable', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false };
+  const values = { 'appearance.skin': 'system', 'appearance.textScale': 100, 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false };
   const tag = about ? 'app-about' : 'app-settings';
   const state = about
     ? 'el.host = ' + JSON.stringify(host) + '; el.info = ' + JSON.stringify(info) + ';'

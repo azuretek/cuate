@@ -12,6 +12,13 @@ export function tokensCss(spec) {
   lines.push('@media (prefers-color-scheme: dark) {', '  :root:not([data-scheme="light"]) {');
   lines.push(...colours(spec.color.dark, '    '), '  }', '}');
   lines.push(':root[data-scheme="dark"] {', '  color-scheme: dark;', ...colours(spec.color.dark, '  '), '}');
-  lines.push(':root[data-scheme="light"] {', '  color-scheme: light;', '}', '');
+  lines.push(':root[data-scheme="light"] {', '  color-scheme: light;', '}');
+  // The default palette again, on any element that asks for it with data-palette="default". The theme picker draws
+  // each theme's colours on a card while a different theme is in force on the root, and a card's colours must fall
+  // back to these defaults rather than to whatever the root inherited from the theme in force.
+  lines.push('[data-palette="default"] {', ...colours(spec.color.light, '  '), '}');
+  lines.push('@media (prefers-color-scheme: dark) {', '  :root:not([data-scheme="light"]) [data-palette="default"] {');
+  lines.push(...colours(spec.color.dark, '    '), '  }', '}');
+  lines.push(':root[data-scheme="dark"] [data-palette="default"] {', ...colours(spec.color.dark, '  '), '}', '');
   return lines.join('\n');
 }

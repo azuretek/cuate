@@ -2,6 +2,7 @@
 // app lives here; the name comes from core/spec/naming.json.
 import { app, BrowserWindow, protocol, ipcMain, Menu, safeStorage, Notification, shell, nativeTheme } from 'electron';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
@@ -270,23 +271,50 @@ async function runSmoke(w) {
   const auth = { authorization: 'Bearer ' + process.env.SMOKE_TOKEN };
   const held = async () => (await (await fetch(srv + '/api/v1/settings', { headers: auth })).json()).values || {};
   const cdp = (method, params) => wc.debugger.sendCommand(method, params);
+  const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
 
   await js("document.querySelector('.sidebar-head .gear-button').click()");
-  await waitFor("Boolean(document.querySelector('app-settings select[data-key=\"appearance.skin\"]'))");
-  const shown = await js("document.querySelector('app-settings select[data-key=\"appearance.skin\"]').value");
+  // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
+  const skinInput = (v) => "document.querySelector('app-settings input[data-key=\"appearance.skin\"][value=\"" + v + "\"]')";
+  // The page disables its controls while a write is in flight, and a click on a disabled radio does nothing (a
+  // dispatched change on the old select went through regardless), so a pick waits for the control to take input. A
+  // pick made while the previous write was still answering is what timed out on ubuntu (run 37066896432).
+  const clickSkin = async (v) => {
+    await waitFor('Boolean(' + skinInput(v) + ') && !' + skinInput(v) + '.disabled', 10000);
+    await js(skinInput(v) + '.click()');
+  };
+  await waitFor("Boolean(document.querySelector('app-settings .segmented[data-key=\"appearance.skin\"]'))");
+  const shown = await js("document.querySelector('app-settings input[data-key=\"appearance.skin\"]:checked')?.value");
   report.settingsRead = shown === ((await held())['appearance.skin'] || 'system');
-  await js("(() => { const s = document.querySelector('app-settings select[data-key=\"appearance.skin\"]'); s.value = 'dark'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+  report.skinSwitch = await js("[...document.querySelectorAll('app-settings .segmented[data-key=\"appearance.skin\"] .segment')].map((l) => l.textContent.trim()).join('|')") === 'System|Light|Dark'
+    && await js("!document.querySelector('app-settings select[data-key=\"appearance.skin\"]')");
+  await clickSkin('dark');
   for (let i = 0; i < 50 && (await held())['appearance.skin'] !== 'dark'; i += 1) await pause(200);
   report.settingsWrote = (await held())['appearance.skin'] === 'dark';
-  // This step flaked on macOS (run 37000805003): the page's own answer to the skin write above landed after this
-  // change's event and put the old density back. The page now takes only the written keys from an answer
+  // This step flaked on macOS (run 37000805003): the page's own answer to the skin write above landed after a change
+  // made at the server, and put the old value back. The page now takes only the written keys from an answer
   // (settingsAfterWrite), so a change made elsewhere survives a late answer, and this step is the live check of that.
+  // It wrote the density until issue 112 removed it; the text size is the setting it changes now.
   // A refused write would leave the wait below timing out on a value that was never stored, so it fails here instead.
-  const densityWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.density': 'compact' } }) });
-  if (!densityWrite.ok) throw new Error('the server refused the density write: ' + densityWrite.status);
-  await waitFor("document.querySelector('app-settings select[data-key=\"appearance.density\"]')?.value === 'compact'", 10000);
+  const scaleWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.textScale': 150 } }) });
+  if (!scaleWrite.ok) throw new Error('the server refused the text size write: ' + scaleWrite.status);
+  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"150\"]')?.checked === true", 10000);
   report.settingsStreamed = true;
-  report.settings = report.settingsRead && report.settingsWrote && report.settingsStreamed;
+  // Text size is a percentage of the type tokens: at 150% the page and the chat list both draw their text half as
+  // large again, and back at 100% they draw exactly what the tokens say (the surface check below holds that).
+  const fontPx = (sel) => js("(() => { const e = document.querySelector(" + JSON.stringify(sel) + "); return e ? parseFloat(getComputedStyle(e).fontSize) : 0; })()");
+  report.textScaleChoices = await js("[...document.querySelectorAll('app-settings .scale-choice')].map((l) => l.textContent.trim()).join('|')");
+  const scaledList = await fontPx('.chat-row .chat-name');
+  const scaledPage = await fontPx('app-settings .setting-label');
+  await putSettings({ 'appearance.textScale': 100 });
+  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"100\"]')?.checked === true", 10000);
+  const plainList = await fontPx('.chat-row .chat-name');
+  const plainPage = await fontPx('app-settings .setting-label');
+  const near = (a, b) => Math.abs(a - b) < 0.6;
+  report.textScale = report.textScaleChoices === '50%|75%|100%|125%|150%|200%|300%' && plainList > 0 && plainPage > 0 && near(scaledList, plainList * 1.5) && near(scaledPage, plainPage * 1.5)
+    && await js("!document.querySelector('app-settings [data-key=\"appearance.density\"]')");
+  console.log('text scale: ' + JSON.stringify({ choices: report.textScaleChoices, scaledList, plainList, scaledPage, plainPage }));
+  report.settings = report.settingsRead && report.skinSwitch && report.settingsWrote && report.settingsStreamed && report.textScale;
 
   // The rendered surface: the values the page RESOLVES must be the ones the one spec holds, in each scheme. The
   // colour scheme follows the platform's, so the shell drives nativeTheme and the page is read back. A platform whose
@@ -312,8 +340,7 @@ async function runSmoke(w) {
   if (!report.surface) console.error('surface mismatches: ' + JSON.stringify(surfaceFound));
   // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
   // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
-  const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
-  const pickSkin = (skin) => js(`(() => { const s = document.querySelector('app-settings select[data-key="appearance.skin"]'); s.value = ${JSON.stringify(skin)}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  const pickSkin = (skin) => clickSkin(skin);
   await putSettings({ 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
   await pickSkin('light');
   await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
@@ -336,11 +363,46 @@ async function runSmoke(w) {
   await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#e0a070'", 10000);
   report.themeImportDrawn = true;
   report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('chart-1'); })()");
+  await waitFor("!document.querySelector('app-settings [data-action=\"theme-default\"]').disabled", 10000);
   await js("document.querySelector('app-settings [data-action=\"theme-default\"]').click()");
   for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
   report.themeImportCleared = (await held())['appearance.theme'] === null;
   report.themeImport = report.themeImportHeld && report.themeImportDrawn && report.themeImportReported && report.themeImportCleared;
   if (!report.themeImport) console.error('theme import: ' + JSON.stringify({ imported, held: report.themeImportHeld, reported: report.themeImportReported, cleared: report.themeImportCleared }));
+
+  // Importing a theme by URL: the server fetches it, converts it and offers it in the picker without putting it in
+  // force; the card shows the theme's own colours; a URL that answers with no theme is refused with the reason and
+  // stores nothing. The theme is served from a loopback server this smoke owns, in tweakcn's registry shape.
+  const registry = { name: 'smoke-url', title: 'Smoke URL', cssVars: { theme: { radius: '0.5rem' }, light: { primary: '#1d4ed8', background: '#f0f4ff' }, dark: { primary: '#93c5fd', background: '#0b1020' } } };
+  const themeHost = http.createServer((req, res) => {
+    if (req.url === '/theme.json') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(registry)); return; }
+    res.writeHead(404, { 'content-type': 'text/plain' }); res.end('no theme here');
+  });
+  await new Promise((resolve) => themeHost.listen(0, '127.0.0.1', resolve));
+  const themeBase = 'http://127.0.0.1:' + themeHost.address().port;
+  const importUrl = async (url) => {
+    await js(`(() => { const i = document.querySelector('app-settings .theme-url-input'); i.value = ${JSON.stringify(url)}; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await waitFor("!document.querySelector('app-settings .theme-url-action').disabled");
+    await js("document.querySelector('app-settings .theme-url-action').click()");
+    await waitFor("Boolean(document.querySelector('app-settings .theme-url-note')) && !document.querySelector('app-settings').urlBusy", 15000);
+    return js("document.querySelector('app-settings .theme-url-note').textContent");
+  };
+  try {
+    const before = ((await held())['appearance.themes'] || []).length;
+    const badNote = await importUrl(themeBase + '/missing.json');
+    report.themeUrlRefused = badNote.includes('404') && ((await held())['appearance.themes'] || []).length === before;
+    const goodNote = await importUrl(themeBase + '/theme.json');
+    const themes = (await held())['appearance.themes'] || [];
+    report.themeUrlHeld = themes.some((t) => t.id === 'smoke-url' && t.color.light.accent === '#1d4ed8') && (await held())['appearance.theme']?.id !== 'smoke-url';
+    await waitFor("Boolean(document.querySelector('app-settings .theme-card[data-theme-id=\"smoke-url\"]'))", 10000);
+    const scheme = await js('document.documentElement.dataset.scheme');
+    const cardAccent = await js("getComputedStyle(document.querySelector('app-settings .theme-card[data-theme-id=\"smoke-url\"] .theme-swatch[data-token=\"accent\"]')).backgroundColor");
+    report.themeUrlCard = cardAccent === (scheme === 'dark' ? 'rgb(147, 197, 253)' : 'rgb(29, 78, 216)');
+    report.themeUrl = report.themeUrlRefused && report.themeUrlHeld && report.themeUrlCard;
+    console.log('theme url: ' + JSON.stringify({ badNote, goodNote, scheme, cardAccent, refused: report.themeUrlRefused, held: report.themeUrlHeld, card: report.themeUrlCard }));
+  } finally {
+    themeHost.close();
+  }
 
   // Notices: an update state raises a native notice over the same bridge the message notices use, and a type the
   // server has switched off raises none. The shell records every notice it is asked to show.
