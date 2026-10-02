@@ -9,7 +9,7 @@ import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings } from '../app/rules/settings.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, cssVarName } from '../app/rules/theme.js';
-import { mapChat, mapMessage, mapReaction } from '../app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
 import { formatTraceparent, parseTraceparent, newTraceparent } from '../kit/rules/trace.js';
@@ -135,6 +135,8 @@ test('the imsg mapping produces exactly the declared model', () => {
   assert.equal(r.targetId, 'G-7');
   assert.equal(r.add, false);
   assert.equal(mapReaction({ id: 1, chat_id: 1 }), null);
+  // A row that names no chat (issue 48) maps to the one value that means no chat, whatever form the engine gave it.
+  for (const chat_id of [0, null, undefined]) assert.equal(mapMessage({ id: 10, chat_id, text: '', created_at: '2026-01-15T10:00:00Z' }, { attachmentId: () => 'x' }).chatId, NO_CHAT_ID);
 });
 
 test('the schema validator is strict', () => {
