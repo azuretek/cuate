@@ -1673,9 +1673,9 @@ async function runSmoke(w) {
   await shot('06d-about-phone-dark.png');
   nativeTheme.themeSource = 'light';
   // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
-  // centre, so the sheet does not cover it; and on a phone the sheet starts below the notice's band, so it covers no
-  // part of the sheet.
-  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.app-notice-dismiss'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.app-notice-dismiss') && sheet && document.querySelector('app-about') && (window.innerWidth > 640 || sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom)); })()";
+  // centre, so the sheet does not cover it; and the sheet starts below the notice's band, on a phone and on the
+  // desktop alike, so the card covers no part of the sheet.
+  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.app-notice-dismiss'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.app-notice-dismiss') && sheet && document.querySelector('app-about') && sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom); })()";
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutPhoneNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
