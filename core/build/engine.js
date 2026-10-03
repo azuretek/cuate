@@ -22,6 +22,8 @@ var engine = (() => {
   var engine_exports = {};
   __export(engine_exports, {
     ABOUT_ORDER: () => ABOUT_ORDER,
+    APP_ICONS: () => APP_ICONS,
+    APP_ICON_KEY: () => APP_ICON_KEY,
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
     BUILD_SPEC: () => BUILD_SPEC,
     DELETE_STEPS: () => DELETE_STEPS,
@@ -81,6 +83,8 @@ var engine = (() => {
     admitPress: () => admitPress,
     allChecked: () => allChecked,
     anchorFrom: () => anchorFrom,
+    appIconChoices: () => appIconChoices,
+    appIconFor: () => appIconFor,
     appUpdateNotice: () => appUpdateNotice,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
@@ -141,6 +145,7 @@ var engine = (() => {
     hideChats: () => hideChats,
     holdsAfter: () => holdsAfter,
     iconSvg: () => iconSvg,
+    iconToApply: () => iconToApply,
     importSummary: () => importSummary,
     importTheme: () => importTheme,
     importTweakcn: () => importTweakcn,
@@ -212,6 +217,7 @@ var engine = (() => {
     settingsAfterWrite: () => settingsAfterWrite,
     settingsFields: () => settingsFields,
     settingsGroups: () => settingsGroups,
+    settingsTabs: () => settingsTabs,
     settlesOpen: () => settlesOpen,
     sheetLeaveDeadline: () => sheetLeaveDeadline,
     sizeLabel: () => sizeLabel,
@@ -895,6 +901,47 @@ var engine = (() => {
       }
     }
   };
+
+  // core/app/rules/app-icons-spec.js
+  var APP_ICONS = {
+    "description": "The app icons a person may choose in Settings (appearance.appIcon, issue 167). Each is the drawing in desktop/build/icon.svg with its tile and its face recoloured, so there is one drawing and the choices differ only in colour. desktop/scripts/icons.mjs draws every one and writes each platform's copy from here: the picture Settings and the desktop shell show (core/app/assets/app-icons), the iOS alternate icon sets, the Android adaptive icons and their launcher colours, and core/app/rules/app-icons-spec.js, the page's mirror of this file. The default is the drawing as it is, which is also the icon a fresh install shows on every platform. pnpm run build fails when a generated copy is stale.",
+    "default": "teal",
+    "icons": [
+      {
+        "id": "teal",
+        "label": "Teal",
+        "tile": "#156c68",
+        "face": "#ffffff"
+      },
+      {
+        "id": "night",
+        "label": "Night",
+        "tile": "#10201f",
+        "face": "#4fd1c5"
+      },
+      {
+        "id": "paper",
+        "label": "Paper",
+        "tile": "#f4efe6",
+        "face": "#156c68"
+      }
+    ]
+  };
+
+  // core/app/rules/app-icons.js
+  var APP_ICON_KEY = "appearance.appIcon";
+  function appIconFor(values, spec = APP_ICONS) {
+    const id = values && values[APP_ICON_KEY];
+    return spec.icons.some((i) => i.id === id) ? id : spec.default;
+  }
+  function appIconChoices(values, spec = APP_ICONS) {
+    const current = appIconFor(values, spec);
+    return spec.icons.map((i) => ({ id: i.id, label: i.label, src: "assets/app-icons/" + i.id + ".png", selected: i.id === current }));
+  }
+  function iconToApply(applied, values, spec = APP_ICONS) {
+    const next = appIconFor(values, spec);
+    return next === applied ? null : next;
+  }
 
   // core/app/rules/attach.js
   var ATTACH_ACTIONS = [
@@ -2082,6 +2129,9 @@ var engine = (() => {
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
       "appearance.textScale": { group: "appearance", label: "Text size", type: "scale", options: TEXT_SCALES, default: 100 },
+      // The app icon (issue 167): one of the icons core/spec/app-icons.json names, each drawn as its own picture, held by
+      // the server like every other setting and applied by each shell where its platform can (rules/app-icons.js).
+      "appearance.appIcon": { group: "appearance", label: "App icon", type: "icon", options: APP_ICONS.icons.map((i) => i.id), labels: Object.fromEntries(APP_ICONS.icons.map((i) => [i.id, i.label])), default: APP_ICONS.default },
       // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
       "notifications.newMessage": { group: "notifications", label: "New messages", type: "toggle", default: true },
       "notifications.updateAvailable": { group: "notifications", label: "Update available", type: "toggle", default: true },
@@ -2105,6 +2155,9 @@ var engine = (() => {
     const groups = schema.groups || [];
     const fallback = groups.length ? groups[0].id : null;
     return groups.map((g) => ({ id: g.id, kind: g.kind || "settings", label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+  }
+  function settingsTabs(schema = SETTINGS_SCHEMA) {
+    return settingsGroups(schema).map((g) => ({ id: g.id, kind: g.kind, label: g.label, keys: g.fields.map((f) => f.key) }));
   }
   var ABOUT_ORDER = [
     ["client", "product"],

@@ -1,0 +1,24 @@
+{
+  "description": "The app icons a person may choose in Settings (appearance.appIcon, issue 167). Each is the drawing in desktop/build/icon.svg with its tile and its face recoloured, so there is one drawing and the choices differ only in colour. desktop/scripts/icons.mjs draws every one and writes each platform's copy from here: the picture Settings and the desktop shell show (core/app/assets/app-icons), the iOS alternate icon sets, the Android adaptive icons and their launcher colours, and core/app/rules/app-icons-spec.js, the page's mirror of this file. The default is the drawing as it is, which is also the icon a fresh install shows on every platform. pnpm run build fails when a generated copy is stale.",
+  "default": "teal",
+  "icons": [
+    {
+      "id": "teal",
+      "label": "Teal",
+      "tile": "#156c68",
+      "face": "#ffffff"
+    },
+    {
+      "id": "night",
+      "label": "Night",
+      "tile": "#10201f",
+      "face": "#4fd1c5"
+    },
+    {
+      "id": "paper",
+      "label": "Paper",
+      "tile": "#f4efe6",
+      "face": "#156c68"
+    }
+  ]
+}

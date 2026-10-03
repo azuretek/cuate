@@ -234,6 +234,10 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
 .sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
 .sheet-back:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
+/* The strip draws one of two ways back: the arrow and the page's own label, or below the phone breakpoint, on a page
+   that returns to the chats list, the chats icon and "Back to chats" (issue 168). The phone block picks between them. */
+.sheet-back-wide, .sheet-back-narrow { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.sheet-back-narrow { display: none; }
 .sheet-back-icon { display: inline-flex; width: var(--size-back-icon); height: var(--size-back-icon); }
 .sheet-back-icon .icon { width: 100%; height: 100%; }
 .sheet-esc { margin-left: auto; padding: var(--space-1) var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-sunken); color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); text-transform: uppercase; }
@@ -242,6 +246,26 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .sheet-desc { margin: var(--space-1) 0 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .sheet-section { display: flex; flex-direction: column; min-width: 0; }
+.sheet-section[hidden] { display: none; }
+/* Settings' tabs (issue 167): one per section, between the heading and the scrolled body, so they stay in place while a
+   section scrolls. They wrap rather than scroll sideways, so every tab is on screen at a phone's width, and the one on
+   show wears the accent, as the skin switch's thumb does. The card keeps the sheet's width as the tabs change, so the
+   card does not jump from one section to the next. */
+app-settings { width: var(--size-sheet); max-width: 100%; }
+.sheet-nav { flex: none; padding: 0 var(--space-4) var(--space-3); border-bottom: var(--size-border) solid var(--color-border); }
+.settings-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.settings-tab { flex: none; padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); cursor: pointer; }
+.settings-tab:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
+.settings-tab[aria-selected="true"] { background: var(--color-accent); color: var(--color-accent-fg); }
+.settings-tab:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+/* The app icon (issue 167): each choice is its own picture with its name under it, the one in force ringed in the
+   accent. */
+.app-icon-choices { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.app-icon-choice { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); font: inherit; font-size: var(--font-size-sm); cursor: pointer; }
+.app-icon-choice:hover { background: var(--color-bg-sunken); }
+.app-icon-choice[aria-checked="true"] { border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
+.app-icon-choice:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.app-icon-picture { display: block; width: var(--size-app-icon-choice); height: var(--size-app-icon-choice); }
 .sheet-section-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
 .sheet-section-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-rows { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); overflow: hidden; min-width: 0; }
@@ -314,7 +338,8 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .theme-import-text { font-family: var(--font-mono); font-size: var(--font-size-sm); resize: vertical; }
 .theme-import-action { align-self: flex-start; }
 .theme-import-note { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); overflow-wrap: anywhere; }
-.conv-back { display: none; background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.conv-back { display: none; align-items: center; justify-content: center; background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.conv-back .icon { width: var(--size-back-icon); height: var(--size-back-icon); }
 
 /* The scrim behind the phone's drawer. Hidden wherever the sidebar is a column rather than a drawer. */
 .scrim { display: none; }
@@ -450,6 +475,19 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
 .sheet { position: relative; z-index: 4; display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); animation: surface-sheet-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+/* On a phone Settings and About are pages that fill the screen (issue 167), not a card over the app: no backdrop
+   margin, no rounded edge, and the safe areas kept clear of the strip and the last row. The strip at the top is the
+   way back, and a phone has no Escape key to name on it. This block follows the card's own rules, so it wins over them. */
+@media (max-width: 640px) {
+  .sheet-scrim { padding: 0; }
+  .sheet { width: 100%; height: 100%; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: env(safe-area-inset-top, calc(var(--space-1) * 0)) env(safe-area-inset-right, calc(var(--space-1) * 0)) env(safe-area-inset-bottom, calc(var(--space-1) * 0)) env(safe-area-inset-left, calc(var(--space-1) * 0)); }
+  app-settings { width: auto; }
+  .sheet-esc { display: none; }
+  /* A page that returns to the chats list says so with the chats icon, as the conversation's own way back does (issue
+     168). */
+  .sheet-back[data-narrow] .sheet-back-wide { display: none; }
+  .sheet-back[data-narrow] .sheet-back-narrow { display: inline-flex; }
+}
 /* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. */
 body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
 body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }

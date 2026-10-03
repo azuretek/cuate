@@ -62,12 +62,16 @@ const noWindow = { minimize: () => false, toggleMaximize: () => false, close: ()
 // desktop window draws its own bar inside the page, so it has nothing to match and answers false.
 const noAppearance = () => false;
 
-export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance }) {
+// The app icon chosen in Settings (issue 167). A shell with no icon of its own to change answers that it applied none.
+const noAppIcon = (icon) => ({ applied: false, icon });
+
+export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
     'storage.delete': async ({ key }) => secure.delete(key),
     'app.info': async () => info(),
+    'app.icon': async ({ icon }) => appIcon(String(icon ?? '')),
     notify: async ({ title, body }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500)),
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
     // About's Check for updates (issue 171): the tray's own check, answering the state it reached; the outcome that

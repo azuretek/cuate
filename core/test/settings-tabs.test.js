@@ -22,16 +22,19 @@ const naming = json('core/spec/naming.json');
 const icons = json('core/spec/app-icons.json');
 const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
 
-// The phone's block of the stylesheet: every rule inside @media (max-width: 640px), braces balanced.
+// The phone's rules of the stylesheet: every rule inside each @media (max-width: 640px) block, braces balanced. A phone
+// block placed after the rules it overrides is how it wins over them, so there may be more than one.
 function phoneBlock() {
-  const start = css.indexOf('@media (max-width: 640px)');
-  assert.ok(start >= 0, 'the stylesheet has a phone block');
-  let depth = 0;
-  for (let i = css.indexOf('{', start); i < css.length; i += 1) {
-    if (css[i] === '{') depth += 1;
-    if (css[i] === '}') { depth -= 1; if (depth === 0) return css.slice(start, i + 1); }
+  const blocks = [];
+  for (let start = css.indexOf('@media (max-width: 640px)'); start >= 0; start = css.indexOf('@media (max-width: 640px)', start + 1)) {
+    let depth = 0;
+    for (let i = css.indexOf('{', start); i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') { depth -= 1; if (depth === 0) { blocks.push(css.slice(start, i + 1)); break; } }
+    }
   }
-  throw new Error('unbalanced phone block');
+  assert.ok(blocks.length > 0, 'the stylesheet has a phone block');
+  return blocks.join('\n');
 }
 
 test('inventory: every setting the desktop page offers is reached from a tab, and the phone hides none of them', () => {
@@ -94,7 +97,9 @@ test('the default icon is the drawing in desktop/build/icon.svg, and every icon 
   const manifest = read('android/app/src/main/AndroidManifest.xml');
   const aliases = [...manifest.matchAll(/<activity-alias\b([\s\S]*?)<\/activity-alias>/g)].map((m) => m[1]);
   assert.equal(aliases.length, icons.icons.length, 'one launcher alias per icon');
-  assert.equal(/<activity\b[^>]*android:name="\.MainActivity"[\s\S]*?<\/activity>/.exec(manifest)[0].includes('category.LAUNCHER'), false, 'only the aliases are launchers, so the icon is the alias in force');
+  const activity = manifest.slice(manifest.indexOf('android:name=".MainActivity"'), manifest.indexOf('<activity-alias'));
+  assert.ok(activity.length > 0, 'the activity is declared before its aliases');
+  assert.equal(activity.includes('category.LAUNCHER'), false, 'only the aliases are launchers, so the icon is the alias in force');
   const alternates = /ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES:\s*"([^"]*)"/.exec(read('ios/project.yml'));
   assert.ok(alternates, 'the iOS project ships the alternate icons');
   assert.match(read('ios/project.yml'), /ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS:\s*YES/);
@@ -122,10 +127,22 @@ test('every shell answers app.icon', () => {
   assert.ok(spec.commands['app.icon'], 'the bridge declares app.icon');
   assert.deepEqual(spec.commands['app.icon'].args, { icon: 'string' });
   assert.match(read('ios/' + naming.product + '/HostBridge.swift'), /case "app\.icon":/);
-  assert.match(read('android/app/src/main/kotlin/com/azuretek/' + naming.slug + '/HostBridge.kt'), /"app\.icon" ->/);
+  const pkg = naming.ids.android.replaceAll('.', '/');
+  assert.match(read('android/app/src/main/kotlin/' + pkg + '/HostBridge.kt'), /"app\.icon" ->/);
   assert.match(read('desktop/src/bridge-handlers.js'), /'app\.icon':/);
   assert.match(read('ios/' + naming.product + 'Tests/NamingTests.swift'), /"app\.icon"/);
-  assert.match(read('android/app/src/androidTest/kotlin/com/azuretek/' + naming.slug + '/ShellParityTest.kt'), /"app\.icon"/);
+  assert.match(read('android/app/src/androidTest/kotlin/' + pkg + '/ShellParityTest.kt'), /"app\.icon"/);
+});
+
+test('the phone Settings fixture cannot be activated in a release build, and both phones keep their captures', () => {
+  const pkg = naming.ids.android.replaceAll('.', '/');
+  assert.match(read('ios/' + naming.product + '/ShellView.swift'), /#if DEBUG[\s\S]*--settings-fixture[\s\S]*#endif/);
+  assert.match(read('ios/project.yml'), /CONFIGURATION.*Debug[\s\S]*core\/test\/settings-fixture/);
+  assert.doesNotMatch(read('android/app/src/main/kotlin/' + pkg + '/MainActivity.kt'), /settings-fixture|settingsProof/);
+  assert.doesNotMatch(read('core/app/main.js'), /settings-fixture|settingsProof/);
+  assert.match(read('android/app/src/androidTest/kotlin/' + pkg + '/SettingsPageTest.kt'), /settings-fixture\.js/);
+  assert.match(read('ios/' + naming.product + 'UITests/SettingsPageTests.swift'), /--settings-fixture/);
+  assert.match(read('.github/workflows/android.yml'), /settings-light\.png[\s\S]*settings-dark\.png/);
 });
 
 test('the page asks its shell for the chosen icon once the settings are read, and only when it changes', async () => {

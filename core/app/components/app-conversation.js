@@ -239,7 +239,9 @@ class AppConversation extends KitElement {
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
+    // back arrow (issue 168); the same control Settings draws on a phone.
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}

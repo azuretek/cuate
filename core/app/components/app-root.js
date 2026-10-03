@@ -22,6 +22,7 @@ import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../ru
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
+import { iconToApply } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
 import './app-onboarding.js';
@@ -52,6 +53,8 @@ class AppRoot extends KitElement {
     // About was opened from ('settings' when it was pushed over Settings, so its back returns there), and pageMotion
     // how the page on screen arrived inside the sheet ('push' or 'pop'; null when the sheet itself arrived).
     view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true },
+    // The Settings tab on show (issue 167), held here so a push to About and back returns to the tab it left.
+    settingsTab: { state: true },
     // The sheet's leaving state has to be reactive: the departure is driven from body.surface--leaving, which updated()
     // writes after a render, so a plain field would never repaint and the leave would never begin.
     sheetLeaving: { state: true }, pendingSheet: { state: true },
@@ -152,6 +155,9 @@ class AppRoot extends KitElement {
     this.heldScreen = null;
     this.aboutFrom = null;
     this.pageMotion = null;
+    this.settingsTab = null;
+    // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
+    this.iconApplied = null;
   }
 
   connectedCallback() {
@@ -213,6 +219,24 @@ class AppRoot extends KitElement {
     for (const [name, value] of scaled) root.style.setProperty(name, value);
     this.themeApplied = [...themed, ...scaled];
     this.loadThemeFonts(this.settings['appearance.theme']);
+    this.applyAppIcon();
+  }
+
+  // The app icon chosen in Settings (issue 167), applied by the shell where its platform can: the desktop's window and
+  // Dock, the iPhone's alternate icon, Android's launcher alias. Only once the server's settings are read, so a stored
+  // choice is never first undone by the default, and only when it changes, since iOS confirms every change with an
+  // alert of its own. A shell that could not apply it answers so, and the next change asks again.
+  async applyAppIcon() {
+    if (!this.settingsRead) return;
+    const next = iconToApply(this.iconApplied, this.settings);
+    if (!next) return;
+    this.iconApplied = next;
+    try {
+      const answer = await this.bridge('app.icon', { icon: next });
+      if (!answer || answer.applied !== true) this.iconApplied = null;
+    } catch {
+      this.iconApplied = null;
+    }
   }
 
   // A theme's type is fetched by the server when the theme is imported; the page reads each file once, with its token,
@@ -572,6 +596,8 @@ class AppRoot extends KitElement {
   openSettings() {
     this.settingsProblem = '';
     if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'pop'); return; }
+    // Settings arriving afresh opens on its first tab; only a return from About keeps the tab it left.
+    if (!this.sheetShowing) this.settingsTab = null;
     this.openSheet('settings');
   }
 
@@ -1110,7 +1136,8 @@ class AppRoot extends KitElement {
         @check-updates=${(e) => respond(e, this.checkUpdates())} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
     }
     return html`<app-settings data-motion=${this.pageMotion || 'none'} .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
-      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}></app-settings>`;
+      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}
+      .tab=${this.settingsTab} @tab=${(e) => { this.settingsTab = e.detail; }}></app-settings>`;
   }
 
   mainView(chat) {

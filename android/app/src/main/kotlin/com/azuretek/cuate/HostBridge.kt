@@ -3,6 +3,7 @@ package com.azuretek.cuate
 import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -90,6 +91,7 @@ class HostBridge(
             "app.info" -> success(
                 JSONObject().put("product", product).put("version", version).put("platform", "android"),
             )
+            "app.icon" -> success(appIcon(args.optString("icon")))
             "notify" -> success(notify(args))
             "open.external" -> success(openExternal(args))
             // About's Check for updates (issue 171). A build reaches this phone as a newer APK, so there is no check to
@@ -110,6 +112,38 @@ class HostBridge(
             "window.appearance" -> success(appearance(args.optString("scheme") == "dark", args.optString("background")))
             else -> failure("undeclared bridge command: " + name)
         }
+    }
+
+    /**
+     * The app icon chosen in Settings (issue 167). Every icon spec/app-icons.json names is a launcher alias of the one
+     * activity, .AppIcon_<id>, and only the default is enabled in the manifest. Choosing one enables its alias first and
+     * then disables the others, so the app always has a launcher entry, and the launcher draws the enabled alias's
+     * icon. DONT_KILL_APP and the activity itself staying enabled mean the change never closes the app; a launcher may
+     * take a moment to redraw. An id the spec does not name is refused and nothing changes.
+     */
+    private fun appIcon(icon: String): JSONObject {
+        val answer = JSONObject().put("icon", icon)
+        val spec = JSONObject(BundledSpec.text(context.assets, "spec/app-icons.json"))
+        val icons = spec.getJSONArray("icons")
+        val ids = (0 until icons.length()).map { icons.getJSONObject(it).getString("id") }
+        if (icon !in ids) return answer.put("applied", false)
+        val fallback = spec.getString("default")
+        val pm = context.packageManager
+        fun alias(id: String) = ComponentName(context.packageName, MainActivity::class.java.name.substringBeforeLast('.') + ".AppIcon_" + id)
+        fun enabled(id: String) = when (pm.getComponentEnabledSetting(alias(id))) {
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
+            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> id == fallback
+            else -> false
+        }
+        if (!enabled(icon)) {
+            pm.setComponentEnabledSetting(alias(icon), PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+        }
+        for (other in ids) {
+            if (other != icon && enabled(other)) {
+                pm.setComponentEnabledSetting(alias(other), PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+            }
+        }
+        return answer.put("applied", true)
     }
 
     private fun notify(args: JSONObject): Boolean {

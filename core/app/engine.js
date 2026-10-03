@@ -18,6 +18,8 @@ export { anchorFrom, scrollFor } from '../kit/rules/scroll.js';
 export { pressOutside, closedByPress, closedByEscape, stackOf, swallows, SWALLOW_MS } from '../kit/rules/dismiss.js';
 export * from '../kit/rules/build.js';
 export * from './rules/build-spec.js';
+export * from './rules/app-icons-spec.js';
+export * from './rules/app-icons.js';
 export * from './rules/attach.js';
 export * from './rules/app-notices.js';
 export * from './rules/chats.js';
