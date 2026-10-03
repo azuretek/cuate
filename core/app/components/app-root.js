@@ -22,6 +22,7 @@ import { screenFor, pageAfterBack } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
+import { ICON_TOKENS, unreadTotal } from '../rules/icon.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
@@ -250,7 +251,23 @@ class AppRoot extends KitElement {
     for (const [name, value] of scaled) root.style.setProperty(name, value);
     this.themeApplied = [...themed, ...scaled];
     this.loadThemeFonts(this.settings['appearance.theme']);
+    this.syncIcon();
   }
+
+  // The app icon follows the theme, the scheme and the unread count (issue 189). The shell draws it, so the page tells
+  // it the colour tokens the icon reads as this page resolved them, the scheme it draws and the total unread, once per
+  // change: a render that changes none of the three asks nothing.
+  syncIcon() {
+    if (typeof document === 'undefined' || typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function' || !this.scheme) return;
+    const style = getComputedStyle(document.documentElement);
+    const colors = Object.fromEntries(ICON_TOKENS.map((k) => [k, style.getPropertyValue('--color-' + k).trim()]));
+    const unread = unreadTotal(this.chats);
+    const key = JSON.stringify([this.scheme, colors, unread]);
+    if (key === this.iconSent) return;
+    this.iconSent = key;
+    this.bridge('icon.redraw', { scheme: this.scheme, colors, unread }).catch(() => {});
+  }
+
 
   // A theme's type is fetched by the server when the theme is imported; the page reads each file once, with its token,
   // and adds it with the FontFace API, so the family the theme names draws as itself rather than as a fallback. A file
@@ -1236,9 +1253,11 @@ class AppRoot extends KitElement {
     return controlLayout({ platform: String(this.host && this.host.platform || '').toLowerCase() });
   }
 
-  // The one class the stylesheet keys off: it says a surface is leaving, so the sheet and its dim leave together.
+  // The one class the stylesheet keys off: it says a surface is leaving, so the sheet and its dim leave together. A
+  // render may also have changed the unread count the app icon carries.
   updated() {
     document.body.classList.toggle('surface--leaving', this.sheetLeaving === true);
+    this.syncIcon();
   }
 
   render() {

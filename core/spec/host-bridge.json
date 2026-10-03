@@ -15,7 +15,8 @@
     "window.minimize": { "args": {}, "returns": "boolean" },
     "window.toggleMaximize": { "args": {}, "returns": "boolean" },
     "window.close": { "args": {}, "returns": "boolean" },
-    "window.appearance": { "args": { "scheme": "string", "background": "string" }, "returns": "boolean" }
+    "window.appearance": { "args": { "scheme": "string", "background": "string" }, "returns": "boolean" },
+    "icon.redraw": { "args": { "scheme": "string", "colors": "object", "unread": "number" }, "returns": "boolean", "note": "The app icon follows the active theme (issue 189): the page sends the scheme it draws, the colour tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) as it resolved them, and the total unread count. The desktop redraws its tray image, its window icon and the Windows taskbar overlay from them and sets the count the Dock and Linux launchers draw, answering true; a phone cannot recolour its icon at runtime and answers false." }
   },
   "events": {
     "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?", "via": "string?", "transferred": "number?", "total": "number?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },

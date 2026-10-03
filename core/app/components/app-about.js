@@ -11,8 +11,9 @@ import './app-sheet.js';
 // The one line the page says about itself, under its title.
 const INTRO = 'The build this device is running and the server it talks to. Select a value to copy it.';
 
-// The app's own icon, generated from desktop/build/icon.svg by the shared icon pipeline (desktop/scripts/icons.mjs,
-// checked by pnpm run build), so every shell bundles the same picture the desktop's window and installers carry.
+// The app's own icon, Flor de muerto in the default theme, generated from the masters in core/spec/icon by the shared
+// icon pipeline (desktop/scripts/icons.mjs, checked by pnpm run build), so every shell bundles the same picture the
+// desktop's window and installers carry.
 const APP_ICON = 'assets/app-icon.png';
 
 // The About page (issue 171): a page of its own on every platform, drawn in the same sheet chrome as Settings (a back

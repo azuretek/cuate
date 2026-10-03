@@ -47,6 +47,7 @@ class ShellParityTest {
             "window.toggleMaximize",
             "window.close",
             "window.appearance",
+            "icon.redraw",
         )
         assertEquals(declared, HostBridge.commandNames(context.assets))
     }
