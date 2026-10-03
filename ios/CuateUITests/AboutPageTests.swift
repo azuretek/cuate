@@ -31,9 +31,20 @@ final class AboutPageTests: XCTestCase {
             XCTAssertFalse(value.isEmpty || value == "Unknown", "About shows this build's \(key): " + reported.label)
         }
         keep(settled(), name: "about-" + scheme)
-        // The build report, scrolled into view inside the sheet, so a capture shows the channel and the build.
+        // The build report, scrolled into view inside the sheet, so a capture shows the channel and the build. Each drag
+        // is slow and held at its end, so the sheet's body moves by the drag alone and never flings past the rows; the
+        // loop ends when the Build row is on screen, and the count only bounds it.
         let page = app.webViews.firstMatch
-        page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.05, thenDragTo: page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        let buildRow = page.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Copy Build:'")).firstMatch
+        XCTAssertTrue(buildRow.waitForExistence(timeout: 5), app.debugDescription)
+        let visibleBottom = page.frame.minY + page.frame.height * 0.85
+        var drags = 0
+        while buildRow.frame.maxY > visibleBottom && drags < 8 {
+            page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                .press(forDuration: 0.1, thenDragTo: page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)), withVelocity: .slow, thenHoldForDuration: 0.3)
+            drags += 1
+        }
+        XCTAssertLessThanOrEqual(buildRow.frame.maxY, visibleBottom, "the Build row never scrolled into view: \(buildRow.frame)")
         keep(settled(), name: "about-build-" + scheme)
     }
 
