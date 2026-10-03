@@ -66,6 +66,14 @@ targets:
       - path: ../core/fixtures
         type: folder
         buildPhase: resources
+    postBuildScripts:
+      - name: Install rotation fixture in test builds only
+        script: |
+          set -eu
+          if [ "$CONFIGURATION" = Debug ]; then
+            cp "$SRCROOT/../core/test/rotation-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/rotation-fixture.js"
+          fi
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.cuate
@@ -109,18 +117,32 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.cuate.tests
         GENERATE_INFOPLIST_FILE: YES
 
+  CuateUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CuateUITests
+    dependencies:
+      - target: Cuate
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.cuate.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   Cuate:
     build:
       targets:
         Cuate: all
         CuateTests: [test]
+        CuateUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - CuateTests
+        - CuateUITests
     profile:
       config: Release
     analyze:

@@ -13,6 +13,8 @@ export { validate } from '../kit/rules/schema.js';
 export { openapiDocument } from '../kit/rules/openapi.js';
 export { tokensCss, iconSvg } from '../kit/rules/tokens.js';
 export { springCurve } from '../kit/rules/motion.js';
+export { PRESS_STATES, admitPress, outcomeOf, holdsAfter, durationMs } from '../kit/rules/press.js';
+export { anchorFrom, scrollFor } from '../kit/rules/scroll.js';
 export * from '../kit/rules/build.js';
 export * from './rules/build-spec.js';
 export * from './rules/attach.js';

@@ -40,6 +40,7 @@ var engine = (() => {
     NOTIFY: () => NOTIFY,
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
+    PRESS_STATES: () => PRESS_STATES,
     SCHEMES: () => SCHEMES,
     SEARCH_MODES: () => SEARCH_MODES,
     SEARCH_MODE_LABELS: () => SEARCH_MODE_LABELS,
@@ -75,7 +76,9 @@ var engine = (() => {
     addGroup: () => addGroup,
     addTerm: () => addTerm,
     addTheme: () => addTheme,
+    admitPress: () => admitPress,
     allChecked: () => allChecked,
+    anchorFrom: () => anchorFrom,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     autoDownloadEnabled: () => autoDownloadEnabled,
@@ -112,6 +115,7 @@ var engine = (() => {
     deliveryLabel: () => deliveryLabel,
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
+    durationMs: () => durationMs,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
@@ -128,6 +132,7 @@ var engine = (() => {
     groupMessages: () => groupMessages,
     groupSections: () => groupSections,
     hideChats: () => hideChats,
+    holdsAfter: () => holdsAfter,
     iconSvg: () => iconSvg,
     importSummary: () => importSummary,
     importTheme: () => importTheme,
@@ -158,6 +163,7 @@ var engine = (() => {
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
     orderChats: () => orderChats,
+    outcomeOf: () => outcomeOf,
     panBounds: () => panBounds,
     panBy: () => panBy,
     parseColour: () => parseColour,
@@ -183,6 +189,7 @@ var engine = (() => {
     safeValue: () => safeValue,
     sameTheme: () => sameTheme,
     screenFor: () => screenFor,
+    scrollFor: () => scrollFor,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
     serverUpdateNotice: () => serverUpdateNotice,
@@ -333,6 +340,11 @@ var engine = (() => {
         return res.blob();
       },
       connect,
+      // Drops the event stream the way a lost connection does, so it reconnects and resumes where it left off. The
+      // desktop smoke uses it to prove a reconnect never blanks a view (issue 142).
+      reconnect() {
+        if (ws && !closed) ws.close(4e3);
+      },
       close() {
         closed = true;
         if (timer) timers.clearTimeout(timer);
@@ -580,13 +592,60 @@ var engine = (() => {
       return 1 - Math.exp(-omega * t) * (1 + omega * t);
     };
     const settleS = Math.log(1 / settle) / (Math.min(zeta, 1) * omega);
-    const durationMs = Math.round(settleS * 1e3 / 10) * 10;
+    const durationMs2 = Math.round(settleS * 1e3 / 10) * 10;
     const points = [];
     for (let i = 0; i <= samples; i += 1) {
-      const value = i === samples ? 1 : position(i / samples * (durationMs / 1e3));
+      const value = i === samples ? 1 : position(i / samples * (durationMs2 / 1e3));
       points.push(Number(value.toFixed(3)));
     }
-    return { durationMs, linear: `linear(${points.join(", ")})` };
+    return { durationMs: durationMs2, linear: `linear(${points.join(", ")})` };
+  }
+
+  // core/kit/rules/press.js
+  var PRESS_STATES = ["idle", "pending", "success", "failure"];
+  function idleEntry() {
+    return { state: "idle", held: false };
+  }
+  function admitPress(entry, { repeat = false, multi = false } = {}) {
+    const e = entry || idleEntry();
+    if (e.state === "pending") return false;
+    if (repeat) return true;
+    if (multi || e.held) return false;
+    return true;
+  }
+  function outcomeOf({ rejected = false, value } = {}) {
+    return rejected || value === false ? "failure" : "success";
+  }
+  function holdsAfter({ repeat = false, detail = 0 } = {}) {
+    return !repeat && Number(detail) >= 1;
+  }
+  function durationMs(value, fallback) {
+    const s = String(value == null ? "" : value).trim();
+    const m = /^(-?\d*\.?\d+)(ms|s)?$/.exec(s);
+    if (!m) return fallback;
+    const n = Number(m[1]) * (m[2] === "s" ? 1e3 : 1);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  }
+
+  // core/kit/rules/scroll.js
+  var END_SLACK = 80;
+  function anchorFrom({ scrollTop = 0, scrollHeight = 0, clientHeight = 0, items = [], follow = false, slack = END_SLACK } = {}) {
+    if (follow && scrollHeight - scrollTop - clientHeight < slack) return { end: true };
+    const first = items.find((it) => it.bottom > 0 && it.key != null);
+    if (first) return { key: String(first.key), offset: first.top };
+    return { top: scrollTop };
+  }
+  function scrollFor(anchor, { scrollTop = 0, scrollHeight = 0, clientHeight = 0, items = [] } = {}) {
+    const max = Math.max(0, scrollHeight - clientHeight);
+    const clamp = (v) => Math.min(max, Math.max(0, v));
+    if (!anchor) return clamp(scrollTop);
+    if (anchor.end) return max;
+    if (anchor.key != null) {
+      const it = items.find((x) => String(x.key) === anchor.key);
+      if (it) return clamp(scrollTop + (it.top - anchor.offset));
+      return clamp(scrollTop);
+    }
+    return clamp(Number.isFinite(anchor.top) ? anchor.top : scrollTop);
   }
 
   // core/kit/rules/build.js

@@ -1,5 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press, emit } from '../../kit/press.js';
+import { keepScroll } from '../../kit/scroll.js';
 import {
   chatTitle, chatPreview, initials, sortChats, filterChats, groupSections, emptyFilters, emptyListText,
   UNGROUPED, renameGroup, moveGroup, placeChat,
@@ -29,6 +31,8 @@ class AppChatList extends KitElement {
     this.editing = false;
     this.checked = [];
     this.renaming = null;
+    // The list is its own scroll container, and keeps its place on a row across a re-render and a resize (issue 142).
+    this.keep = keepScroll(this, { scroller: 'app-chat-list', items: '.chat-row' });
   }
 
   get f() {
@@ -39,8 +43,9 @@ class AppChatList extends KitElement {
     return Array.isArray(this.checked) ? this.checked : [];
   }
 
+  // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
   fire(name, detail) {
-    this.dispatchEvent(new CustomEvent(name, { detail }));
+    return emit(this, name, detail);
   }
 
   pick(id) {
@@ -66,7 +71,7 @@ class AppChatList extends KitElement {
     this.fire('check', { id, checked });
   }
 
-  patch(settings) { this.fire('chatsettings', { patch: settings }); }
+  patch(settings) { return this.fire('chatsettings', { patch: settings }); }
 
   startRename(id) {
     this.renaming = id;
@@ -90,8 +95,8 @@ class AppChatList extends KitElement {
     else if (e.key === 'Escape') { e.preventDefault(); this.renaming = null; }
   }
 
-  moveGroupBy(section, delta) { this.patch({ 'chats.groups': moveGroup(this.groups, section.id, delta) }); }
-  setPlacement(chatId, groupId) { this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
+  moveGroupBy(section, delta) { return this.patch({ 'chats.groups': moveGroup(this.groups, section.id, delta) }); }
+  setPlacement(chatId, groupId) { return this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
 
   sectionHead(section) {
     if (section.id === UNGROUPED) return html`<header class="section-head"><span class="section-name">${section.name}</span></header>`;
@@ -101,10 +106,10 @@ class AppChatList extends KitElement {
         ? html`<input class="group-rename" data-id=${section.id} .value=${section.name} aria-label="Group name" @keydown=${this.onRenameKey} @blur=${this.commitRename}>`
         : html`<span class="section-name">${section.name}</span>`}
       <span class="section-actions">
-        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' up'} ?disabled=${i <= 0} @click=${() => this.moveGroupBy(section, -1)}><span class="icon" data-icon="chevron-up" aria-hidden="true"></span></button>
-        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' down'} ?disabled=${i >= (this.groups.length - 1)} @click=${() => this.moveGroupBy(section, 1)}><span class="icon" data-icon="chevron-down" aria-hidden="true"></span></button>
-        <button type="button" class="icon-button" aria-label=${'Rename ' + section.name} @click=${() => this.startRename(section.id)}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button>
-        ${this.editing ? html`<button type="button" class="icon-button" aria-label=${'Delete ' + section.name} @click=${() => this.fire('groupdelete', { id: section.id, name: section.name })}><span class="icon" data-icon="x" aria-hidden="true"></span></button>` : nothing}
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' up'} ?disabled=${i <= 0} @click=${press(() => this.moveGroupBy(section, -1))}><span class="icon" data-icon="chevron-up" aria-hidden="true"></span></button>
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' down'} ?disabled=${i >= (this.groups.length - 1)} @click=${press(() => this.moveGroupBy(section, 1))}><span class="icon" data-icon="chevron-down" aria-hidden="true"></span></button>
+        <button type="button" class="icon-button" aria-label=${'Rename ' + section.name} @click=${press(() => this.startRename(section.id))}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button>
+        ${this.editing ? html`<button type="button" class="icon-button" aria-label=${'Delete ' + section.name} @click=${press(() => this.fire('groupdelete', { id: section.id, name: section.name }))}><span class="icon" data-icon="x" aria-hidden="true"></span></button>` : nothing}
       </span>
     </header>`;
   }

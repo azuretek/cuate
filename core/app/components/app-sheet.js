@@ -1,5 +1,7 @@
 import { html } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press } from '../../kit/press.js';
+import { keepScroll } from '../../kit/scroll.js';
 
 // The chrome Settings and About draw inside their sheet: a top strip that is itself the back control, the page's
 // title and its one-line description, then the page's sections. The pages supply the words and the body; this
@@ -31,6 +33,8 @@ class AppSheet extends KitElement {
     this.description = '';
     this.label = 'Back';
     this.content = null;
+    // The page's body scrolls, and keeps its place on a section across a re-render and a resize (issue 142).
+    this.keep = keepScroll(this, { scroller: '.sheet-body', items: '.sheet-section' });
     this.reveal = null;
   }
 
@@ -67,7 +71,7 @@ class AppSheet extends KitElement {
   }
 
   render() {
-    return html`<button type="button" class="sheet-back" @click=${() => this.back()}>
+    return html`<button type="button" class="sheet-back" @click=${press(() => this.back())}>
         <span class="sheet-back-icon" aria-hidden="true"><span class="icon" data-icon="arrow-left" aria-hidden="true"></span></span>
         <span class="sheet-back-label">${this.label}</span>
         <kbd class="sheet-esc" aria-hidden="true">esc</kbd>
