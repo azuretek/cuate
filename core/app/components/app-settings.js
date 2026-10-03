@@ -75,13 +75,16 @@ class AppSettings extends KitElement {
     }
     if (field.type === 'segmented') {
       // A three-position switch: one radio per choice under one name, drawn as a track with a thumb that slides to
-      // the choice in force. data-at says which position the thumb sits at, so the CSS needs no width of its own.
+      // the choice in force. data-at says which position the thumb sits at and data-segments how many there are, and
+      // the stylesheet turns them into --at and --segments, so the CSS needs no width of its own. They were written as
+      // a style attribute, which the page's Content-Security-Policy (style-src 'self') drops, so the thumb never left
+      // System and a Light or Dark choice drew its on-accent label on the bare track (issue 135).
       // The label on the thumb is marked from the same value the thumb is placed by (data-selected), never from the
       // radio's own checked state, which flips the moment it is pressed and before the write lands: keyed to the
       // radio, the pressed label turned on-accent while the thumb still sat elsewhere, and read as nothing on the
       // bare track (issue 135).
       const at = Math.max(0, field.options.indexOf(value));
-      return html`<div class="segmented setting-control-wide" role="radiogroup" aria-label=${field.label} data-key=${field.key} data-at=${at} style=${'--segments: ' + field.options.length + '; --at: ' + at}>
+      return html`<div class="segmented setting-control-wide" role="radiogroup" aria-label=${field.label} data-key=${field.key} data-at=${at} data-segments=${field.options.length}>
         <span class="segment-thumb" aria-hidden="true"></span>
         ${field.options.map((o) => html`<label class="segment" ?data-selected=${o === value}><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${o === value} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
       </div>`;
