@@ -370,14 +370,15 @@ export async function status({ config, installRoot = null, print = console.log, 
 }
 
 /** Restart the service and wait until a new run answers; returns that run's id. */
-export async function restart({ config, print = console.log, home = os.homedir() }) {
-  const P = servicePaths(home);
-  if (!launchdState().loaded) throw new Error(LABEL + ' is not loaded; run service install');
+export async function restart({ config, installRoot = null, print = console.log, home = os.homedir() }) {
+  const label = installRoot ? serviceLabel(installLayout(installRoot), home) : LABEL;
+  const P = servicePaths(home, label);
+  if (!launchdState(label).loaded) throw new Error(label + ' is not loaded; run service install');
   const prev = lastEvent(tailText(P.log), 'server.ready');
-  const r = sh('/bin/launchctl', ['kickstart', '-k', target()], { timeout: 30000 });
+  const r = sh('/bin/launchctl', ['kickstart', '-k', target(label)], { timeout: 30000 });
   if (r.code !== 0) throw new Error('launchctl kickstart failed: ' + (r.err || r.out));
   const run = await waitReady(P.log, prev ? prev.run : null, config.port);
-  print('done  restarted; answering on 127.0.0.1:' + config.port + ' (pid ' + (launchdState().pid || '?') + ')');
+  print('done  restarted; answering on 127.0.0.1:' + config.port + ' (pid ' + (launchdState(label).pid || '?') + ')');
   return run;
 }
 

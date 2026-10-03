@@ -48,6 +48,23 @@ test('a second install root gets its own LaunchAgent label and log, and the usua
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+test('status and restart with --install-root reach that root\'s own LaunchAgent, never the usual one', { skip: process.platform !== 'darwin' && 'the service is a macOS LaunchAgent' }, () => {
+  const dir = scratch();
+  try {
+    const data = path.join(dir, 'data');
+    const root = path.join(dir, 'rehearsal');
+    assert.equal(run(['init', '--engine', 'fake', '--port', '1', '--data', data]).status, 0);
+    const label = serviceLabel(installLayout(root));
+    // The label is never loaded, so each command stops at launchd and names the label it would have acted on.
+    const restarted = run(['service', 'restart', '--install-root', root, '--data', data]);
+    assert.notEqual(restarted.status, 0);
+    assert.ok(restarted.stderr.includes(label + ' is not loaded'), restarted.stderr);
+    const status = run(['service', 'status', '--install-root', root, '--data', data]);
+    assert.ok(status.stdout.includes('warn  ' + label + ': not loaded'), status.stdout);
+    assert.ok(!status.stdout.includes(LABEL + ':'), 'the usual service is not reported as this one');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('the LaunchAgent runs this server with its data folder, at login and after a crash', () => {
   const x = renderPlist({ node: '/opt/n/node', main: '/r/server/src/main.js', dataDir: '/d/a b&c', root: '/r', log: '/l/s.log', pathDirs: ['/opt/n', '/usr/bin'] });
   assert.ok(x.includes('<key>Label</key><string>' + LABEL + '</string>'));
