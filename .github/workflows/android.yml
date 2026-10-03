@@ -72,7 +72,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-boot-proof
-          path: android/proof
+          path: |
+            android/proof
+            android/app/build/reports/androidTests
+            android/app/build/outputs/androidTest-results
           if-no-files-found: warn
 
   # The publish half: the APK, signed with the Android release keystore.

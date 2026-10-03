@@ -52,7 +52,7 @@ export function defaultInstallRoot({ env = process.env, home = os.homedir() } = 
 }
 
 // Resolve existing ancestors too: a not-yet-created child of a symlink is not a separate data folder.
-function canonical(dir) {
+export function canonical(dir) {
   const absolute = path.resolve(dir);
   if (existsSync(absolute)) return realpathSync(absolute);
   return path.join(canonical(path.dirname(absolute)), path.basename(absolute));
@@ -141,6 +141,25 @@ export function setPaused(L, paused) {
   const tmp = file + '.' + process.pid;
   writeFileSync(tmp, JSON.stringify(Boolean(paused)), { mode: 0o600 });
   renameSync(tmp, file);
+}
+
+/**
+ * A rollback drill, in its own atomic file like the pause: when armed, the next switch's health check fails on purpose
+ * after the candidate has answered it, so the real rollback runs against a real release (server/src/updater.js,
+ * finishSwitch). The finish that runs the drill disarms it, whatever the outcome.
+ */
+const drillFile = (L) => path.join(L.root, 'update-drill.json');
+
+export function readDrill(L) {
+  try { return JSON.parse(readFileSync(drillFile(L), 'utf8')) === true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; }
+}
+
+export function setDrill(L, armed) {
+  if (!armed) return rmSync(drillFile(L), { force: true });
+  mkdirSync(L.root, { recursive: true, mode: 0o700 });
+  const tmp = drillFile(L) + '.' + process.pid;
+  writeFileSync(tmp, 'true', { mode: 0o600 });
+  renameSync(tmp, drillFile(L));
 }
 
 export function writeState(L, state) {

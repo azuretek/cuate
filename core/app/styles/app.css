@@ -14,6 +14,25 @@ app-root { display: block; height: 100%; }
 .spinner { width: var(--size-spinner); height: var(--size-spinner); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-border); border-top-color: var(--color-accent); animation: spin var(--motion-spin) linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Press states, the one look of core/kit/press.js on every button (issue 140). While a press's work runs the label
+   steps aside for a spinner drawn in the control's own text colour, so it reads on a filled button and a bare one
+   alike; then a tick (success), or a mark ringed in the danger colour (failure), shows for --motion-press-hold and
+   the control is idle again. The control keeps its size throughout, so nothing around it moves. Every value is a
+   token, so an imported theme styles the states with the rest of the app. These rules sit before every component's
+   own, so a control that is itself positioned (a fixed scrim, an absolute close) keeps its position. */
+[data-press] { position: relative; }
+[data-press="pending"] { cursor: progress; -webkit-text-fill-color: transparent; }
+[data-press="pending"] > *, [data-press="success"] > *, [data-press="failure"] > * { visibility: hidden; }
+[data-press="success"], [data-press="failure"] { -webkit-text-fill-color: transparent; }
+[data-press]::after { position: absolute; inset: 0; margin: auto; display: grid; place-items: center; width: var(--size-press-spinner); height: var(--size-press-spinner); line-height: 1; -webkit-text-fill-color: currentColor; pointer-events: none; }
+[data-press="pending"]::after { content: ''; border-radius: var(--radius-pill); border: calc(var(--size-border) * 2) solid currentColor; border-right-color: transparent; animation: spin var(--motion-spin) linear infinite; }
+[data-press="success"]::after { content: '\2713'; font-weight: var(--font-weight-bold); animation: press-settle var(--motion-normal) var(--motion-ease) both; }
+[data-press="failure"]::after { content: '!'; font-weight: var(--font-weight-bold); animation: press-settle var(--motion-normal) var(--motion-ease) both; }
+[data-press="failure"] { box-shadow: 0 0 0 calc(var(--size-border) * 2) var(--color-danger); }
+@keyframes press-settle { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+/* Reduced motion: the states still show, the spinner as a still ring, and nothing turns or grows. */
+@media (prefers-reduced-motion: reduce) { [data-press]::after { animation: none; } }
+
 .shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 .sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: var(--size-header); padding: 0 var(--space-4); flex: none; }
@@ -241,6 +260,10 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .theme-card { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); cursor: pointer; font: inherit; text-align: left; min-width: 0; }
 .theme-card[aria-checked="true"] { border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
 .theme-card:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+/* A card is too large to blank for its press state: its colours stay, and the state sits in its corner. */
+.theme-card[data-press] { -webkit-text-fill-color: currentColor; }
+.theme-card[data-press] > * { visibility: visible; }
+.theme-card[data-press]::after { inset: var(--space-2) var(--space-2) auto auto; margin: 0; }
 .theme-swatches { display: grid; grid-template-columns: repeat(6, 1fr); height: var(--space-5); border-radius: var(--radius-sm); overflow: hidden; border: var(--size-border) solid var(--color-border); }
 .theme-swatch[data-token="bg"] { background: var(--color-bg); }
 .theme-swatch[data-token="bg-raised"] { background: var(--color-bg-raised); }
