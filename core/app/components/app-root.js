@@ -672,7 +672,7 @@ class AppRoot extends KitElement {
       const r = await this.client.react(chatId, messageId, { emoji, remove });
       if (chatId !== this.openChatId) return;
       if (r.status === 'uncertain') this.messageNote = { id: messageId, text: 'The reaction may not have sent.' };
-      else this.messages = applyReaction(this.messages, { targetId: messageId, type: r.type, emoji: null, add: r.add, fromMe: true, sender: null });
+      else this.messages = applyReaction(this.messages, { targetId: messageId, type: r.type, emoji: r.emoji ?? null, add: r.add, fromMe: true, sender: null });
       return r.status !== 'uncertain';
     } catch (e) {
       if (chatId === this.openChatId) this.messageNote = { id: messageId, text: e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e) };
