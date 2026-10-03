@@ -77,8 +77,8 @@ test('a PDF goes to Messages as a named document with its extension', async () =
 });
 
 test('a file of an unknown type keeps its own name and goes as a document', async () => {
-  const odd = await sendShape({ name: 'synthetic notes.cuatex', bytes: UNKNOWN });
-  assert.equal(odd.sentName, 'synthetic notes.cuatex');
+  const odd = await sendShape({ name: 'synthetic notes.synthx', bytes: UNKNOWN });
+  assert.equal(odd.sentName, 'synthetic notes.synthx');
   assert.equal(odd.att.mime, 'application/octet-stream');
   // A known extension with bytes the server cannot place keeps the device's word for it.
   const text = await sendShape({ name: 'synthetic.txt', bytes: UNKNOWN });
