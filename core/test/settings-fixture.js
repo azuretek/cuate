@@ -28,8 +28,11 @@
   await until(() => page() && page().querySelector('.settings-tab'), 'the Settings page');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the page to arrive');
   // The page fills the screen, and its way back is the chats control.
+  // The page fills the screen between the system bars: the backdrop's padding is the bars' insets and nothing more.
   const sheet = document.querySelector('.sheet').getBoundingClientRect();
-  if (Math.abs(sheet.width - innerWidth) > 1 || Math.abs(sheet.height - innerHeight) > 1) throw new Error('Settings is a card, not a page: ' + sheet.width + 'x' + sheet.height + ' of ' + innerWidth + 'x' + innerHeight);
+  const pad = getComputedStyle(document.querySelector('.sheet-scrim'));
+  const room = { w: innerWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight), h: innerHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom) };
+  if (Math.abs(sheet.width - room.w) > 1 || Math.abs(sheet.height - room.h) > 1) throw new Error('Settings is a card, not a page: ' + sheet.width + 'x' + sheet.height + ' of ' + room.w + 'x' + room.h);
   const narrow = page().querySelector('.sheet-back-narrow');
   const shown = (el) => Boolean(el) && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0;
   if (!shown(narrow) || shown(page().querySelector('.sheet-back-wide'))) throw new Error('the way back is not the chats control');

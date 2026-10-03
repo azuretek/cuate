@@ -64,7 +64,8 @@ test('the settings page draws its sections as tabs: a tablist, one tab and one p
 test('on a phone Settings and About are pages that fill the screen, not a card over the app', () => {
   const phone = phoneBlock();
   assert.match(phone, /\.sheet\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/, 'the sheet fills the phone');
-  assert.match(phone, /\.sheet-scrim\s*\{[^}]*padding:\s*0/, 'no backdrop margin around it');
+  assert.match(phone, /\.sheet-scrim\s*\{[^}]*padding:\s*var\(--inset-top\) var\(--inset-right\) var\(--inset-bottom\) var\(--inset-left\)/, 'no backdrop margin around it, only the system bars');
+  assert.match(phone, /\.sheet-scrim\s*\{[^}]*background:\s*var\(--color-bg-raised\)/, 'the bars wear the page\'s own surface');
 });
 
 test('the app icon is a setting the server holds, offered from the one spec', () => {

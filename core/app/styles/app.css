@@ -498,8 +498,11 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    margin, no rounded edge, and the safe areas kept clear of the strip and the last row. The strip at the top is the
    way back, and a phone has no Escape key to name on it. This block follows the card's own rules, so it wins over them. */
 @media (max-width: 640px) {
-  .sheet-scrim { padding: 0; }
-  .sheet { width: 100%; height: 100%; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: var(--inset-top) var(--inset-right) var(--inset-bottom) var(--inset-left); }
+  /* The page sits between the system bars, which wear the page's own surface (issue 175), and a focused field scrolls
+     into sight with room to spare above the keyboard. */
+  .sheet-scrim { padding: var(--inset-top) var(--inset-right) var(--inset-bottom) var(--inset-left); background: var(--color-bg-raised); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .sheet { width: 100%; height: 100%; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+  .sheet-body { scroll-padding-block: var(--space-4); }
   app-settings { width: auto; }
   .sheet-esc { display: none; }
   /* A page that returns to the chats list says so with the chats icon, as the conversation's own way back does (issue
