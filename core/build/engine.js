@@ -53,6 +53,13 @@ var engine = (() => {
     UNGROUPED: () => UNGROUPED,
     UNKNOWN: () => UNKNOWN,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
+    ZOOM_DOUBLE_TAP: () => ZOOM_DOUBLE_TAP,
+    ZOOM_DOUBLE_TAP_MS: () => ZOOM_DOUBLE_TAP_MS,
+    ZOOM_DOUBLE_TAP_PX: () => ZOOM_DOUBLE_TAP_PX,
+    ZOOM_FIT: () => ZOOM_FIT,
+    ZOOM_PAN_STEP: () => ZOOM_PAN_STEP,
+    ZOOM_SLOP: () => ZOOM_SLOP,
+    ZOOM_STEP: () => ZOOM_STEP,
     aboutModel: () => aboutModel,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
@@ -72,6 +79,8 @@ var engine = (() => {
     chatTitle: () => chatTitle,
     checkedCount: () => checkedCount,
     checksumMatches: () => checksumMatches,
+    clampPan: () => clampPan,
+    clampScale: () => clampScale,
     clearGroupPlacement: () => clearGroupPlacement,
     clientReport: () => clientReport,
     coerceSetting: () => coerceSetting,
@@ -110,6 +119,8 @@ var engine = (() => {
     insertEmoji: () => insertEmoji,
     installPolicy: () => installPolicy,
     installSource: () => installSource,
+    isClick: () => isClick,
+    isDoubleTap: () => isDoubleTap,
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
@@ -129,9 +140,12 @@ var engine = (() => {
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
     orderChats: () => orderChats,
+    panBounds: () => panBounds,
+    panBy: () => panBy,
     parseTraceparent: () => parseTraceparent,
     pick: () => pick,
     pickerSide: () => pickerSide,
+    pinch: () => pinch,
     placeChat: () => placeChat,
     policy: () => policy,
     progressFor: () => progressFor,
@@ -173,6 +187,7 @@ var engine = (() => {
     themeVars: () => themeVars,
     toBase64: () => toBase64,
     toggleChecked: () => toggleChecked,
+    toggleZoom: () => toggleZoom,
     tokensCss: () => tokensCss,
     transferDetail: () => transferDetail,
     unsupportedBanner: () => unsupportedBanner,
@@ -180,7 +195,13 @@ var engine = (() => {
     updateNotice: () => updateNotice,
     updateNoticeKey: () => updateNoticeKey,
     validate: () => validate,
-    verificationCheck: () => verificationCheck
+    verificationCheck: () => verificationCheck,
+    wheelFactor: () => wheelFactor,
+    zoomBy: () => zoomBy,
+    zoomFit: () => zoomFit,
+    zoomKey: () => zoomKey,
+    zoomMax: () => zoomMax,
+    zoomTo: () => zoomTo
   });
 
   // core/kit/api.js
@@ -1231,9 +1252,9 @@ var engine = (() => {
     return [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || seen.get(b) - seen.get(a)).slice(0, limit);
   }
   function pickerSide(panel, anchor) {
-    const middle = (r) => (Number(r?.top) + Number(r?.bottom)) / 2;
-    const p = middle(panel);
-    const a = middle(anchor);
+    const middle2 = (r) => (Number(r?.top) + Number(r?.bottom)) / 2;
+    const p = middle2(panel);
+    const a = middle2(anchor);
     if (!Number.isFinite(p) || !Number.isFinite(a)) return "above";
     return p > a ? "below" : "above";
   }
@@ -1648,6 +1669,96 @@ var engine = (() => {
   // core/app/rules/sheet.js
   function backdropReturns(startsOnBackdrop, endsOnBackdrop) {
     return startsOnBackdrop === true && endsOnBackdrop === true;
+  }
+
+  // core/app/rules/zoom.js
+  var ZOOM_FIT = 1;
+  var ZOOM_STEP = 2;
+  var ZOOM_DOUBLE_TAP = 2.5;
+  var ZOOM_PAN_STEP = 48;
+  var ZOOM_SLOP = 6;
+  var ZOOM_DOUBLE_TAP_MS = 300;
+  var ZOOM_DOUBLE_TAP_PX = 32;
+  var zoomFit = () => ({ scale: ZOOM_FIT, x: 0, y: 0 });
+  function zoomMax(native) {
+    const n = Number(native);
+    const byPixels = Number.isFinite(n) && n > 0 ? n * 2 : 0;
+    return Math.min(16, Math.max(4, byPixels));
+  }
+  function clampScale(scale, max) {
+    const s = Number(scale);
+    const top = Number(max) > ZOOM_FIT ? Number(max) : ZOOM_FIT;
+    if (!Number.isFinite(s)) return ZOOM_FIT;
+    return Math.min(top, Math.max(ZOOM_FIT, s));
+  }
+  function axisReach(size2, scale, stage) {
+    const drawn = size2 * scale;
+    return drawn > stage ? (drawn - stage) / 2 : 0;
+  }
+  function panBounds(view, box) {
+    return { x: axisReach(box.width, view.scale, box.stageWidth), y: axisReach(box.height, view.scale, box.stageHeight) };
+  }
+  var within = (v, reach) => reach === 0 ? 0 : Math.min(reach, Math.max(-reach, v));
+  function clampPan(view, box) {
+    const reach = panBounds(view, box);
+    return { scale: view.scale, x: within(view.x, reach.x), y: within(view.y, reach.y) };
+  }
+  function zoomTo(view, scale, point, box, max) {
+    const next = clampScale(scale, max);
+    const k = next / view.scale;
+    const p = point || { x: 0, y: 0 };
+    return clampPan({ scale: next, x: p.x - (p.x - view.x) * k, y: p.y - (p.y - view.y) * k }, box);
+  }
+  function zoomBy(view, factor, point, box, max) {
+    return zoomTo(view, view.scale * factor, point, box, max);
+  }
+  function panBy(view, dx, dy, box) {
+    return clampPan({ scale: view.scale, x: view.x + dx, y: view.y + dy }, box);
+  }
+  function toggleZoom(view, point, box, max) {
+    if (view.scale > ZOOM_FIT + 0.01) return zoomFit();
+    return zoomTo(view, ZOOM_DOUBLE_TAP, point, box, max);
+  }
+  var distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  var middle = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  function pinch(start, from, to, box, max) {
+    const d0 = distance(from[0], from[1]);
+    const d1 = distance(to[0], to[1]);
+    if (!(d0 > 0) || !(d1 > 0)) return clampPan(start, box);
+    const c0 = middle(from[0], from[1]);
+    const c1 = middle(to[0], to[1]);
+    const next = clampScale(start.scale * (d1 / d0), max);
+    const k = next / start.scale;
+    return clampPan({ scale: next, x: c1.x - (c0.x - start.x) * k, y: c1.y - (c0.y - start.y) * k }, box);
+  }
+  function wheelFactor(deltaY, deltaMode = 0, pinching = false) {
+    const unit = deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1;
+    const d = Math.max(-400, Math.min(400, (Number(deltaY) || 0) * unit));
+    return Math.exp(-d * (pinching ? 0.01 : 2e-3));
+  }
+  function isClick(down, up) {
+    if (!down || !up) return false;
+    return distance(down, up) < ZOOM_SLOP;
+  }
+  function isDoubleTap(prev, tap) {
+    if (!prev || !tap) return false;
+    const dt = tap.at - prev.at;
+    return dt >= 0 && dt <= ZOOM_DOUBLE_TAP_MS && distance(prev, tap) <= ZOOM_DOUBLE_TAP_PX;
+  }
+  var KEYS = {
+    "+": { kind: "zoom", factor: ZOOM_STEP },
+    "=": { kind: "zoom", factor: ZOOM_STEP },
+    "-": { kind: "zoom", factor: 1 / ZOOM_STEP },
+    _: { kind: "zoom", factor: 1 / ZOOM_STEP },
+    0: { kind: "reset" },
+    Escape: { kind: "close" },
+    ArrowLeft: { kind: "pan", dx: ZOOM_PAN_STEP, dy: 0 },
+    ArrowRight: { kind: "pan", dx: -ZOOM_PAN_STEP, dy: 0 },
+    ArrowUp: { kind: "pan", dx: 0, dy: ZOOM_PAN_STEP },
+    ArrowDown: { kind: "pan", dx: 0, dy: -ZOOM_PAN_STEP }
+  };
+  function zoomKey(key) {
+    return Object.prototype.hasOwnProperty.call(KEYS, key) ? KEYS[key] : null;
   }
 
   // core/app/rules/time.js
