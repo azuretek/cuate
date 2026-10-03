@@ -1546,14 +1546,37 @@ async function runSmoke(w) {
     w.setMinimumSize(320, 400);
     const originalTheme = nativeTheme.themeSource;
     const geometry = "(() => { const card = document.querySelector('.app-notice'); if (!card) return false; const r = card.getBoundingClientRect(); const controls = [...document.querySelectorAll('.conv-head button, .sidebar-head button, app-composer button, app-composer textarea')]; return r.width > 200 && r.left >= 0 && r.right <= innerWidth && controls.every((b) => { const q = b.getBoundingClientRect(); return !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; }); })()";
-    for (const [label, width, height, theme] of [['light', 1100, 800, 'light'], ['dark', 1100, 800, 'dark'], ['mobile', 390, 844, 'light']]) {
+    // On a phone the notice must clear EVERY control the visible surface offers, the open drawer's included: its Edit
+    // control, its rows and the conversation's own header and composer. Each state is read once it has settled, and
+    // what the card lands on is named in the report, so a failure says which control was covered rather than only that
+    // one was. The scrim is the drawer's backdrop, not a control on the surface, and the card's own buttons are its own.
+    const covered = "(() => { const card = document.querySelector('.app-notice'); if (!card) return ['no notice']; const r = card.getBoundingClientRect(); const seen = (q) => q.width > 0 && q.height > 0 && q.right > 0 && q.bottom > 0 && q.left < innerWidth && q.top < innerHeight; return [...document.querySelectorAll('button, input, select, textarea, a[href], [role=button], [role=option], .chat-row')].filter((el) => !card.contains(el) && !el.classList.contains('scrim') && getComputedStyle(el).visibility !== 'hidden').filter((el) => { const q = el.getBoundingClientRect(); return seen(q) && !(r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom); }).map((el) => (el.className || el.tagName.toLowerCase()) + ':' + (el.getAttribute('aria-label') || el.textContent.trim().slice(0, 24))); })()";
+    const pane = (want) => js("(() => { const root = document.querySelector('app-root'); if (" + JSON.stringify(want) + " === 'list') root.listOpen = true; else root.closeDrawer(); return true; })()");
+    const clear = {};
+    const listWasOpen = await js("document.querySelector('app-root').listOpen");
+    for (const [label, width, height, theme, drawer] of [['light', 1100, 800, 'light'], ['dark', 1100, 800, 'dark'], ['mobile', 390, 844, 'light', 'list'], ['mobile-conversation', 390, 844, 'light', 'conversation']]) {
       w.setSize(width, height);
       nativeTheme.themeSource = theme;
+      if (drawer) {
+        await pane(drawer);
+        await waitFor("document.querySelector('.shell')?.dataset.pane === " + JSON.stringify(drawer), 5000);
+        await pause(400); // the drawer slides on a 160ms transition; read the settled surface, not a frame of it.
+      }
       await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.11',percent:0.6,detail:'6 MB of 10 MB',canInstall:true})");
       await waitFor("Boolean(document.querySelector('.app-notice-progress'))");
-      await waitFor(geometry);
+      if (drawer) {
+        let hits = await covered();
+        for (const t0 = Date.now(); hits.length && Date.now() - t0 < 3000; hits = await covered()) await pause(100);
+        clear[label] = hits;
+      } else {
+        await waitFor(geometry);
+      }
       await shot('05-notices-' + label + '.png');
     }
+    await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(listWasOpen)));
+    report.noticeClearMobile = Object.values(clear).every((hits) => hits.length === 0);
+    if (!report.noticeClearMobile) console.error('notice covers: ' + JSON.stringify(clear));
+    report.updates = report.updates && report.noticeClearMobile;
     if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
