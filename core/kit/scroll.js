@@ -17,6 +17,10 @@ import { anchorFrom, scrollFor, revealDelta } from './rules/scroll.js';
 
 const keyOf = (el, i) => el.dataset.id ?? el.dataset.chat ?? el.dataset.key ?? String(i);
 
+// The view's size and its content's height. A scroll event that arrives while these differ from what the view last
+// was put back at is the browser's (a rotation or a rewrap clamping or carrying the old scrollTop), never the person's.
+const shapeOf = (el) => el.clientWidth + 'x' + el.clientHeight + ':' + el.scrollHeight;
+
 export class KeepScroll {
   constructor(host, { scroller, items = ':scope > *', key = keyOf, follow = false } = {}) {
     this.host = host;
@@ -29,6 +33,7 @@ export class KeepScroll {
     this.onScroll = () => this.record();
     this.resized = null;
     this.added = null;
+    this.shape = null;
     host.addController(this);
   }
 
@@ -105,8 +110,13 @@ export class KeepScroll {
 
   // A scroll that left the view where its place says it should be (this controller's own restore, or the browser
   // clamping a view that cannot reach it) keeps the place; any other is the person scrolling, and becomes the place.
+  // A scroll that arrives after the view or its content changed size, before this controller has put the view back for
+  // that change, is the layout moving under the view (a phone turning, a rewrap; issue 211): the place stays, and the resize that
+  // follows puts the view back. Read as the person's, it re-anchors a conversation to whatever item the half-turned
+  // layout has at its top, so a turn can end many messages away from where it started.
   record() {
     if (!this.el) return;
+    if (this.shape !== null && shapeOf(this.el) !== this.shape) return;
     const now = this.measure();
     if (this.anchor && Math.abs(scrollFor(this.anchor, now) - now.scrollTop) < 1) return;
     this.anchor = anchorFrom({ ...now, follow: this.follow });
@@ -116,6 +126,7 @@ export class KeepScroll {
     if (!this.el || !this.el.isConnected || !this.anchor) return;
     const next = scrollFor(this.anchor, this.measure());
     if (Math.abs(next - this.el.scrollTop) >= 1) this.el.scrollTop = next;
+    this.shape = shapeOf(this.el);
     this.reveal();
   }
 
