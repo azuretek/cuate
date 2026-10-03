@@ -43,17 +43,33 @@ enum AppIcons {
         return alternates.contains(name) ? .alternate(name) : .refused
     }
 
-    static func apply(_ icon: String, done: @escaping ([String: Any]) -> Void) {
-        let app = UIApplication.shared
-        guard let spec = spec, app.supportsAlternateIcons else { done(["applied": false, "icon": icon]); return }
+    /// The live icon behaviour, behind one value so a test can hold the choice to asking iOS for the set without a real
+    /// change: iOS answers an icon change with an alert of its own that a unit test cannot dismiss, so the device proves
+    /// the change and AppIconTests proves the bridge asks for the right set and reports what it settled on.
+    struct Runtime {
+        var supportsAlternateIcons: () -> Bool
+        var alternateIconName: () -> String?
+        var setAlternateIconName: (String?, @escaping (Error?) -> Void) -> Void
+
+        static let live = Runtime(
+            supportsAlternateIcons: { UIApplication.shared.supportsAlternateIcons },
+            alternateIconName: { UIApplication.shared.alternateIconName },
+            setAlternateIconName: { name, completion in
+                UIApplication.shared.setAlternateIconName(name, completionHandler: completion)
+            }
+        )
+    }
+
+    static func apply(_ icon: String, runtime: Runtime = .live, done: @escaping ([String: Any]) -> Void) {
+        guard let spec = spec, runtime.supportsAlternateIcons() else { done(["applied": false, "icon": icon]); return }
         let name: String?
         switch target(for: icon, spec: spec, alternates: alternates()) {
         case .refused: done(["applied": false, "icon": icon]); return
         case .primary: name = nil
         case .alternate(let alternate): name = alternate
         }
-        if app.alternateIconName == name { done(["applied": true, "icon": icon]); return }
-        app.setAlternateIconName(name) { error in
+        if runtime.alternateIconName() == name { done(["applied": true, "icon": icon]); return }
+        runtime.setAlternateIconName(name) { error in
             DispatchQueue.main.async {
                 var answer: [String: Any] = ["applied": error == nil, "icon": icon]
                 if let error { answer["detail"] = error.localizedDescription }
