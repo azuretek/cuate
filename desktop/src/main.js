@@ -702,9 +702,14 @@ async function runSmoke(w) {
   const activeBg = await js("getComputedStyle(document.querySelector('.list-tools .edit-toggle')).backgroundColor");
   const groupIds = [await rowCheck('Avery Quinn'), await rowCheck('+15555550142')];
   await waitFor("document.querySelector('.edit-count').textContent.trim() === '2 selected'");
+  // Edit, select-all, the count and the three actions share one row.
+  const editRowTops = await js("[...document.querySelectorAll('.list-tools.editing > *, .list-tools.editing .edit-actions > *')].map((el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); })");
   await editTheme('15-edit-mode');
   await js("document.querySelector('.edit-group').click()");
   await waitFor("Boolean(document.querySelector('.group-prompt .group-name-input'))");
+  await pause(900);
+  // The prompt sits on the sheet backdrop, centred in the window.
+  const prompt = await js("(() => { const p = document.querySelector('.group-prompt'); const b = p.getBoundingClientRect(); return { backdrop: p.parentElement.classList.contains('sheet-scrim') && getComputedStyle(p.parentElement).position === 'fixed', dx: Math.abs(b.left + b.width / 2 - window.innerWidth / 2), dy: Math.abs(b.top + b.height / 2 - window.innerHeight / 2) }; })()");
   await editTheme('16-group-prompt');
   await js("document.querySelector('.group-prompt .group-create').click()");
   const t1 = Date.now();
@@ -755,6 +760,8 @@ async function runSmoke(w) {
   const editChecks = {
     layout: Boolean(editLayout) && editLayout.label === 'Edit' && editLayout.first && Math.abs(editLayout.inset) < 1 && editLayout.gone && parseFloat(editLayout.radius) > 0,
     active: activeBg !== 'rgba(0, 0, 0, 0)' && activeBg !== 'transparent',
+    oneRow: editRowTops.length >= 5 && Math.max(...editRowTops) - Math.min(...editRowTops) <= 2,
+    prompt: prompt.backdrop && prompt.dx < 2 && prompt.dy < 2,
     grouped,
     modal: modal.title === 'Are you sure?' && modal.what === 'Delete 1 conversation?' && modal.backdrop && !modal.button,
     pressIsNotSlide: afterPress.open && !afterPress.hidden.includes(deleteId),
@@ -762,10 +769,20 @@ async function runSmoke(w) {
     deleted: (deletedHeld['chats.hidden'] || []).includes(deleteId) && !JSON.parse(leftNames).includes('Weekend plans'),
   };
   report.editMode = Object.values(editChecks).every(Boolean);
-  console.log('edit mode: ' + JSON.stringify({ checks: editChecks, editLayout, activeBg, groupIds, madeGroup, deleteId, modal, afterPress, afterHalf, leftNames }));
-  // The smoke's own changes go back, so every later step sees the three chats ungrouped.
-  await putSettings({ 'chats.hidden': [], 'chats.groups': [], 'chats.placement': {} });
-  await waitFor("document.querySelectorAll('.chat-row').length >= 3 && !document.querySelector('.chat-section')", 10000);
+  console.log('edit mode: ' + JSON.stringify({ checks: editChecks, editLayout, activeBg, editRowTops, prompt, groupIds, madeGroup, deleteId, modal, afterPress, afterHalf, leftNames }));
+  // The smoke's own changes go back, so every later step sees the three chats ungrouped. The page's own delete write
+  // has to have answered first: an answer is taken for the keys it wrote (settingsAfterWrite), so one landing after the
+  // reset would draw the deleted chat as hidden again.
+  await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
+  const reset = await putSettings({ 'chats.hidden': [], 'chats.groups': [], 'chats.placement': {} });
+  if (!reset.ok) throw new Error('the server refused the chat arrangement reset: ' + reset.status);
+  try {
+    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && !document.querySelector('.chat-section')", 10000);
+  } catch (e) {
+    const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], groups: s['chats.groups'], placement: s['chats.placement'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
+    console.error('chat arrangement reset: ' + JSON.stringify({ page, held: await held() }));
+    throw e;
+  }
 
   // The Edit control stays one line (it replaced Add group, which issue 122 held to this): at the smallest window the
   // shell allows and at every text size from 50% to 300%, its label renders as one line, in full. The line count is

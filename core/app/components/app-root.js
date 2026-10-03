@@ -842,7 +842,7 @@ class AppRoot extends KitElement {
 
   groupPrompt() {
     const n = this.selectionCount();
-    return html`<div class="confirm-scrim" @click=${(e) => { if (e.target === e.currentTarget) this.naming = false; }}>
+    return html`<div class="sheet-scrim confirm-scrim" @click=${(e) => { if (e.target === e.currentTarget) this.naming = false; }}>
       <section class="confirm-modal group-prompt" role="dialog" aria-modal="true" aria-labelledby="group-prompt-title">
         <h2 id="group-prompt-title">Group ${n} conversation${n === 1 ? '' : 's'}</h2>
         <input class="group-name-input" type="text" placeholder="Name (optional)" aria-label="Group name, optional" @keydown=${this.onGroupNameKey}>

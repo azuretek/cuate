@@ -250,7 +250,7 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
    field takes the rest, and the box takes the accent while either has focus. */
 .search-box { flex: 1; display: flex; align-items: stretch; min-width: 0; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
 .search-box:focus-within { border-color: var(--color-accent); }
-.search-mode { flex: none; max-width: 40%; border: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-sunken); color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-xs); padding: 0 var(--space-1); cursor: pointer; }
+.search-mode { flex: none; border: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-sunken); color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-xs); padding: 0 var(--space-1); cursor: pointer; }
 .chat-search { flex: 1; min-width: 0; border: 0; background: none; color: var(--color-fg); padding: var(--space-1) var(--space-2); }
 .chat-search:focus, .search-mode:focus { outline: none; }
 /* Each committed term is a chip: its own mode, its text and its own remove control, padded from the tokens and
@@ -346,8 +346,9 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
 .edit-toggle:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
 .edit-all { display: inline-flex; align-items: center; }
 .edit-count { color: var(--color-fg-muted); font-size: var(--font-size-sm); white-space: nowrap; }
+.list-tools.editing { gap: var(--space-1); }
 .edit-actions { display: inline-flex; align-items: center; gap: var(--space-1); margin-left: auto; }
-.edit-actions .text-button { font-size: var(--font-size-sm); }
+.edit-actions .text-button { font-size: var(--font-size-sm); padding: var(--space-1); }
 .text-button.danger { color: var(--color-danger); }
 .text-button:disabled { opacity: 0.4; cursor: default; background: none; }
 .chat-check { flex: none; margin: 0; }
