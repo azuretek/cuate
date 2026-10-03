@@ -6,3 +6,5 @@ allowBuilds:
   esbuild: true
   sharp: true
   electron-winstaller: false
+patchedDependencies:
+  dmg-builder@26.16.1: patches/dmg-builder@26.16.1.patch
