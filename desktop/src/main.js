@@ -335,10 +335,14 @@ async function runSmoke(w) {
       return { sel, icon: i.dataset.icon, mask: (s.maskImage || s.webkitMaskImage || '').slice(0, 30), paint: s.backgroundColor, color: getComputedStyle(b).color, width: r.width, size: parseFloat(root.getPropertyValue('--icon-size')), text: b.textContent.trim() };
     });
   })()`);
+  // Each read waits for the page to report the scheme it was switched to: a fixed 300ms pause read the dark icons
+  // still painted light on a busy macOS runner, which failed the follows check with nothing wrong in the icons.
   nativeTheme.themeSource = 'light';
+  await waitFor("!matchMedia('(prefers-color-scheme: dark)').matches", 5000);
   await pause(300);
   const iconsLight = await iconRead();
   nativeTheme.themeSource = 'dark';
+  await waitFor("matchMedia('(prefers-color-scheme: dark)').matches", 5000);
   await pause(300);
   const iconsDark = await iconRead();
   nativeTheme.themeSource = 'light';
