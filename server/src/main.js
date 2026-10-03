@@ -44,7 +44,11 @@ const HELP = `usage: node server/src/main.js <command> [--data DIR]
   run                                                              start the server
   check [--url URL]                                                with a token on stdin: does a server answer and read
   service install [--tailscale] [--node PATH]                      run it at login and after a crash (macOS)
+  service install --release [--version V] [--install-root DIR]     the same, from a verified release under the install root
   service status|restart|update|remove                             look after that service
+  service update --release                                         an installed server: check releases now and report
+  service update --pause|--resume                                  stop or restart installs (a paused server still checks)
+  update finish                                                    the installed server runs this itself after a switch
 data folder: ${dataDir}`;
 
 const die = (msg) => {
