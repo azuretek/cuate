@@ -421,6 +421,22 @@ test('a pause stops installs: the server still checks and installs nothing, from
   updateState(s.L, (st) => { st.paused = false; });
 });
 
+test('a LaunchAgent whose Node is gone refuses the switch before anything is downloaded, and says why', async (t) => {
+  const s = await installed(t);
+  s.gh.add(build(2));
+  const before = presentVersions(s.L);
+  const assetsBefore = s.gh.fetched.filter((u) => u !== releasesUrl(repo)).length;
+  const u = createUpdater({ L: s.L, dataDir: s.dataDir, log: s.log, running: release(1).version, repo, slug, fetchImpl: s.gh.fetchImpl,
+    serviceNode: () => 'the LaunchAgent runs /gone/node, which no longer exists', handoff: async () => assert.fail('no switch the service cannot restart into') });
+  const r = await u.check();
+  assert.deepEqual(r, { state: 'refused', version: release(2).version, reason: 'service_node' });
+  assert.equal(s.gh.fetched.filter((u) => u !== releasesUrl(repo)).length, assetsBefore, 'nothing was downloaded');
+  assert.deepEqual(presentVersions(s.L), before);
+  assert.equal(currentVersion(s.L), release(1).version);
+  assert.match(readState(s.L).outcome.detail, /no longer exists/);
+  assert.equal(s.events('update.refused').at(-1).reason, 'service_node');
+});
+
 test('candidate probation refuses a send until health is committed', async (t) => {
   let pending = true;
   const b = await boot({ sending: true, updatePending: () => pending });
