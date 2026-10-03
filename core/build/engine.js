@@ -1886,6 +1886,7 @@ var engine = (() => {
     if (own && typeof own === "object") for (const group of THEME_GROUPS) put(group, own[group]);
     const colors = theme.color && theme.color[scheme];
     if (colors?.fg) put("color", { "bg-raised-fg": colors.fg, "selection-fg": colors.fg });
+    if (colors?.["fg-muted"]) put("color", { placeholder: colors["fg-muted"] });
     put("color", colors);
     return [...out];
   }

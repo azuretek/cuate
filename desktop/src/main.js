@@ -709,12 +709,37 @@ async function runSmoke(w) {
   const customPicked = await pick('\u{1F389}');
   await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
   const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
+  // Any emoji someone else reacted with arrives as a reaction on the message it names (issue 188): the fixture's raised
+  // hands on your own message, drawn at the bubble's corner like a tapback and not marked as yours, on a desktop window
+  // and at a phone's width, light and dark.
+  const EMOJI_TARGET = '.bubble-row[data-id="FAKE-0009"]';
+  const emojiOn = () => js(`(() => { const row = document.querySelector(${q(EMOJI_TARGET)}); if (!row) return null; row.querySelector('.bubble').scrollIntoView({ block: 'center' }); return [...row.querySelectorAll('.reaction')].map((r) => ({ text: r.textContent.trim(), mine: r.classList.contains('mine') })); })()`);
+  const emojiDesktop = await emojiOn();
+  await pause(1200); // the refused pick's failure mark on the emoji control settles back to idle before the capture
+  await both('14e-emoji-reaction');
+  // A phone's width is emulated, as the phone checks below do, since the window has a minimum width. The conversation is
+  // the pane there, and the drawer is left as it was found, since a later check opens it.
+  const emojiListOpen = await js("document.querySelector('app-root').listOpen");
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await js("(() => { const root = document.querySelector('app-root'); if (root.listOpen) root.closeDrawer(); return true; })()");
+  await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'", 5000);
+  await pause(400);
+  const emojiPhone = await emojiOn();
+  await both('14f-emoji-reaction-phone');
+  await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
+  await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(emojiListOpen)}; return true; })()`);
+  await pause(300);
+  const shows = (list) => Array.isArray(list) && list.some((r) => r.text.includes('\u{1F64C}') && !r.mine);
+  const receivedEmoji = shows(emojiDesktop) && shows(emojiPhone);
+  console.log('emoji reaction: ' + JSON.stringify({ desktop: emojiDesktop, phone: emojiPhone }));
   const reactChecks = {
     menu: Boolean(theirMenu) && Boolean(theirMenu.time) && theirMenu.datetime.length > 0 && theirMenu.labels.join('|') === 'Reply in thread|React' && theirMenu.icons.join('|') === 'reply|smile-plus' && theirMenu.drawn && theirMenu.tapbacks === 0,
     inside: Boolean(theirMenu) && theirMenu.inside,
     ownNoReply: Boolean(ownMenu) && Boolean(ownMenu.time) && ownMenu.labels.join('|') === 'React',
     composerPanel: panel.composer && !panel.inList && !panel.menu && panel.targeted && panel.clear,
-    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom,
+    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom, receivedEmoji,
   };
   report.react = Object.values(reactChecks).every(Boolean);
   console.log('react: ' + JSON.stringify({ checks: reactChecks, theirMenu, ownMenu, panel, customPicked }));
@@ -2133,6 +2158,39 @@ async function runSmoke(w) {
   await pause(300);
   report.dismiss = Object.keys(dismissChecks).length === dismissPanels.length * 2 && Object.values(dismissChecks).every((c) => c.opened && c.closed && c.hits === 0 && c.held && c.escape);
   console.log('dismiss: ' + JSON.stringify(dismissChecks));
+
+  // Placeholder text is dimmed from its token (issue 185): every visible field's hint resolves to the placeholder token
+  // in the scheme in force, and never to the colour the field draws your own text in, in light and dark, at desktop
+  // width and at phone width with the list and with the conversation in front.
+  const readPlaceholders = () => js("(() => { const probe = document.createElement('i'); probe.style.color = 'var(--color-placeholder)'; document.body.append(probe); const want = getComputedStyle(probe).color; probe.remove(); return [...document.querySelectorAll('input[placeholder], textarea[placeholder]')].filter((f) => f.placeholder && f.getClientRects().length > 0).map((f) => ({ field: f.getAttribute('aria-label') || f.tagName, hint: getComputedStyle(f, '::placeholder').color, text: getComputedStyle(f).color, want })); })()");
+  const placeholderChecks = {};
+  const placeholderPass = async (width, phone) => {
+    for (const scheme of ['light', 'dark']) {
+      nativeTheme.themeSource = scheme;
+      await waitFor('document.documentElement.dataset.scheme === ' + JSON.stringify(scheme), 5000);
+      const fields = [];
+      for (const list of phone ? [true, false] : [null]) {
+        if (list !== null) await js('(() => { document.querySelector("app-root").listOpen = ' + list + '; return true; })()');
+        await pause(phone ? 450 : 150);
+        fields.push(...await readPlaceholders());
+        await shot('21-placeholder-' + width + (list === null ? '' : list ? '-list' : '-conversation') + '-' + scheme + '.png');
+      }
+      const names = new Set(fields.map((f) => f.field));
+      const ok = names.has('Search conversations') && names.has('Message') && fields.every((f) => f.hint === f.want && f.hint !== f.text);
+      placeholderChecks[width + ':' + scheme] = { ok, fields };
+      if (!ok) console.error('placeholder failed: ' + width + ' ' + scheme + ' ' + JSON.stringify(fields));
+    }
+  };
+  await placeholderPass('desktop', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 375', 5000);
+  await placeholderPass('phone', true);
+  await js("(() => { document.querySelector('app-root').listOpen = false; return true; })()");
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  report.placeholder = Object.keys(placeholderChecks).length === 4 && Object.values(placeholderChecks).every((c) => c.ok);
+  console.log('placeholder: ' + JSON.stringify(placeholderChecks));
 
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
