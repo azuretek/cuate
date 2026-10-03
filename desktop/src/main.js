@@ -2170,7 +2170,9 @@ async function runSmoke(w) {
   // or on the modal backdrop drawn over it. Probes on it count anything that reaches it.
   const dismissTarget = (panel) => js('(() => {'
     + ' const panel = document.querySelector(' + dq(panel) + ');'
-    + ' const cands = [".chat-row:not(.selected)", ".sidebar-head .gear-button", "app-conversation .conv-back"];'
+    // An open thread puts its close control where the way back was (issue 195), so the contact's avatar beside it is
+    // the control a press outside the thread lands on there.
+    + ' const cands = [".chat-row:not(.selected)", ".sidebar-head .gear-button", "app-conversation .conv-back", "app-conversation .conv-head .avatar"];'
     + ' for (const sel of cands) {'
     + '   for (const el of document.querySelectorAll(sel)) {'
     + '     const b = el.getBoundingClientRect();'
