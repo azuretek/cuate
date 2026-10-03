@@ -540,6 +540,9 @@ app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--
   app-notices, .app-window[data-platform="darwin"] app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-bg); }
   .app-notice-stack { align-items: stretch; margin: 0; padding: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--space-3)) calc(env(safe-area-inset-right, calc(var(--space-1) * 0)) + var(--space-4)) var(--space-5) calc(env(safe-area-inset-left, calc(var(--space-1) * 0)) + var(--space-4)); }
   .app-window[data-platform="darwin"] .app-notice-stack { padding-top: calc(var(--size-window-strip) + var(--space-3)); }
+  /* On macOS the band then holds the traffic-light strip, so the headers below it drop their own and no gap opens. */
+  .app-window[data-platform="darwin"]:has(.app-notice) .sidebar-head,
+  .app-window[data-platform="darwin"]:has(.app-notice) .conv-head { height: var(--size-header); padding-block-start: calc(var(--space-1) * 0); }
   .app-notice-stack:not(:has(.app-notice)) { display: none; }
   .app-notice { width: auto; }
 }
