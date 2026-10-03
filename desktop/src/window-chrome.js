@@ -14,6 +14,11 @@ export const WINDOW_STRIP_HEIGHT = 32;
 export const MAC_LIGHTS_X = 16;
 export const MAC_LIGHTS_PX = 16;
 
+// How far Windows and Linux set the app's own window controls in from the window's top edge and from its right edge,
+// the one value both offsets share so the controls sit square in the corner. It is the token size.window-control-inset,
+// which desktop/test/window-chrome.test.js holds to this, and the window-chrome proof measures it on the drawn page.
+export const WINDOW_CONTROL_INSET = 6;
+
 // The BrowserWindow options for a platform. macOS keeps its traffic lights, so it asks for the inset title bar and
 // places them over the app's own surface; Windows and Linux draw no platform frame at all, because the app draws the
 // window controls in its own header there.
