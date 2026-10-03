@@ -174,7 +174,7 @@ class AppSettings extends KitElement {
         <span class="setting-label">Import a theme from a URL</span>
         <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/r/themes/..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy}
           @input=${(e) => { this.importUrl = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') this.importUrlPress(e); }}>
-        <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${!this.importUrl.trim()} @click=${press(this.importUrlPress)}>Import</button>
+        <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${!this.importUrl.trim()} @click=${this.importUrlPress}>Import</button>
         ${this.urlNote ? html`<p class="theme-import-note theme-url-note" role="status">${this.urlNote}</p>` : nothing}
       </div>
       <div class="setting-row theme-import">

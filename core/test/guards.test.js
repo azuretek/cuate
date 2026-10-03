@@ -245,4 +245,5 @@ test('no component declares a property with the name of one of its methods', () 
     const props = [...(block[1] || block[2]).matchAll(/(\w+):\s*\{/g)].map((m) => m[1]);
     const methods = new Set([...src.matchAll(/^ {2}(?:async |get |set |static )?(\w+)\s*\([^)]*\)\s*\{/gm)].map((m) => m[1]));
     for (const p of props) assert.ok(!methods.has(p), f + ': the property ' + p + ' would replace the method ' + p + '()');
-  }});
+  }
+});
