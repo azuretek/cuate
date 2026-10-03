@@ -621,56 +621,154 @@ async function runSmoke(w) {
   console.log('attach menu: ' + JSON.stringify({ checks: attachChecks, menu: attachMenu }));
   await shot('03b-after-file-send.png');
 
-  // Reactions and threaded replies (issue 138). A right click opens a message's menu; a standard tapback goes out
-  // through the server and shows on the bubble as yours, and choosing it again takes it off. The hover control opens
-  // the same menu, whose full emoji panel offers any emoji, and one the engine cannot send is refused under the
-  // message. Reply quotes the parent above the field, the sent reply shows its parent quoted, and pressing the quote
-  // goes to the parent and lights it.
+  // A message's actions (issues 138 and 169). A right click, or a long click with the mouse, opens one menu on a
+  // message: its time, then Reply in thread and React as icons from the shared set, and on your own message the time and
+  // React only. React opens the composer's own emoji panel, never a second picker in the list; a standard tapback chosen
+  // there goes out through the server and shows on the bubble as yours, choosing it again takes it off, and an emoji the
+  // engine cannot send is refused under the message. Reply in thread fades every message outside the thread, the
+  // composer says it is replying without repeating the message, and cancelling brings the conversation back.
   const TARGET = 'FAKE-0013';
+  const OWN = 'FAKE-0012';
   const REPLY = 'Replying from the desktop smoke';
   const row = '.bubble-row[data-id="' + TARGET + '"]';
+  const ownRow = '.bubble-row[data-id="' + OWN + '"]';
   const q = (s) => JSON.stringify(s);
-  await js(`(() => { const b = document.querySelector(${q(row + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 })); return true; })()`);
+  const rightClick = (sel) => js(`(() => { const b = document.querySelector(${q(sel + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 })); return true; })()`);
+  const escape = () => js("(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true; })()");
+  const menuOf = (sel) => js(`(() => {
+    const m = document.querySelector(${q(sel + ' .message-menu')});
+    if (!m) return null;
+    const list = document.querySelector('.messages').getBoundingClientRect();
+    const r = m.getBoundingClientRect();
+    const icons = [...m.querySelectorAll('.message-action .icon')];
+    return {
+      time: (m.querySelector('.message-time')?.textContent || '').trim(), datetime: m.querySelector('.message-time')?.getAttribute('datetime') || '',
+      labels: [...m.querySelectorAll('.message-action')].map((x) => x.getAttribute('aria-label')), icons: icons.map((i) => i.dataset.icon),
+      drawn: icons.every((i) => { const s = getComputedStyle(i); return (s.maskImage || s.webkitMaskImage || 'none') !== 'none' && i.getBoundingClientRect().width > 0; }),
+      tapbacks: m.querySelectorAll('.tapback').length, inside: r.top >= list.top - 1 && r.bottom <= list.bottom + 1,
+    };
+  })()`);
+  const both = async (name) => {
+    await pause(250);
+    await shot(name + '-light.png');
+    nativeTheme.themeSource = 'dark';
+    await pause(400);
+    await shot(name + '-dark.png');
+    nativeTheme.themeSource = 'light';
+    await pause(250);
+  };
+  await rightClick(row);
   await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu')}))`, 10000);
-  await pause(250);
-  const reactMenu = await js(`(() => { const m = document.querySelector(${q(row + ' .message-menu')}); const list = document.querySelector('.messages').getBoundingClientRect(); const r = m.getBoundingClientRect(); return { tapbacks: m.querySelectorAll('.tapback-row .tapback[role=menuitemcheckbox]').length, more: Boolean(m.querySelector('.tapback-more')), reply: [...m.querySelectorAll('.menu-item')].some((b) => b.textContent.trim() === 'Reply'), inside: r.top >= list.top - 1 && r.bottom <= list.bottom + 1, side: m.dataset.side }; })()`);
-  await shot('13-message-menu-light.png');
-  nativeTheme.themeSource = 'dark';
-  await pause(400);
-  await shot('13b-message-menu-dark.png');
-  nativeTheme.themeSource = 'light';
-  await js(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')}).click()`);
+  const theirMenu = await menuOf(row);
+  await both('13-message-menu');
+  await escape();
+  await waitFor(`!document.querySelector(${q(row + ' .message-menu')})`, 5000);
+  // A long click: the main mouse button held on your own message, then released, opens the menu and presses nothing.
+  await js(`(() => { const b = document.querySelector(${q(ownRow + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 3, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1, clientX: r.left + 6, clientY: r.top + 6 })); return true; })()`);
+  await pause(700);
+  await js(`(() => { const b = document.querySelector(${q(ownRow + ' .bubble')}); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 3, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 0, clientX: r.left + 6, clientY: r.top + 6 })); b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })); return true; })()`);
+  await waitFor(`Boolean(document.querySelector(${q(ownRow + ' .message-menu')}))`, 10000);
+  const ownMenu = await menuOf(ownRow);
+  await both('13c-own-message-menu');
+  await escape();
+  // React opens the composer's emoji panel; the panel's pick is the reaction.
+  const reactFrom = async (query) => {
+    await rightClick(row);
+    await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu .message-action[aria-label="React"]')}))`, 10000);
+    await js(`document.querySelector(${q(row + ' .message-menu .message-action[aria-label="React"]')}).click()`);
+    await waitFor("Boolean(document.querySelector('app-composer app-emoji-picker .emoji-grid .emoji-cell'))", 10000);
+    await pause(300); // the list makes room above the panel and brings the message into it
+    const state = await js(`({ composer: Boolean(document.querySelector('app-composer app-emoji-picker')), inList: Boolean(document.querySelector('.messages app-emoji-picker')), menu: Boolean(document.querySelector(${q(row + ' .message-menu')})), targeted: document.querySelector(${q(row)}).classList.contains('targeted'), clear: document.querySelector(${q(row + ' .bubble')}).getBoundingClientRect().bottom <= document.querySelector('app-composer .emoji-picker').getBoundingClientRect().top })`);
+    await js(`(() => { const f = document.querySelector('app-composer .emoji-search'); f.value = ${q(query)}; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await pause(250);
+    return state;
+  };
+  const pick = (glyph) => js(`(() => { const cells = [...document.querySelectorAll('app-composer app-emoji-picker .emoji-grid .emoji-cell')]; const c = cells.find((x) => x.textContent === ${q(glyph)}); if (!c) return null; c.click(); return c.textContent; })()`);
+  const panel = await reactFrom('thumbs up');
+  await both('14-react-panel');
+  // Reactions float at the bubble's top outer corner with no background, and adding one moves no message (issue 182).
+  const layout = () => js("[...document.querySelectorAll('.messages .bubble-row')].map((r) => [r.dataset.id, r.offsetTop, r.offsetHeight])");
+  const corner = (sel) => js(`(() => { const body = document.querySelector(${q(sel + ' .bubble-body')}); const re = body && body.querySelector('.reactions'); if (!re) return null; const b = body.getBoundingClientRect(); const r = re.getBoundingClientRect(); const s = getComputedStyle(re.querySelector('.reaction')); return { dx: Math.round(r.left + r.width / 2 - b.left), dy: Math.round(r.top + r.height / 2 - b.top), w: Math.round(b.width), bg: s.backgroundColor, border: s.borderTopWidth, shadow: s.boxShadow }; })()`);
+  const beforeReact = await layout();
+  const liked = await pick('\u{1F44D}');
   await waitFor(`[...document.querySelectorAll(${q(row + ' .reaction.mine')})].some((r) => r.textContent.includes('\u{1F44D}'))`, 10000);
-  const reacted = !(await js(`Boolean(document.querySelector(${q(row + ' .message-menu')}))`));
-  await pause(300);
-  await shot('14-reacted-light.png');
-  nativeTheme.themeSource = 'dark';
-  await pause(400);
-  await shot('14b-reacted-dark.png');
-  nativeTheme.themeSource = 'light';
-  await js(`(() => { const b = document.querySelector(${q(row + ' .bubble')}); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })); return true; })()`);
-  await waitFor(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')})?.getAttribute('aria-checked') === 'true'`, 10000);
-  await js(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')}).click()`);
+  const reacted = Boolean(liked) && await js("!document.querySelector('app-composer app-emoji-picker') && !document.querySelector('.message-menu') && !document.querySelector('.bubble-row.targeted')");
+  const afterReact = await layout();
+  const receivedCorner = await corner(row);
+  const sentCorner = await corner(ownRow);
+  const floats = (c, side) => Boolean(c) && Math.abs(c.dy) <= 4 && (side === 'right' ? Math.abs(c.dx - c.w) <= 6 : Math.abs(c.dx) <= 6) && c.bg === 'rgba(0, 0, 0, 0)' && c.border === '0px' && c.shadow === 'none';
+  const reactionGeometry = { received: floats(receivedCorner, 'right'), sent: floats(sentCorner, 'left'), noShift: JSON.stringify(beforeReact) === JSON.stringify(afterReact) };
+  console.log('reaction geometry: ' + JSON.stringify({ checks: reactionGeometry, received: receivedCorner, sent: sentCorner }));
+  await both('14-reacted');
+  await reactFrom('thumbs up');
+  await pick('\u{1F44D}');
   await waitFor(`!document.querySelector(${q(row + ' .reaction.mine')})`, 10000);
-  const unreacted = await js(`!document.querySelector(${q(row + ' .message-menu')}) && !document.querySelector(${q(row + ' .reaction.mine')})`);
-  await js(`document.querySelector(${q(row + ' .message-action[aria-label="React"]')}).click()`);
-  await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu .tapback-more')}))`, 10000);
-  await js(`document.querySelector(${q(row + ' .message-menu .tapback-more')}).click()`);
-  await waitFor(`Boolean(document.querySelector(${q(row + ' app-emoji-picker .emoji-grid .emoji-cell')}))`, 10000);
-  await js(`(() => { const f = document.querySelector(${q(row + ' app-emoji-picker .emoji-search')}); f.value = 'party'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  await pause(250);
-  const customPicked = await js(`(() => { const cells = [...document.querySelectorAll(${q(row + ' app-emoji-picker .emoji-grid .emoji-cell')})]; const c = cells.find((x) => x.textContent === '\u{1F389}') || cells[0]; if (!c) return null; const t = c.textContent; c.click(); return t; })()`);
+  const unreacted = await js("!document.querySelector('app-composer app-emoji-picker')");
+  await reactFrom('party');
+  const customPicked = await pick('\u{1F389}');
   await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
-  const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector(${q(row + ' app-emoji-picker')})`);
-  const reactChecks = { menu: reactMenu.tapbacks === 6 && reactMenu.more && reactMenu.reply, inside: reactMenu.inside, reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom };
+  const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
+  const reactChecks = {
+    menu: Boolean(theirMenu) && Boolean(theirMenu.time) && theirMenu.datetime.length > 0 && theirMenu.labels.join('|') === 'Reply in thread|React' && theirMenu.icons.join('|') === 'reply|smile-plus' && theirMenu.drawn && theirMenu.tapbacks === 0,
+    inside: Boolean(theirMenu) && theirMenu.inside,
+    ownNoReply: Boolean(ownMenu) && Boolean(ownMenu.time) && ownMenu.labels.join('|') === 'React',
+    composerPanel: panel.composer && !panel.inList && !panel.menu && panel.targeted && panel.clear,
+    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom,
+  };
   report.react = Object.values(reactChecks).every(Boolean);
-  console.log('react: ' + JSON.stringify({ checks: reactChecks, menu: reactMenu, customPicked }));
+  console.log('react: ' + JSON.stringify({ checks: reactChecks, theirMenu, ownMenu, panel, customPicked }));
 
-  await js(`document.querySelector(${q(row + ' .message-action[aria-label="Reply"]')}).click()`);
-  await waitFor("(document.querySelector('app-composer .composer-reply .reply-text')?.textContent || '').includes('See you soon')", 10000);
-  const replyFocused = await js("document.activeElement === document.querySelector('app-composer textarea')");
-  await pause(200);
-  await shot('15-replying-light.png');
+  // Reply in thread opens the thread as its own conversation over the rest, which blurs behind it; the composer repeats
+  // none of the message (issues 169 and 183).
+  const inThread = '.thread-view ' + row;
+  const startReply = async () => {
+    await rightClick(row);
+    await waitFor(`Boolean(document.querySelector(${q(row + ' .message-action[aria-label="Reply in thread"]')}))`, 10000);
+    await js(`document.querySelector(${q(row + ' .message-action[aria-label="Reply in thread"]')}).click()`);
+    await waitFor(`document.querySelector('.conv-body')?.dataset.thread === ${q(TARGET)} && Boolean(document.querySelector(${q(inThread)}))`, 10000);
+    await pause(400); // the thread arrives on --motion-normal; read it settled, not a frame of it.
+  };
+  const focusState = () => js(`(() => {
+    const view = document.querySelector('.thread-view');
+    const list = document.querySelector('.messages');
+    const c = document.querySelector('app-composer');
+    const sharp = view ? [...view.querySelectorAll('.bubble-row')] : [];
+    return {
+      thread: document.querySelector('.conv-body').dataset.thread || null,
+      ids: sharp.map((r) => r.dataset.id), sharp: sharp.every((r) => { for (let e = r; e; e = e.parentElement) if (getComputedStyle(e).filter !== 'none') return false; return true; }),
+      blurred: getComputedStyle(list).filter.includes('blur'), inert: list.inert, behind: list.querySelectorAll('.bubble-row').length,
+      indicator: (c.querySelector('.composer-thread')?.textContent || '').trim(), repeats: c.textContent.includes('See you soon'), banner: Boolean(c.querySelector('.composer-reply')),
+      focused: document.activeElement === c.querySelector('textarea'), animation: view ? getComputedStyle(view).animationName : null, labels: document.querySelectorAll('.messages .reply-link').length + [...list.querySelectorAll('.bubble-row')].filter((r) => /Reply to/.test(r.textContent)).length,
+    };
+  })()`);
+  await pause(1200); // the refused reaction's failure mark on the emoji button runs out before the capture
+  // Motion is pinned both ways rather than inherited: a Windows runner reports reduced motion of its own.
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await startReply();
+  const focused = await focusState();
+  await both('15-thread-focus');
+  await js("document.querySelector('app-composer .composer-thread button[aria-label=\"Cancel reply\"]').click()");
+  await waitFor("!document.querySelector('.conv-body').dataset.thread && !document.querySelector('.thread-view')", 5000);
+  await pause(400);
+  const cancelled = await focusState();
+  await shot('15b-thread-cancelled-light.png');
+  // Reduced motion keeps the thread without its arrival animation.
+  await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await startReply();
+  const still = await focusState();
+  await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { media: '', features: [] });
+  const threadChecks = {
+    view: focused.thread === TARGET && focused.ids.join('|') === TARGET && focused.sharp && focused.blurred && focused.inert && focused.behind > 1,
+    noBanner: focused.indicator === 'Replying in thread' && !focused.repeats && !focused.banner,
+    noLabels: focused.labels === 0,
+    focused: focused.focused,
+    restored: !cancelled.thread && !cancelled.blurred && !cancelled.inert && !cancelled.indicator && cancelled.ids.length === 0,
+    reduced: still.animation === 'none' && focused.animation === 'thread-in' && still.blurred,
+  };
+  console.log('thread view: ' + JSON.stringify({ checks: threadChecks, focused, cancelled, still }));
+  const replyFocused = Object.values(threadChecks).every(Boolean);
+
   // The message box grows while the conversation is scrolled back and while it is at its end, and the conversation keeps
   // its place through both (issues 139 and 142). The reply is typed as real keys, Shift+Enter between its lines, with the
   // conversation scrolled back: the first message in view must stay within 2px, the reply's quote must stay above the
@@ -699,7 +797,7 @@ async function runSmoke(w) {
       scrollTop: Math.round(m.scrollTop), fromEnd: Math.round(m.scrollHeight - m.clientHeight - m.scrollTop),
       text: t.value, start: t.selectionStart, end: t.selectionEnd, focused: document.activeElement === t,
       h: t.offsetHeight, max: parseFloat(s.maxHeight), hidden: t.scrollHeight - t.clientHeight, overflow: s.overflowY,
-      quote: document.querySelector('app-composer .composer-reply .reply-text')?.textContent || '',
+      thread: document.querySelector('.conv-body').dataset.thread || '', indicator: Boolean(document.querySelector('app-composer .composer-thread')),
     };
   })()`);
   const fits = (s) => s.hidden <= 0 || (s.overflow === 'auto' && Math.abs(s.h - s.max) < 1);
@@ -738,7 +836,7 @@ async function runSmoke(w) {
     scrolledBack: backBefore.scrollTop > 0 && backBefore.fromEnd > 100,
     grewBack: backGrown.h > backBefore.h * 2 && backGrown.text === BACK.join('\n') && backGrown.start === backGrown.text.length && backGrown.end === backGrown.text.length && backGrown.focused,
     placeOnGrowth: sameRow(backGrown, backBefore),
-    quoteKept: [backGrown, ...backSteps, endGrown, endResized].every((s) => s.quote.includes('See you soon')),
+    threadKept: [backGrown, ...backSteps, endGrown, endResized].every((s) => s.thread === TARGET && s.indicator),
     placeOnResize: backSteps.every((s) => sameRow(s, backGrown)),
     draftOnResize: backSteps.every((s) => s.text === backGrown.text && s.start === 6 && s.end === 19),
     fitsEveryWidth: [backGrown, ...backSteps].every(fits),
@@ -749,9 +847,9 @@ async function runSmoke(w) {
   report.composerGrows = report.composerGrows && Object.values(keepChecks).every(Boolean);
   console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
-  const replySel = `[...document.querySelectorAll('.bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
-  await waitFor(`Boolean(${replySel}?.querySelector('.reply-link'))`, 20000);
-  const replied = await js(`(() => { const r = ${replySel}; const quote = r.querySelector('.reply-link'); return { quote: quote.textContent, enabled: !quote.disabled, cleared: !document.querySelector('app-composer .composer-reply') }; })()`);
+  const replySel = `[...document.querySelectorAll('.messages .bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
+  await waitFor(`Boolean(${replySel}?.querySelector('.reply-mark'))`, 20000);
+  const replied = await js(`(() => { const r = ${replySel}; const mark = r.querySelector('.reply-mark'); return { id: r.dataset.id, quote: mark.getAttribute('aria-label'), text: r.textContent, enabled: !mark.disabled, cleared: !document.querySelector('app-composer .composer-thread') && !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') }; })()`);
   await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
   await pause(300);
   await shot('16-replied-light.png');
@@ -759,12 +857,17 @@ async function runSmoke(w) {
   await pause(400);
   await shot('16b-replied-dark.png');
   nativeTheme.themeSource = 'light';
-  await js(`${replySel}.querySelector('.reply-link').click()`);
-  await waitFor(`document.querySelector(${q(row)})?.classList.contains('flash')`, 5000);
-  const wentTo = await js(`(() => { const r = document.querySelector(${q(row)}).getBoundingClientRect(); const l = document.querySelector('.messages').getBoundingClientRect(); return r.bottom > l.top && r.top < l.bottom; })()`);
-  const replyChecks = { focused: replyFocused, relationship: !replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn'), enabled: replied.enabled, cleared: replied.cleared, wentTo };
-  report.reply = Object.values(replyChecks).every(Boolean);
-  console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied }));
+  // The reply's mark opens its thread, and the reply sent from the thread is in it, after its first message.
+  await js(`${replySel}.querySelector('.reply-mark').click()`);
+  await waitFor(`Boolean(document.querySelector(${q('.thread-view .bubble-row[data-id="' + TARGET + '"]')}))`, 5000);
+  await pause(400);
+  const landed = await js(`[...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id)`);
+  await both('16c-thread-with-reply');
+  await escape();
+  await waitFor("!document.querySelector('.thread-view')", 5000);
+  const replyChecks = { focused: replyFocused, relationship: !replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn') && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2 };
+  report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
+  console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed }));
 
   // Pictures (issue 126): a received picture and a staged one both show an aspect-correct, dressed preview, and the
   // viewer opens over the sheet's own blurred, darkened backdrop. The desktop drives the viewer with real mouse input
@@ -1765,6 +1868,35 @@ async function runSmoke(w) {
   report.phone = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const scrim = document.querySelector('.scrim'); return r.right <= 0 && (!scrim || getComputedStyle(scrim).visibility === 'hidden'); })()");
   await shot('08-phone-conversation.png');
 
+  // A message's menu at phone width (issue 169): a finger held on someone else's message opens it with the time, Reply
+  // in thread and React, then Reply in thread fades every message outside the thread. Light and dark of each.
+  const phoneRow = '.bubble-row[data-id="FAKE-0013"]';
+  const touchAt = (type) => js(`(() => { const b = document.querySelector(${JSON.stringify(phoneRow + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent(${JSON.stringify(type)}, { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', isPrimary: true, button: 0, buttons: ${type === 'pointerdown' ? 1 : 0}, clientX: r.left + 8, clientY: r.top + 8 })); return true; })()`);
+  const phoneBoth = async (name) => {
+    await pause(300);
+    await shot(name + '-light.png');
+    nativeTheme.themeSource = 'dark';
+    await pause(400);
+    await shot(name + '-dark.png');
+    nativeTheme.themeSource = 'light';
+    await pause(250);
+  };
+  await touchAt('pointerdown');
+  await pause(700);
+  await touchAt('pointerup');
+  await waitFor(`Boolean(document.querySelector(${JSON.stringify(phoneRow + ' .message-menu')}))`, 10000);
+  const phoneMenu = await js(`(() => { const m = document.querySelector(${JSON.stringify(phoneRow + ' .message-menu')}); const r = m.getBoundingClientRect(); return { labels: [...m.querySelectorAll('.message-action')].map((x) => x.getAttribute('aria-label')), time: (m.querySelector('.message-time')?.textContent || '').trim(), inView: r.left >= 0 && r.right <= window.innerWidth }; })()`);
+  await phoneBoth('08b-phone-message-menu');
+  await js(`document.querySelector(${JSON.stringify(phoneRow + ' .message-action[aria-label="Reply in thread"]')}).click()`);
+  await waitFor("Boolean(document.querySelector('.conv-body')?.dataset.thread) && Boolean(document.querySelector('.thread-view .bubble-row'))", 10000);
+  await pause(400);
+  const phoneThread = await js("(() => { const list = document.querySelector('.messages'); return { ids: [...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id), blurred: getComputedStyle(list).filter.includes('blur'), indicator: (document.querySelector('app-composer .composer-thread')?.textContent || '').trim() }; })()");
+  await phoneBoth('08c-phone-thread-focus');
+  await js("document.querySelector('app-composer .composer-thread button[aria-label=\"Cancel reply\"]').click()");
+  await waitFor("!document.querySelector('.thread-view')", 5000);
+  report.phoneMessageMenu = phoneMenu.labels.join('|') === 'Reply in thread|React' && Boolean(phoneMenu.time) && phoneMenu.inView && phoneThread.ids[0] === 'FAKE-0013' && phoneThread.ids.length === 2 && phoneThread.blurred && phoneThread.indicator === 'Replying in thread';
+  console.log('phone message menu: ' + JSON.stringify({ phoneMenu, phoneThread }));
+
   // The gesture: the drawer follows the finger from the left edge, settles by where the finger left it, and takes no
   // drag that began in the middle of the conversation. A drag is a pointerdown on the shell, then moves and an up on
   // the window, which is where the component listens while a drag is live.
@@ -1829,7 +1961,7 @@ async function runSmoke(w) {
     { name: 'attach', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()", panel: 'app-composer .attach-menu' },
     { name: 'emoji', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()", panel: 'app-composer .emoji-picker' },
     { name: 'message-menu', pane: 'conversation', open: '(() => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); return true; })()', panel: DISMISS_ROW + ' .message-menu' },
-    { name: 'message-emoji', pane: 'conversation', open: '(async () => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); for (let i = 0; i < 50 && !document.querySelector(' + dq(DISMISS_ROW + ' .tapback-more') + '); i += 1) await new Promise((r) => setTimeout(r, 50)); document.querySelector(' + dq(DISMISS_ROW + ' .tapback-more') + ').click(); return true; })()', panel: DISMISS_ROW + ' .message-picker' },
+    { name: 'thread', pane: 'conversation', open: '(async () => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); const sel = ' + dq(DISMISS_ROW + ' .message-action[aria-label="Reply in thread"]') + '; for (let i = 0; i < 50 && !document.querySelector(sel); i += 1) await new Promise((r) => setTimeout(r, 50)); document.querySelector(sel).click(); return true; })()', panel: '.thread-view .thread-list' },
     { name: 'group', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-group').click()", panel: '.group-prompt' },
     { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.group-prompt)' },
     { name: 'sheet', pane: 'list', open: "document.querySelector('.sidebar-head .gear-button').click()", panel: '.sheet' },

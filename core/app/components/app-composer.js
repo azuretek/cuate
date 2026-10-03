@@ -9,8 +9,9 @@ import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
 class AppComposer extends KitElement {
   static properties = {
     disabled: {}, placeholder: {}, maxBytes: {},
-    // The message being replied to, as the conversation quotes it ({ id, who, text }), or null.
-    replyTo: { attribute: false },
+    // The message being replied to ({ id }), or null, and the message the emoji panel is choosing a reaction for, or
+    // null. The composer repeats neither message's text: the conversation shows the thread itself (issue 169).
+    replyTo: { attribute: false }, reactFor: { attribute: false },
     emojiOpen: { state: true }, attachOpen: { state: true }, frequent: { state: true }, staged: { state: true }, stageProblem: { state: true },
     // A staged picture's preview, as an object URL the composer owns and revokes when the file leaves.
     preview: { state: true },
@@ -22,6 +23,7 @@ class AppComposer extends KitElement {
     this.placeholder = '';
     this.maxBytes = undefined;
     this.replyTo = null;
+    this.reactFor = null;
     this.emojiOpen = false;
     this.attachOpen = false;
     this.frequent = [];
@@ -35,7 +37,7 @@ class AppComposer extends KitElement {
     // (core/kit/dismiss.js). Each tool button keeps both names, so pressing one while the other's panel is open
     // switches panels rather than only closing the open one.
     dismissable(this, { name: 'attach', open: () => this.attachOpen, close: () => { this.attachOpen = false; } });
-    dismissable(this, { name: 'emoji', open: () => this.emojiOpen, close: () => { this.emojiOpen = false; } });
+    dismissable(this, { name: 'emoji', open: () => this.emojiOpen, close: () => this.closeEmoji() });
   }
 
   connectedCallback() {
@@ -74,6 +76,14 @@ class AppComposer extends KitElement {
     const before = this.frequent;
     this.frequent = [...before, char].slice(-200);
     await rememberEmoji(before, char);
+  }
+
+  // React on a message opens this composer's own emoji panel, the one used for typing, to choose the reaction.
+  willUpdate(changed) {
+    if (changed.has('reactFor') && this.reactFor) {
+      this.emojiOpen = true;
+      this.attachOpen = false;
+    }
   }
 
   // Choosing a message to reply to puts the caret in the field, ready to type the reply.
@@ -172,9 +182,31 @@ class AppComposer extends KitElement {
   }
 
   toggleEmoji() {
-    this.emojiOpen = !this.emojiOpen;
+    if (this.emojiOpen) {
+      this.closeEmoji();
+      return;
+    }
+    this.emojiOpen = true;
     this.attachOpen = false;
-    if (this.emojiOpen) this.field()?.focus();
+    this.field()?.focus();
+  }
+
+  // Closing the panel while it was choosing a reaction ends that reaction without one.
+  closeEmoji() {
+    this.emojiOpen = false;
+    if (this.reactFor) this.dispatchEvent(new CustomEvent('react-cancel'));
+  }
+
+  // A pick is the reaction while the panel is choosing one, and text at the caret otherwise. Either way it is recently
+  // used, in the one list every panel shares.
+  pickEmoji(char) {
+    if (!this.reactFor) {
+      this.insert(char);
+      return;
+    }
+    this.emojiOpen = false;
+    this.remember(char);
+    this.dispatchEvent(new CustomEvent('react-pick', { detail: char }));
   }
 
   // The attach menu is a small list beside the composer, and each entry opens the system picker with its own filter.
@@ -244,7 +276,7 @@ class AppComposer extends KitElement {
     const s = this.staged;
     const q = this.replyTo;
     return html`${q
-      ? html`<div class="composer-reply" role="status"><span class="reply-meta"><span class="reply-who small">${q.who ? 'Replying to ' + q.who : 'Replying'}</span><span class="reply-text muted small">${q.text}</span></span><button type="button" class="staged-remove" aria-label="Cancel reply" @click=${press(() => this.cancelReply())}>\u00D7</button></div>`
+      ? html`<div class="composer-thread" role="status"><span class="icon" data-icon="reply" aria-hidden="true"></span><span class="composer-thread-label">Replying in thread</span><button type="button" class="staged-remove" aria-label="Cancel reply" title="Cancel reply" @click=${press(() => this.cancelReply())}><span class="icon" data-icon="x" aria-hidden="true"></span></button></div>`
       : nothing}${s || this.stageProblem
       ? html`<div class="composer-staged" role="status">
           ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${press(() => this.openPreview())}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${press(() => this.unstage())}>\u00D7</button></span>` : nothing}
@@ -263,7 +295,7 @@ class AppComposer extends KitElement {
       ${this.attachOpen
         ? html`<div class="attach-menu" role="menu" aria-label="Attach" data-dismiss="attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
         : nothing}
-      ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .frequent=${this.frequent} @pick=${(e) => this.insert(e.detail)}></app-emoji-picker>` : nothing}
+      ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .frequent=${this.frequent} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)}></app-emoji-picker>` : nothing}
     </form>`;
   }
 }
