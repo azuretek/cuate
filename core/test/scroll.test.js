@@ -11,6 +11,8 @@ test('a focused field the view shrank over is brought into sight, and one in sig
   assert.equal(revealDelta(view, { top: 485, bottom: 600 }), 220, 'under the keyboard: scrolled up until its bottom shows');
   assert.equal(revealDelta(view, { top: 10, bottom: 30 }), -30, 'above the view: scrolled down until its top shows');
   assert.equal(revealDelta(view, { top: 300, bottom: 800 }), 260, 'taller than the view: its top stays in sight');
+  assert.equal(revealDelta(view, { top: 266, bottom: 380.56 }), 1, 'a fraction of a pixel past the edge is a whole pixel to move, never left past it');
+  assert.equal(revealDelta(view, { top: 200, bottom: 380.3 }), 0, 'under half a pixel is in sight');
 });
 
 // A column of items of the given heights, as the view measures them at a scrollTop.
