@@ -40,6 +40,7 @@ const HELP = `usage: node server/src/main.js <command> [--data DIR]
   hooks add ID URL [--events a,b|*] [--plaintext]                  add an endpoint; prints its secret and key, once
   hooks remove|enable|disable ID                                   remove, switch on or switch off an endpoint
   hooks rotate ID [--retire]                                       new secret and key, the old kept until --retire
+  hooks test ID [--event TYPE]                                     send one test delivery to that endpoint; fails if refused
   doctor                                                           check the engine and the Mac
   run                                                              start the server
   check [--url URL]                                                with a token on stdin: does a server answer and read
