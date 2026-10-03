@@ -223,3 +223,14 @@ test('nothing reloads the page or clears a list before its replacement arrives',
     }
   }
 });
+
+// The Android shell handles a rotation, a split-screen resize, a keyboard and a dark-mode change itself, so none of them
+// recreates the activity, which would load the page again from nothing (issue 142). iOS's web view never reloads on
+// rotation, so it needs no counterpart.
+test('the Android shell keeps its page through rotation and resizing', () => {
+  const manifest = read('android/app/src/main/AndroidManifest.xml');
+  const m = /android:name="\.MainActivity"[\s\S]*?android:configChanges="([^"]+)"/.exec(manifest);
+  assert.ok(m, 'MainActivity declares the changes it handles');
+  const handled = new Set(m[1].split('|'));
+  for (const c of ['orientation', 'screenSize', 'smallestScreenSize', 'screenLayout', 'keyboard', 'keyboardHidden', 'navigation', 'uiMode']) assert.ok(handled.has(c), 'a change of ' + c + ' would reload the page');
+});
