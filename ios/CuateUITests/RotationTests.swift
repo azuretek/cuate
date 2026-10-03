@@ -17,10 +17,15 @@ final class RotationTests: XCTestCase {
         for (orientation, label) in [(UIDeviceOrientation.portrait, "portrait"), (.landscapeLeft, "landscape"), (.portrait, "portrait")] {
             XCUIDevice.shared.orientation = orientation
             let proof = app.webViews.staticTexts[label + ":pass"].firstMatch
-            XCTAssertTrue(proof.waitForExistence(timeout: 20), app.debugDescription)
+            let appeared = proof.waitForExistence(timeout: 20)
+            // A wait that times out must name the state it saw, never proceed on an element that was not there: the
+            // fixture's own diagnosis, and the window against the page, so a red run says which check failed and
+            // whether the shell and the page disagree on the orientation (issue 199).
+            XCTAssertTrue(appeared, "the \(scheme) \(label) verdict never read pass: " + diagnosis(app) + " :: " + app.debugDescription)
+            guard appeared else { return }
             let image = settled(app, proof: proof, landscape: label == "landscape")
             // The verdict must still read pass once the screen has settled, so a capture never keeps a fail label.
-            XCTAssertTrue(proof.exists, "the \(scheme) \(label) verdict stopped reading pass during the capture: " + app.debugDescription)
+            XCTAssertTrue(proof.exists, "the \(scheme) \(label) verdict stopped reading pass during the capture: " + diagnosis(app) + " :: " + app.debugDescription)
             let attachment = XCTAttachment(image: image)
             attachment.name = scheme + "-" + label
             attachment.lifetime = .keepAlways
@@ -46,6 +51,14 @@ final class RotationTests: XCTestCase {
         var previous: [UInt8]?
         var last = "no sample"
         repeat {
+            // Read the verdict's own frame only while its element is present, and only crop a capture with that frame:
+            // the label a screenshot is judged against must be the one that existed at the moment it was taken, never
+            // an element the test did not check (issue 201).
+            guard proof.exists else {
+                last = "the verdict label was not present: " + diagnosis(app)
+                continue
+            }
+            let label = proof.frame
             let window = app.windows.firstMatch.frame
             let web = app.webViews.firstMatch.frame
             let image = upright(XCUIScreen.main.screenshot().image, landscape: landscape)
@@ -55,13 +68,25 @@ final class RotationTests: XCTestCase {
             let fills = web.width * web.height >= window.width * window.height * 0.8
             let change = previous.map { difference($0, current) } ?? Double.infinity
             let pixels = image.cgImage.map { "\($0.width)x\($0.height)" } ?? "none"
-            let verdict = verdictShown(image, label: proof.frame)
-            last = "window \(window) web \(web) image \(size) pixels \(pixels) change \(change) verdict \(verdict)"
-            if turned && fills && verdict == "pass" && change < 1.0 { return image }
+            let verdict = verdictShown(image, label: label)
+            last = "window \(window) web \(web) image \(size) pixels \(pixels) change \(change) verdict \(verdict) label \(label)"
+            // The element must still be there once the passing frame was found, so the image kept is of the pass it saw.
+            if turned && fills && verdict == "pass" && change < 1.0 && proof.exists { return image }
             previous = current
         } while Date() < deadline
         XCTFail("Rotation never settled: " + last)
         return XCUIScreen.main.screenshot().image
+    }
+
+    // What a red run should always say: the fixture's own last sample (its state, failing checks, the sample it last
+    // failed on and the frame counter) and whether the shell window and the page's web view agree on the orientation
+    // (issue 199). The diagnosis element is the fixture's own, so it is read from the page, not inferred.
+    private func diagnosis(_ app: XCUIApplication) -> String {
+        let window = app.windows.firstMatch.frame
+        let web = app.webViews.firstMatch.frame
+        let page = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "rotation-diagnosis")).firstMatch
+        let disagree = (window.width > window.height) != (web.width > web.height)
+        return "window \(window) web \(web) windowAndWebDisagree \(disagree) :: \(page.exists ? page.label : "no diagnosis")"
     }
 
     // The fixture fills its verdict green for pass and red for fail, and draws it over everything, so every pixel inside
