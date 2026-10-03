@@ -1228,11 +1228,14 @@ async function runSmoke(w) {
   const skinBefore = ((await (await fetch(pinSrv + '/api/v1/settings', { headers: pinAuth })).json()).values || {})['appearance.skin'] || 'system';
   const putSkin = (skin) => fetch(pinSrv + '/api/v1/settings', { method: 'PUT', headers: { ...pinAuth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.skin': skin } }) });
   const pinMinimum = w.getMinimumSize();
+  const pinListWasOpen = await js("document.querySelector('app-root').listOpen");
   const pinned = [];
   for (const [label, width, height] of [['desktop', 1100, 720], ['phone', 390, 760]]) {
     if (label === 'phone') w.setMinimumSize(320, 400);
     w.setSize(width, height);
     await pause(500);
+    // On a phone the conversation is the pane under test, so the list's drawer is put away first.
+    if (label === 'phone') { await js("(() => { document.querySelector('app-root').closeDrawer(); return true; })()"); await pause(600); }
     const box = await js(String.raw`(() => {
       const m = document.querySelector('.messages');
       const before = m.scrollHeight - m.clientHeight;
@@ -1255,7 +1258,7 @@ async function runSmoke(w) {
     for (const skin of ['light', 'dark']) {
       await putSkin(skin);
       await pause(500);
-      const state = await js("(() => { const h = document.querySelector('.conv-head'); const r = h.getBoundingClientRect(); const back = document.querySelector('.conv-back'); return { top: r.top, bottom: r.bottom, scrollY: window.scrollY, doc: document.scrollingElement.scrollTop, scale: window.visualViewport ? window.visualViewport.scale : 1, name: Boolean(h.querySelector('.conv-title') && h.querySelector('.conv-title').textContent.trim()), back: Boolean(back) && getComputedStyle(back).display !== 'none', scheme: document.documentElement.dataset.scheme }; })()");
+      const state = await js("(() => { const h = document.querySelector('.conv-head'); const r = h.getBoundingClientRect(); const back = document.querySelector('.conv-back'); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { visible: Boolean(hit) && h.contains(hit), top: r.top, bottom: r.bottom, scrollY: window.scrollY, doc: document.scrollingElement.scrollTop, scale: window.visualViewport ? window.visualViewport.scale : 1, name: Boolean(h.querySelector('.conv-title') && h.querySelector('.conv-title').textContent.trim()), back: Boolean(back) && getComputedStyle(back).display !== 'none', scheme: document.documentElement.dataset.scheme }; })()");
       pinned.push({ label, skin, room: box.room, factor: wc.getZoomFactor(), ...state });
       await shot('15-pinned-header-' + label + '-' + skin + '.png');
     }
@@ -1263,8 +1266,9 @@ async function runSmoke(w) {
   await putSkin(skinBefore);
   w.setSize(1100, 720);
   w.setMinimumSize(...pinMinimum);
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(pinListWasOpen)));
   await pause(300);
-  report.headerPinned = pinned.length === 4 && pinned.every((p) => p.room > 0 && Math.abs(p.top) <= 0.5 && p.bottom > 0 && p.scrollY === 0 && p.doc === 0 && p.name && p.scheme === p.skin)
+  report.headerPinned = pinned.length === 4 && pinned.every((p) => p.room > 0 && p.visible && Math.abs(p.top) <= 0.5 && p.bottom > 0 && p.scrollY === 0 && p.doc === 0 && p.name && p.scheme === p.skin)
     && pinned.filter((p) => p.label === 'phone').every((p) => p.back);
   report.noPageZoom = pinned.length === 4 && pinned.every((p) => p.factor === 1 && p.scale === 1);
   console.log('header pinned: ' + JSON.stringify(pinned));

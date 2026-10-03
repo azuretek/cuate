@@ -123,10 +123,25 @@ export class KeepScroll {
   // on-screen keyboard opening, the view brings the field into sight, and that scroll becomes the place it keeps.
   reveal() {
     const field = typeof document === 'undefined' ? null : document.activeElement;
-    if (!field || field === this.el || !this.el.contains(field) || typeof field.matches !== 'function') return;
-    if (!field.matches('input, textarea, [contenteditable]')) return;
-    const delta = revealDelta(this.el.getBoundingClientRect(), field.getBoundingClientRect());
-    if (delta) this.el.scrollTop += delta;
+    if (!field || field === this.el || !this.el.contains(field)) return;
+    revealField(field);
+  }
+}
+
+// Brings a focused field into sight inside every view that scrolls around it (issue 180), measured against what is
+// actually visible: each view's own box, cut at the bottom of the visual viewport, which an on-screen keyboard can
+// shrink before the layout does or without it. Each view scrolls the least that shows the field.
+export function revealField(field) {
+  if (!field || typeof field.matches !== 'function' || !field.matches('input, textarea, [contenteditable]')) return;
+  const viewport = typeof window === 'undefined' ? null : window.visualViewport;
+  const visibleBottom = viewport ? viewport.offsetTop + viewport.height : Infinity;
+  for (let el = field.parentElement; el; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight + 1) continue;
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow !== 'auto' && overflow !== 'scroll') continue;
+    const box = el.getBoundingClientRect();
+    const delta = revealDelta({ top: box.top, bottom: Math.min(box.bottom, visibleBottom) }, field.getBoundingClientRect());
+    if (delta) el.scrollTop += delta;
   }
 }
 

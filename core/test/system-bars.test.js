@@ -107,7 +107,10 @@ test('only the media viewer zooms: every page zoom gesture and key is recognised
   assert.match(hold, /e\.preventDefault\(\)/);
   assert.match(hold, /\[window, 'wheel', refuse, \{ passive: false/, 'a wheel can only be refused by a listener that is not passive');
   assert.match(hold, /window\.scrollTo\(0, 0\)/, 'the page is put back if anything scrolls it as a whole');
-  assert.match(hold, /scrollIntoView\(\{ block: 'nearest'/, 'a focused field is kept in sight inside its own view');
+  assert.match(hold, /revealField\(document\.activeElement\)/, 'a focused field is kept in sight inside its own view');
+  assert.match(hold, /\[document, 'focusin', reveal/, 'from the moment it takes focus');
+  const kit = read('core/kit/scroll.js');
+  assert.match(kit, /Math\.min\(box\.bottom, visibleBottom\)/, 'measured against the visual viewport the keyboard shrinks');
   assert.match(root, /connectedCallback\(\) \{[\s\S]*?this\.holdPage\(\);/);
 });
 
