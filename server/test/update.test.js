@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -210,13 +210,13 @@ test('current is repointed by a rename, and an installed server finds its instal
   const s = scratch();
   t.after(s.cleanup);
   for (const n of [1, 2]) mkdirSync(path.join(s.L.versions, release(n).version, 'server', 'src'), { recursive: true });
-  for (const n of [1, 2]) spawnSync('touch', [path.join(s.L.versions, release(n).version, 'server', 'src', 'main.js')]);
+  for (const n of [1, 2]) writeFileSync(path.join(s.L.versions, release(n).version, 'server', 'src', 'main.js'), '');
   pointCurrent(s.L, release(1).version);
   assert.equal(currentVersion(s.L), release(1).version);
   pointCurrent(s.L, release(2).version);
   assert.equal(currentVersion(s.L), release(2).version);
   assert.ok(!existsSync(s.L.current + '.new'), 'no half-made link is left beside it');
-  assert.equal(installRootOf(realpathSync(s.L.current)), s.L.root);
+  assert.equal(installRootOf(realpathSync(s.L.current)), realpathSync(s.L.root));
   assert.equal(installRootOf(path.dirname(path.dirname(cli))), null, 'a checkout is not an install');
   assert.throws(() => pointCurrent(s.L, release(3).version), /not installed/);
 });
