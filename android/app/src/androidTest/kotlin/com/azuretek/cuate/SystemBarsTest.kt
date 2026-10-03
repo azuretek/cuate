@@ -247,8 +247,7 @@ class SystemBarsTest {
         val top = statusBar / dpr
         var last = listOf("no proof")
         var shot: Bitmap? = null
-        do {
-            instrumentation.waitForIdleSync()
+        fun check(): List<String> {
             val raw = evaluate(scenario, "JSON.stringify(window.systemBarsKeysProof())")
             val p = JSONObject(JSONObject("{\"v\":$raw}").getString("v"))
             val out = ArrayList<String>()
@@ -265,12 +264,27 @@ class SystemBarsTest {
             if (p.getDouble("fieldTop") + 0.5 < top || p.getDouble("fieldBottom") > p.getDouble("viewportHeight") + 0.5) {
                 out.add("the field (${p.getDouble("fieldTop")} to ${p.getDouble("fieldBottom")}) is not in sight between $top and ${p.getDouble("viewportHeight")}")
             }
-            last = out
-            shot?.recycle()
-            shot = instrumentation.uiAutomation.takeScreenshot()
-            if (out.isEmpty()) break
+            return out
+        }
+        do {
+            instrumentation.waitForIdleSync()
+            last = check()
+            if (last.isEmpty()) break
         } while (System.nanoTime() < deadline)
+        // The screen lags the page by a frame or more on the emulator, so the kept capture is the first one that two
+        // captures in a row agree on, taken once the page has passed.
+        val settleBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        do {
+            instrumentation.waitForIdleSync()
+            val next = instrumentation.uiAutomation.takeScreenshot() ?: continue
+            val settled = shot?.sameAs(next) == true
+            shot?.recycle()
+            shot = next
+            if (settled) break
+        } while (System.nanoTime() < settleBy)
         shot?.let { save(it, "keys-$kind-$scheme") }
+        // And it still holds on the frame that was kept: a view that slid back after passing once fails here.
+        if (last.isEmpty()) last = check()
         assertTrue("With the keyboard up on $kind ($scheme): " + last.joinToString("; "), last.isEmpty())
         scenario.onActivity { activity ->
             val view = webView(activity.findViewById(android.R.id.content))!!
