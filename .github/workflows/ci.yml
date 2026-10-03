@@ -31,7 +31,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # A network step, so it has its own deadline rather than the job's (issue 66).
       - name: Install
+        timeout-minutes: 5
         run: pnpm install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
@@ -63,7 +65,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # A network step, so it has its own deadline rather than the job's (issue 66).
       - name: Install
+        timeout-minutes: 5
         run: pnpm install --frozen-lockfile
       # The Electron download reaches the network, so it gets a cache and a deadline
       # like every other one: a cold or stalled download fails here in five minutes

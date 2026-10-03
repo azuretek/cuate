@@ -112,7 +112,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # A network step, so it carries its own deadline rather than the job's (issue 66).
       - run: pnpm install --frozen-lockfile --ignore-scripts
+        timeout-minutes: 5
       - uses: actions/download-artifact@v4
         with:
           pattern: installers-*

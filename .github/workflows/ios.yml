@@ -80,6 +80,36 @@ jobs:
           echo "using $bundle (Xcode $version)"
           "$bundle/Contents/Developer/usr/bin/xcodebuild" -version
 
+      # The simulator is resolved from the runner's own list rather than named:
+      # the image's set differs from any development machine's, so a hardcoded
+      # name is the classic way this job fails. The resolver script owns the
+      # choice (newest iOS runtime, iPhone only).
+      #
+      # It is resolved and its boot STARTED here, before the project is
+      # generated and built, so the boot overlaps that work instead of
+      # following it (issue 66). Measured over twelve pull request runs, this
+      # job is what the platforms gate waits for (p50 9.6, p90 16.7 minutes),
+      # and its slowest step was the boot: a first boot of the image's device
+      # spends minutes "Waiting on Data Migration" (8.5 of the boot step's 10.4
+      # minutes on run 37114535529). The boot runs detached with its own log;
+      # boot-proof.sh waits for it with bootstatus, which joins a boot already
+      # under way, and prints the log so the time it took is in this job's log.
+      - name: Resolve an iPhone simulator and start booting it
+        run: |
+          set -eo pipefail
+          sim="$(python3 scripts/resolve-simulator.py)"
+          if [ -z "$sim" ]; then
+            echo "::error::no available iPhone simulator on this runner"
+            xcrun simctl list runtimes || true
+            exit 1
+          fi
+          echo "SIMULATOR_UDID=$sim" >> "$GITHUB_ENV"
+          echo "resolved simulator for the newest iOS runtime: $sim"
+          echo "SIMULATOR_BOOT_LOG=$RUNNER_TEMP/simulator-boot.log" >> "$GITHUB_ENV"
+          date +%s > "$RUNNER_TEMP/simulator-boot.start"
+          nohup xcrun simctl bootstatus "$sim" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
+          echo "boot started in the background at $(date -u +%H:%M:%SZ)"
+
       # The project is generated output, not source, and the checkout has no
       # Cuate.xcodeproj in it at all.
       - name: Install xcodegen
@@ -127,28 +157,17 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build-for-testing
 
-      # The simulator is resolved from the runner's own list rather than named:
-      # the image's set differs from any development machine's, so a hardcoded
-      # name is the classic way this job fails. The resolver script owns the
-      # choice (newest iOS runtime, iPhone only).
-      - name: Resolve an available iPhone simulator
-        run: |
-          set -eo pipefail
-          sim="$(python3 scripts/resolve-simulator.py)"
-          if [ -z "$sim" ]; then
-            echo "::error::no available iPhone simulator on this runner"
-            xcrun simctl list runtimes || true
-            exit 1
-          fi
-          echo "SIMULATOR_UDID=$sim" >> "$GITHUB_ENV"
-          echo "resolved simulator for the newest iOS runtime: $sim"
-
       # The acceptance the phase is judged by: a shell that only compiles is not
       # a shell that runs.
+      # Bounded: p90 10.4 minutes measured, almost all of it the first boot.
       - name: Boot the app in the simulator and capture the proof
+        timeout-minutes: 20
         run: bash scripts/boot-proof.sh
 
+      # The wrapper kills the run at twenty minutes (test-with-diagnostics.mjs);
+      # the step deadline is the backstop.
       - name: Run unit and native rotation tests
+        timeout-minutes: 25
         run: |
           set -eo pipefail
           node scripts/test-with-diagnostics.mjs xcodebuild \

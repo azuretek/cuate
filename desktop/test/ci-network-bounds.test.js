@@ -29,7 +29,31 @@ test('every workflow that installs from the network bounds the install', () => {
         if (/\bbrew\s+install\b/.test(run)) {
           assert.match(run, /\btimeout\s+\d+/, file + ': ' + jobName + ' runs brew install with no deadline');
         }
+        // The package store and Electron's postinstall download both come from the network (issue 66).
+        if (/\bpnpm\s+install\b/.test(run)) {
+          assert.ok(Number(step['timeout-minutes']) > 0, file + ': ' + jobName + ' runs pnpm install with no step deadline');
+        }
+        // The emulator action fetches its system image before it boots.
+        if (String(step.uses ?? '').startsWith('reactivecircus/android-emulator-runner')) {
+          assert.ok(Number(step['timeout-minutes']) > 0, file + ': ' + jobName + ' boots the emulator with no step deadline');
+        }
       }
     }
+  }
+});
+
+// Issue 66: the cache hit is STATED in the log rather than assumed. Every actions/cache step in the packaging leg
+// carries an id, and a later step hands that id's cache-hit output to scripts/ci/state-cache.sh, which names the
+// outcome and counts the folder.
+test('the packaging leg states its cache outcome in the log', () => {
+  const workflow = parse(readFileSync(new URL('package.yml', WORKFLOWS), 'utf8'));
+  const steps = workflow.jobs.build.steps;
+  const caches = steps.filter((step) => String(step.uses ?? '').startsWith('actions/cache'));
+  assert.ok(caches.length > 0, 'the packaging leg caches nothing');
+  for (const cache of caches) {
+    assert.ok(cache.id, 'a packaging cache step has no id, so its outcome cannot be stated');
+    const stated = steps.filter((step) => String(step.run ?? '').includes('scripts/ci/state-cache.sh')
+      && Object.values(step.env ?? {}).some((value) => String(value).includes('steps.' + cache.id + '.outputs.cache-hit')));
+    assert.ok(stated.length >= 2, 'the cache ' + cache.id + ' must be stated before and after packaging, found ' + stated.length);
   }
 });

@@ -56,7 +56,11 @@ jobs:
       # The acceptance the phase is judged by: a shell that only compiles is not
       # a shell that runs. One emulator boot serves both the capture and the
       # instrumented tests.
+      # The runner action fetches the system image and the emulator before it boots, so the step reaches the network:
+      # it carries its own deadline rather than the job's (issue 66). Measured p50 3.0, p90 3.1 minutes over twelve
+      # pull request runs, so fifteen is a stall, not a slow day.
       - name: Boot the app, capture the proof and run the instrumented tests
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35

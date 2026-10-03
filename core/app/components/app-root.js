@@ -21,7 +21,7 @@ import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../ru
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
-import { backdropReturns } from '../rules/sheet.js';
+import { backdropReturns, sheetLeaveDeadline } from '../rules/sheet.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -90,6 +90,7 @@ class AppRoot extends KitElement {
     this.listOpen = true;
     this.sheetLeaving = false;
     this.pendingSheet = null;
+    this.sheetDeadline = null;
     // A press on the backdrop is a second way back only when it both starts and ends there (rules/sheet.js).
     this.downOnBackdrop = false;
     this.settings = {};
@@ -170,6 +171,8 @@ class AppRoot extends KitElement {
     if (this.offOpen) { this.offOpen(); this.offOpen = null; }
     clearTimeout(this.noticeHold);
     this.noticeHold = null;
+    clearTimeout(this.sheetDeadline);
+    this.sheetDeadline = null;
   }
 
   // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
@@ -612,20 +615,34 @@ class AppRoot extends KitElement {
     this.downOnBackdrop = false;
   };
 
+  // The departure ends on the sheet's own animationend, or at its deadline (the token duration plus a margin,
+  // rules/sheet.js), whichever comes first: a window that draws no frames never sends the event.
   leaveSheet() {
-    if (!this.sheetLeaving) this.sheetLeaving = true;
+    if (this.sheetLeaving) return;
+    this.sheetLeaving = true;
+    clearTimeout(this.sheetDeadline);
+    const tokenMs = durationMs(getComputedStyle(this).getPropertyValue('--motion-sheet-out'), 400);
+    this.sheetDeadline = setTimeout(() => this.finishSheetLeave(), sheetLeaveDeadline(tokenMs));
   }
 
-  // The departure has finished, so the surface changes now: the next page arrives from the bottom edge, or the
-  // conversation does. Waiting for the event is what keeps a half-drawn page off the screen.
   onSheetAnimationEnd = (e) => {
     if (!this.sheetLeaving || e.target !== e.currentTarget) return;
+    this.finishSheetLeave();
+  };
+
+  // The departure has finished, so the surface changes now: the next page arrives from the bottom edge, or the
+  // conversation does. Waiting for the event is what keeps a half-drawn page off the screen; the deadline only
+  // stands in for an event that will never come. Whichever arrives second finds nothing left to do.
+  finishSheetLeave() {
+    clearTimeout(this.sheetDeadline);
+    this.sheetDeadline = null;
+    if (!this.sheetLeaving) return;
     this.sheetLeaving = false;
     const next = this.pendingSheet;
     this.pendingSheet = null;
     this.view = next || 'messages';
     if (this.view !== 'settings') this.settingsSection = null;
-  };
+  }
 
   get sheetShowing() {
     return this.view === 'settings';
