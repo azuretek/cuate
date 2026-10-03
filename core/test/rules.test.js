@@ -140,6 +140,16 @@ test('the imsg mapping produces exactly the declared model', () => {
   assert.equal(r.targetId, 'G-7');
   assert.equal(r.add, false);
   assert.equal(mapReaction({ id: 1, chat_id: 1 }), null);
+  // Any emoji as a reaction (issue 188): imsg names Messages' type 2006 "custom" and carries the emoji, live and inline,
+  // on whichever part it targets; it maps to { type: 'emoji', emoji } and is drawn with that emoji, added or taken off.
+  const party = '\u{1F389}';
+  const live = mapReaction({ id: 11, chat_id: 42, is_reaction: true, reaction_type: 'custom', reaction_emoji: party, is_reaction_add: true, reacted_to_guid: 'p:1/G-7', is_from_me: false, sender: '+15555550100' });
+  assert.deepEqual(validate(live, 'ReactionEvent', models), []);
+  assert.deepEqual(live, { chatId: '42', targetId: 'G-7', type: 'emoji', emoji: party, add: true, fromMe: false, sender: '+15555550100' });
+  assert.equal(mapReaction({ id: 12, chat_id: 42, is_reaction: true, reaction_type: 'custom', reaction_emoji: party, is_reaction_add: false, reacted_to_guid: 'G-7', is_from_me: false, sender: '+15555550100' }).add, false);
+  const inline = mapMessage({ id: 7, chat_id: 42, guid: 'G-7', is_from_me: true, text: 'hi', created_at: '2026-01-15T10:00:00Z', attachments: [], reactions: [{ id: 11, type: 'custom', emoji: party, sender: '+15555550100', is_from_me: false }, { id: 13, type: 'emphasis', emoji: '\u203c\ufe0f', sender: '+15555550177', is_from_me: false }] }, { attachmentId: () => 'x' });
+  assert.deepEqual(inline.reactions, [{ type: 'emoji', emoji: party, fromMe: false, sender: '+15555550100' }, { type: 'emphasis', emoji: '\u203c\ufe0f', fromMe: false, sender: '+15555550177' }]);
+  assert.deepEqual(summarizeReactions(applyReaction([{ id: 'G-7', reactions: [] }], live)[0].reactions), [{ glyph: party, count: 1 }]);
   // A row that names no chat (issue 48) maps to the one value that means no chat, whatever form the engine gave it.
   for (const chat_id of [0, null, undefined]) assert.equal(mapMessage({ id: 10, chat_id, text: '', created_at: '2026-01-15T10:00:00Z' }, { attachmentId: () => 'x' }).chatId, NO_CHAT_ID);
 });

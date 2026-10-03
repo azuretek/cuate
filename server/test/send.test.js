@@ -246,7 +246,7 @@ test('a reaction is sent as a standard tapback, shows on the message, and comes 
   assert.equal(added.http, 201);
   assert.deepEqual(added.body, { status: 'sent', targetId: 'FAKE-0013', type: 'love', add: true });
   assert.deepEqual(s.world.tapbacks, [{ chatId: 1, targetId: 'FAKE-0013', kind: 'love', remove: false }], 'the text and emoji forms of a heart are one tapback');
-  assert.deepEqual(await ofMe(s, '1', 'FAKE-0013'), [{ type: 'love', emoji: null, fromMe: true, sender: null }]);
+  assert.deepEqual(await ofMe(s, '1', 'FAKE-0013'), [{ type: 'love', emoji: '\u2764\ufe0f', fromMe: true, sender: null }], 'history carries the glyph, as imsg reports it');
   await tick(80);
   assert.deepEqual(live.map((r) => [r.targetId, r.type, r.add, r.fromMe]), [['FAKE-0013', 'love', true, true]], 'it streams like a received one');
   const removed = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2764\ufe0f', remove: true });
@@ -265,6 +265,7 @@ test('a reaction the engine cannot send is refused cleanly, costs no rate budget
   const custom = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F389}' });
   assert.equal(custom.http, 422);
   assert.equal(custom.error[0], 'reaction_unsupported');
+  assert.match(custom.error[1], /engine .*cannot send an emoji reaction yet/, 'the note names the engine as the limit, not the Mac (issue 188)');
   assert.equal((await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F44D}\u{1F3FD}' })).error[0], 'reaction_unsupported', 'a skin tone is not the like tapback');
   assert.equal(s.world.attempts, 0);
   s.world.behavior.bridge = 'down';

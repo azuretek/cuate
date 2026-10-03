@@ -708,12 +708,30 @@ async function runSmoke(w) {
   const customPicked = await pick('\u{1F389}');
   await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
   const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
+  // Any emoji someone else reacted with arrives as a reaction on the message it names (issue 188): the fixture's raised
+  // hands on your own message, drawn at the bubble's corner like a tapback and not marked as yours, on a desktop window
+  // and at a phone's width, light and dark.
+  const EMOJI_TARGET = '.bubble-row[data-id="FAKE-0009"]';
+  const emojiOn = () => js(`(() => { const row = document.querySelector(${q(EMOJI_TARGET)}); if (!row) return null; row.querySelector('.bubble').scrollIntoView({ block: 'center' }); return [...row.querySelectorAll('.reaction')].map((r) => ({ text: r.textContent.trim(), mine: r.classList.contains('mine') })); })()`);
+  const emojiDesktop = await emojiOn();
+  await both('14e-emoji-reaction');
+  const emojiSize = w.getSize();
+  w.setSize(390, 844);
+  await js("(() => { const root = document.querySelector('app-root'); if (root.listOpen) root.closeDrawer(); return true; })()");
+  await pause(500);
+  const emojiPhone = await emojiOn();
+  await both('14f-emoji-reaction-phone');
+  w.setSize(...emojiSize);
+  await pause(300);
+  const shows = (list) => Array.isArray(list) && list.some((r) => r.text.includes('\u{1F64C}') && !r.mine);
+  const receivedEmoji = shows(emojiDesktop) && shows(emojiPhone);
+  console.log('emoji reaction: ' + JSON.stringify({ desktop: emojiDesktop, phone: emojiPhone }));
   const reactChecks = {
     menu: Boolean(theirMenu) && Boolean(theirMenu.time) && theirMenu.datetime.length > 0 && theirMenu.labels.join('|') === 'Reply in thread|React' && theirMenu.icons.join('|') === 'reply|smile-plus' && theirMenu.drawn && theirMenu.tapbacks === 0,
     inside: Boolean(theirMenu) && theirMenu.inside,
     ownNoReply: Boolean(ownMenu) && Boolean(ownMenu.time) && ownMenu.labels.join('|') === 'React',
     composerPanel: panel.composer && !panel.inList && !panel.menu && panel.targeted && panel.clear,
-    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom,
+    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom, receivedEmoji,
   };
   report.react = Object.values(reactChecks).every(Boolean);
   console.log('react: ' + JSON.stringify({ checks: reactChecks, theirMenu, ownMenu, panel, customPicked }));

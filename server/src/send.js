@@ -87,14 +87,15 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     }
   };
 
-  // Add or remove this device owner's reaction on one message. Only the six standard tapbacks can be sent, so any
-  // other emoji is refused before it costs rate budget or reaches the engine. One reaction per message is in flight
-  // at a time, because a tapback sent twice can undo itself.
+  // Add or remove this device owner's reaction on one message. Messages itself takes any emoji as a reaction, but the
+  // engine's bridge sends only the six standard tapbacks (and folds some other emoji onto them, so passing one through
+  // would send the wrong reaction), so any other emoji is refused before it costs rate budget or reaches the engine
+  // (issue 188). One reaction per message is in flight at a time, because a tapback sent twice can undo itself.
   async function react(chatId, { targetId, emoji, remove = false }) {
     const type = tapbackType(emoji);
     if (!type) {
       log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });
-      return { http: 422, error: ['reaction_unsupported', 'The Mac can only send the six standard tapbacks as a reaction.'] };
+      return { http: 422, error: ['reaction_unsupported', 'The message engine on the Mac cannot send an emoji reaction yet, only the six standard tapbacks.'] };
     }
     const key = chatId + '/' + targetId;
     if (reacting.has(key)) return { http: 409, error: ['in_flight', 'A reaction to that message is still being sent.'] };

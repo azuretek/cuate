@@ -384,6 +384,29 @@ test('tapbacks stream as reaction events', async () => {
   a.ws.close();
 });
 
+// Issue 188: Messages takes any emoji as a reaction, and the engine reports one as reaction_type "custom" with the emoji in
+// reaction_emoji (live) or { type: "custom", emoji } (inline). It reaches every client live on the message it names, the
+// history shows it there, and taking it off clears it, all as imsg itself shapes them.
+test('an emoji reaction from someone else arrives live and in history on the right message, and comes off again (issue 188)', async () => {
+  const party = '\u{1F389}';
+  const a = await openSocket(s.base);
+  a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
+  await waitFor(() => a.frames.some((f) => f.type === 'hello'));
+  const theirs = (f) => f.type === 'event' && f.name === 'reaction' && f.data.targetId === 'FAKE-0010';
+  const onTarget = async () => (await (await s.get('/api/v1/chats/1/messages?limit=50', s.tokens.device)).json()).messages.find((m) => m.id === 'FAKE-0010').reactions;
+  s.world.react(1, 'FAKE-0010', party, '+15555550100');
+  await waitFor(() => a.frames.some(theirs));
+  const added = a.frames.find(theirs).data;
+  conforms(added, 'ReactionEvent');
+  assert.deepEqual({ type: added.type, emoji: added.emoji, add: added.add, fromMe: added.fromMe, sender: added.sender }, { type: 'emoji', emoji: party, add: true, fromMe: false, sender: '+15555550100' });
+  assert.deepEqual(await onTarget(), [{ type: 'emoji', emoji: party, fromMe: false, sender: '+15555550100' }]);
+  s.world.react(1, 'FAKE-0010', party, '+15555550100', { remove: true });
+  await waitFor(() => a.frames.filter(theirs).length === 2);
+  assert.equal(a.frames.filter(theirs)[1].data.add, false);
+  assert.deepEqual(await onTarget(), []);
+  a.ws.close();
+});
+
 test('the client library talks to the server', async () => {
   const events = [];
   const states = [];
