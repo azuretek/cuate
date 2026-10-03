@@ -132,7 +132,9 @@ class MainActivity : Activity() {
     private fun appearance(dark: Boolean, background: String) {
         val fill = try {
             Color.parseColor(background)
-        } catch (e: IllegalArgumentException) {
+        } catch (e: RuntimeException) {
+            // parseColor throws IllegalArgumentException for an unknown form and StringIndexOutOfBoundsException for
+            // an empty one, which is what the shell passes before the page has named its fill.
             if (dark) Color.BLACK else Color.WHITE
         }
         root.setBackgroundColor(fill)
