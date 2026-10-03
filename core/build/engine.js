@@ -21,6 +21,7 @@ var engine = (() => {
   // core/app/engine.js
   var engine_exports = {};
   __export(engine_exports, {
+    ABOUT_ORDER: () => ABOUT_ORDER,
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
     BUILD_SPEC: () => BUILD_SPEC,
     DELETE_STEPS: () => DELETE_STEPS,
@@ -67,7 +68,9 @@ var engine = (() => {
     ZOOM_PAN_STEP: () => ZOOM_PAN_STEP,
     ZOOM_SLOP: () => ZOOM_SLOP,
     ZOOM_STEP: () => ZOOM_STEP,
+    aboutLinks: () => aboutLinks,
     aboutModel: () => aboutModel,
+    aboutRows: () => aboutRows,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
     addTerm: () => addTerm,
@@ -1653,7 +1656,9 @@ var engine = (() => {
     groups: [
       { id: "appearance", label: "Appearance", description: "How the app looks and how much text it shows." },
       { id: "notifications", label: "Notifications", description: "Which events raise a notice on this device." },
-      { id: "updates", label: "Updates", description: "How a release this app finds is fetched." }
+      { id: "updates", label: "Updates", description: "How a release this app finds is fetched." },
+      { id: "device", kind: "device", label: "This device", description: "The server this app talks to, and the way out of it." },
+      { id: "about", kind: "about", label: "About", description: "The build this device is running and the server it talks to. Select a value to copy it." }
     ],
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
@@ -1680,7 +1685,52 @@ var engine = (() => {
     const fields = settingsFields(schema);
     const groups = schema.groups || [];
     const fallback = groups.length ? groups[0].id : null;
-    return groups.map((g) => ({ id: g.id, label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+    return groups.map((g) => ({ id: g.id, kind: g.kind || "settings", label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+  }
+  var ABOUT_ORDER = [
+    ["client", "product"],
+    ["client", "version"],
+    ["client", "channel"],
+    ["client", "build"],
+    ["client", "commit"],
+    ["client", "builtAt"],
+    ["server", "serverVersion"],
+    ["server", "serverCommit"],
+    ["server", "serverChannel"],
+    ["server", "serverBuild"],
+    ["server", "serverBuiltAt"],
+    ["client", "platform"],
+    ["client", "arch"],
+    ["client", "electron"],
+    ["client", "chromium"],
+    ["client", "node"],
+    ["client", "installSource"],
+    ["client", "packaged"],
+    ["client", "updateChannel"],
+    ["server", "serverPlatform"],
+    ["server", "engine.kind"],
+    ["server", "engine.version"],
+    ["server", "apiVersion"]
+  ];
+  var PRODUCT = { key: "product", label: "App" };
+  function aboutRows(host, info, spec = BUILD_SPEC) {
+    const halves = { client: reportRows(spec, "client", host || {}), server: reportRows(spec, "server", info || {}) };
+    return ABOUT_ORDER.map(([half, key]) => {
+      if (key === PRODUCT.key) {
+        const name = host && host.product || info && info.product;
+        return { ...PRODUCT, value: name ? String(name) : UNKNOWN };
+      }
+      return halves[half].find((row) => row.key === key) || { key, label: key, value: UNKNOWN };
+    });
+  }
+  function aboutLinks(repository) {
+    const base = typeof repository === "string" ? repository.trim().replace(/\.git$/, "").replace(/\/+$/, "") : "";
+    if (!/^https:\/\/[^\s/]+\/\S+$/.test(base)) return [];
+    return [
+      { key: "source", label: "Source code", href: base },
+      { key: "licence", label: "Licence", href: base + "/blob/main/LICENSE" },
+      { key: "report", label: "Report a problem", href: base + "/issues/new" }
+    ];
   }
   function optionLabel(field, option) {
     if (field.labels && Object.hasOwn(field.labels, option)) return field.labels[option];

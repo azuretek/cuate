@@ -67,6 +67,7 @@ test('info conforms and names the product from naming.json', async () => {
   const b = await r.json();
   conforms(b, 'Info');
   assert.equal(b.product, naming.product);
+  assert.equal(b.repository, 'https://github.com/' + naming.repo, 'About links to the repository naming.json names');
   assert.equal(b.apiVersion, apiSpec.version);
   assert.equal(b.engine.ready, true);
 });
