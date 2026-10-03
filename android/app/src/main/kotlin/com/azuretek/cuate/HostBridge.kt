@@ -120,7 +120,8 @@ class HostBridge(
 
     /**
      * The app icon chosen in Settings (issue 167). Every icon spec/app-icons.json names is a launcher alias of the one
-     * activity, .AppIcon_<id>, and only the default is enabled in the manifest. Choosing one enables its alias first and
+     * activity, .AppIcon_<id>, and only the default (Follow theme, the store icon in the default theme) is enabled in the
+     * manifest. Choosing one enables its alias first and
      * then disables the others, so the app always has a launcher entry, and the launcher draws the enabled alias's
      * icon. DONT_KILL_APP and the activity itself staying enabled mean the change never closes the app; a launcher may
      * take a moment to redraw. An id the spec does not name is refused and nothing changes.

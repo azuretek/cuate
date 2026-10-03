@@ -16,6 +16,7 @@ import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
+import { renderIcon } from '../../core/app/rules/icon.js';
 import { lockZoom } from './zoom-lock.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
 
@@ -47,17 +48,19 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
-// The app icon chosen in Settings (issue 167): the picture the icon pipeline drew for each choice
-// (core/app/assets/app-icons), set on the window on Windows and Linux and on the Dock on macOS while the app runs. The
-// launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
+// The app icon chosen in Settings (issue 167): Follow theme, the default, leaves the icons to the theme (applyIcons,
+// below); a fixed palette from core/spec/app-icons.json stands in for the theme's colours in every image the shell
+// redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
+// The launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
 const appIconSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/app-icons.json'), 'utf8'));
 let appIconApplied = appIconSpec.default;
+let appIconFixed = null;
 function setAppIcon(icon) {
-  if (!appIconSpec.icons.some((i) => i.id === icon)) return { applied: false, icon };
-  const image = nativeImage.createFromPath(path.join(CORE, 'app/assets/app-icons', icon + '.png'));
-  if (image.isEmpty()) return { applied: false, icon };
-  if (process.platform === 'darwin') { if (app.dock) app.dock.setIcon(image); } else if (win && !win.isDestroyed()) win.setIcon(image);
+  const choice = appIconSpec.icons.find((i) => i.id === icon);
+  if (!choice) return { applied: false, icon };
+  appIconFixed = choice.colors ? { scheme: choice.scheme === 'dark' ? 'dark' : 'light', colors: choice.colors } : null;
   appIconApplied = icon;
+  applyIcons();
   return { applied: true, icon };
 }
 // Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
@@ -83,6 +86,7 @@ const iconMasters = loadMasters(CORE);
 let iconState = { scheme: 'light', colors: {}, unread: 0 };
 let iconKey = null;
 let windowIconKey = null;
+let dockIconKey = null;
 const smokeIcons = [];
 const nativeFrom = (reps) => {
   const image = nativeImage.createEmpty();
@@ -91,7 +95,17 @@ const nativeFrom = (reps) => {
 };
 function applyIcons(next = {}) {
   iconState = { ...iconState, ...next };
-  const out = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState });
+  const out = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState, fixed: appIconFixed });
+  // macOS: the Dock wears a fixed palette while the app runs, and the bundle's icon (the default theme's) once the
+  // choice is Follow theme again.
+  if (process.platform === 'darwin' && app.dock && (appIconFixed || dockIconKey)) {
+    const dockKey = appIconFixed ? JSON.stringify(out.palette) : null;
+    if (dockKey !== dockIconKey) {
+      const palette = appIconFixed ? out.palette : shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color }).palette;
+      app.dock.setIcon(nativeFrom([{ scale: 1, image: renderIcon({ masters: iconMasters, palette, kind: 'app', size: 512 }) }]));
+      dockIconKey = dockKey;
+    }
+  }
   if (out.key === iconKey) return true;
   iconKey = out.key;
   if (tray) {
@@ -1808,23 +1822,29 @@ async function runSmoke(w) {
   const desktopWalk = await tabWalk();
   report.settingsTabs = tabLabels === settingsTabs().map((t) => t.label).join('|') && tabsOk(desktopWalk);
   if (!report.settingsTabs) console.error('settings tabs: ' + JSON.stringify({ tabLabels, desktopWalk }));
-  // The app icon: a choice in Appearance, written to the server like any setting, and applied by this shell to its
-  // window (the Dock on macOS). Put back to the default after.
+  // The app icon: Follow theme, drawn by the page in the theme in force, then the fixed palettes; a choice is written to
+  // the server like any setting and applied by this shell to the images it draws (and the Dock on macOS). Put back to
+  // the default after.
   await showTab('appearance');
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
   const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconSpec.icons.length + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
+  const themePicture = await js(iconChoice(appIconSpec.default) + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
   await waitFor('Boolean(' + iconChoice('night') + ') && !' + iconChoice('night') + '.disabled', 10000);
   await js(iconChoice('night') + '.click()');
   for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== 'night' || appIconApplied !== 'night'); i += 1) await pause(200);
   const iconHeld = (await held())['appearance.appIcon'] === 'night';
   const iconApplied = appIconApplied === 'night';
+  // A fixed palette stands in for the theme in the images the shell draws (the tray's mark is the palette's).
+  const nightMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: { scheme: appIconSpec.icons.find((i) => i.id === 'night').scheme, colors: appIconSpec.icons.find((i) => i.id === 'night').colors } }).palette.mark;
+  const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === nightMark;
   const iconMarked = await js(iconChoice('night') + ".getAttribute('aria-checked') === 'true'");
   await waitFor('!' + iconChoice(appIconSpec.default) + '.disabled', 10000);
   await js(iconChoice(appIconSpec.default) + '.click()');
   for (let i = 0; i < 50 && appIconApplied !== appIconSpec.default; i += 1) await pause(200);
-  report.appIcon = iconPictures && iconHeld && iconApplied && iconMarked && appIconApplied === appIconSpec.default && (await held())['appearance.appIcon'] === appIconSpec.default;
-  if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, iconHeld, iconApplied, iconMarked, now: appIconApplied }));
+  const themeAgain = smokeIcons.at(-1).mark !== nightMark;
+  report.appIcon = iconPictures && themePicture && iconHeld && iconApplied && iconDrawn && iconMarked && themeAgain && appIconApplied === appIconSpec.default && (await held())['appearance.appIcon'] === appIconSpec.default;
+  if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, themePicture, iconHeld, iconApplied, iconDrawn, iconMarked, themeAgain, now: appIconApplied }));
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
   await showTab('notifications');

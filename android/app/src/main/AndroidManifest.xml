@@ -23,15 +23,28 @@
             android:theme="@style/Theme.Cuate" />
 
         <!-- The launcher entries, one per app icon Settings offers (core/spec/app-icons.json, issue 167). Each is an
-             alias of the one activity wearing its own icon; only the default is enabled in a fresh install, and the
-             bridge's app.icon enables the chosen one and disables the rest (HostBridge.kt). The activity itself is
-             never disabled, so a change never closes the app. core/test/settings-tabs.test.js holds this list to the
+             alias of the one activity wearing its own icon; only Follow theme (the store icon, drawn in the
+             default theme) is enabled in a fresh install, and the bridge's app.icon enables the chosen one and
+             disables the rest (HostBridge.kt). The activity itself is never disabled, so a change never closes the
+             app. core/test/settings-tabs.test.js holds this list to the
              spec. -->
         <activity-alias
-            android:name=".AppIcon_teal"
+            android:name=".AppIcon_theme"
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIcon_teal"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_teal"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>

@@ -22,7 +22,8 @@ import { screenFor, pageAfterBack } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
-import { ICON_TOKENS, unreadTotal } from '../rules/icon.js';
+import { ICON_TOKENS, unreadTotal, iconColours, iconPalette, parseGlyph, renderIcon } from '../rules/icon.js';
+import { ICON_MASTERS } from '../rules/app-icons-spec.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { iconToApply } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
@@ -58,6 +59,8 @@ class AppRoot extends KitElement {
     view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true },
     // The Settings tab on show (issue 167), held here so a push to About and back returns to the tab it left.
     settingsTab: { state: true },
+    // Follow theme's picture in Settings (issue 167): the app icon in the theme in force, drawn here as a PNG data URL.
+    themePicture: { state: true },
     // The sheet's leaving state has to be reactive: the departure is driven from body.surface--leaving, which updated()
     // writes after a render, so a plain field would never repaint and the leave would never begin.
     sheetLeaving: { state: true }, pendingSheet: { state: true },
@@ -161,6 +164,8 @@ class AppRoot extends KitElement {
     this.settingsTab = null;
     // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
     this.iconApplied = null;
+    this.themePicture = null;
+    this.themePictureKey = null;
   }
 
   connectedCallback() {
@@ -259,6 +264,37 @@ class AppRoot extends KitElement {
     this.loadThemeFonts(this.settings['appearance.theme']);
     this.applyAppIcon();
     this.syncIcon();
+    this.drawThemePicture();
+  }
+
+  // Follow theme's picture in Settings is the app icon as the theme in force colours it, drawn by the one renderer the
+  // shells draw with (rules/icon.js) from the masters the icon pipeline mirrors for the page. Drawn once per change of
+  // scheme or colours, after the theme is in place and off the render that applied it; until then, and where the page
+  // has no canvas, Settings shows the default theme's icon (rules/app-icons.js).
+  drawThemePicture() {
+    if (typeof document === 'undefined' || typeof document.createElement !== 'function' || !this.scheme) return;
+    const style = getComputedStyle(document.documentElement);
+    const colors = Object.fromEntries(ICON_TOKENS.map((k) => [k, style.getPropertyValue('--color-' + k).trim()]));
+    const key = JSON.stringify([this.scheme, colors]);
+    if (key === this.themePictureKey) return;
+    this.themePictureKey = key;
+    const scheme = this.scheme;
+    setTimeout(() => {
+      if (key !== this.themePictureKey) return;
+      try {
+        if (!AppRoot.iconMasters) AppRoot.iconMasters = { full: parseGlyph(ICON_MASTERS.full), small: parseGlyph(ICON_MASTERS.small) };
+        const image = renderIcon({ masters: AppRoot.iconMasters, palette: iconPalette(iconColours(colors, colors), scheme), kind: 'app', size: 144 });
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext && canvas.getContext('2d');
+        if (!context) return;
+        context.putImageData(new ImageData(image.data, image.width, image.height), 0, 0);
+        this.themePicture = canvas.toDataURL('image/png');
+      } catch {
+        this.themePicture = null;
+      }
+    }, 0);
   }
 
   // The app icon chosen in Settings (issue 167), applied by the shell where its platform can: the desktop's window and
@@ -1191,7 +1227,7 @@ class AppRoot extends KitElement {
     }
     return html`<app-settings data-motion=${this.pageMotion || 'none'} .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
       @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}
-      .tab=${this.settingsTab} @tab=${(e) => { this.settingsTab = e.detail; }}></app-settings>`;
+      .themePicture=${this.themePicture} .tab=${this.settingsTab} @tab=${(e) => { this.settingsTab = e.detail; }}></app-settings>`;
   }
 
   mainView(chat) {

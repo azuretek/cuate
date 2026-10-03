@@ -100,7 +100,7 @@ targets:
         # The other app icons Settings offers (core/spec/app-icons.json, issue 167), each an alternate icon set the
         # shared icon pipeline writes; the compiler lists them in the Info.plist so setAlternateIconName can use them.
         # core/test/settings-tabs.test.js holds this list to the spec.
-        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-night AppIcon-paper"
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-teal AppIcon-night AppIcon-paper"
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # iPhone only. Claiming a tablet would mean supporting one.

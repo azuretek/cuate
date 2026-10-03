@@ -16,8 +16,8 @@ final class AppIconTests: XCTestCase {
     }
 
     func testAnIdAsksForItsOwnIcon() throws {
-        let spec = AppIcons.Spec(defaultID: "teal", ids: ["teal", "night"])
-        XCTAssertEqual(AppIcons.target(for: "teal", spec: spec, alternates: ["AppIcon-night"]), .primary)
+        let spec = AppIcons.Spec(defaultID: "theme", ids: ["theme", "night"])
+        XCTAssertEqual(AppIcons.target(for: "theme", spec: spec, alternates: ["AppIcon-night"]), .primary)
         XCTAssertEqual(AppIcons.target(for: "night", spec: spec, alternates: ["AppIcon-night"]), .alternate("AppIcon-night"))
         XCTAssertEqual(AppIcons.target(for: "night", spec: spec, alternates: []), .refused, "a set the build does not carry is never asked for")
         XCTAssertEqual(AppIcons.target(for: "nope", spec: spec, alternates: ["AppIcon-nope"]), .refused)

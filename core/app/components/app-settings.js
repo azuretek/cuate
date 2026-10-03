@@ -26,7 +26,7 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 // force is app-root's, handed down as .tab, so returning from About lands on the About tab it was opened from.
 class AppSettings extends KitElement {
   static properties = {
-    values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
+    values: { attribute: false }, themePicture: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
     info: { attribute: false }, host: { attribute: false }, tab: {},
     importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
   };
@@ -154,7 +154,7 @@ class AppSettings extends KitElement {
       // The app icon (issue 167): each choice is its own picture, the one in force marked, and a press writes the
       // choice to the server like any other setting; the shell applies it from there (rules/app-icons.js).
       return html`<div class="app-icon-choices" role="radiogroup" aria-label=${field.label} data-key=${field.key}>
-        ${appIconChoices(this.values).map((c) => html`<button type="button" class="app-icon-choice" role="radio" aria-checked=${c.selected ? 'true' : 'false'} data-icon-id=${c.id} ?disabled=${disabled}
+        ${appIconChoices(this.values, { themePicture: this.themePicture }).map((c) => html`<button type="button" class="app-icon-choice" role="radio" aria-checked=${c.selected ? 'true' : 'false'} data-icon-id=${c.id} ?disabled=${disabled}
             @click=${press(() => (c.selected ? undefined : this.fire('setting', { key: field.key, value: c.id })))}>
           <img class="app-icon-picture" src=${c.src} alt="" draggable="false">
           <span class="app-icon-name">${c.label}</span>
