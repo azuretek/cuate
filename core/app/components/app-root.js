@@ -194,6 +194,12 @@ class AppRoot extends KitElement {
     for (const [name] of this.themeApplied) root.style.removeProperty(name);
     const themed = themeVars(this.settings['appearance.theme'], scheme);
     for (const [name, value] of themed) root.style.setProperty(name, value);
+    // A phone draws its status and navigation bars over the page, so the shell is told the scheme and the page's fill,
+    // and the bars' icons stay readable on the colour behind them. A shell with no bars of its own answers false.
+    if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
+      const background = getComputedStyle(root).getPropertyValue('--color-bg').trim();
+      this.bridge('window.appearance', { scheme, background }).catch(() => {});
+    }
     // Text size scales the type sizes the theme and the tokens resolve to, read back once the theme is in place, so a
     // theme's own type sizes are scaled too. At 100% nothing is written and the tokens draw what they always did.
     const style = getComputedStyle(root);
