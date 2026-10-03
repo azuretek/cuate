@@ -67,7 +67,10 @@ export function mapMessage(m, { attachmentId }) {
     senderName: fromMe ? null : m.sender_name || null,
     text: stripInlineObjects(m.text),
     sentAt: iso(m.created_at) || '1970-01-01T00:00:00.000Z',
-    replyTo: m.reply_to_guid || m.thread_originator_guid || null,
+    // A message is in a thread only when imsg reports its thread originator. Its reply_to_guid is no such mark: Messages
+    // fills it on ordinary rows with the message before it, so reading it marked every consecutive message as a reply
+    // to the one above (issue 195).
+    replyTo: m.thread_originator_guid ? String(m.thread_originator_guid) : null,
     read: fromMe || typeof m.is_read !== 'boolean' ? null : m.is_read,
     attachments: (Array.isArray(m.attachments) ? m.attachments : []).map((a) => mapAttachment(a, attachmentId)),
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
