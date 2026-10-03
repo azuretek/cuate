@@ -1,14 +1,16 @@
 // Sending, which is the dangerous half: off until switched on, rate limited, one send per client key, and an
 // uncertain outcome is reported as uncertain and never retried. A send carries text, a file, or a file with a
-// caption; the file is an attachment id the server already holds, resolved to its path only here.
+// caption, optionally as a reply to one message; the file is an attachment id the server already holds, resolved to
+// its path only here. A reaction is a send too: it passes the same switch and the same rate window (issue 138).
+import { tapbackType } from '../../core/app/rules/messages.js';
+
 export function createSender({ engine, store, config, log, now = Date.now }) {
   const recent = [];
   const inFlight = new Set();
-  return async function send(chatId, { text = '', file = '' } = {}, clientKey) {
-    const prev = store.getSend(clientKey);
-    if (prev) return { http: 200, body: { status: prev.status, clientKey, messageId: prev.message_id ?? null, duplicate: true } };
-    if (inFlight.has(clientKey)) return { http: 409, error: ['in_flight', 'That message is still being sent.'] };
-    if (!String(text).trim() && !file) return { http: 400, error: ['bad_text', 'Send text, a file, or a file with a caption'] };
+  const reacting = new Set();
+
+  // The switch and the rate window every send passes. A refusal here costs nothing.
+  function admit(chatId) {
     if (!config.sending.enabled) {
       log.emit('send.refused', { reason: 'sending_off', chat: chatId });
       return { http: 403, error: ['sending_off', 'Sending is switched off on the server.'] };
@@ -19,6 +21,26 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
       log.emit('send.refused', { reason: 'rate_limited', chat: chatId });
       return { http: 429, error: ['rate_limited', 'Too many messages in the last minute.'] };
     }
+    return null;
+  }
+  // An admitted send takes one slot in the window, and gets it back when the engine says it cannot do the thing at
+  // all, since nothing reached Messages.
+  const charge = () => {
+    const t = now();
+    recent.push(t);
+    return () => {
+      const i = recent.indexOf(t);
+      if (i >= 0) recent.splice(i, 1);
+    };
+  };
+
+  async function send(chatId, { text = '', file = '', replyTo = '' } = {}, clientKey) {
+    const prev = store.getSend(clientKey);
+    if (prev) return { http: 200, body: { status: prev.status, clientKey, messageId: prev.message_id ?? null, duplicate: true } };
+    if (inFlight.has(clientKey)) return { http: 409, error: ['in_flight', 'That message is still being sent.'] };
+    if (!String(text).trim() && !file) return { http: 400, error: ['bad_text', 'Send text, a file, or a file with a caption'] };
+    const refused = admit(chatId);
+    if (refused) return refused;
     // Resolved before the window is charged, so a request naming a file we do not hold costs no rate budget.
     let path = null;
     if (file) {
@@ -29,11 +51,12 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
       }
       path = rec.path;
     }
-    recent.push(t);
+    const refund = charge();
     inFlight.add(clientKey);
+    const opts = replyTo ? { replyTo } : {};
     try {
       store.putSend(clientKey, chatId, 'pending', null);
-      const r = path ? await engine.sendFile(chatId, path, text) : await engine.sendText(chatId, text);
+      const r = path ? await engine.sendFile(chatId, path, text, opts) : await engine.sendText(chatId, text, opts);
       if (r.ok) {
         store.putSend(clientKey, chatId, 'sent', r.messageId);
         return { http: 201, body: { status: 'sent', clientKey, messageId: r.messageId ?? null } };
@@ -44,10 +67,54 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
         return { http: 202, body: { status: 'uncertain', clientKey, messageId: null } };
       }
       store.putSend(clientKey, chatId, 'failed', null);
+      if (r.unsupported) {
+        refund();
+        log.emit('send.refused', { reason: 'reply_unsupported', chat: chatId });
+        return { http: 422, error: ['reply_unsupported', 'The Mac cannot send a threaded reply right now: it needs the engine bridge running.'] };
+      }
       log.emit('send.failed', { chat: chatId, code: r.code, error: r.error || null });
       return { http: 502, error: ['send_failed', 'Messages did not send it.'] };
     } finally {
       inFlight.delete(clientKey);
     }
-  };
+  }
+
+  // Add or remove this device owner's reaction on one message. Only the six standard tapbacks can be sent, so any
+  // other emoji is refused before it costs rate budget or reaches the engine. One reaction per message is in flight
+  // at a time, because a tapback sent twice can undo itself.
+  async function react(chatId, { targetId, emoji, remove = false }) {
+    const type = tapbackType(emoji);
+    if (!type) {
+      log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });
+      return { http: 422, error: ['reaction_unsupported', 'The Mac can only send the six standard tapbacks as a reaction.'] };
+    }
+    const key = chatId + '/' + targetId;
+    if (reacting.has(key)) return { http: 409, error: ['in_flight', 'A reaction to that message is still being sent.'] };
+    const refused = admit(chatId);
+    if (refused) return refused;
+    const refund = charge();
+    reacting.add(key);
+    const body = { status: 'sent', targetId, type, add: !remove };
+    try {
+      const r = await engine.react(chatId, targetId, { type, remove });
+      if (r.ok) return { http: 201, body };
+      if (r.uncertain) {
+        log.emit('send.uncertain', { chat: chatId, code: r.code });
+        return { http: 202, body: { ...body, status: 'uncertain' } };
+      }
+      if (r.unsupported) {
+        refund();
+        log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });
+        return { http: 422, error: ['reaction_unsupported', 'The Mac cannot send a reaction right now: it needs the engine bridge running.'] };
+      }
+      log.emit('send.failed', { chat: chatId, code: r.code, error: r.error || null });
+      return { http: 502, error: ['react_failed', 'The Mac did not send the reaction.'] };
+    } finally {
+      reacting.delete(key);
+    }
+  }
+
+  // The sender stays one function, as every caller has it; the reaction path rides on it.
+  send.react = react;
+  return send;
 }

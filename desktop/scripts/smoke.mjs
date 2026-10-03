@@ -2,7 +2,8 @@
 // it drew. It proves boot, the chat list, a conversation with a photo, a live incoming message over the event stream,
 // a send, closing to the tray with a send in flight and the tray's menu opening screens in the app, the settings page reading, writing and streaming a change, a theme imported by URL, a notice firing and a notice suppressed, the about
 // page, image previews and the image viewer's zoom by click, wheel, key and touch, the phone layout with its edge drag (the settle threshold and the reduced-motion path included), and onboarding.
-// The sidebar's Add group control holds one line at the smallest window and every text size.
+// The sidebar's Add group control holds one line at the smallest window and every text size. A message takes a reaction
+// from its menu and comes off again, an emoji the engine cannot send is refused, and a threaded reply quotes its parent.
 // Run it under a display (xvfb-run on Linux).
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
@@ -65,7 +66,7 @@ await new Promise((resolve) => {
 });
 rmSync(data, { recursive: true, force: true });
 rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
-const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.addGroup;
+const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.addGroup && report.react && report.reply;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
   process.exit(1);

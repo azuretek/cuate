@@ -372,6 +372,74 @@ async function runSmoke(w) {
   console.log('attach menu: ' + JSON.stringify({ checks: attachChecks, menu: attachMenu }));
   await shot('03b-after-file-send.png');
 
+  // Reactions and threaded replies (issue 138). A right click opens a message's menu; a standard tapback goes out
+  // through the server and shows on the bubble as yours, and choosing it again takes it off. The hover control opens
+  // the same menu, whose full emoji panel offers any emoji, and one the engine cannot send is refused under the
+  // message. Reply quotes the parent above the field, the sent reply shows its parent quoted, and pressing the quote
+  // goes to the parent and lights it.
+  const TARGET = 'FAKE-0013';
+  const REPLY = 'Replying from the desktop smoke';
+  const row = '.bubble-row[data-id="' + TARGET + '"]';
+  const q = (s) => JSON.stringify(s);
+  await js(`(() => { const b = document.querySelector(${q(row + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 })); return true; })()`);
+  await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu')}))`, 10000);
+  await pause(250);
+  const reactMenu = await js(`(() => { const m = document.querySelector(${q(row + ' .message-menu')}); const list = document.querySelector('.messages').getBoundingClientRect(); const r = m.getBoundingClientRect(); return { tapbacks: m.querySelectorAll('.tapback-row .tapback[role=menuitemcheckbox]').length, more: Boolean(m.querySelector('.tapback-more')), reply: [...m.querySelectorAll('.menu-item')].some((b) => b.textContent.trim() === 'Reply'), inside: r.top >= list.top - 1 && r.bottom <= list.bottom + 1, side: m.dataset.side }; })()`);
+  await shot('13-message-menu-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('13b-message-menu-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')}).click()`);
+  await waitFor(`[...document.querySelectorAll(${q(row + ' .reaction.mine')})].some((r) => r.textContent.includes('\u{1F44D}'))`, 10000);
+  const reacted = !(await js(`Boolean(document.querySelector(${q(row + ' .message-menu')}))`));
+  await pause(300);
+  await shot('14-reacted-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('14b-reacted-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js(`(() => { const b = document.querySelector(${q(row + ' .bubble')}); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })); return true; })()`);
+  await waitFor(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')})?.getAttribute('aria-checked') === 'true'`, 10000);
+  await js(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')}).click()`);
+  await waitFor(`!document.querySelector(${q(row + ' .reaction.mine')})`, 10000);
+  const unreacted = await js(`!document.querySelector(${q(row + ' .message-menu')}) && !document.querySelector(${q(row + ' .reaction.mine')})`);
+  await js(`document.querySelector(${q(row + ' .message-action[aria-label="React"]')}).click()`);
+  await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu .tapback-more')}))`, 10000);
+  await js(`document.querySelector(${q(row + ' .message-menu .tapback-more')}).click()`);
+  await waitFor(`Boolean(document.querySelector(${q(row + ' app-emoji-picker .emoji-grid .emoji-cell')}))`, 10000);
+  await js(`(() => { const f = document.querySelector(${q(row + ' app-emoji-picker .emoji-search')}); f.value = 'party'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await pause(250);
+  const customPicked = await js(`(() => { const cells = [...document.querySelectorAll(${q(row + ' app-emoji-picker .emoji-grid .emoji-cell')})]; const c = cells.find((x) => x.textContent === '\u{1F389}') || cells[0]; if (!c) return null; const t = c.textContent; c.click(); return t; })()`);
+  await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
+  const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector(${q(row + ' app-emoji-picker')})`);
+  const reactChecks = { menu: reactMenu.tapbacks === 6 && reactMenu.more && reactMenu.reply, inside: reactMenu.inside, reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom };
+  report.react = Object.values(reactChecks).every(Boolean);
+  console.log('react: ' + JSON.stringify({ checks: reactChecks, menu: reactMenu, customPicked }));
+
+  await js(`document.querySelector(${q(row + ' .message-action[aria-label="Reply"]')}).click()`);
+  await waitFor("(document.querySelector('app-composer .composer-reply .reply-text')?.textContent || '').includes('See you soon')", 10000);
+  const replyFocused = await js("document.activeElement === document.querySelector('app-composer textarea')");
+  await pause(200);
+  await shot('15-replying-light.png');
+  await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  const replySel = `[...document.querySelectorAll('.bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
+  await waitFor(`Boolean(${replySel}?.querySelector('.reply-quote'))`, 20000);
+  const replied = await js(`(() => { const r = ${replySel}; const quote = r.querySelector('.reply-quote'); return { quote: quote.textContent, enabled: !quote.disabled, cleared: !document.querySelector('app-composer .composer-reply') }; })()`);
+  await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
+  await pause(300);
+  await shot('16-replied-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('16b-replied-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js(`${replySel}.querySelector('.reply-quote').click()`);
+  await waitFor(`document.querySelector(${q(row)})?.classList.contains('flash')`, 5000);
+  const wentTo = await js(`(() => { const r = document.querySelector(${q(row)}).getBoundingClientRect(); const l = document.querySelector('.messages').getBoundingClientRect(); return r.bottom > l.top && r.top < l.bottom; })()`);
+  const replyChecks = { focused: replyFocused, quoted: replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn'), enabled: replied.enabled, cleared: replied.cleared, wentTo };
+  report.reply = Object.values(replyChecks).every(Boolean);
+  console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied }));
+
   // Pictures (issue 126): a received picture and a staged one both show an aspect-correct, dressed preview, and the
   // viewer opens over the sheet's own blurred, darkened backdrop. The desktop drives the viewer with real mouse input
   // (sendInputEvent): a left click zooms in, a right click zooms out with no context menu, the wheel zooms about the
