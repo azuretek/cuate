@@ -76,8 +76,8 @@ enum TestFlight {
     /// The URL that was accepted, or nil when neither was, which is logged rather than swallowed.
     @discardableResult
     static func open(_ opener: Open = systemOpen) async -> URL? {
-        for url in [appURL, storeURL].compactMap({ $0 }) where await opener(url) {
-            return url
+        for url in [appURL, storeURL].compactMap({ $0 }) {
+            if await opener(url) { return url }
         }
         NSLog("[cuate] neither TestFlight nor its App Store page could be opened")
         return nil
