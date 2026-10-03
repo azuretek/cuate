@@ -10,6 +10,15 @@ export function putNotice(notices, notice) {
   return prior ? notices.map((n) => n.id === notice.id ? next : n) : [...notices, next];
 }
 
+// The sibling's eighth rule: a transient state the reader is meant to read stays up for motion.min-visible before
+// anything replaces it. Only a transient card (a check in progress) is floored; a standing condition or a progress
+// tick never is. Returns how long a change to the card under `id` must still wait; zero means apply it now.
+export function noticeHoldMs(notices, id, notice, shownAt, now, floorMs) {
+  const prior = notices.find((n) => n.id === id && !n.read);
+  if (!prior?.transient || !Number.isFinite(shownAt) || prior.revision === notice?.revision) return 0;
+  return Math.max(0, floorMs - (now - shownAt));
+}
+
 export function dismissNotice(notices, id) {
   return notices.map((n) => n.id === id ? { ...n, read: true } : n);
 }
@@ -22,6 +31,7 @@ export function appUpdateNotice(status) {
     id: 'app-update', revision: [status.state, status.version || '', status.state === 'error' ? status.detail || '' : ''].join(':'),
     ...banner, action: banner.action?.command === DISMISS ? null : banner.action,
     tone: status.state === 'error' ? 'error' : status.state === 'stalled' ? 'warn' : status.state === 'ready' || status.state === 'current' ? 'ok' : 'info',
+    transient: status.state === 'checking',
     percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null,
   };
 }

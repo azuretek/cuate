@@ -13,7 +13,8 @@ import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
-import { putNotice, dismissNotice, appUpdateNotice } from '../rules/app-notices.js';
+import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
+import { durationMs } from '../../kit/rules/press.js';
 import './app-notices.js';
 import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
@@ -102,6 +103,8 @@ class AppRoot extends KitElement {
     // render and the app never becomes ready.
     this.updateStatus = null;
     this.appNotices = [];
+    this.noticeShownAt = null;
+    this.noticeHold = null;
     this.pending = new Map();
     this.client = null;
     this.drag = null;
@@ -165,6 +168,8 @@ class AppRoot extends KitElement {
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }
     if (this.offOpen) { this.offOpen(); this.offOpen = null; }
+    clearTimeout(this.noticeHold);
+    this.noticeHold = null;
   }
 
   // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
@@ -416,10 +421,24 @@ class AppRoot extends KitElement {
   onUpdate(data) {
     const { state, version, percent, detail, canInstall } = data || {};
     this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null, canInstall: Boolean(canInstall) } : null;
-    const notice = appUpdateNotice(this.updateStatus);
-    this.appNotices = notice ? putNotice(this.appNotices, notice) : this.appNotices.filter((n) => n.id !== 'app-update');
+    this.showUpdateNotice(appUpdateNotice(this.updateStatus));
     if (!this.settingsRead) { this.heldUpdate = data || null; return; }
     this.noticeUpdate(data);
+  }
+
+  // The update card follows the latest state, except that a transient card (a check in progress) stays up for the
+  // floor the tokens hold (motion.min-visible) before a different state replaces it. Only the newest state is kept:
+  // a later event cancels a pending one, so the card never replays a state that was already superseded.
+  showUpdateNotice(notice) {
+    clearTimeout(this.noticeHold);
+    this.noticeHold = null;
+    const floor = durationMs(getComputedStyle(this).getPropertyValue('--motion-min-visible'), 900);
+    const wait = noticeHoldMs(this.appNotices, 'app-update', notice, this.noticeShownAt, Date.now(), floor);
+    if (wait > 0) { this.noticeHold = setTimeout(() => this.showUpdateNotice(notice), wait); return; }
+    const prior = this.appNotices.find((n) => n.id === 'app-update');
+    this.appNotices = notice ? putNotice(this.appNotices, notice) : this.appNotices.filter((n) => n.id !== 'app-update');
+    if (!notice) this.noticeShownAt = null;
+    else if (prior?.revision !== notice.revision) this.noticeShownAt = Date.now();
   }
 
   // The latest state that arrived before the settings did, decided now that they have.
@@ -834,7 +853,7 @@ class AppRoot extends KitElement {
     const current = normalizeSort(this.settings['chats.sort']);
     return html`<div class="sort-menu" role="menu" aria-label="Sort conversations">
       ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${press(() => this.chooseSort(o))}>
-        <span class="sort-check" aria-hidden="true">${o === current ? '✓' : ''}</span>${SORT_LABELS[o]}
+        <span class="sort-check" aria-hidden="true">${o === current ? html`<span class="icon" data-icon="check" aria-hidden="true"></span>` : nothing}</span>${SORT_LABELS[o]}
       </button>`)}
     </div>`;
   }
@@ -1020,9 +1039,9 @@ class AppRoot extends KitElement {
         <select class="search-mode" aria-label="Search by" @change=${(e) => this.setFilters({ mode: e.currentTarget.value })}>${this.modeOptions(f.mode)}</select>
         <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })} @keydown=${this.onSearchKey}>
       </span>
-      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${press(() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; })}>≡</button>
-      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${press(() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; })}>⇅</button>
-      <button type="button" class="gear-button" aria-label="Settings" @click=${press(() => this.openSettings())}>⚙</button>
+      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${press(() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; })}><span class="icon" data-icon="list-filter" aria-hidden="true"></span></button>
+      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${press(() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; })}><span class="icon" data-icon="arrow-up-down" aria-hidden="true"></span></button>
+      <button type="button" class="gear-button" aria-label="Settings" @click=${press(() => this.openSettings())}><span class="icon" data-icon="settings" aria-hidden="true"></span></button>
       ${this.sortOpen ? this.sortMenu() : nothing}
       ${this.filterOpen ? this.filterMenu() : nothing}
     </header>`;

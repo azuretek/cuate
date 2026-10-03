@@ -171,3 +171,4 @@ jobs:
           path: |
             ${{ runner.temp }}/packaged-smoke/*.png
             ${{ runner.temp }}/packaged-smoke/report.json
+            ${{ runner.temp }}/packaged-smoke/failure.json

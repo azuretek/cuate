@@ -72,7 +72,7 @@ class AppSheet extends KitElement {
 
   render() {
     return html`<button type="button" class="sheet-back" @click=${press(() => this.back())}>
-        <span class="sheet-back-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg></span>
+        <span class="sheet-back-icon" aria-hidden="true"><span class="icon" data-icon="arrow-left" aria-hidden="true"></span></span>
         <span class="sheet-back-label">${this.label}</span>
         <kbd class="sheet-esc" aria-hidden="true">esc</kbd>
       </button>

@@ -28,5 +28,14 @@ landscape screen by the app's portrait frame, which Xcode saved on its side and
 cut in half, and which read as a clipped layout that is not there. The screen as
 the simulator returned it is kept beside it as `landscape-as-returned`.
 
+The iOS CI test command runs once through `ios/scripts/test-with-diagnostics.mjs`.
+It preserves the test exit status and keeps stdout, stderr, timestamped process
+snapshots, unprivileged one-second launch-process samples and filtered system logs
+in `proof/launch-diagnostics`, uploaded even on failure. Each diagnostic command
+has a five-second bound and the test command has a twenty-minute deadline.
+Sampling failures are recorded, not treated as passing tests. No retries or
+rotation assertions are removed. These captures diagnose launch handshakes that
+can time out before the first app or rotation assertion starts.
+
 Run with the existing iOS scheme's test action or, from android,
 `./gradlew --no-daemon :app:connectedDebugAndroidTest`.
