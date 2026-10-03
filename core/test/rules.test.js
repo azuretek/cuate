@@ -17,7 +17,8 @@ import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engin
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
 import { formatTraceparent, parseTraceparent, newTraceparent } from '../kit/rules/trace.js';
-import { tokensCss } from '../kit/rules/tokens.js';
+import { tokensCss, iconSvg } from '../kit/rules/tokens.js';
+import { springCurve } from '../kit/rules/motion.js';
 import { createLogger } from '../kit/log.js';
 
 const spec = (p) => JSON.parse(readFileSync(new URL('../spec/' + p, import.meta.url), 'utf8'));
@@ -880,4 +881,41 @@ test('a reply quotes its parent by who wrote it and a line of it, and says so wh
   assert.equal(Array.from(q.text).length, 80);
   assert.ok(q.text.endsWith('\u2026'));
   assert.deepEqual(replyQuote(all, msg({ replyTo: 'gone' })), { id: 'gone', found: false, who: '', text: 'An earlier message' });
+});
+
+test('the motion tokens are the sibling app\'s, and the spring is recomputed rather than trusted', () => {
+  const tokens = spec('tokens.json');
+  const s = tokens.motionSource.spring;
+  const curve = springCurve({ responseMs: s['response-ms'], dampingFraction: s['damping-fraction'] });
+  assert.equal(tokens.motion.spring, curve.durationMs + 'ms', 'the duration is how long the spring takes to settle');
+  assert.equal(tokens.motion['spring-ease'], curve.linear, 'the easing is the spring sampled');
+  // Chela's own values (its core/spec/tokens.json motion block and the linear() its ui.css restates), so a drift here
+  // is a drift between the two clients rather than a tidy-up.
+  assert.equal(curve.durationMs, 730);
+  assert.match(curve.linear, /^linear\(0, 0\.05, 0\.164, .*, 1\.01, 1\.01, .*, 1\)$/);
+  assert.equal(tokens.motion.screen, '350ms');
+  assert.equal(tokens.motion['min-visible'], '900ms');
+  assert.equal(tokens.motion['sheet-ease'], 'cubic-bezier(0.32, 0.72, 0, 1)', 'the screen moves on the sheet curve');
+  assert.equal(tokens.motion.ease, 'cubic-bezier(0.16, 1, 0.3, 1)');
+  const css = tokensCss(tokens);
+  for (const name of ['screen', 'spring', 'spring-ease', 'min-visible']) assert.ok(css.includes('--motion-' + name + ': ' + tokens.motion[name] + ';'), name);
+  const critical = springCurve({ responseMs: 500, dampingFraction: 1 });
+  assert.ok(critical.linear.startsWith('linear(0, ') && critical.linear.endsWith(', 1)'), 'a critically damped spring still runs 0 to 1');
+});
+
+test('the icon set is drawn from the tokens, one stroked glyph per name, in the generated stylesheet', () => {
+  const tokens = spec('tokens.json');
+  const css = tokensCss(tokens);
+  assert.ok(css.includes('--icon-size: ' + tokens.icon.size + ';') && css.includes('--icon-stroke: ' + tokens.icon.stroke + ';'));
+  const glyphs = tokens.icons.glyphs;
+  for (const name of ['x', 'check', 'circle-x', 'alert-triangle', 'info']) assert.ok(glyphs[name], 'Chela\'s set carries ' + name);
+  for (const [name, glyph] of Object.entries(glyphs)) {
+    assert.ok(glyph['sf-symbol'], name + ' names the SF Symbol the phone draws');
+    const svg = iconSvg(glyph, tokens.icon);
+    assert.match(svg, /fill="none"/, name);
+    assert.match(svg, /stroke-linecap="round" stroke-linejoin="round"/, name);
+    assert.ok(svg.includes('stroke-width="' + (glyph['stroke-width'] || tokens.icon.stroke) + '"'), name);
+    assert.ok(css.includes('.icon[data-icon="' + name + '"] { --icon-glyph: url("data:image/svg+xml,' + encodeURIComponent(svg) + '"); }'), name + ' is in the stylesheet');
+  }
+  assert.ok(iconSvg(glyphs['arrow-left'], tokens.icon).includes('stroke-width="1.7"'), 'the back arrow keeps Chela\'s finer weight');
 });

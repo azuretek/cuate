@@ -257,3 +257,14 @@ test('no component declares a property with the name of one of its methods', () 
     for (const p of props) assert.ok(!methods.has(p), f + ': the property ' + p + ' would replace the method ' + p + '()');
   }
 });
+
+test('every icon a component draws is one the icon set holds, and no control draws a text glyph for an icon', () => {
+  const glyphs = json('core/spec/tokens.json').icons.glyphs;
+  const used = new Set();
+  for (const f of walk('core/app/components').filter((f) => CODE.test(f))) {
+    const src = read(f);
+    for (const m of src.matchAll(/data-icon="([^"]+)"/g)) { used.add(m[1]); assert.ok(glyphs[m[1]], f + ' draws ' + m[1] + ', which the set does not hold'); }
+    assert.equal(/>[\u2191\u2193\u270e\u2715\u2261\u21c5\u2699\u2713]</.exec(src.replace(/class="send"[^>]*>\\u2191/, '')), null, f + ' draws an icon as a text glyph');
+  }
+  for (const name of ['list-filter', 'arrow-up-down', 'settings', 'check', 'arrow-left', 'x', 'chevron-up', 'chevron-down', 'pencil']) assert.ok(used.has(name), name + ' is drawn');
+});

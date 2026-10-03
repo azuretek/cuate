@@ -213,7 +213,7 @@ class AppImageViewer extends KitElement {
         @pointerdown=${this.onDown} @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${this.onCancel}
         @contextmenu=${this.onContext} @wheel=${this.onWheel}>
       <img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>
-      <button type="button" class="viewer-close" aria-label="Close" @click=${press(() => this.close())}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+      <button type="button" class="viewer-close" aria-label="Close" @click=${press(() => this.close())}><span class="icon" data-icon="x" aria-hidden="true"></span></button>
       <p class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</p>
     </div>`;
   }

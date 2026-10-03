@@ -151,7 +151,7 @@ jobs:
       - name: Run unit and native rotation tests
         run: |
           set -eo pipefail
-          xcodebuild \
+          node scripts/test-with-diagnostics.mjs xcodebuild \
             -project Cuate.xcodeproj \
             -scheme Cuate \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \

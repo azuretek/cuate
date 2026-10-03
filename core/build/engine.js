@@ -133,6 +133,7 @@ var engine = (() => {
     groupSections: () => groupSections,
     hideChats: () => hideChats,
     holdsAfter: () => holdsAfter,
+    iconSvg: () => iconSvg,
     importSummary: () => importSummary,
     importTheme: () => importTheme,
     importTweakcn: () => importTweakcn,
@@ -206,6 +207,7 @@ var engine = (() => {
     slideProgress: () => slideProgress,
     slideRelease: () => slideRelease,
     sortChats: () => sortChats,
+    springCurve: () => springCurve,
     stageCheck: () => stageCheck,
     stalledNotice: () => stalledNotice,
     stampProblem: () => stampProblem,
@@ -549,7 +551,17 @@ var engine = (() => {
   }
 
   // core/kit/rules/tokens.js
-  var GROUPS = ["space", "radius", "font", "size", "motion", "shadow"];
+  var GROUPS = ["space", "radius", "font", "size", "motion", "shadow", "icon"];
+  function iconSvg(glyph, icon) {
+    const attrs = (o) => Object.entries(o).map(([k, v]) => ` ${k}="${v}"`).join("");
+    const parts = glyph.svg.map(([tag, a]) => `<${tag}${attrs(a)}/>`).join("");
+    const stroke = { viewBox: "0 0 24 24", xmlns: "http://www.w3.org/2000/svg", fill: "none", stroke: "black", "stroke-width": glyph["stroke-width"] || icon.stroke, "stroke-linecap": "round", "stroke-linejoin": "round" };
+    return `<svg${attrs(stroke)}>${parts}</svg>`;
+  }
+  function iconRules(spec) {
+    const glyphs = spec.icons && spec.icons.glyphs || {};
+    return Object.entries(glyphs).map(([name, glyph]) => `.icon[data-icon="${name}"] { --icon-glyph: url("data:image/svg+xml,${encodeURIComponent(iconSvg(glyph, spec.icon))}"); }`);
+  }
   function tokensCss(spec) {
     const flat = (prefix, obj, indent) => Object.entries(obj).map(([k, v]) => `${indent}--${prefix}-${k}: ${v};`);
     const lines = ["/* Generated from core/spec/tokens.json by scripts/gen-tokens.mjs. Do not edit. */", ":root {", "  color-scheme: light dark;"];
@@ -563,8 +575,30 @@ var engine = (() => {
     lines.push('[data-palette="default"] {', ...colours(spec.color.light, "  "), "}");
     lines.push("@media (prefers-color-scheme: dark) {", '  :root:not([data-scheme="light"]) [data-palette="default"] {');
     lines.push(...colours(spec.color.dark, "    "), "  }", "}");
-    lines.push(':root[data-scheme="dark"] [data-palette="default"] {', ...colours(spec.color.dark, "  "), "}", "");
+    lines.push(':root[data-scheme="dark"] [data-palette="default"] {', ...colours(spec.color.dark, "  "), "}");
+    lines.push(...iconRules(spec), "");
     return lines.join("\n");
+  }
+
+  // core/kit/rules/motion.js
+  function springCurve(spring, { samples = 24, settle = 1e-3 } = {}) {
+    const omega = 2 * Math.PI / (spring.responseMs / 1e3);
+    const zeta = spring.dampingFraction;
+    const position = (t) => {
+      if (zeta < 1) {
+        const damped = omega * Math.sqrt(1 - zeta * zeta);
+        return 1 - Math.exp(-zeta * omega * t) * (Math.cos(damped * t) + zeta * omega / damped * Math.sin(damped * t));
+      }
+      return 1 - Math.exp(-omega * t) * (1 + omega * t);
+    };
+    const settleS = Math.log(1 / settle) / (Math.min(zeta, 1) * omega);
+    const durationMs2 = Math.round(settleS * 1e3 / 10) * 10;
+    const points = [];
+    for (let i = 0; i <= samples; i += 1) {
+      const value = i === samples ? 1 : position(i / samples * (durationMs2 / 1e3));
+      points.push(Number(value.toFixed(3)));
+    }
+    return { durationMs: durationMs2, linear: `linear(${points.join(", ")})` };
   }
 
   // core/kit/rules/press.js
