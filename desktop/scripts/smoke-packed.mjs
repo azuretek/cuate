@@ -16,8 +16,11 @@ export function packedSmoke() {
     const folder = process.arch === 'arm64' ? 'mac-arm64' : 'mac';
     executable = path.join(dist, folder, naming.product + '.app/Contents/MacOS/' + naming.product);
   }
+  // The bound is for a smoke that hangs, never for one that is merely slow: the whole smoke takes 132 to 144 seconds on
+  // the arm64, Linux and Windows runners, and the macos-15-intel runner went past the old 150 second bound with every
+  // check still passing, which failed its package leg with spawnSync ETIMEDOUT.
   const result = spawnSync(process.execPath, [path.join(root, 'desktop/scripts/smoke.mjs')], {
-    stdio: 'inherit', timeout: 150000,
+    stdio: 'inherit', timeout: 360000,
     env: { ...process.env, SMOKE_APP: executable, APPIMAGE_EXTRACT_AND_RUN: '1' },
   });
   if (result.error) throw result.error;

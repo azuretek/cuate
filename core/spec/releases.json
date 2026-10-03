@@ -1,0 +1,13 @@
+{
+  "description": "Where a phone learns of a newer build and fetches it, with no credential in the app (issue 192): the repository's public release feed, the address a release asset is served from, the names of the Android APK and its manifest on a release, and the two addresses that open TestFlight. The phone shells read the addresses from this file (the page loads nothing from the network), scripts/release names the Android assets it publishes from it, and core/test/phone-updates.test.js holds each side to it.",
+  "feed": "https://github.com/{repo}/releases.atom",
+  "asset": "https://github.com/{repo}/releases/download/v{version}/{name}",
+  "android": {
+    "apk": "{slug}-android-{version}.apk",
+    "manifest": "{slug}-android-{version}.manifest.json"
+  },
+  "testflight": {
+    "app": "itms-beta://",
+    "store": "https://apps.apple.com/app/testflight/id899247664"
+  }
+}

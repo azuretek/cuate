@@ -6,6 +6,9 @@
          screens land next. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Updating in the app (issue 192): a verified release APK is handed to the system installer, which asks the
+         person to confirm. Android asks once whether this app may install apps, after the app has said why. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -26,6 +29,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The installer's answer to an update this app handed it. Not exported: only the PendingIntent the app made
+             reaches it, so nothing outside the app can hand it an intent to start. -->
+        <receiver
+            android:name=".InstallStatusReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

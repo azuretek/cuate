@@ -8,7 +8,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { parse } from 'yaml';
-import { judge, isSupersession, check, findRun, splitList, ghJson } from '../../scripts/release/gate.mjs';
+import { judge, isSupersession, check, findRun, splitList, ghJson, isTransient } from '../../scripts/release/gate.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const WORKFLOWS = new URL('../../.github/workflows/', import.meta.url);
 const readWorkflow = (file) => parse(readFileSync(new URL(file, WORKFLOWS), 'utf8'));
@@ -139,6 +142,49 @@ test('a GitHub answer larger than the 1 MiB default output buffer is read whole'
   const size = 3 * 1024 * 1024;
   const answer = ghJson(process.execPath, ['-e', 'process.stdout.write(JSON.stringify({ pad: "x".repeat(' + size + ') }))']);
   assert.equal(answer.pad.length, size);
+});
+
+// A stand-in for gh that fails the way GitHub did for the first few calls, then answers. The count lives in a file, since
+// each call is its own process.
+function flakyGh(failures, stderr) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'gate-gh-'));
+  const count = path.join(dir, 'count');
+  const script = 'const fs = require("fs"); const f = ' + JSON.stringify(count) + '; const n = fs.existsSync(f) ? Number(fs.readFileSync(f, "utf8")) : 0; fs.writeFileSync(f, String(n + 1));'
+    + ' if (n < ' + failures + ') { process.stderr.write(' + JSON.stringify(stderr) + '); process.exit(1); } process.stdout.write(JSON.stringify({ calls: n + 1 }));';
+  return { args: ['-e', script], close: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('a GitHub 5xx or timeout is asked again, with a growing pause, and the answer that follows is used', () => {
+  const gh = flakyGh(2, 'gh: No server is currently available to service your request. (HTTP 503)\n');
+  try {
+    const pauses = [];
+    const answer = ghJson(process.execPath, gh.args, process.env, { wait: (ms) => pauses.push(ms), pauseMs: 10 });
+    assert.equal(answer.calls, 3);
+    assert.deepEqual(pauses, [10, 20]);
+  } finally {
+    gh.close();
+  }
+  assert.ok(isTransient({ stderr: "gh: We couldn't respond to your request in time. (HTTP 504)" }));
+  assert.ok(isTransient({ message: 'read tcp: i/o timeout' }));
+});
+
+test('a failure that is not transient fails at once, and a transient one fails after its attempts run out', () => {
+  const missing = flakyGh(9, 'gh: Not Found (HTTP 404)\n');
+  try {
+    const pauses = [];
+    assert.throws(() => ghJson(process.execPath, missing.args, process.env, { wait: (ms) => pauses.push(ms) }), /HTTP 404/);
+    assert.deepEqual(pauses, [], 'a 404 is an answer, not a blip');
+  } finally {
+    missing.close();
+  }
+  const down = flakyGh(9, 'gh: Server Error (HTTP 502)\n');
+  try {
+    const pauses = [];
+    assert.throws(() => ghJson(process.execPath, down.args, process.env, { attempts: 3, wait: (ms) => pauses.push(ms), pauseMs: 1 }), /HTTP 502/);
+    assert.equal(pauses.length, 2, 'bounded: three attempts, two pauses');
+  } finally {
+    down.close();
+  }
 });
 
 test('splitList reads a comma separated pipeline list', () => {

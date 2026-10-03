@@ -64,7 +64,7 @@ export function publish({ dir, version, sha, apply = false, gh = (args) => execF
     // repair in place rather than start over.
     if (existing && existing.draft) gh(['release', 'delete', tag, ...repo, '--yes']);
     if (!alreadyPublished) {
-      gh(['release', 'create', tag, ...repo, '--target', sha, '--draft', '--prerelease', '--title', tag, '--notes', 'Test build of commit ' + sha + ': the desktop apps and the server, one version. See docs/release.md for installation, update channels and verifying the server artifact.']);
+      gh(['release', 'create', tag, ...repo, '--target', sha, '--draft', '--prerelease', '--title', tag, '--notes', 'Test build of commit ' + sha + ': the desktop apps, the server and the Android APK, one version. See docs/release.md for installation, update channels and verifying the server artifact.']);
       created = true;
       gh(['release', 'upload', tag, ...repo, ...assets.map((asset) => path.join(dir, asset))]);
       const draft = JSON.parse(gh(['release', 'view', tag, ...repo, '--json', 'databaseId']));

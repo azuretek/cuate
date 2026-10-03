@@ -102,6 +102,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      # Reads the android pipeline's release artifact for this commit (issue 192); nothing here writes to Actions.
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,6 +126,13 @@ jobs:
         with:
           name: server-release
           path: release-assets
+      # The signed APK and its manifest, from the android run the platforms gate already required to succeed, so a
+      # phone can update itself from the release (issue 192). A network step, so it carries its own deadline.
+      - name: Fetch the signed APK for this commit
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/android-artifact.mjs fetch "$GITHUB_SHA" release-assets
       - name: Verify all assets, draft, attach, verify remote digests, publish, retain ten
         env:
           GH_TOKEN: ${{ github.token }}
