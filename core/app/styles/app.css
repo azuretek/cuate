@@ -1,7 +1,11 @@
 /* The app's styles. Every colour, size, spacing, radius and duration comes from tokens.css (core/spec/tokens.json);
    core/test/guards.test.js fails on a literal. */
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; }
+/* The page never scrolls or zooms as a whole (issue 180): its views scroll inside it, so the conversation header stays
+   pinned, an on-screen keyboard never slides the page under the status bar, and only the media viewer zooms (it takes
+   every touch itself, touch-action: none). */
+html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+html { touch-action: pan-x pan-y; }
 body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); letter-spacing: var(--font-tracking); color: var(--color-fg); background: var(--color-bg); }
 button, input, textarea { font: inherit; color: inherit; }
 /* The caret, native form controls and selected text take the theme's colours rather than the platform's accent,

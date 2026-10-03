@@ -88,6 +88,67 @@
   // presses the marker on iOS.
   window.systemBarsSwitch = (next) => { scheme = next === 'dark' ? 'dark' : 'light'; return report(); };
   marker.addEventListener('click', () => { window.systemBarsSwitch(scheme === 'dark' ? 'light' : 'dark'); });
+
+  // The keyboard (issue 180). The native test taps a real field, the composer's or one in Settings, so the platform
+  // raises its own keyboard; the page reports whether anything slid: the page's scroll, the visual viewport's offset,
+  // where the surface at the top now sits, and where the focused field is against the visible height.
+  let kind = 'conversation';
+  const field = () => (kind === 'settings' ? document.querySelector('[data-bars-field]') : document.querySelector('app-composer textarea'));
+  window.systemBarsField = () => {
+    const f = field();
+    if (!f) return null;
+    const r = f.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 20) };
+  };
+  window.systemBarsOpenSettings = async () => {
+    kind = 'settings';
+    root.openSettings();
+    await root.updateComplete;
+    await new Promise(requestAnimationFrame);
+    const fields = [...document.querySelectorAll('app-settings input[type=url], app-settings input[type=text], app-settings input[type=number], app-settings textarea')];
+    // The last text field, low in the sheet, so a keyboard covers where it sits until the sheet scrolls it into sight.
+    const f = fields[fields.length - 1];
+    if (!f) throw new Error('settings must offer a text field');
+    f.dataset.barsField = '';
+    f.setAttribute('aria-label', 'bars-field');
+    f.scrollIntoView({ block: 'end' });
+    await new Promise(requestAnimationFrame);
+    keys();
+    return window.systemBarsField();
+  };
+  const keysMarker = document.createElement('button');
+  Object.assign(keysMarker.style, { position: 'fixed', top: '40%', left: '5%', zIndex: '9999' });
+  keysMarker.addEventListener('click', () => { window.systemBarsOpenSettings(); });
+  document.body.append(keysMarker);
+  const keys = () => {
+    const f = field();
+    const r = f ? f.getBoundingClientRect() : { top: -1, bottom: -1 };
+    const surface = kind === 'settings' ? document.querySelector('app-settings .sheet') : document.querySelector('.conv-head');
+    const s = surface ? surface.getBoundingClientRect() : { top: -1 };
+    const vv = window.visualViewport || { offsetTop: 0, height: innerHeight, scale: 1 };
+    const proof = {
+      kind,
+      focused: Boolean(f) && document.activeElement === f,
+      scrollY: window.scrollY,
+      doc: document.scrollingElement.scrollTop,
+      viewportTop: vv.offsetTop,
+      viewportHeight: vv.height,
+      scale: vv.scale,
+      envTop: measure('var(--inset-top)'),
+      surfaceTop: s.top,
+      fieldTop: r.top,
+      fieldBottom: r.bottom,
+    };
+    window.systemBarsKeys = proof;
+    const round = (n) => Math.round(n * 100) / 100;
+    // keys:<kind>:<focused>:<scrollY>:<viewport top>:<viewport height>:<scale>:<inset top>:<surface top>:<field top>:<field bottom>
+    const label = ['keys', kind, proof.focused ? 1 : 0, round(proof.scrollY + proof.doc), round(proof.viewportTop), round(proof.viewportHeight), round(proof.scale), round(proof.envTop), round(proof.surfaceTop), round(proof.fieldTop), round(proof.fieldBottom)].join(':');
+    if (keysMarker.textContent !== label) { keysMarker.textContent = label; keysMarker.setAttribute('aria-label', label); }
+    return proof;
+  };
+  window.systemBarsKeysProof = keys;
+  const tick = () => { keys(); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
   await report();
 })().catch((error) => {
   window.systemBarsProof = { error: error.message };

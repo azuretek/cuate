@@ -5,8 +5,12 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -189,6 +193,76 @@ class SystemBarsTest {
         }
     }
 
+/** Taps the page at a point given in CSS pixels, as a finger would, so the platform raises its own keyboard. */
+    private fun tap(scenario: ActivityScenario<MainActivity>, x: Double, y: Double, dpr: Double) {
+        val at = IntArray(2)
+        scenario.onActivity { webView(it.findViewById(android.R.id.content))!!.getLocationOnScreen(at) }
+        val sx = (at[0] + x * dpr).toFloat()
+        val sy = (at[1] + y * dpr).toFloat()
+        val now = SystemClock.uptimeMillis()
+        for ((action, time) in listOf(MotionEvent.ACTION_DOWN to now, MotionEvent.ACTION_UP to now + 60)) {
+            val event = MotionEvent.obtain(now, time, action, sx, sy, 0)
+            event.source = InputDevice.SOURCE_TOUCHSCREEN
+            assertTrue("the tap was not delivered", instrumentation.uiAutomation.injectInputEvent(event, true))
+            event.recycle()
+        }
+    }
+
+    private fun keyboardShown(scenario: ActivityScenario<MainActivity>): Boolean {
+        var shown = false
+        scenario.onActivity { shown = it.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true }
+        return shown
+    }
+
+    /**
+     * With the keyboard up on the conversation's composer or on a field in Settings, nothing slides: the page has not
+     * scrolled, the header is still at the top (or the settings sheet still clear of the status bar), and the field is
+     * in sight between the status bar and the keyboard (issue 180).
+     */
+    private fun keyboardHolds(scenario: ActivityScenario<MainActivity>, scheme: String, kind: String, dpr: Double, statusBar: Int) {
+        if (kind == "settings") evaluate(scenario, "window.systemBarsOpenSettings(); true")
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        var spot = "null"
+        while (spot == "null" && System.nanoTime() < deadline) {
+            instrumentation.waitForIdleSync()
+            spot = evaluate(scenario, "JSON.stringify(window.systemBarsField && document.querySelector('app-root') && (window.systemBarsKeysProof().kind === '$kind') ? window.systemBarsField() : null)")
+            if (spot == "\"null\"") spot = "null"
+        }
+        assertTrue("no $kind field to tap", spot != "null")
+        val at = JSONObject(JSONObject("{\"v\":$spot}").getString("v"))
+        tap(scenario, at.getDouble("x"), at.getDouble("y"), dpr)
+        val top = statusBar / dpr
+        var last = listOf("no proof")
+        var shot: Bitmap? = null
+        do {
+            instrumentation.waitForIdleSync()
+            val raw = evaluate(scenario, "JSON.stringify(window.systemBarsKeysProof())")
+            val p = JSONObject(JSONObject("{\"v\":$raw}").getString("v"))
+            val out = ArrayList<String>()
+            if (!keyboardShown(scenario)) out.add("the soft keyboard is not up")
+            if (!p.getBoolean("focused")) out.add("the $kind field does not have focus")
+            if (p.getDouble("scrollY") != 0.0 || p.getDouble("doc") != 0.0) out.add("the page scrolled to ${p.getDouble("scrollY")}")
+            if (p.getDouble("viewportTop") > 0.5) out.add("the view slid up by ${p.getDouble("viewportTop")}")
+            if (kind == "conversation" && abs(p.getDouble("surfaceTop")) > 0.5) out.add("the header moved to ${p.getDouble("surfaceTop")}")
+            if (kind == "settings" && p.getDouble("surfaceTop") + 0.5 < top) out.add("the settings sheet starts at ${p.getDouble("surfaceTop")}, under the $top status bar")
+            if (p.getDouble("fieldTop") + 0.5 < top || p.getDouble("fieldBottom") > p.getDouble("viewportHeight") + 0.5) {
+                out.add("the field (${p.getDouble("fieldTop")} to ${p.getDouble("fieldBottom")}) is not in sight between $top and ${p.getDouble("viewportHeight")}")
+            }
+            last = out
+            shot?.recycle()
+            shot = instrumentation.uiAutomation.takeScreenshot()
+            if (out.isEmpty()) break
+        } while (System.nanoTime() < deadline)
+        shot?.let { save(it, "keys-$kind-$scheme") }
+        assertTrue("With the keyboard up on $kind ($scheme): " + last.joinToString("; "), last.isEmpty())
+        scenario.onActivity { activity ->
+            val view = webView(activity.findViewById(android.R.id.content))!!
+            (activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                .hideSoftInputFromWindow(view.windowToken, 0)
+        }
+        evaluate(scenario, "document.activeElement && document.activeElement.blur(); true")
+    }
+
     @Test
     fun lightThenDarkAtRuntime() = run("light", "dark")
 
@@ -211,6 +285,10 @@ class SystemBarsTest {
             captureHolding(scenario, first, "bars-$first")
             evaluate(scenario, "window.systemBarsSwitch('$then'); true")
             captureHolding(scenario, then, "bars-$first-then-$then")
+            val dpr = awaitProof(scenario, then).getDouble("dpr")
+            val statusBar = bars(scenario).first
+            keyboardHolds(scenario, then, "conversation", dpr, statusBar)
+            keyboardHolds(scenario, then, "settings", dpr, statusBar)
         }
     }
 }

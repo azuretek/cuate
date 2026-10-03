@@ -8,12 +8,16 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
+            // The page runs under the status bar and the home indicator but never under the keyboard: the web view
+            // ends at the keyboard's top edge, so the page's own views scroll a focused field into sight rather than
+            // the whole page sliding up under the status bar (issues 175 and 180).
             ShellWebView(model: model)
-                .ignoresSafeArea()
+                .ignoresSafeArea(.container)
             if model.phase != .ready {
                 LoadingCover(product: model.product, phase: model.phase)
             }
         }
+        .background(Color("Surface").ignoresSafeArea())
     }
 }
 
@@ -60,6 +64,7 @@ struct ShellWebView: UIViewRepresentable {
         webView.backgroundColor = UIColor(named: "Surface") ?? .systemBackground
         webView.scrollView.backgroundColor = UIColor(named: "Surface") ?? .systemBackground
         webView.navigationDelegate = context.coordinator
+        context.coordinator.hold(webView.scrollView)
         model.attach(webView)
         webView.load(URLRequest(url: BundleSchemeHandler.startURL))
         return webView
@@ -75,6 +80,26 @@ struct ShellWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         private let model: ShellModel
+        private var holds: [NSKeyValueObservation] = []
+
+        /// The page never scrolls or zooms as a whole (issue 180): its own views scroll inside it, and only the media
+        /// viewer zooms, in the page. WebKit moves the page to reveal a focused field and the viewport allows no zoom, so
+        /// both are put back here should either happen anyway, which keeps the header pinned under the status bar.
+        func hold(_ scrollView: UIScrollView) {
+            scrollView.isScrollEnabled = false
+            scrollView.bounces = false
+            scrollView.bouncesZoom = false
+            scrollView.pinchGestureRecognizer?.isEnabled = false
+            holds = [
+                scrollView.observe(\.contentOffset, options: [.new]) { view, _ in
+                    let rest = CGPoint(x: -view.adjustedContentInset.left, y: -view.adjustedContentInset.top)
+                    if view.contentOffset != rest { view.contentOffset = rest }
+                },
+                scrollView.observe(\.zoomScale, options: [.new]) { view, _ in
+                    if view.zoomScale != 1 { view.setZoomScale(1, animated: false) }
+                },
+            ]
+        }
 
         init(model: ShellModel) {
             self.model = model
@@ -83,6 +108,7 @@ struct ShellWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             model.ready()
             model.bridge.applySystemBars()
+            webView.scrollView.pinchGestureRecognizer?.isEnabled = false
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

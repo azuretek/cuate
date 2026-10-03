@@ -42,7 +42,69 @@ final class SystemBarsTests: XCTestCase {
         marker.tap()
         XCTAssertTrue(self.marker(app, scheme: then).waitForExistence(timeout: 20), app.debugDescription)
         hold(app, scheme: then, name: "bars-" + first + "-then-" + then)
+        pinchRefused(app, scheme: then)
+        keyboardHolds(app, scheme: then, kind: "conversation")
+        keyboardHolds(app, scheme: then, kind: "settings")
     }
+
+    /// The keyboard marker's label: keys:<kind>:<focused>:<scroll>:<viewport top>:<viewport height>:<scale>:<inset top>:
+    /// <surface top>:<field top>:<field bottom>, from core/test/system-bars-fixture.js.
+    private func keysMarker(_ app: XCUIApplication) -> XCUIElement {
+        app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "keys:")).firstMatch
+    }
+
+    /// With the keyboard up on the conversation's composer or on a field in Settings, nothing slides: the page has not
+    /// scrolled, the header is still at the top (or the settings sheet still clear of the status bar), and the field is
+    /// in sight between the status bar and the keyboard (issue 180).
+    private func keyboardHolds(_ app: XCUIApplication, scheme: String, kind: String) {
+        if kind == "settings" {
+            keysMarker(app).tap()
+            let field = app.webViews.descendants(matching: .any)["bars-field"].firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 20), app.debugDescription)
+            field.tap()
+        } else {
+            let composer = app.webViews.textViews.firstMatch
+            XCTAssertTrue(composer.waitForExistence(timeout: 20), app.debugDescription)
+            composer.tap()
+        }
+        let deadline = Date().addingTimeInterval(20)
+        var last = ["no proof"]
+        repeat {
+            var out: [String] = []
+            if !app.keyboards.firstMatch.exists { out.append("the software keyboard is not up") }
+            let parts = keysMarker(app).label.split(separator: ":").map(String.init)
+            let n = parts.count == 11 ? parts.dropFirst(3).compactMap { Double($0) } : []
+            if parts.count != 11 || n.count != 8 || parts[1] != kind {
+                out.append("the page's keyboard measurements could not be read: " + parts.joined(separator: ":"))
+            } else {
+                let (scroll, top, height, scale, inset, surface, fieldTop, fieldBottom) = (n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7])
+                if parts[2] != "1" { out.append("the \(kind) field does not have focus") }
+                if scroll != 0 { out.append("the page scrolled to \(scroll)") }
+                if top > 0.5 { out.append("the view slid up by \(top)") }
+                if scale != 1 { out.append("the view is zoomed to \(scale)") }
+                if kind == "conversation" && abs(surface) > 0.5 { out.append("the header moved to \(surface)") }
+                if kind == "settings" && surface + 0.5 < inset { out.append("the settings sheet starts at \(surface), under the \(inset) status bar") }
+                if fieldTop + 0.5 < inset || fieldBottom > height + 0.5 { out.append("the field (\(fieldTop) to \(fieldBottom)) is not in sight between \(inset) and \(height)") }
+            }
+            last = out
+            if out.isEmpty { break }
+        } while Date() < deadline
+        let attachment = XCTAttachment(image: XCUIScreen.main.screenshot().image)
+        attachment.name = "keys-" + kind + "-" + scheme
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertTrue(last.isEmpty, "With the keyboard up on \(kind) (\(scheme)): " + last.joined(separator: "; "))
+    }
+
+    /// A pinch on the conversation leaves the page at scale 1: only the media viewer zooms (issue 180).
+    private func pinchRefused(_ app: XCUIApplication, scheme: String) {
+        app.webViews.firstMatch.pinch(withScale: 2.5, velocity: 2)
+        let parts = keysMarker(app).label.split(separator: ":").map(String.init)
+        XCTAssertEqual(parts.count, 11, "the page's measurements could not be read")
+        if parts.count == 11 { XCTAssertEqual(Double(parts[6]), 1, "a pinch outside media zoomed the page (\(scheme))") }
+        if parts.count == 11 { XCTAssertEqual(Double(parts[3]), 0, "a pinch outside media scrolled the page (\(scheme))") }
+    }
+
 
     private func marker(_ app: XCUIApplication, scheme: String) -> XCUIElement {
         app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "bars:" + scheme + ":ready:")).firstMatch
