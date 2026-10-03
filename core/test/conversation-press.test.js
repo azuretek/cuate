@@ -38,7 +38,7 @@ test('reply send returns the same work and preserves the parent id', async () =>
   assert.equal(host.replyingTo, null);
 });
 
-test('reaction closes its menu but leaves shared pending and failure feedback on the persistent control', async () => {
+test('reaction closes its menu but leaves shared pending and failure feedback on the composer\'s emoji button, the control it was chosen from', async () => {
   configurePress({ timers: { setTimeout() { return 1; }, clearTimeout() {} } });
   try {
     const attrs = new Map();
@@ -46,7 +46,7 @@ test('reaction closes its menu but leaves shared pending and failure feedback on
     let resolve;
     let calls = 0;
     const work = new Promise((r) => { resolve = r; });
-    const host = { pop: { id: 'parent' }, querySelectorAll() { return [{ dataset: { id: 'parent' }, querySelector() { return control; } }]; }, fire() { calls++; return work; } };
+    const host = { pop: { id: 'parent' }, querySelector(sel) { assert.equal(sel, 'app-composer button.tool[aria-label="Emoji"]'); return control; }, fire() { calls++; return work; } };
     const message = { id: 'parent', reactions: [] };
     const first = proto.react.call(host, message, '👍');
     proto.react.call(host, message, '👍');
