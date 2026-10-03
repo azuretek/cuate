@@ -148,7 +148,7 @@ jobs:
       - name: Boot the app in the simulator and capture the proof
         run: bash scripts/boot-proof.sh
 
-      - name: Run the unit tests
+      - name: Run unit and native rotation tests
         run: |
           set -eo pipefail
           xcodebuild \
@@ -157,6 +157,7 @@ jobs:
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
+            -resultBundlePath proof/rotation.xcresult \
             test-without-building
 
       - name: Keep the boot proof

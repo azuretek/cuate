@@ -154,6 +154,96 @@ test('the app never names the messaging transport', () => {
   }
 });
 
+// Every button in the app goes through the kit's one press behaviour (issue 140): its click is press(...), or a handler
+// the component built with press(...), and a submit button's form submits through press(...). A button that set its
+// own busy state or its own busy disabling would be a second behaviour beside the kit's, so both fail here too.
+test('every button in core/app goes through the kit press behaviour', () => {
+  const tags = (src) => {
+    const out = [];
+    for (let i = src.indexOf('<button'); i >= 0; i = src.indexOf('<button', i + 1)) {
+      let depth = 0;
+      let j = i;
+      for (; j < src.length; j += 1) {
+        if (src[j] === '{') depth += 1;
+        else if (src[j] === '}') depth -= 1;
+        else if (src[j] === '>' && depth === 0) break;
+      }
+      out.push(src.slice(i, j + 1));
+    }
+    return out;
+  };
+  let seen = 0;
+  for (const f of walk('core/app').filter((f) => CODE.test(f))) {
+    const src = read(f);
+    const built = new Set([...src.matchAll(/this\.(\w+)\s*=\s*press\(/g)].map((m) => m[1]));
+    const viaPress = (expr) => /^press\(/.test(expr) || (/^this\.(\w+)$/.test(expr) && built.has(expr.slice(5)));
+    for (const tag of tags(src)) {
+      seen += 1;
+      const click = /@click=\$\{\s*([^\s}]+(?:\([^]*?)?)/.exec(tag);
+      if (/type="submit"/.test(tag)) {
+        const submit = /@submit=\$\{\s*([\w.]+\(?)/.exec(src);
+        assert.ok(submit && viaPress(submit[1].replace(/\($/, '(')), f + ': a submit button whose form does not submit through press(): ' + tag.slice(0, 80));
+      } else {
+        assert.ok(click && viaPress(click[1]), f + ': a button that does not go through press(): ' + tag.slice(0, 80));
+      }
+      assert.ok(!/aria-busy|aria-disabled|data-press/.test(tag), f + ': a button that draws its own press state: ' + tag.slice(0, 80));
+      assert.ok(!/\?disabled=\$\{[^}]*(?:busy|Busy|loading|Loading|pending|Pending)/.test(tag), f + ': a button with its own busy disabling: ' + tag.slice(0, 80));
+    }
+  }
+  assert.ok(seen > 20, 'the guard found the buttons');
+});
+
+// Every scroll container keeps its place across a re-render and a resize (issue 142): each selector the stylesheet
+// lets scroll is the scroller of a keepScroll() in a component.
+test('every scrolled view keeps its place through the kit', () => {
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const scrolled = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter((m) => /overflow(?:-y|-x)?\s*:\s*(?:auto|scroll)/.test(m[2]))
+    .flatMap((m) => m[1].split(',').map((s) => s.trim()))
+    .filter((s) => s && !s.startsWith('@'))
+    // A text field is not a view of items: the browser scrolls it to its caret, and the message box past its maximum
+    // height is the one that does (issue 139), with its text, caret and selection kept by the field itself.
+    .filter((s) => !/(?:^|\s)textarea(?:[.:[\s]|$)/.test(s));
+  assert.ok(scrolled.length >= 4, 'the guard found the scroll containers: ' + scrolled.join(', '));
+  const components = walk('core/app/components').map(read).join('\n');
+  const kept = new Set([...components.matchAll(/keepScroll\(this,\s*\{\s*scroller:\s*'([^']+)'/g)].map((m) => m[1]));
+  for (const s of scrolled) assert.ok(kept.has(s), s + ' scrolls but no component keeps its place with keepScroll()');
+});
+
+// Nothing reloads the page or rebuilds a view from empty (issue 142). No code asks the page or the window to load
+// again, and no component empties a list and then waits for its replacement: data is replaced in one step.
+test('nothing reloads the page or clears a list before its replacement arrives', () => {
+  const RELOAD = /location\.reload|location\.(?:assign|replace)\(|location\.href\s*=|window\.location\s*=|webContents\.reload|\.reloadIgnoringCache|\.loadURL\(/;
+  for (const f of [...walk('core/app'), ...walk('core/kit'), ...walk('desktop/src')].filter((f) => CODE.test(f))) {
+    const src = read(f);
+    const hits = src.split('\n').filter((l) => RELOAD.test(l));
+    // The shell loads the page once, when it creates the window.
+    const allowed = f === 'desktop/src/main.js' ? hits.filter((l) => !/win\.loadURL\('app:\/\/bundle\/app\/index\.html'\)/.test(l)) : hits;
+    assert.deepEqual(allowed, [], f + ' reloads the page');
+    if (f === 'desktop/src/main.js') assert.equal(hits.length, 1, 'the window loads the page once');
+  }
+  for (const f of walk('core/app/components').filter((f) => CODE.test(f))) {
+    const src = read(f);
+    for (const m of src.matchAll(/\n {2}async (\w+)\([^)]*\)\s*\{([\s\S]*?)\n {2}\}\n/g)) {
+      const body = m[2];
+      const cleared = /this\.\w+\s*=\s*(?:\[\]|\{\})/.exec(body);
+      if (!cleared) continue;
+      const waits = body.indexOf('await', cleared.index);
+      assert.equal(waits, -1, f + ' ' + m[1] + '() clears ' + cleared[0] + ' and then waits for its replacement');
+    }
+  }
+});
+
+// The Android shell handles a rotation, a split-screen resize, a keyboard and a dark-mode change itself, so none of them
+// recreates the activity, which would load the page again from nothing (issue 142). iOS's web view never reloads on
+// rotation, so it needs no counterpart.
+test('the Android shell keeps its page through rotation and resizing', () => {
+  const manifest = read('android/app/src/main/AndroidManifest.xml');
+  const m = /android:name="\.MainActivity"[\s\S]*?android:configChanges="([^"]+)"/.exec(manifest);
+  assert.ok(m, 'MainActivity declares the changes it handles');
+  const handled = new Set(m[1].split('|'));
+  for (const c of ['orientation', 'screenSize', 'smallestScreenSize', 'screenLayout', 'keyboard', 'keyboardHidden', 'navigation', 'uiMode']) assert.ok(handled.has(c), 'a change of ' + c + ' would reload the page');
+});
 // A reactive property named like one of the element's own methods replaces that method on the instance, so the next
 // render calls a value and throws. It happened once (issue 134: a `section` property over the method that draws a
 // section), and only the desktop smoke caught it, so it is held here.
