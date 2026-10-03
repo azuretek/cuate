@@ -1,7 +1,8 @@
 import XCTest
 
 // Issue 171: the About page on iPhone is the same page the desktop draws, opened from Settings' last row, and its
-// Check for updates asks this shell's own bridge (updates.check), whose answer arrives as the app notice. The fixture
+// Check for updates reads the release feed through this shell's own bridge (updates.releases, issue 192), whose answer
+// arrives as the app notice. The fixture
 // (core/test/about-fixture.js) drives the real components; this test waits for its proof and keeps a light and a dark
 // capture of the page with the notice up.
 final class AboutPageTests: XCTestCase {
@@ -10,7 +11,9 @@ final class AboutPageTests: XCTestCase {
 
     private func about(scheme: String) {
         let app = XCUIApplication()
-        app.launchArguments = ["--about-fixture"] + (scheme == "dark" ? ["--fixture-dark"] : [])
+        // --update-fixture: the shell reads a synthetic release feed naming a newer build (issue 192), so the capture is
+        // the update-available state, the notice and About's button both offering TestFlight.
+        app.launchArguments = ["--about-fixture", "--update-fixture"] + (scheme == "dark" ? ["--fixture-dark"] : [])
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         defer { app.terminate() }

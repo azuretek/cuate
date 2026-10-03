@@ -73,6 +73,9 @@ export function createHandlers({ secure, notify, info, openExternal, checkUpdate
     // About's Check for updates (issue 171): the tray's own check, answering the state it reached; the outcome that
     // follows arrives on update.state as the tray's does.
     'updates.check': async () => checkUpdates() ?? null,
+    // The phones read their release feed through this (issue 192); the desktop's updater reads its own feed, so the
+    // desktop has none to hand the page.
+    'updates.releases': async () => null,
     // The page holds the server's settings, so it tells the shell whether a found release may be fetched on its own.
     'updates.configure': async ({ autoDownload }) => configureUpdates(autoDownload === true),
     // An explicit download and install, asked for by the page. Each answers whether the shell accepted it, so the page

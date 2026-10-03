@@ -240,6 +240,9 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 .about-name { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); }
 .about-version { color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
 .about-check { align-self: flex-start; }
+/* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
+.about-update-line { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
+.about-update-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
 /* A page moved inside the sheet that is up (About from Settings, and back) slides across on the screen-push token and
    the sheet's curve, Chela's screen motion; the sheet itself does not move. */
 @keyframes page-push { from { transform: translateX(100%); } to { transform: translateX(0); } }
@@ -557,9 +560,12 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* Floating notice geometry: clear header controls and reserve the composer below. The stack scrolls, which clips
    whatever paints outside its padding box, so its padding holds the card's shadow and a negative margin keeps
    the card where a 4px inset puts it. */
-/* The stack draws above a sheet's backdrop and card (z-index 3 and 4), so an answer to a press on a sheet, About's
-   Check for updates (issue 171), is seen while the sheet stays up; see the band below for where it sits then. */
-app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 5; }
+/* The stack draws above every other surface (issue 191): the chats, a conversation and its thread view, Settings,
+   About and every sheet, a confirm and the media viewer, so an update notice is always seen. Its z-index is the
+   highest in this file, which core/test/app-notices.test.js holds, and it starts below the header, so it never covers
+   the window controls. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet
+   stays up; see the band below for where it sits then. */
+app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 8; }
 .app-window { position: relative; }
 .app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }

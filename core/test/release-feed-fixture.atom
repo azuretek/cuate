@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic: the shape of a repository's releases.atom, read by the phone UI tests through the shell (issue 192) so
+     the capture of a newer build never depends on the network. It names a newer release on both channels, so a test
+     build finds one whichever channel it follows. -->
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en-US">
+  <id>tag:github.com,2008:https://github.com/owner/app/releases</id>
+  <title>Release notes</title>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/v99.0.0-dev.1.0123456789</id>
+    <title>v99.0.0-dev.1.0123456789</title>
+    <content type="html">Synthetic test build.</content>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/v99.0.0</id>
+    <title>v99.0.0</title>
+    <content type="html">Synthetic release.</content>
+  </entry>
+</feed>

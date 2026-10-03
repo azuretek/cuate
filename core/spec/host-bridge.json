@@ -8,8 +8,9 @@
     "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
     "open.external": { "args": { "url": "string" }, "returns": "boolean" },
     "updates.check": { "args": {}, "returns": "UpdateState?" },
+    "updates.releases": { "args": {}, "returns": "string?" },
     "updates.configure": { "args": { "autoDownload": "boolean" }, "returns": "boolean" },
-    "updates.download": { "args": {}, "returns": "boolean" },
+    "updates.download": { "args": { "version": "string?" }, "returns": "boolean" },
     "updates.install": { "args": {}, "returns": "boolean" },
     "window.minimize": { "args": {}, "returns": "boolean" },
     "window.toggleMaximize": { "args": {}, "returns": "boolean" },
@@ -17,7 +18,7 @@
     "window.appearance": { "args": { "scheme": "string", "background": "string" }, "returns": "boolean" }
   },
   "events": {
-    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },
+    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?", "via": "string?", "transferred": "number?", "total": "number?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },
     "window.state": { "args": { "maximized": "boolean" }, "returns": "void" },
     "app.open": { "args": { "screen": "string" }, "returns": "void", "screens": ["settings", "about", "updates"] }
   }

@@ -74,6 +74,7 @@ var engine = (() => {
     aboutLinks: () => aboutLinks,
     aboutModel: () => aboutModel,
     aboutRows: () => aboutRows,
+    aboutUpdate: () => aboutUpdate,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
     addTerm: () => addTerm,
@@ -81,6 +82,9 @@ var engine = (() => {
     admitPress: () => admitPress,
     allChecked: () => allChecked,
     anchorFrom: () => anchorFrom,
+    apkAvailableBanner: () => apkAvailableBanner,
+    apkManifestProblem: () => apkManifestProblem,
+    apkReadyBanner: () => apkReadyBanner,
     appUpdateNotice: () => appUpdateNotice,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
@@ -127,6 +131,8 @@ var engine = (() => {
     emptyFilters: () => emptyFilters,
     emptyListText: () => emptyListText,
     failedBanner: () => failedBanner,
+    feedVersions: () => feedVersions,
+    fillTemplate: () => fillTemplate,
     filterChats: () => filterChats,
     forgetChats: () => forgetChats,
     forgetRead: () => forgetRead,
@@ -166,6 +172,7 @@ var engine = (() => {
     moveGroup: () => moveGroup,
     myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
+    newestRelease: () => newestRelease,
     normalizeSort: () => normalizeSort,
     noticeEnabled: () => noticeEnabled,
     noticeHoldMs: () => noticeHoldMs,
@@ -179,6 +186,7 @@ var engine = (() => {
     panBy: () => panBy,
     parseColour: () => parseColour,
     parseTraceparent: () => parseTraceparent,
+    phoneUpdate: () => phoneUpdate,
     pick: () => pick,
     pickerSide: () => pickerSide,
     pinch: () => pinch,
@@ -189,6 +197,7 @@ var engine = (() => {
     putNotice: () => putNotice,
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
+    releaseAssets: () => releaseAssets,
     removeGroup: () => removeGroup,
     removeTerm: () => removeTerm,
     removeTheme: () => removeTheme,
@@ -232,6 +241,7 @@ var engine = (() => {
     swatchVars: () => swatchVars,
     tapbackType: () => tapbackType,
     termsSentence: () => termsSentence,
+    testFlightBanner: () => testFlightBanner,
     textScale: () => textScale,
     textScaleVars: () => textScaleVars,
     themeChoices: () => themeChoices,
@@ -958,14 +968,74 @@ var engine = (() => {
     if (platform === "linux") {
       return appImage ? { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "an AppImage replaces itself in place" } : { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "not running as an AppImage, so there is no file an update could replace" };
     }
-    if (platform === "ios") return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "updates to this app arrive through TestFlight" };
-    if (platform === "android") return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "updates to this app are installed from a newer APK" };
+    if (platform === "ios") return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, via: "testflight", reason: "updates to this app install through TestFlight" };
+    if (platform === "android") return { action: MANUAL, check: true, autoDownload: false, canInstall: true, via: "apk", reason: "a newer APK from the release is verified, then installed by Android once you confirm" };
     return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, reason: "no install path on this platform" };
   }
   function checkAnswer(answer, platform) {
     if (!answer || typeof answer !== "object" || !updateBanner(answer.state, { canInstall: true })) return null;
     const detail = answer.detail ?? (answer.state === "unsupported" ? capability({ platform, packaged: true }).reason : null);
-    return { state: answer.state, version: answer.version ?? null, percent: answer.percent ?? null, detail: detail ?? null, canInstall: Boolean(answer.canInstall) };
+    const state = { state: answer.state, version: answer.version ?? null, percent: answer.percent ?? null, detail: detail ?? null, canInstall: Boolean(answer.canInstall) };
+    return answer.via ? { ...state, via: answer.via } : state;
+  }
+  function releaseVersion(text) {
+    const version = String(text || "").trim().replace(/^v/, "");
+    try {
+      compareVersions(version, version);
+      return version;
+    } catch {
+      return null;
+    }
+  }
+  function feedVersions(feed) {
+    if (typeof feed !== "string" || !/<feed[\s>]/.test(feed)) return null;
+    const versions = [];
+    for (const block of feed.split(/<entry[\s>]/).slice(1)) {
+      const id = /<id>([^<]*)<\/id>/.exec(block);
+      const version = id ? releaseVersion(id[1].split("/").pop()) : null;
+      if (version) versions.push(version);
+    }
+    return versions;
+  }
+  function newestRelease(versions, channel) {
+    const mine = (versions || []).filter((v) => channelOf(v) === channel);
+    return mine.reduce((best, v) => best === null || compareVersions(v, best) > 0 ? v : best, null);
+  }
+  function phoneUpdate({ platform, current, feed }) {
+    const cap = capability({ platform, packaged: true });
+    const how = { canInstall: Boolean(cap.canInstall), via: cap.via };
+    if (!releaseVersion(current)) return { state: "unsupported", detail: "this build carries no release version to compare", ...how };
+    const versions = feedVersions(feed);
+    if (versions === null) return { state: "error", detail: "the release list could not be read", ...how };
+    const newest = newestRelease(versions, channelOf(current));
+    if (newest && compareVersions(newest, current) > 0) return { state: "available", version: newest, ...how };
+    return { state: "current", version: current, ...how };
+  }
+  function fillTemplate(template, values) {
+    return String(template).replace(/\{(\w+)\}/g, (_, key) => {
+      if (!Object.hasOwn(values, key) || values[key] === void 0 || values[key] === null) throw new Error("the template names a missing value: " + key);
+      return String(values[key]);
+    });
+  }
+  function releaseAssets(spec, naming, version) {
+    if (!releaseVersion(version) || releaseVersion(version) !== version) throw new Error("not a release version: " + version);
+    const values = { repo: naming.repo, slug: naming.slug, version };
+    const asset = (template) => {
+      const name = fillTemplate(template, values);
+      return { name, url: fillTemplate(spec.asset, { ...values, name }) };
+    };
+    return { feed: fillTemplate(spec.feed, values), apk: asset(spec.android.apk), manifest: asset(spec.android.manifest) };
+  }
+  function apkManifestProblem(manifest, { version, slug }) {
+    if (!manifest || typeof manifest !== "object") return "the manifest is not an object";
+    if (manifest.version !== version) return "the manifest names another version: " + manifest.version;
+    const commit = String(manifest.commit);
+    if (!/^[a-f0-9]{40}$/.test(commit) || channelOf(version) === "dev" && !String(version).endsWith("." + commit.slice(0, 10))) return "the manifest's commit is not the one the version names";
+    if (manifest.file !== slug + "-android-" + version + ".apk") return "the manifest names an unexpected file: " + manifest.file;
+    if (!Number.isInteger(manifest.size) || manifest.size <= 0) return "the manifest carries no size";
+    if (!/^[a-f0-9]{64}$/.test(String(manifest.sha256))) return "the manifest carries no SHA-256 digest";
+    if (!/^[a-f0-9]{64}$/.test(String(manifest.signer))) return "the manifest names no signer certificate";
+    return null;
   }
   function policy({ autoDownload = false, ...opts }) {
     const base = capability(opts);
@@ -1031,7 +1101,7 @@ var engine = (() => {
     const why = detail ? String(detail) : "this build has no update path";
     return { message: "This build does not update itself.", detail: why.charAt(0).toUpperCase() + why.slice(1) + "." };
   }
-  function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
+  function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false, via = null } = {}) {
     if (state === "checking") return { message: "Checking for updates.", detail: "", percent: null, action: null };
     if (state === "current") {
       return { ...currentBanner({ version }), percent: null, action: { command: DISMISS, label: "OK" } };
@@ -1040,8 +1110,10 @@ var engine = (() => {
       return { ...unsupportedBanner({ detail }), percent: null, action: { command: DISMISS, label: "OK" } };
     }
     if (state === "available") {
+      if (via === "testflight") return { ...testFlightBanner({ version }), percent: null, action: { command: "updates.install", label: "Open TestFlight" } };
       if (!canInstall) return null;
-      return { ...availableBanner({ version }), percent: null, action: { command: "updates.download", label: "Download" } };
+      const banner = via === "apk" ? apkAvailableBanner({ version }) : availableBanner({ version });
+      return { ...banner, percent: null, action: { command: "updates.download", label: "Download" } };
     }
     if (state === "downloading") {
       const n = downloadingNotice({ version, transfer: detail });
@@ -1052,12 +1124,38 @@ var engine = (() => {
       return { message: n.message, detail: n.detail, percent: null, action: null };
     }
     if (state === "ready") {
+      if (via === "apk") return { ...apkReadyBanner({ version }), percent: null, action: { command: "updates.install", label: "Install" } };
       return { ...readyBanner({ version }), percent: null, action: { command: "updates.install", label: "Restart and install" } };
     }
     if (state === "error") {
       return { ...failedBanner({ detail }), percent: null, action: canInstall ? { command: "updates.download", label: "Try again" } : null };
     }
     return null;
+  }
+  function testFlightBanner({ version = null } = {}) {
+    const what = version ? "Version " + version : "A newer build";
+    return { message: what + " is available in TestFlight.", detail: "Open TestFlight to install it." };
+  }
+  function apkAvailableBanner({ version = null } = {}) {
+    const what = version ? "Version " + version : "An update";
+    return { message: what + " is available.", detail: "Download it here; Android asks you to confirm before it installs." };
+  }
+  function apkReadyBanner({ version = null } = {}) {
+    const what = version ? "Version " + version : "The update";
+    return { message: what + " is downloaded and verified.", detail: "Install hands it to Android, which asks you to confirm." };
+  }
+  function aboutUpdate(status) {
+    const idle = { label: "Check for updates", command: null, line: null, percent: null };
+    if (!status || !status.state) return idle;
+    const banner = updateBanner(status.state, status);
+    if (!banner) return idle;
+    const action = banner.action && banner.action.command !== DISMISS ? banner.action : null;
+    return {
+      label: action ? action.label : idle.label,
+      command: action ? action.command : null,
+      line: status.state === "checking" ? null : banner.message,
+      percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null
+    };
   }
 
   // core/app/rules/app-notices.js
