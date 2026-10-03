@@ -2,6 +2,7 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
 import { press, respond } from '../../kit/press.js';
+import { revealField } from '../../kit/scroll.js';
 import {
   orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS, normalizeSort,
   SEARCH_MODES, SEARCH_MODE_LABELS, addTerm, removeTerm, setTermMode,
@@ -176,11 +177,13 @@ class AppRoot extends KitElement {
       e.preventDefault();
     };
     const pin = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
-    const reveal = () => requestAnimationFrame(() => {
-      const field = document.activeElement;
-      if (field && field.matches && field.matches('input, textarea, [contenteditable]')) field.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      pin();
-    });
+    // A keyboard arrives over a few frames, so the field is brought into sight as it starts and again once it has
+    // settled, each time inside the views around it and never by scrolling the page.
+    const revealNow = () => { revealField(document.activeElement); pin(); };
+    const reveal = () => {
+      requestAnimationFrame(revealNow);
+      for (const ms of [200, 500]) setTimeout(revealNow, ms);
+    };
     const viewport = window.visualViewport;
     this.pageHolds = [
       [window, 'wheel', refuse, { passive: false, capture: true }],
@@ -189,6 +192,7 @@ class AppRoot extends KitElement {
       [window, 'gesturechange', refuse, { passive: false, capture: true }],
       [window, 'scroll', pin, { passive: true }],
       [window, 'resize', reveal, { passive: true }],
+      [document, 'focusin', reveal, { passive: true }],
       ...(viewport ? [[viewport, 'resize', reveal, { passive: true }]] : []),
     ];
     for (const [target, type, fn, options] of this.pageHolds) target.addEventListener(type, fn, options);
