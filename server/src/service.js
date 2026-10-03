@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  accessSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync,
+  accessSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync,
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
@@ -44,6 +44,7 @@ export function servicePaths(home = os.homedir(), label = LABEL) {
 }
 
 const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const unxml = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
 /** The LaunchAgent: this checkout's server with its data folder, at login and again after a crash. */
 export function renderPlist({ label = LABEL, node, main = MAIN, dataDir, root = ROOT, log, pathDirs }) {
@@ -72,6 +73,82 @@ export function renderPlist({ label = LABEL, node, main = MAIN, dataDir, root = 
     '</plist>',
     '',
   ].join('\n');
+}
+
+/**
+ * A Node inside a versioned Homebrew keg, <prefix>/Cellar/<formula>/<version>/bin/node, or null. brew cleanup deletes
+ * that folder once a newer version is installed, so a LaunchAgent naming it stops being able to start.
+ */
+export function kegNode(p) {
+  const m = /^(.*)\/Cellar\/(node(?:@[^/]+)?)\/([^/]+)\/bin\/node$/.exec(String(p || ''));
+  return m ? { prefix: m[1], formula: m[2], version: m[3] } : null;
+}
+
+const real = (p) => {
+  try { return realpathSync(p); } catch { return null; }
+};
+
+/**
+ * The Node path a LaunchAgent should name. A keg path is replaced by the link Homebrew keeps pointing at the current
+ * version, <prefix>/bin/node or else <prefix>/opt/<formula>/bin/node, provided it resolves to the same file today. A keg
+ * path with no such link is refused, unless --node named it, which is kept with a warning. Anything else is kept as found.
+ */
+export function stableNode(bin, { explicit = false } = {}) {
+  const keg = kegNode(bin);
+  if (!keg) return { node: bin };
+  const why = bin + ' is inside a versioned Homebrew folder, which brew cleanup deletes after an upgrade';
+  if (explicit) return { node: bin, warn: why + ', so the service stops starting then: --node named it, so it is kept' };
+  const want = real(bin);
+  for (const link of [path.join(keg.prefix, 'bin', 'node'), path.join(keg.prefix, 'opt', keg.formula, 'bin', 'node')]) {
+    if (want && real(link) === want) return { node: link, from: bin };
+  }
+  throw new Error(why + ', and no stable Homebrew link resolves to it: pass --node PATH');
+}
+
+/**
+ * The LaunchAgent install would write, and the Node it runs: --node, else the first node on PATH without resolving
+ * links, else this process's own binary, each made stable by stableNode. The plist's PATH starts with that Node's folder.
+ */
+export function agentPlist({ label = LABEL, node = null, env = process.env, execPath = process.execPath, config, main = MAIN, root = ROOT, dataDir, log }) {
+  const found = node || which('node', env) || execPath;
+  const stable = stableNode(found, { explicit: Boolean(node) });
+  const bin = stable.node;
+  try {
+    accessSync(bin, constants.X_OK);
+  } catch {
+    throw new Error('cannot run ' + bin);
+  }
+  const notes = [];
+  if (stable.warn) notes.push('warn  ' + stable.warn);
+  if (stable.from) notes.push('ok    ' + stable.from + ' is inside a versioned Homebrew folder, so the LaunchAgent runs ' + bin + ', the stable link to the same Node');
+  const engineBin = config.engine.kind === 'imsg' ? (path.isAbsolute(config.engine.bin) ? config.engine.bin : which(config.engine.bin, env)) : null;
+  if (config.engine.kind === 'imsg' && !engineBin) throw new Error('cannot find the engine ' + config.engine.bin + ' on PATH');
+  const pathDirs = [...new Set([path.dirname(bin), ...(engineBin ? [path.dirname(engineBin)] : []), ...SYSTEM_PATH])];
+  return { bin, notes, text: renderPlist({ label, node: bin, main, root, dataDir, log, pathDirs }) };
+}
+
+/** The Node a LaunchAgent runs: the first of its ProgramArguments. */
+export function plistNode(text) {
+  const m = /<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]*)<\/string>/.exec(String(text || ''));
+  return m ? unxml(m[1]) : null;
+}
+
+/**
+ * What is wrong with the Node a LaunchAgent runs, or null: it is gone, so the service cannot start again (fail), or it
+ * is inside a versioned Homebrew folder, so it will be after the next brew upgrade and cleanup (warn).
+ */
+export function nodeProblem(text, { exists = existsSync } = {}) {
+  const node = plistNode(text);
+  if (!node) return null;
+  if (!exists(node)) return { level: 'fail', node, detail: 'the LaunchAgent runs ' + node + ', which no longer exists, so the service cannot start again: run service install again to name a Node that does' };
+  if (kegNode(node)) return { level: 'warn', node, detail: 'the LaunchAgent runs ' + node + ', inside a versioned Homebrew folder that brew cleanup deletes after an upgrade: run service install again to name the stable link' };
+  return null;
+}
+
+/** The problem with the Node the LaunchAgent of this install root runs, read from its plist; null without one. */
+export function serviceNodeProblem(L = null, home = os.homedir()) {
+  const P = servicePaths(home, serviceLabel(L, home));
+  return existsSync(P.plist) ? nodeProblem(readFileSync(P.plist, 'utf8')) : null;
 }
 
 /** The fields that matter from launchctl print. */
@@ -260,17 +337,9 @@ export async function install({ dataDir, config, doctor, tailscale = false, node
   const report = await doctor();
   for (const line of report.lines) print(line);
   if (report.failed) throw new Error('doctor found a problem, so nothing was installed');
-  const bin = node || which('node', env) || process.execPath;
-  try {
-    accessSync(bin, constants.X_OK);
-  } catch {
-    throw new Error('cannot run ' + bin);
-  }
-  const engineBin = config.engine.kind === 'imsg' ? (path.isAbsolute(config.engine.bin) ? config.engine.bin : which(config.engine.bin, env)) : null;
-  if (config.engine.kind === 'imsg' && !engineBin) throw new Error('cannot find the engine ' + config.engine.bin + ' on PATH');
-  const pathDirs = [...new Set([path.dirname(bin), ...(engineBin ? [path.dirname(engineBin)] : []), ...SYSTEM_PATH])];
   const P = servicePaths(home, label);
-  const want = renderPlist({ label, node: bin, main, root: workdir, dataDir, log: P.log, pathDirs });
+  const { bin, notes, text: want } = agentPlist({ label, node, env, config, main, root: workdir, dataDir, log: P.log });
+  for (const line of notes) print(line);
   const have = existsSync(P.plist) ? readFileSync(P.plist, 'utf8') : null;
   if (have !== want) {
     mkdirSync(path.dirname(P.plist), { recursive: true });
@@ -351,6 +420,8 @@ export async function status({ config, installRoot = null, print = console.log, 
   const st = launchdState(label);
   const detail = st.loaded ? [st.state, st.pid && 'pid ' + st.pid, st.lastExit && 'last exit ' + st.lastExit].filter(Boolean).join(', ') : 'not loaded; run service install';
   print((st.loaded ? 'ok    ' : 'warn  ') + label + ': ' + detail);
+  const np = existsSync(P.plist) ? nodeProblem(readFileSync(P.plist, 'utf8')) : null;
+  if (np) print((np.level === 'fail' ? 'fail  ' : 'warn  ') + np.detail);
   const h = await get('http://127.0.0.1:' + config.port + '/healthz');
   print((h.status === 200 ? 'ok    ' : 'fail  ') + '127.0.0.1:' + config.port + (h.status === 200 ? ' answers' : ' does not answer'));
   const start = lastEvent(tailText(P.log), 'server.start');
@@ -366,7 +437,7 @@ export async function status({ config, installRoot = null, print = console.log, 
     const d = serveDecision(serveStatus(ts), config.port);
     print(d.action === 'present' ? 'ok    tailnet: https://' + d.host : d.action === 'add' ? 'warn  not published on the tailnet' : 'warn  tailnet: ' + d.detail);
   }
-  return st.loaded && h.status === 200;
+  return st.loaded && h.status === 200 && !(np && np.level === 'fail');
 }
 
 /** Restart the service and wait until a new run answers; returns that run's id. */
