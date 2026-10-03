@@ -55,6 +55,9 @@ class MainActivity : Activity() {
     /** The scheme the page last said it drew, or null until it has said; the bar icons contrast with it. */
     private var pageScheme: String? = null
 
+    /** The page's own fill (its --color-bg), shown behind the web view where the keyboard ends it; empty until named. */
+    private var pageFill = ""
+
     /** The window's insets in CSS pixels (top, right, bottom, left), handed to the page as --shell-inset-*. */
     private var pageInsets = floatArrayOf(0f, 0f, 0f, 0f)
 
@@ -62,11 +65,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val product = Naming.product(assets).ifEmpty { "Cuate" }
-        val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName()) { scheme ->
+        val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName()) { dark, background ->
             runOnUiThread {
-                pageScheme = scheme
+                pageScheme = if (dark) "dark" else "light"
+                pageFill = background
                 applyBarIcons()
             }
+            true
         }
         Diagnostics.remember(this)
 
@@ -146,12 +151,22 @@ class MainActivity : Activity() {
 
     /**
      * The bar icons contrast with the page: dark on a light surface, light on a dark one. Until the page has said which
-     * scheme it drew, the system's own night mode decides, which is what the page follows by default.
+     * scheme it drew, the system's own night mode decides, which is what the page follows by default. The page names its
+     * scheme and its fill through window.appearance; the page's choice wins over the system's, since it may differ. The
+     * bars themselves stay transparent: the page paints behind them.
      */
     @Suppress("DEPRECATION")
     private fun applyBarIcons() {
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val light = (pageScheme ?: if (night) "dark" else "light") == "light"
+        val fill = try {
+            Color.parseColor(pageFill)
+        } catch (e: RuntimeException) {
+            // parseColor throws IllegalArgumentException for an unknown form and StringIndexOutOfBoundsException for an
+            // empty one, which is what the shell holds before the page has named its fill.
+            getColor(R.color.surface)
+        }
+        root.setBackgroundColor(fill)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
             window.insetsController?.setSystemBarsAppearance(if (light) mask else 0, mask)
@@ -205,7 +220,6 @@ class MainActivity : Activity() {
         super.onConfigurationChanged(newConfig)
         // The activity keeps its page through a night mode change, so the shell's own surface follows here; the page
         // follows the system through its own media query and reports the scheme it then drew.
-        root.setBackgroundColor(getColor(R.color.surface))
         cover.setBackgroundColor(getColor(R.color.surface))
         applyBarIcons()
     }
