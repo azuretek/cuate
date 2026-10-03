@@ -2,7 +2,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { boot, waitFor, openSocket } from './helpers.js';
 import { openStore } from '../src/store.js';
 import { apiSpec, naming, serverVersion, serverCommit } from '../src/paths.js';
@@ -67,6 +68,7 @@ test('info conforms and names the product from naming.json', async () => {
   const b = await r.json();
   conforms(b, 'Info');
   assert.equal(b.product, naming.product);
+  assert.equal(b.repository, 'https://github.com/' + naming.repo, 'About links to the repository naming.json names');
   assert.equal(b.apiVersion, apiSpec.version);
   assert.equal(b.engine.ready, true);
 });
@@ -649,6 +651,20 @@ test('a bad theme URL, or a URL that is not a theme, is refused with the reason 
   } finally {
     await host.close();
   }
+});
+
+test('a theme font the server fetched is read back by id with a token, and nothing else is', async () => {
+  const bytes = Buffer.from('wOF2 synthetic font bytes');
+  const id = createHash('sha256').update(bytes).digest('hex');
+  mkdirSync(path.join(s.dir, 'theme-fonts'), { recursive: true });
+  writeFileSync(path.join(s.dir, 'theme-fonts', id + '.woff2'), bytes);
+  const r = await s.get('/api/v1/themes/fonts/' + id, s.tokens.device);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('content-type'), 'font/woff2');
+  assert.deepEqual(Buffer.from(await r.arrayBuffer()), bytes);
+  assert.equal((await s.get('/api/v1/themes/fonts/' + id)).status, 401, 'a font is read with a token like any other route');
+  assert.equal((await s.get('/api/v1/themes/fonts/' + 'f'.repeat(64), s.tokens.device)).status, 404);
+  assert.equal((await s.get('/api/v1/themes/fonts/..%2F..%2Fstate.db', s.tokens.device)).status, 400);
 });
 
 test('the appearance choice survives a server restart', async () => {

@@ -8,7 +8,8 @@
 //
 // The tray's items open screens inside the app rather than separate dialogs. Each raises the window first, restoring it
 // when it was minimised and showing it when it was hidden, then tells the page which screen to show over the bridge
-// event app.open. The page decides what that screen is (core/app/rules/screens.js), so this file only routes.
+// event app.open. The page decides what that screen is (core/app/rules/screens.js), so this file only routes: About,
+// for one, opens Settings at its last section, About (issue 134), and there is no separate About page.
 
 // The items the tray carries, in order. Separators are layout, not commands.
 export const TRAY_ITEMS = ['show', 'settings', 'about', 'checkUpdates', 'quit'];

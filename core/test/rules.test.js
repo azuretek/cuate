@@ -7,11 +7,12 @@ import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions, TAPBACKS, tapbackType, myReaction, replyQuote, canTarget } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel } from '../app/rules/settings.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel, ABOUT_ORDER, aboutRows, aboutLinks } from '../app/rules/settings.js';
+import { BUILD_SPEC as ABOUT_SPEC } from '../app/rules/build-spec.js';
 import { backdropReturns } from '../app/rules/sheet.js';
 import { slideProgress, slideConfirms, slideRelease, slideKey, SLIDE_CONFIRM_AT } from '../app/rules/slide.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
-import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars } from '../app/rules/theme.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars, themeFonts, contrastRatio } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -269,9 +270,10 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScale', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'every key the schema declares lands in one section, once, in the schema order');
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
-  for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups().filter((g) => g.kind === 'settings')) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups().filter((g) => g.kind !== 'settings')) assert.deepEqual(g.fields, [], g.id + ' draws its own rows, and no setting lands in it');
   for (const g of settingsGroups()) assert.ok(typeof g.description === 'string' && g.description.length > 0, g.id + ' carries a one-line description for its section');
-  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates'], 'the page draws one section per group');
+  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates', 'device', 'about'], 'the page draws one section per group');
   assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload', 'updates.serverAuto'], 'the updates section holds the client and server preferences');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.autoDownload'), {}), false, 'automatic download is off until the server says otherwise');
@@ -336,6 +338,54 @@ test('a theme URL answer in tweakcn registry form converts through the same conv
   assert.equal(importSummary(importTheme('{"name":"x","cssVars":{}}')).ok, false, 'a registry item that carries nothing is not a theme');
   assert.equal(importSummary(importTheme('<html><body>Not found</body></html>')).ok, false, 'a page that is not a theme is not a theme');
   assert.equal(importSummary(importTheme('{"not": "a theme"}')).ok, false);
+});
+
+test('a theme carries its whole design language: radius and spacing scales, shadows, letter spacing, and dark-only values', () => {
+  const css = [
+    ':root { --radius: 0rem; --spacing: 0.3rem; --letter-spacing: 0.01em; --shadow-sm: 0 1px 2px #0002; --shadow-md: 0 2px 4px #0002; --shadow-xl: 0 9px 9px #0002; --destructive-foreground: #ffffff; }',
+    '.dark { --radius: 0rem; --shadow-md: 0 2px 4px #0008; --destructive-foreground: #111111; }',
+  ].join('\n');
+  const { theme, accepted, refused } = importTweakcn(css, { name: 'square' });
+  assert.deepEqual(theme.radius, { md: '0rem', sm: 'calc(0rem * 0.6)', lg: 'calc(0rem * 1.4)' }, 'a radius of 0 is square at every size');
+  assert.deepEqual(theme.space, { 1: '0.3rem', 2: 'calc(0.3rem * 2)', 3: 'calc(0.3rem * 3)', 4: 'calc(0.3rem * 4)', 5: 'calc(0.3rem * 6)', 6: 'calc(0.3rem * 8)' });
+  assert.equal(theme.font.tracking, '0.01em');
+  assert.deepEqual(theme.shadow, { sm: '0 1px 2px #0002', md: '0 2px 4px #0002' });
+  assert.deepEqual(theme.schemes, { dark: { shadow: { md: '0 2px 4px #0008' } } }, 'only what dark says differently is held for dark');
+  assert.equal(theme.color.dark['danger-fg'], '#111111');
+  assert.ok(refused.includes('shadow-xl'));
+  assert.ok(!accepted.includes('shadow-xl'));
+  assert.equal(importSummary({ accepted, refused }).text, 'Imported 6 values. Refused: shadow-xl.', 'a derived scale step is not a value of its own');
+  const light = Object.fromEntries(themeVars(theme, 'light'));
+  const dark = Object.fromEntries(themeVars(theme, 'dark'));
+  assert.equal(light['--shadow-md'], '0 2px 4px #0002');
+  assert.equal(dark['--shadow-md'], '0 2px 4px #0008', 'dark draws its own shadow over the shared one');
+  assert.equal(dark['--space-5'], 'calc(0.3rem * 6)');
+  assert.equal(light['--font-tracking'], '0.01em');
+  // A .dark block written first is read after the light one all the same.
+  assert.deepEqual(importTweakcn('.dark { --shadow-md: b; } :root { --shadow-md: a; }').theme.schemes, { dark: { shadow: { md: 'b' } } });
+  assert.equal(importTheme(JSON.stringify({ name: 'elegant-luxury', cssVars: { light: { primary: '#000' } } })).theme.name, 'Elegant Luxury', 'a registry slug with no title reads as the theme page names it');
+});
+
+test('a theme\'s fonts reach the FontFace API only as a family, a digest, a weight and a style', () => {
+  const id = 'a'.repeat(64);
+  assert.deepEqual(themeFonts({ fonts: [{ family: 'Poppins', id, weight: '400', style: 'normal', extra: 1 }] }), [{ family: 'Poppins', id, weight: '400', style: 'normal' }]);
+  assert.deepEqual(themeFonts({ fonts: [{ family: 'Poppins", x', id, weight: '400' }, { family: 'Poppins', id: '../x', weight: '400' }, { family: 'Poppins', id, weight: 'bold' }, null] }), []);
+  assert.deepEqual(themeFonts(null), []);
+});
+
+test('the System, Light, Dark switch and the text size chips read at 4.5:1 in both schemes of the default palette', () => {
+  // The pairs app.css draws them with (issue 135): on-accent words on the accent thumb or chip, muted words on the page
+  // surface that is the track and an unselected chip.
+  const spec = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url), 'utf8'));
+  for (const scheme of ['light', 'dark']) {
+    const c = spec.color[scheme];
+    assert.ok(contrastRatio(c['accent-fg'], c.accent) >= 4.5, scheme + ' selected ' + contrastRatio(c['accent-fg'], c.accent));
+    assert.ok(contrastRatio(c['fg-muted'], c.bg) >= 4.5, scheme + ' unselected ' + contrastRatio(c['fg-muted'], c.bg));
+  }
+  assert.equal(Math.round(contrastRatio('#ffffff', '#000000')), 21);
+  assert.equal(contrastRatio('#777', '#777'), 1);
+  assert.ok(Math.abs(contrastRatio('oklch(1 0 0)', 'rgb(0, 0, 0)') - 21) < 0.01, 'oklch and rgb are read');
+  assert.equal(contrastRatio('hsl(0 0% 0%)', '#fff'), null, 'a form it cannot read gives no ratio rather than a wrong one');
 });
 
 test('a theme value that could end the declaration or reach the network is refused', () => {
@@ -754,6 +804,50 @@ test('a refused write rolls back only the keys it named', () => {
   const before = { 'appearance.skin': 'system' };
   const current = { 'appearance.skin': 'dark', 'appearance.textScale': 150, 'chats.order': ['a'] };
   assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.textScale': 150 }, 'the named keys return to what they held, and one that did not exist is removed');
+});
+
+// Issue 134: About is the last section of Settings, with chela's full details inline and in chela's order.
+test('About is the last section of Settings, and This device sits just above it with no About link', () => {
+  const groups = settingsGroups();
+  assert.equal(groups.at(-1).id, 'about', 'About is the last section');
+  assert.equal(groups.at(-1).kind, 'about');
+  assert.equal(groups.at(-2).id, 'device');
+  const page = readFileSync(new URL('../app/components/app-settings.js', import.meta.url), 'utf8');
+  assert.equal(/data-action="about"/.test(page), false, 'the separate About link has gone');
+  assert.ok(page.includes('<app-about'), 'the settings page draws the About section itself');
+});
+
+test('the About section shows every field in chela\'s order, each from its own half', () => {
+  const host = { product: 'App', version: '1.2.3-dev.4.abcdef0123', channel: 'dev', build: '4', commit: 'a'.repeat(40), builtAt: '2026-10-02T00:00:00Z', electron: '38.0.0', chromium: '140.0', node: '22.13.0', platform: 'linux', arch: 'x64', packaged: false, installSource: 'source', updateChannel: 'dev' };
+  const info = { product: 'App', repository: 'https://example.test/owner/app', serverVersion: '9.9.9', serverChannel: 'stable', serverBuild: '7', serverCommit: 'b'.repeat(40), serverBuiltAt: 'then', serverPlatform: 'darwin', engine: { kind: 'fake', version: '0.1' }, apiVersion: 1 };
+  const rows = aboutRows(host, info);
+  assert.deepEqual(rows.map((r) => r.key), [
+    'product', 'version', 'channel', 'build', 'commit', 'builtAt',
+    'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt',
+    'platform', 'arch', 'electron', 'chromium', 'node',
+    'installSource', 'packaged', 'updateChannel',
+    'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion',
+  ], 'name and version, channel, build and commit, the server\'s version and commit, platform and architecture, Electron, Chromium and Node, install source, then the rest');
+  assert.deepEqual(rows.slice(0, 2).map((r) => [r.label, r.value]), [['App', 'App'], ['Client version', host.version]]);
+  assert.equal(rows.find((r) => r.key === 'serverVersion').value, '9.9.9', 'the server\'s version comes from the server');
+  assert.equal(rows.find((r) => r.key === 'version').value, host.version, 'the client\'s version comes from the shell');
+  assert.equal(rows.find((r) => r.key === 'electron').value, '38.0.0');
+  // Every field the build spec declares is on the page once, so a field added there cannot be left off.
+  const declared = Object.entries(ABOUT_SPEC.halves).flatMap(([half, h]) => h.fields.map((f) => half + ':' + f.key));
+  const shown = ABOUT_ORDER.filter(([, key]) => key !== 'product').map(([half, key]) => half + ':' + key);
+  assert.deepEqual([...shown].sort(), [...declared].sort());
+  assert.equal(new Set(shown).size, shown.length, 'no field is shown twice');
+  for (const row of rows) assert.ok(typeof row.value === 'string' && row.value.length > 0, row.key + ' has a value to copy');
+  assert.equal(aboutRows({}, {}).find((r) => r.key === 'commit').value, 'Unknown', 'a missing value reads Unknown');
+});
+
+test('the About links go to the source, the licence and the issues, and only over https', () => {
+  const links = aboutLinks('https://example.test/owner/app.git');
+  assert.deepEqual(links.map((l) => [l.key, l.label]), [['source', 'Source code'], ['licence', 'Licence'], ['report', 'Report a problem']]);
+  assert.deepEqual(links.map((l) => l.href), ['https://example.test/owner/app', 'https://example.test/owner/app/blob/main/LICENSE', 'https://example.test/owner/app/issues/new']);
+  assert.deepEqual(aboutLinks('http://example.test/owner/app'), [], 'not over plain http');
+  assert.deepEqual(aboutLinks('javascript:alert(1)'), []);
+  assert.deepEqual(aboutLinks(undefined), [], 'a server that names no repository draws no links');
 });
 
 test('a reaction is one of the six standard tapbacks or none, whichever presentation the emoji arrives in (issue 138)', () => {

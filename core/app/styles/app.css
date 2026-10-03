@@ -2,7 +2,7 @@
    core/test/guards.test.js fails on a literal. */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); color: var(--color-fg); background: var(--color-bg); }
+body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); letter-spacing: var(--font-tracking); color: var(--color-fg); background: var(--color-bg); }
 button, input, textarea { font: inherit; color: inherit; }
 code { font-family: var(--font-mono); font-size: var(--font-size-sm); }
 app-root { display: block; height: 100%; }
@@ -171,10 +171,10 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .button.primary { background: var(--color-accent); color: var(--color-accent-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
-/* Settings and About draw in the app's one sheet surface, on the same chrome: a top strip that is itself the back
-   control, the page's title and its one-line description, then its sections. The chrome is drawn by app-sheet, which
-   both pages use, so the two cannot drift into two different ways back. */
-app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+/* Settings draws in the app's one sheet surface: a top strip that is itself the back control, the page's title and its
+   one-line description, then its sections, the last of which is About (issue 134). The chrome is drawn by app-sheet. */
+app-settings { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+app-about { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
 .sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
@@ -196,6 +196,17 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .setting-value { overflow-wrap: anywhere; text-align: right; }
 .setting-control { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); max-width: 100%; min-width: 0; }
 .setting-control:focus { outline: none; border-color: var(--color-accent); }
+/* About's values: each one is a button that copies it, drawn as the value itself (mono, as chela draws its facts), with
+   the word Copied beside the one last copied. */
+.about-value { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-2); margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1); border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg); font-family: var(--font-mono); font-size: var(--font-size-sm); text-align: right; cursor: copy; user-select: text; -webkit-user-select: text; }
+.about-value:hover { background: var(--color-bg-sunken); }
+.about-value:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.about-value-text { overflow-wrap: anywhere; }
+.about-copied { flex: none; font-family: var(--font-family); font-size: var(--font-size-xs); color: var(--color-accent); }
+.about-link-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); min-width: 0; }
+.about-link { text-decoration: none; font-size: var(--font-size-sm); }
+.about-link:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.about-copy { align-self: flex-start; }
 .about-compare { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .about-compare.mismatch { color: var(--color-danger); }
 /* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
@@ -203,18 +214,28 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 /* A row whose control sits under its label rather than beside it: the theme grid and the text size choices. */
 .setting-row-stack { flex-direction: column; align-items: stretch; gap: var(--space-2); }
 /* The System, Light, Dark switch: a track of equal cells with a thumb that slides to the one in force. --segments and
-   --at come from the component, so the thumb's width and place are fractions of the track, never a length. */
-.segmented { position: relative; display: grid; grid-template-columns: repeat(var(--segments, 3), 1fr); min-width: 0; flex: 0 1 auto; background: var(--color-bg-sunken); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); overflow: hidden; }
-.segment-thumb { position: absolute; top: 0; bottom: 0; left: calc(100% / var(--segments, 3) * var(--at, 0)); width: calc(100% / var(--segments, 3)); background: var(--color-accent); border-radius: var(--radius-pill); transition: left var(--motion-normal) var(--motion-ease); }
-.segment { position: relative; display: flex; align-items: center; justify-content: center; padding: var(--space-1) var(--space-3); cursor: pointer; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
+   --at come from the component's data-segments and data-at below (never a style attribute, which the page's CSP
+   drops), so the thumb's width and place are fractions of the track, never a length.
+   Every choice control (this switch and the text size chips) draws from one pairing, so an imported theme draws them
+   too (issue 135): the track and an unselected chip are the page surface with the muted words, the thumb and a
+   selected chip are the accent with its own on-accent words. The selected label is marked by data-selected, the same
+   value that places the thumb, so the label and its fill never disagree. */
+.segmented { position: relative; display: grid; grid-template-columns: repeat(var(--segments, 3), 1fr); min-width: 0; flex: 0 1 auto; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); overflow: hidden; }
+.segmented[data-segments="2"] { --segments: 2; }
+.segmented[data-segments="4"] { --segments: 4; }
+.segmented[data-at="1"] { --at: 1; }
+.segmented[data-at="2"] { --at: 2; }
+.segmented[data-at="3"] { --at: 3; }
+.segment-thumb { position: absolute; top: 0; bottom: 0; left: calc(100% / var(--segments, 3) * var(--at, 0)); width: calc(100% / var(--segments, 3)); background: var(--color-accent); border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); transition: left var(--motion-normal) var(--motion-ease); }
+.segment { position: relative; display: flex; align-items: center; justify-content: center; padding: var(--space-1) var(--space-3); cursor: pointer; color: var(--color-fg-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); transition: color var(--motion-normal) var(--motion-ease); }
 .segment input, .scale-choice input { position: absolute; opacity: 0; pointer-events: none; }
-.segment:has(input:checked) { color: var(--color-accent-fg); font-weight: var(--font-weight-medium); }
+.segment[data-selected] { color: var(--color-accent-fg); }
 .segment:has(input:focus-visible), .scale-choice:has(input:focus-visible) { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-@media (prefers-reduced-motion: reduce) { .segment-thumb { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .segment-thumb, .segment { transition: none; } }
 /* The text size choices: one chip per percentage, wrapping on a narrow window. */
 .scale-choices { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.scale-choice { position: relative; padding: var(--space-1) var(--space-3); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); cursor: pointer; font-size: var(--font-size-sm); color: var(--color-fg); background: var(--color-bg); }
-.scale-choice:has(input:checked) { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-fg); }
+.scale-choice { position: relative; padding: var(--space-1) var(--space-3); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); cursor: pointer; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-fg-muted); background: var(--color-bg); }
+.scale-choice[data-selected] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-fg); }
 /* The theme picker: a grid of cards, each drawn in its own theme's colours (set on the card by the component). */
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--size-avatar) * 3), 1fr)); gap: var(--space-2); }
 .theme-card { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); cursor: pointer; font: inherit; text-align: left; min-width: 0; }

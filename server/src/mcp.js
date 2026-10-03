@@ -2,10 +2,10 @@
 // request and response shapes. A call is dispatched through the server's own route, so a tool allows exactly what
 // its route allows and there is one scope check rather than two.
 import { jsonSchema, modelJsonSchema } from '../../core/kit/rules/schema.js';
+import { pathParams } from '../../core/kit/rules/openapi.js';
 
 const DEFS = '#/$defs/';
 const PROTOCOL = '2025-06-18';
-const pathParams = (p) => [...p.matchAll(/:([A-Za-z]+)/g)].map((m) => m[1]);
 const reply = (id, result) => ({ jsonrpc: '2.0', id, result });
 const failure = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 
