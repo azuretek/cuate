@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { loadConfig } from '../config.js';
-import { naming, logSpec, serverVersion } from '../paths.js';
+import { ROOT, naming, logSpec, serverVersion, serverCommit } from '../paths.js';
+import { DATA_NEWER } from '../store.js';
 
 // The fields of a Mac event that go on the wire. The log line keeps its own shape; this is the event's, so a
 // client sees the same handful of things whatever the action was.
@@ -16,6 +17,11 @@ const macEvent = (name, fields) => {
 export default {
   name: 'run',
   async run({ dataDir, store, engineSetup }) {
+    const { installRootOf, installLayout, readState, assertSeparateData, assertInstalledPlatform } = await import('../install.js');
+    const installRoot = installRootOf(ROOT);
+    const L = installRoot ? installLayout(installRoot) : null;
+    if (L) assertInstalledPlatform();
+    if (L) assertSeparateData(L, dataDir);
     const config = loadConfig(dataDir);
     const { createLogger } = await import('../../../core/kit/log.js');
     const { installCrashHandlers } = await import('../crash.js');
@@ -39,6 +45,11 @@ export default {
     });
     logger = createLogger({ spec: logSpec, app: naming.slug + '-server', version: serverVersion, run: randomUUID().slice(0, 8), pid: process.pid, sink, now: Date.now, level: process.env.LOG_LEVEL || config.log.level });
     installCrashHandlers({ log: logger, logger, dataDir });
+    if (L) {
+      const { recoverStartup } = await import('../updater.js');
+      const recovered = await recoverStartup({ L, dataDir, running: serverVersion, log: logger.child('update') });
+      if (recovered.restart) return 0;
+    }
     // Every Mac action is one declared log event, and the run path sends each on as an event too, so the Server
     // screen sees a sleep hold, a lock, a relaunch and a restart as they happen. The sender exists once the
     // server does, so a Mac action taken before that would have no event to send.
@@ -50,7 +61,16 @@ export default {
       },
       child: () => macLog,
     };
-    const s = store();
+    // A data folder newer than this version understands is refused, said in the log, and left untouched: the updater's
+    // rollback restores its pre-switch backup rather than letting an older server read it wrong.
+    let s;
+    try {
+      s = store();
+    } catch (e) {
+      if (e.code === DATA_NEWER) logger.emit('update.refused', { version: serverVersion, reason: DATA_NEWER, error: e.message });
+      throw e;
+    }
+    // The installed path: a server running from a version folder under an install root updates itself from releases.
     const secret = readFileSync(path.join(dataDir, 'secret'), 'utf8').trim();
     const { makeTransport, attachmentsRoot } = await engineSetup(config);
     const engineLog = logger.child('engine');
@@ -60,8 +80,31 @@ export default {
     const mac = createMac({ log: macLog, settings: config.mac, platform: process.platform, engineNeedsScreen: Boolean(config.engine.needsScreen) });
     let restartServer = () => process.exit(0);
     const restarts = createRestarts({ engine, mac, log: macLog, exit: () => restartServer() });
-    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, mac, restarts });
+    // The last update outcome is reported for a day, so a client that reconnects after a rollback still hears of it.
+    const updateOutcome = () => {
+      if (!L) return null;
+      try {
+        const o = readState(L).outcome;
+        return o && Date.now() - Date.parse(o.at) < 24 * 60 * 60 * 1000 ? o : null;
+      } catch {
+        return null;
+      }
+    };
+    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, mac, restarts, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
     publish = srv.publish;
+    let updater = null;
+    if (L) {
+      const { createUpdater, finisherHandoff } = await import('../updater.js');
+      const { runsInstalled } = await import('../service.js');
+      updater = createUpdater({
+        L, dataDir, log: logger.child('update'), running: serverVersion, runningCommit: serverCommit, publish: srv.publish, quiesce: srv.quiesce,
+        settings: () => s.getAllSettings(),
+        handoff: runsInstalled(L) ? finisherHandoff({ L, dataDir }) : null,
+      });
+      updater.start();
+      // service update --release asks for a check now.
+      process.on('SIGUSR1', () => { updater.run(); });
+    }
     // The Mac care starts with the server listening, so every one of its events has somewhere to go.
     const care = startMacCare({ mac, engine, log: macLog });
     await care.start();
@@ -70,6 +113,7 @@ export default {
       if (stopping) return;
       stopping = true;
       logger.emit('server.stop', { reason });
+      if (updater) updater.stop();
       setTimeout(() => process.exit(0), 8000).unref();
       care.stop();
       sink.close();

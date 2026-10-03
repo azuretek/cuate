@@ -204,6 +204,22 @@ async function runSmoke(w) {
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
+  // A resync refetches the open conversation in place: every DOM change while it runs is watched, and the conversation
+  // never drops to no messages on the way. Emptying it first was what let a late first-connection resync read as none.
+  const resync = await js(`(async () => {
+    const root = document.querySelector('app-root');
+    const count = () => document.querySelectorAll('.bubble-row').length;
+    let least = count();
+    const watch = new MutationObserver(() => { least = Math.min(least, count()); });
+    watch.observe(document, { childList: true, subtree: true });
+    await root.reload();
+    await root.updateComplete;
+    await new Promise((r) => setTimeout(r, 50));
+    watch.disconnect();
+    return { least, after: count() };
+  })()`);
+  report.resyncKeeps = resync.least > 0 && resync.after > 0;
+  if (!report.resyncKeeps) console.error('resync: ' + JSON.stringify(resync));
   // The chats header is a search field, a filter icon and a gear, and no heading text or Settings text button.
   report.header = await js("(() => { const h = document.querySelector('.sidebar-head'); if (!h) return false; const gone = !h.querySelector('.title') && !h.querySelector('.text-button') && !h.querySelector('h1'); return Boolean(h.querySelector('.chat-search') && h.querySelector('.filter-button') && h.querySelector('.gear-button') && gone); })()");
   // Typing narrows the list live, by the chat's name and by its last message.

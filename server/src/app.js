@@ -54,7 +54,7 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, webhookOptions = {}, themeFetch = globalThis.fetch }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, webhookOptions = {}, themeFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const send = createSender({ engine, store, config, log });
   const previews = new Map();
@@ -203,6 +203,9 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     themeFetch,
     // A theme's fonts, fetched at import and served to the clients (issue 132).
     themeFonts: dataDir ? createThemeFonts({ dataDir, fetchImpl: themeFetch }) : null,
+    // The installed server's last update outcome, which info reports so a client that reconnects after a rollback
+    // still hears about it. Null for a checkout.
+    updateOutcome,
   };
   const handlers = await loadRoutes(apiSpec.routes);
   for (const r of apiSpec.routes) if (!handlers.has(r.id)) throw new Error('no handler for route ' + r.id);
@@ -230,6 +233,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     on() { return this; },
   });
   const dispatch = async (id, { params = {}, query = {}, body = null, principal = null } = {}) => {
+    if (updatePending() && !['health', 'chats'].includes(id)) throw Object.assign(new Error('The server is validating an update.'), { status: 503, code: 'updating' });
     const spec = apiSpec.routes.find((r) => r.id === id);
     if (!spec) throw Object.assign(new Error('No such route.'), { status: 404, code: 'not_found' });
     if (!allows(principal, spec.scope)) throw Object.assign(new Error('This token cannot do that.'), { status: 403, code: 'forbidden' });
@@ -280,6 +284,9 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       }
     }
     if (!route) return fail(res, 404, 'not_found', 'No such route.');
+    // During probation only the health probes run. No send, settings change, upload or export can be accepted
+    // and then erased by a rollback. Read the durable gate on each request, before any asynchronous work.
+    if (updatePending() && !['health', 'chats'].includes(route.id)) return fail(res, 503, 'updating', 'The server is validating an update.');
     if (TOKEN_PARAMS.some((k) => url.searchParams.has(k))) {
       log.emit('auth.refused', { route: route.id, reason: 'token_in_url' });
       return fail(res, 400, 'token_in_url', 'Send the token in the Authorization header, never in the URL.');
@@ -385,6 +392,15 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     epoch,
     publish,
     webhooks,
+    /**
+     * The updater's gate before a switch: hold() stops new sends and exports, busy() says what is still running, and
+     * release() lets them through again when the switch does not happen.
+     */
+    quiesce: {
+      hold() { send.hold(); exporter.hold(); },
+      release() { send.release(); exporter.release(); },
+      busy: () => ({ sends: send.inFlight(), exporting: exporter.running() }),
+    },
     /** Read the hook endpoints again from a new config, as the run command does on SIGHUP. */
     reloadHooks(next) {
       config.webhooks = next.webhooks;
