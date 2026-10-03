@@ -41,10 +41,14 @@ var engine = (() => {
     OPEN_SCREENS: () => OPEN_SCREENS,
     PRESS_STATES: () => PRESS_STATES,
     SCHEMES: () => SCHEMES,
+    SEARCH_MODES: () => SEARCH_MODES,
+    SEARCH_MODE_LABELS: () => SEARCH_MODE_LABELS,
     SERVER_UPDATE_ERRORS: () => SERVER_UPDATE_ERRORS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
     SILENT_UPDATE_STATES: () => SILENT_UPDATE_STATES,
+    SLIDE_CONFIRM_AT: () => SLIDE_CONFIRM_AT,
+    SLIDE_KEY_STEP: () => SLIDE_KEY_STEP,
     SLOP: () => SLOP,
     SORT_LABELS: () => SORT_LABELS,
     SORT_ORDERS: () => SORT_ORDERS,
@@ -67,6 +71,7 @@ var engine = (() => {
     aboutModel: () => aboutModel,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
+    addTerm: () => addTerm,
     addTheme: () => addTheme,
     admitPress: () => admitPress,
     allChecked: () => allChecked,
@@ -82,7 +87,6 @@ var engine = (() => {
     capability: () => capability,
     channelOf: () => channelOf,
     chatPreview: () => chatPreview,
-    chatSearchText: () => chatSearchText,
     chatTitle: () => chatTitle,
     checkedCount: () => checkedCount,
     checksumMatches: () => checksumMatches,
@@ -94,6 +98,7 @@ var engine = (() => {
     commitState: () => commitState,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
+    contactSearchText: () => contactSearchText,
     controlLayout: () => controlLayout,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
@@ -101,6 +106,7 @@ var engine = (() => {
     cssVarName: () => cssVarName,
     currentBanner: () => currentBanner,
     daysAgo: () => daysAgo,
+    defaultGroupName: () => defaultGroupName,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
     downloadProgress: () => downloadProgress,
@@ -109,6 +115,7 @@ var engine = (() => {
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
+    emptyListText: () => emptyListText,
     failedBanner: () => failedBanner,
     filterChats: () => filterChats,
     forgetChats: () => forgetChats,
@@ -135,18 +142,18 @@ var engine = (() => {
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
     localAttachment: () => localAttachment,
-    manualOrder: () => manualOrder,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
-    matchesSearch: () => matchesSearch,
+    matchesTerm: () => matchesTerm,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     messageNotice: () => messageNotice,
-    moveChat: () => moveChat,
+    messageSearchText: () => messageSearchText,
     moveGroup: () => moveGroup,
     myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
+    normalizeSort: () => normalizeSort,
     noticeEnabled: () => noticeEnabled,
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
@@ -164,6 +171,7 @@ var engine = (() => {
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     removeGroup: () => removeGroup,
+    removeTerm: () => removeTerm,
     removeTheme: () => removeTheme,
     renameGroup: () => renameGroup,
     replyQuote: () => replyQuote,
@@ -180,6 +188,7 @@ var engine = (() => {
     searchEmoji: () => searchEmoji,
     serverUpdateNotice: () => serverUpdateNotice,
     setAllChecked: () => setAllChecked,
+    setTermMode: () => setTermMode,
     settingValue: () => settingValue,
     settingsAfterRefusal: () => settingsAfterRefusal,
     settingsAfterWrite: () => settingsAfterWrite,
@@ -187,6 +196,10 @@ var engine = (() => {
     settingsGroups: () => settingsGroups,
     settlesOpen: () => settlesOpen,
     sizeLabel: () => sizeLabel,
+    slideConfirms: () => slideConfirms,
+    slideKey: () => slideKey,
+    slideProgress: () => slideProgress,
+    slideRelease: () => slideRelease,
     sortChats: () => sortChats,
     stageCheck: () => stageCheck,
     stalledNotice: () => stalledNotice,
@@ -195,6 +208,7 @@ var engine = (() => {
     summarizeReactions: () => summarizeReactions,
     swatchVars: () => swatchVars,
     tapbackType: () => tapbackType,
+    termsSentence: () => termsSentence,
     textScale: () => textScale,
     textScaleVars: () => textScaleVars,
     themeChoices: () => themeChoices,
@@ -905,37 +919,71 @@ var engine = (() => {
   }
 
   // core/app/rules/chats.js
-  var SORT_ORDERS = ["recent", "unread", "name", "manual"];
-  var SORT_LABELS = { recent: "Recent activity", unread: "Unread first", name: "Name", manual: "Manual order" };
+  var SORT_ORDERS = ["recent", "name", "name-desc"];
+  var SORT_LABELS = { recent: "Recent", name: "Name A to Z", "name-desc": "Name Z to A" };
+  function normalizeSort(sort) {
+    return SORT_ORDERS.includes(sort) ? sort : "recent";
+  }
   var UNGROUPED = "ungrouped";
+  var SEARCH_MODES = ["contact", "text"];
+  var SEARCH_MODE_LABELS = { contact: "Contact", text: "Full text" };
   function emptyFilters() {
-    return { unread: false, group: null, kind: null, text: "" };
+    return { unread: false, group: null, kind: null, text: "", mode: "contact", terms: [] };
   }
   function orderChats(chats) {
     return [...chats].sort(byActivity);
   }
   var byActivity = (a, b) => (b.lastMessageAt || "").localeCompare(a.lastMessageAt || "") || String(a.id).localeCompare(String(b.id));
-  var byName = (a, b) => chatTitle(a).localeCompare(chatTitle(b)) || String(a.id).localeCompare(String(b.id));
-  function sortChats(chats, { sort = "recent", order = [] } = {}) {
+  function byName(locale) {
+    const collator = new Intl.Collator(locale || void 0, { sensitivity: "base", numeric: true });
+    return (a, b) => collator.compare(chatTitle(a), chatTitle(b)) || String(a.id).localeCompare(String(b.id));
+  }
+  function sortChats(chats, { sort = "recent", locale } = {}) {
     const list = [...chats];
-    if (sort === "unread") return [...list.filter((c) => c.unread > 0).sort(byActivity), ...list.filter((c) => !(c.unread > 0)).sort(byActivity)];
-    if (sort === "name") return list.sort(byName);
-    if (sort === "manual") {
-      const rank = new Map(order.map((id, i) => [id, i]));
-      const at = (c) => rank.has(c.id) ? rank.get(c.id) : Infinity;
-      return list.sort((a, b) => at(a) - at(b) || byActivity(a, b));
-    }
-    return list.sort(byActivity);
+    const order = normalizeSort(sort);
+    if (order === "recent") return list.sort(byActivity);
+    const compare = byName(locale);
+    return order === "name" ? list.sort(compare) : list.sort((a, b) => compare(b, a));
   }
-  function chatSearchText(chat) {
-    return [chatTitle(chat), (chat.participants || []).join(" "), chat.lastMessage && chat.lastMessage.text || ""].join(" ").toLowerCase();
+  function contactSearchText(chat) {
+    return [chatTitle(chat), (chat.participants || []).join(" ")].join(" ").toLowerCase();
   }
-  function matchesSearch(chat, query) {
-    const q = String(query || "").trim().toLowerCase();
-    return !q || chatSearchText(chat).includes(q);
+  function messageSearchText(chat, texts = {}) {
+    const loaded = texts && texts[chat.id] || [];
+    return [chat.lastMessage && chat.lastMessage.text || "", ...loaded].join(" ").toLowerCase();
   }
-  function filterChats(chats, filters = {}, { placement = {} } = {}) {
+  function matchesTerm(chat, term, { texts = {} } = {}) {
+    const q = String(term && term.text || "").trim().toLowerCase();
+    if (!q) return true;
+    return (term.mode === "text" ? messageSearchText(chat, texts) : contactSearchText(chat)).includes(q);
+  }
+  var searchMode = (mode) => SEARCH_MODES.includes(mode) ? mode : "contact";
+  function addTerm(terms = [], text, mode = "contact") {
+    const t = String(text || "").trim();
+    const m = searchMode(mode);
+    if (!t || terms.some((x) => x.mode === m && x.text.toLowerCase() === t.toLowerCase())) return terms;
+    return [...terms, { text: t, mode: m }];
+  }
+  function removeTerm(terms = [], index) {
+    return terms.filter((_, i) => i !== index);
+  }
+  function setTermMode(terms = [], index, mode) {
+    return terms.map((x, i) => i === index ? { ...x, mode: searchMode(mode) } : x);
+  }
+  function termsSentence(terms = []) {
+    const parts = terms.map((t) => '"' + t.text + '" (' + SEARCH_MODE_LABELS[searchMode(t.mode)] + ")");
+    if (parts.length < 2) return parts.join("");
+    return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+  }
+  function emptyListText(filters = {}) {
     const f = { ...emptyFilters(), ...filters };
+    const terms = [...f.terms];
+    if (String(f.text || "").trim()) terms.push({ text: String(f.text).trim(), mode: f.mode });
+    return terms.length ? "No conversations match " + termsSentence(terms) + "." : "No conversations match these filters.";
+  }
+  function filterChats(chats, filters = {}, { placement = {}, texts = {} } = {}) {
+    const f = { ...emptyFilters(), ...filters };
+    const terms = [...Array.isArray(f.terms) ? f.terms : [], { text: f.text, mode: f.mode }];
     return chats.filter((c) => {
       if (f.unread && !(c.unread > 0)) return false;
       if (f.group) {
@@ -944,7 +992,7 @@ var engine = (() => {
       }
       if (f.kind === "direct" && c.isGroup) return false;
       if (f.kind === "group" && !c.isGroup) return false;
-      if (!matchesSearch(c, f.text)) return false;
+      if (!terms.every((t) => matchesTerm(c, t, { texts }))) return false;
       return true;
     });
   }
@@ -957,23 +1005,14 @@ var engine = (() => {
     }
     return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: "Ungrouped", chats: ungrouped }];
   }
-  function manualOrder(chats, order = []) {
-    const ids = new Set(chats.map((c) => c.id));
-    const head = order.filter((id) => ids.has(id));
-    const seen = new Set(head);
-    const rest = orderChats(chats.filter((c) => !seen.has(c.id))).map((c) => c.id);
-    return [...head, ...rest];
-  }
-  function moveChat(order, id, delta) {
-    const list = [...order];
-    const i = list.indexOf(id);
-    const j = i < 0 ? -1 : i + delta;
-    if (i < 0 || j < 0 || j >= list.length) return list;
-    [list[i], list[j]] = [list[j], list[i]];
-    return list;
+  function defaultGroupName(groups = []) {
+    const taken = new Set(groups.map((g) => g.name));
+    let n = 1;
+    while (taken.has("Group " + n)) n += 1;
+    return "Group " + n;
   }
   function addGroup(groups, { id, name }) {
-    return [...groups, { id, name: String(name || "").trim() || "Group" }];
+    return [...groups, { id, name: String(name || "").trim() || defaultGroupName(groups) }];
   }
   function renameGroup(groups, id, name) {
     return groups.map((g) => g.id === id ? { ...g, name: String(name || "").trim() || g.name } : g);
@@ -1781,6 +1820,28 @@ var engine = (() => {
   // core/app/rules/sheet.js
   function backdropReturns(startsOnBackdrop, endsOnBackdrop) {
     return startsOnBackdrop === true && endsOnBackdrop === true;
+  }
+
+  // core/app/rules/slide.js
+  var SLIDE_CONFIRM_AT = 0.9;
+  var SLIDE_KEY_STEP = 0.1;
+  function slideProgress(offset, travel) {
+    if (!(travel > 0) || !Number.isFinite(offset)) return 0;
+    return Math.min(1, Math.max(0, offset / travel));
+  }
+  function slideConfirms(progress) {
+    return progress >= SLIDE_CONFIRM_AT;
+  }
+  function slideRelease(progress) {
+    return slideConfirms(progress) ? 1 : 0;
+  }
+  function slideKey(progress, key) {
+    const p = Number(progress) || 0;
+    if (key === "ArrowRight" || key === "ArrowUp") return Math.min(1, Math.round((p + SLIDE_KEY_STEP) * 10) / 10);
+    if (key === "ArrowLeft" || key === "ArrowDown") return Math.max(0, Math.round((p - SLIDE_KEY_STEP) * 10) / 10);
+    if (key === "Home") return 0;
+    if (key === "End") return 1;
+    return null;
   }
 
   // core/app/rules/zoom.js

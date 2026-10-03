@@ -1,16 +1,29 @@
 // Pure: the chat list's rules. The list can be sorted, filtered and gathered into person-made groups; only the
 // arrangement lives here, so a group never changes which chats or messages exist.
-export const SORT_ORDERS = ['recent', 'unread', 'name', 'manual'];
+export const SORT_ORDERS = ['recent', 'name', 'name-desc'];
 
 // The sort choices named the way a person reads them. The page header's sort control and the list's own order share
 // this one map, so a button's label and the order it asks for cannot drift.
-export const SORT_LABELS = { recent: 'Recent activity', unread: 'Unread first', name: 'Name', manual: 'Manual order' };
+export const SORT_LABELS = { recent: 'Recent', name: 'Name A to Z', 'name-desc': 'Name Z to A' };
+
+// A stored order the menu no longer offers (the unread and manual orders before issue 136) reads as Recent, so an old
+// setting draws a list and marks a choice rather than neither.
+export function normalizeSort(sort) {
+  return SORT_ORDERS.includes(sort) ? sort : 'recent';
+}
 
 // A chat placed in no group is drawn under this pseudo-group, so nothing disappears when it is left out of one.
 export const UNGROUPED = 'ungrouped';
 
+// The search reads a term one of two ways: Contact reads the chat's name and its participants, Full text reads the
+// message text the client holds for it. The mode is chosen per term (issue 133).
+export const SEARCH_MODES = ['contact', 'text'];
+export const SEARCH_MODE_LABELS = { contact: 'Contact', text: 'Full text' };
+
+// `text` and `mode` are what is being typed, which filters live; `terms` are the committed search terms, each with its
+// own mode, and every one of them must match.
 export function emptyFilters() {
-  return { unread: false, group: null, kind: null, text: '' };
+  return { unread: false, group: null, kind: null, text: '', mode: 'contact', terms: [] };
 }
 
 export function orderChats(chats) {
@@ -18,38 +31,83 @@ export function orderChats(chats) {
 }
 
 const byActivity = (a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || '') || String(a.id).localeCompare(String(b.id));
-const byName = (a, b) => chatTitle(a).localeCompare(chatTitle(b)) || String(a.id).localeCompare(String(b.id));
+// Names compare the way a person reads them: by the locale's own collation, ignoring case and accents, with numbers in
+// numeric order. The id breaks a tie so the order is stable.
+function byName(locale) {
+  const collator = new Intl.Collator(locale || undefined, { sensitivity: 'base', numeric: true });
+  return (a, b) => collator.compare(chatTitle(a), chatTitle(b)) || String(a.id).localeCompare(String(b.id));
+}
 
-// The order the list draws in. Unread first keeps the unread chats in their own activity order rather than the order
-// they arrived. Manual follows the stored sequence, and anything it does not name falls in by activity behind it.
-export function sortChats(chats, { sort = 'recent', order = [] } = {}) {
+// The order the list draws in: by activity, or by the name drawn on the row, A to Z or Z to A.
+export function sortChats(chats, { sort = 'recent', locale } = {}) {
   const list = [...chats];
-  if (sort === 'unread') return [...list.filter((c) => c.unread > 0).sort(byActivity), ...list.filter((c) => !(c.unread > 0)).sort(byActivity)];
-  if (sort === 'name') return list.sort(byName);
-  if (sort === 'manual') {
-    const rank = new Map(order.map((id, i) => [id, i]));
-    const at = (c) => (rank.has(c.id) ? rank.get(c.id) : Infinity);
-    return list.sort((a, b) => at(a) - at(b) || byActivity(a, b));
-  }
-  return list.sort(byActivity);
+  const order = normalizeSort(sort);
+  if (order === 'recent') return list.sort(byActivity);
+  const compare = byName(locale);
+  return order === 'name' ? list.sort(compare) : list.sort((a, b) => compare(b, a));
 }
 
-// The text a search reads: the chat's name, its participants and its last message.
-export function chatSearchText(chat) {
-  return [chatTitle(chat), (chat.participants || []).join(' '), (chat.lastMessage && chat.lastMessage.text) || ''].join(' ').toLowerCase();
+// What a Contact term reads: the name drawn on the row and the participants.
+export function contactSearchText(chat) {
+  return [chatTitle(chat), (chat.participants || []).join(' ')].join(' ').toLowerCase();
 }
 
-// The search predicate: an empty query matches everything, and a query matches when it appears anywhere in the text
-// a chat is searched by. It lives here, not in the element, so the element draws and never decides.
-export function matchesSearch(chat, query) {
-  const q = String(query || '').trim().toLowerCase();
-  return !q || chatSearchText(chat).includes(q);
+// What a Full text term reads: the message text the client holds for the chat, its last message and any history it
+// has loaded (`texts`, keyed by chat id).
+export function messageSearchText(chat, texts = {}) {
+  const loaded = (texts && texts[chat.id]) || [];
+  return [(chat.lastMessage && chat.lastMessage.text) || '', ...loaded].join(' ').toLowerCase();
+}
+
+// One search term against one chat. A blank term matches everything; otherwise its text must appear in what its mode
+// reads, case-insensitively.
+export function matchesTerm(chat, term, { texts = {} } = {}) {
+  const q = String((term && term.text) || '').trim().toLowerCase();
+  if (!q) return true;
+  return (term.mode === 'text' ? messageSearchText(chat, texts) : contactSearchText(chat)).includes(q);
+}
+
+const searchMode = (mode) => (SEARCH_MODES.includes(mode) ? mode : 'contact');
+
+// Enter commits what was typed as a term in the chosen mode. A blank entry, or one that repeats a term already in
+// force in the same mode, leaves the list as it was.
+export function addTerm(terms = [], text, mode = 'contact') {
+  const t = String(text || '').trim();
+  const m = searchMode(mode);
+  if (!t || terms.some((x) => x.mode === m && x.text.toLowerCase() === t.toLowerCase())) return terms;
+  return [...terms, { text: t, mode: m }];
+}
+
+export function removeTerm(terms = [], index) {
+  return terms.filter((_, i) => i !== index);
+}
+
+// A chip keeps its text and changes only how it reads.
+export function setTermMode(terms = [], index, mode) {
+  return terms.map((x, i) => (i === index ? { ...x, mode: searchMode(mode) } : x));
+}
+
+// The terms in force, named the way the empty list says them.
+export function termsSentence(terms = []) {
+  const parts = terms.map((t) => '"' + t.text + '" (' + SEARCH_MODE_LABELS[searchMode(t.mode)] + ')');
+  if (parts.length < 2) return parts.join('');
+  return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+}
+
+// What the list says when nothing is left: the search terms when there are any, the filters otherwise.
+export function emptyListText(filters = {}) {
+  const f = { ...emptyFilters(), ...filters };
+  const terms = [...f.terms];
+  if (String(f.text || '').trim()) terms.push({ text: String(f.text).trim(), mode: f.mode });
+  return terms.length ? 'No conversations match ' + termsSentence(terms) + '.' : 'No conversations match these filters.';
 }
 
 // Filters compose: each one that is set narrows the list and clearing one leaves the others alone. The group filter
-// reads placement, where UNGROUPED means the chats that are in no group.
-export function filterChats(chats, filters = {}, { placement = {} } = {}) {
+// reads placement, where UNGROUPED means the chats that are in no group. Every committed term and the text being typed
+// must all match, so each term refines the one before.
+export function filterChats(chats, filters = {}, { placement = {}, texts = {} } = {}) {
   const f = { ...emptyFilters(), ...filters };
+  const terms = [...(Array.isArray(f.terms) ? f.terms : []), { text: f.text, mode: f.mode }];
   return chats.filter((c) => {
     if (f.unread && !(c.unread > 0)) return false;
     if (f.group) {
@@ -58,7 +116,7 @@ export function filterChats(chats, filters = {}, { placement = {} } = {}) {
     }
     if (f.kind === 'direct' && c.isGroup) return false;
     if (f.kind === 'group' && !c.isGroup) return false;
-    if (!matchesSearch(c, f.text)) return false;
+    if (!terms.every((t) => matchesTerm(c, t, { texts }))) return false;
     return true;
   });
 }
@@ -75,29 +133,17 @@ export function groupSections(chats, { groups = [], placement = {} } = {}) {
   return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: 'Ungrouped', chats: ungrouped }];
 }
 
-// The manual sequence covering every chat, so a move always has a neighbour to swap with. A stored head keeps its
-// order and the chats it does not name follow by activity.
-export function manualOrder(chats, order = []) {
-  const ids = new Set(chats.map((c) => c.id));
-  const head = order.filter((id) => ids.has(id));
-  const seen = new Set(head);
-  const rest = orderChats(chats.filter((c) => !seen.has(c.id))).map((c) => c.id);
-  return [...head, ...rest];
+// A group made without a name takes the first "Group N" not already in use, so two unnamed groups never read alike.
+export function defaultGroupName(groups = []) {
+  const taken = new Set(groups.map((g) => g.name));
+  let n = 1;
+  while (taken.has('Group ' + n)) n += 1;
+  return 'Group ' + n;
 }
 
-// Move one chat one step within the manual sequence; at either end, or for a chat not in it, it is unchanged.
-export function moveChat(order, id, delta) {
-  const list = [...order];
-  const i = list.indexOf(id);
-  const j = i < 0 ? -1 : i + delta;
-  if (i < 0 || j < 0 || j >= list.length) return list;
-  [list[i], list[j]] = [list[j], list[i]];
-  return list;
-}
-
-// Groups are pure lists too: create, rename and reorder are new lists, never edits in place.
+// Groups are pure lists too: create, rename and reorder are new lists, never edits in place. The name is optional.
 export function addGroup(groups, { id, name }) {
-  return [...groups, { id, name: String(name || '').trim() || 'Group' }];
+  return [...groups, { id, name: String(name || '').trim() || defaultGroupName(groups) }];
 }
 
 export function renameGroup(groups, id, name) {
