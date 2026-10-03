@@ -111,13 +111,15 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     }
   };
 
-  // Add or remove this device owner's reaction on one message. Messages itself takes any emoji as a reaction, but the
-  // engine's bridge sends only the six standard tapbacks (and folds some other emoji onto them, so passing one through
-  // would send the wrong reaction), so any other emoji is refused before it costs rate budget or reaches the engine
-  // (issue 188). One reaction per message is in flight at a time, because a tapback sent twice can undo itself.
+  // Add or remove this device owner's reaction on one message. Messages itself takes any emoji as a reaction; an
+  // engine that advertises tapback.emoji sends any emoji as itself, and one that does not sends only the six standard
+  // tapbacks (it folds some other emoji onto them, so passing one through would send the wrong reaction), so any other
+  // emoji is refused before it costs rate budget or reaches the engine (issue 188). One reaction per message is in
+  // flight at a time, because a tapback sent twice can undo itself.
   async function react(chatId, { targetId, emoji, remove = false }) {
     const type = tapbackType(emoji);
-    if (!type) {
+    const arbitrary = engine.supportsEmojiTapback();
+    if (!arbitrary && !type) {
       log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });
       return { http: 422, error: ['reaction_unsupported', 'The message engine on the Mac cannot send an emoji reaction yet, only the six standard tapbacks.'] };
     }
@@ -127,9 +129,10 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     if (refused) return refused;
     const refund = charge();
     reacting.add(key);
-    const body = { status: 'sent', targetId, type, add: !remove };
+    const body = { status: 'sent', targetId, type: arbitrary ? type || 'emoji' : type, add: !remove };
+    if (arbitrary) body.emoji = emoji;
     try {
-      const r = await engine.react(chatId, targetId, { type, remove });
+      const r = await engine.react(chatId, targetId, arbitrary ? { emoji, remove } : { type, remove });
       if (r.ok) return { http: 201, body };
       if (r.uncertain) {
         log.emit('send.uncertain', { chat: chatId, code: r.code });

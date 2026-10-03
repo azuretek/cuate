@@ -1396,6 +1396,9 @@
           "type": {
             "type": "string"
           },
+          "emoji": {
+            "type": "string"
+          },
           "add": {
             "type": "boolean"
           }
