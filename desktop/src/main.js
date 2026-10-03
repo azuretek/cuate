@@ -715,16 +715,20 @@ async function runSmoke(w) {
   const EMOJI_TARGET = '.bubble-row[data-id="FAKE-0009"]';
   const emojiOn = () => js(`(() => { const row = document.querySelector(${q(EMOJI_TARGET)}); if (!row) return null; row.querySelector('.bubble').scrollIntoView({ block: 'center' }); return [...row.querySelectorAll('.reaction')].map((r) => ({ text: r.textContent.trim(), mine: r.classList.contains('mine') })); })()`);
   const emojiDesktop = await emojiOn();
+  await pause(1200); // the refused pick's failure mark on the emoji control settles back to idle before the capture
   await both('14e-emoji-reaction');
-  const emojiSize = w.getSize();
-  // The conversation is the pane at this width, and the drawer is left as it was found, since a later check opens it.
+  // A phone's width is emulated, as the phone checks below do, since the window has a minimum width. The conversation is
+  // the pane there, and the drawer is left as it was found, since a later check opens it.
   const emojiListOpen = await js("document.querySelector('app-root').listOpen");
-  w.setSize(390, 844);
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
   await js("(() => { const root = document.querySelector('app-root'); if (root.listOpen) root.closeDrawer(); return true; })()");
-  await pause(500);
+  await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'", 5000);
+  await pause(400);
   const emojiPhone = await emojiOn();
   await both('14f-emoji-reaction-phone');
-  w.setSize(...emojiSize);
+  await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
   await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(emojiListOpen)}; return true; })()`);
   await pause(300);
   const shows = (list) => Array.isArray(list) && list.some((r) => r.text.includes('\u{1F64C}') && !r.mine);
