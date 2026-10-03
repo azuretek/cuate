@@ -23,6 +23,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trayTemplate, trayIcon, trayLabels, TRAY_ITEMS } from '../src/tray.js';
+import { loadMasters, shellIcons, encodePng } from '../src/icon-images.js';
+import { importTheme } from '../../core/app/rules/theme.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CORE = path.resolve(HERE, '..', '..', 'core');
@@ -135,6 +137,64 @@ app.whenReady().then(async () => {
     else note('the tray reported no bounds, so the notification area was not captured');
   }
 
+
+  // The icon in the active theme (issue 189): the images the shell draws (src/icon-images.js) for the default theme
+  // and an imported one, with no count and with a count, set on the real tray and captured where the platform shows
+  // them: the macOS menu bar light and dark, the Windows notification area and the taskbar overlay, the Linux panel.
+  // Every image handed to Electron is kept beside the captures too, so the PR shows what each platform was given.
+  const masters = loadMasters(CORE);
+  const tokens = JSON.parse(fs.readFileSync(path.join(CORE, 'spec', 'tokens.json'), 'utf8')).color;
+  const imported = importTheme(fs.readFileSync(path.join(CORE, 'fixtures', 'themes', 'elegant-luxury.json'), 'utf8')).theme;
+  const themes = { default: {}, 'elegant-luxury': imported.color };
+  const nativeFrom = (reps) => {
+    const n = nativeImage.createEmpty();
+    for (const r of reps) n.addRepresentation({ scaleFactor: r.scale, width: r.image.width, height: r.image.height, buffer: encodePng(r.image) });
+    return n;
+  };
+  const owner = new BrowserWindow({ width: 320, height: 200, x: 60, y: 60, show: true, backgroundColor: '#ffffff', title: naming.product });
+  await owner.loadURL('data:text/html,<body style="margin:0;background:#fff"></body>');
+  const counts = process.platform === 'win32' ? [3, 12] : [0, 3];
+  for (const [name, colours] of Object.entries(themes)) {
+    for (const scheme of ['light', 'dark']) {
+      for (const unread of counts) {
+        const out = shellIcons({ platform: process.platform, masters, tokens, scheme, colors: colours[scheme] || {}, unread });
+        const tag = name + '-' + scheme + '-' + unread;
+        for (const r of out.tray.reps) fs.writeFileSync(path.join(SHOTS, 'given-tray-' + process.platform + '-' + tag + '@' + r.image.width + '.png'), encodePng(r.image));
+        if (out.overlay) fs.writeFileSync(path.join(SHOTS, 'given-overlay-' + tag + '.png'), encodePng(out.overlay));
+        const image = nativeFrom(out.tray.reps);
+        if (out.tray.template) image.setTemplateImage(true);
+        tray.setImage(image);
+        if (out.window) owner.setIcon(nativeFrom([{ scale: 1, image: out.window }]));
+        if (process.platform === 'win32') owner.setOverlayIcon(out.overlay ? nativeFrom([{ scale: 1, image: out.overlay }]) : null, out.description);
+        await pause(800);
+        if (process.platform === 'darwin') {
+          // The template is the same silhouette in every theme; the menu bar recolours it, so each appearance is shot.
+          if (scheme !== 'light') continue;
+          const b = tray.getBounds();
+          if (!b || b.width === 0) { note('the tray reported no bounds for ' + tag); continue; }
+          const region = { x: Math.max(0, b.x - 120), y: 0, width: b.width + 240, height: Math.max(24, b.height + b.y) };
+          if (setDark(false)) { await pause(1200); capture('icon-menubar-' + name + '-' + unread + '-light.png', region); }
+          if (setDark(true)) { await pause(1200); capture('icon-menubar-' + name + '-' + unread + '-dark.png', region); }
+        } else if (process.platform === 'win32') {
+          const b = tray.getBounds();
+          if (b && b.width > 0) capture('icon-tray-' + tag + '.png', { x: Math.max(0, b.x - 80), y: Math.max(0, b.y - 8), width: b.width + 160, height: b.height + 16 });
+          const d = screen.getPrimaryDisplay();
+          const bar = { x: d.bounds.x, y: d.workArea.y + d.workArea.height, width: d.bounds.width, height: d.bounds.height - d.workArea.height };
+          if (bar.height > 0) capture('icon-taskbar-' + tag + '.png', bar);
+          else note('no taskbar below the work area for ' + tag);
+        } else {
+          // The panel: a system tray host started beside the proof (stalonetray at the top left, in CI), or the
+          // whole screen's top strip when none reported where it is.
+          const b = tray.getBounds();
+          const region = b && b.width > 0 ? { x: Math.max(0, b.x - 40), y: Math.max(0, b.y - 4), width: b.width + 80, height: b.height + 8 } : { x: 0, y: 0, width: 240, height: 40 };
+          capture('icon-panel-' + tag + '.png', region);
+        }
+      }
+    }
+  }
+  if (process.platform === 'darwin') setDark(false);
+  owner.destroy();
+
   // The menu as the platform draws it: the tray's own menu, popped up over a small window so it opens without a click
   // on the icon, which a runner cannot make.
   const win = new BrowserWindow({ width: 360, height: 260, x: 40, y: 80, show: true, backgroundColor: '#ffffff' });
@@ -154,4 +214,4 @@ app.whenReady().then(async () => {
 }).catch((e) => { console.error('tray proof failed: ' + (e && e.stack)); app.exit(1); });
 
 // A deadline of its own, so a menu that never closes cannot hold the runner.
-setTimeout(() => { console.error('tray proof timed out'); app.exit(1); }, 90000).unref();
+setTimeout(() => { console.error('tray proof timed out'); app.exit(1); }, 180000).unref();
