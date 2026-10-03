@@ -47,7 +47,8 @@ export function sanitizeState(value, secrets = [], depth = 0) {
 // or was cancelled, nor whether the page was hidden while it should have run. The intermittent macOS packaged
 // smoke failure (job 111169024308, run 37111099406: "timed out waiting for !document.querySelector('.sheet') &&
 // ... does not update itself", after the window was hidden to the tray and raised by Check for updates) is
-// exactly that question, since the sheet leaves only on its animationend. This records the sheet and scrim
+// exactly that question, since the sheet then left only on its animationend (it now also finishes at a deadline,
+// core/app/rules/sheet.js, so a window that draws no frames cannot hold it up). This records the sheet and scrim
 // animation events, the body's leaving class and the page's visibility, with page-relative times, bounded to
 // the last TRACE_LIMIT entries so a long run cannot grow it. It is installed once, by the smoke only, and it
 // observes: it never changes what the page does.
