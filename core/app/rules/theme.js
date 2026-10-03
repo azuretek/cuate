@@ -14,6 +14,14 @@ export function resolveScheme(preference, systemDark) {
   return systemDark ? 'dark' : 'light';
 }
 
+// What the page tells its shell about the system bars (the status bar and the home indicator or navigation bar), which
+// the page paints behind: the scheme it drew, so the bar icons are dark on light and light on dark, and whether that
+// scheme is the system's own, so a shell that takes the scheme for its whole window lets it follow the system again
+// rather than holding it. Answers the arguments of the system.bars bridge command.
+export function systemBars(preference, scheme) {
+  return { scheme: scheme === 'dark' ? 'dark' : 'light', followSystem: preference !== 'light' && preference !== 'dark' };
+}
+
 // The CSS custom property name tokens.css defines for a group's key.
 export function cssVarName(group, key) {
   return group === 'color' ? `--color-${key}` : `--${group}-${key}`;

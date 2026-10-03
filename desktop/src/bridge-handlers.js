@@ -75,6 +75,9 @@ export function createHandlers({ secure, notify, info, openExternal, configureUp
     'window.minimize': async () => windowControls.minimize(),
     'window.toggleMaximize': async () => windowControls.toggleMaximize(),
     'window.close': async () => windowControls.close(),
+    // A desktop window has no system bars over the page: its own top strip is the page's header. The phones paint
+    // behind theirs and set the bar icons from this; here it answers false.
+    'system.bars': async () => false,
   };
 }
 

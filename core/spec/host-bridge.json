@@ -12,7 +12,8 @@
     "updates.install": { "args": {}, "returns": "boolean" },
     "window.minimize": { "args": {}, "returns": "boolean" },
     "window.toggleMaximize": { "args": {}, "returns": "boolean" },
-    "window.close": { "args": {}, "returns": "boolean" }
+    "window.close": { "args": {}, "returns": "boolean" },
+    "system.bars": { "args": { "scheme": "string", "followSystem": "boolean" }, "returns": "boolean", "schemes": ["light", "dark"] }
   },
   "events": {
     "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },

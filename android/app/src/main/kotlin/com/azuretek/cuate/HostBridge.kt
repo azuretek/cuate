@@ -27,6 +27,7 @@ class HostBridge(
     private val commands: Set<String>,
     private val product: String,
     private val version: String,
+    private val onSystemBars: (scheme: String) -> Unit = {},
 ) {
 
     companion object {
@@ -100,6 +101,9 @@ class HostBridge(
             "window.minimize" -> success(false)
             "window.toggleMaximize" -> success(false)
             "window.close" -> success(false)
+            // The page paints behind the status and navigation bars and names the scheme it drew, so the bar icons
+            // contrast with it: dark on light, light on dark.
+            "system.bars" -> success(systemBars(args))
             else -> failure("undeclared bridge command: " + name)
         }
     }
@@ -132,6 +136,13 @@ class HostBridge(
             .setContentText(body)
             .build()
         manager.notify(title.hashCode(), notification)
+        return true
+    }
+
+    private fun systemBars(args: JSONObject): Boolean {
+        val scheme = args.optString("scheme")
+        if (scheme != "light" && scheme != "dark") return false
+        onSystemBars(scheme)
         return true
     }
 

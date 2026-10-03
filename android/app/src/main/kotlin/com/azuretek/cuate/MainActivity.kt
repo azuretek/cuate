@@ -3,13 +3,18 @@ package com.azuretek.cuate
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -41,16 +46,28 @@ class MainActivity : Activity() {
         const val PICK_FILE = 41
     }
 
+    private lateinit var root: FrameLayout
     private lateinit var webView: WebView
     private lateinit var cover: LinearLayout
     private lateinit var coverMessage: TextView
     private var pickCallback: ValueCallback<Array<Uri>>? = null
 
+    /** The scheme the page last said it drew, or null until it has said; the bar icons contrast with it. */
+    private var pageScheme: String? = null
+
+    /** The window's insets in CSS pixels (top, right, bottom, left), handed to the page as --shell-inset-*. */
+    private var pageInsets = floatArrayOf(0f, 0f, 0f, 0f)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val product = Naming.product(assets).ifEmpty { "Cuate" }
-        val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName())
+        val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName()) { scheme ->
+            runOnUiThread {
+                pageScheme = scheme
+                applyBarIcons()
+            }
+        }
         Diagnostics.remember(this)
 
         webView = WebView(this).apply {
@@ -69,17 +86,122 @@ class MainActivity : Activity() {
         cover = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(getColor(R.color.surface))
             addView(ProgressBar(this@MainActivity))
             addView(coverMessage)
         }
 
-        val root = FrameLayout(this)
+        root = FrameLayout(this)
+        root.setBackgroundColor(getColor(R.color.surface))
         root.addView(webView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         root.addView(cover, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            applyInsets(insets)
+            insets
+        }
         setContentView(root)
+        edgeToEdge()
+        applyBarIcons()
 
         webView.loadUrl(START_URL)
+    }
+
+    /**
+     * The page paints behind the status bar, the navigation bar and any display cutout, and pads its edge surfaces by
+     * the insets it is handed, so each bar wears the colour of the surface beside it (issue 175). Android 15 forces
+     * this for the target SDK; the earlier releases are asked for the same thing here, with transparent bars and no
+     * contrast scrim of the system's own.
+     */
+    @Suppress("DEPRECATION")
+    private fun edgeToEdge() {
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        } else {
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+    }
+
+    /**
+     * The bar icons contrast with the page: dark on a light surface, light on a dark one. Until the page has said which
+     * scheme it drew, the system's own night mode decides, which is what the page follows by default.
+     */
+    @Suppress("DEPRECATION")
+    private fun applyBarIcons() {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val light = (pageScheme ?: if (night) "dark" else "light") == "light"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(if (light) mask else 0, mask)
+        } else {
+            val mask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            val flags = window.decorView.systemUiVisibility
+            window.decorView.systemUiVisibility = if (light) flags or mask else flags and mask.inv()
+        }
+    }
+
+    /**
+     * The system bars and the cutout become the page's insets, in CSS pixels. The keyboard is the one inset the page
+     * does not paint behind: the web view ends at its top edge, as the resizes-content viewport expects, and nothing
+     * under it needs the navigation bar's inset while it is up.
+     */
+    @Suppress("DEPRECATION")
+    private fun applyInsets(insets: WindowInsets) {
+        val bars: IntArray
+        val keyboard: Int
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val b = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            bars = intArrayOf(b.top, b.right, b.bottom, b.left)
+            keyboard = insets.getInsets(WindowInsets.Type.ime()).bottom
+        } else {
+            bars = intArrayOf(insets.stableInsetTop, insets.stableInsetRight, insets.stableInsetBottom, insets.stableInsetLeft)
+            keyboard = if (insets.systemWindowInsetBottom > insets.stableInsetBottom) insets.systemWindowInsetBottom else 0
+        }
+        val typing = keyboard > bars[2]
+        val params = webView.layoutParams as FrameLayout.LayoutParams
+        val margin = if (typing) keyboard else 0
+        if (params.bottomMargin != margin) {
+            params.bottomMargin = margin
+            webView.layoutParams = params
+        }
+        val density = resources.displayMetrics.density
+        pageInsets = floatArrayOf(bars[0] / density, bars[1] / density, if (typing) 0f else bars[2] / density, bars[3] / density)
+        sendInsets()
+    }
+
+    private fun sendInsets() {
+        val (top, right, bottom, left) = pageInsets.map { "%.2fpx".format(java.util.Locale.ROOT, it) }
+        webView.evaluateJavascript(
+            "(function (s) { s.setProperty('--shell-inset-top', '$top'); s.setProperty('--shell-inset-right', '$right'); " +
+                "s.setProperty('--shell-inset-bottom', '$bottom'); s.setProperty('--shell-inset-left', '$left'); })" +
+                "(document.documentElement.style);",
+            null,
+        )
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The activity keeps its page through a night mode change, so the shell's own surface follows here; the page
+        // follows the system through its own media query and reports the scheme it then drew.
+        root.setBackgroundColor(getColor(R.color.surface))
+        cover.setBackgroundColor(getColor(R.color.surface))
+        applyBarIcons()
     }
 
     override fun onDestroy() {
@@ -141,9 +263,11 @@ class MainActivity : Activity() {
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             view?.evaluateJavascript(HostBridge.injectedScript, null)
+            sendInsets()
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
+            sendInsets()
             cover.visibility = View.GONE
         }
 

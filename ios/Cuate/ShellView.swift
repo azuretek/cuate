@@ -54,9 +54,11 @@ struct ShellWebView: UIViewRepresentable {
         configuration.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        // The page paints behind the status bar and the home indicator (viewport-fit=cover), and until it has painted
+        // the shell shows the tokens' own surface rather than a system white or black (issue 175).
         webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        webView.backgroundColor = UIColor(named: "Surface") ?? .systemBackground
+        webView.scrollView.backgroundColor = UIColor(named: "Surface") ?? .systemBackground
         webView.navigationDelegate = context.coordinator
         model.attach(webView)
         webView.load(URLRequest(url: BundleSchemeHandler.startURL))
@@ -80,6 +82,7 @@ struct ShellWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             model.ready()
+            model.bridge.applySystemBars()
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -152,6 +155,6 @@ struct LoadingCover: View {
                 .font(.headline)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
+        .background(Color("Surface").ignoresSafeArea())
     }
 }
