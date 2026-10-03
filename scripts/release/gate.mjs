@@ -120,8 +120,22 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 // for a commit whose platforms were fine. The buffer is a ceiling, not an allocation.
 export const GH_MAX_BUFFER = 64 * 1024 * 1024;
 
-export const ghJson = (bin, args, env = process.env) =>
-  JSON.parse(execFileSync(bin, args, { encoding: 'utf8', env, maxBuffer: GH_MAX_BUFFER }));
+// GitHub's API answers a 5xx, or times out, for a moment at a time. One such answer killed the gate mid poll and failed
+// a commit whose platforms were fine, so a transient failure is asked again a bounded number of times, with a growing
+// pause; anything else (a 404, a bad token, bad JSON) fails at once, and the last transient failure is thrown as it is.
+const TRANSIENT = /HTTP 5\d\d|No server is currently available|couldn't respond to your request in time|ETIMEDOUT|ECONNRESET|EAI_AGAIN|i\/o timeout|connection reset/i;
+export const isTransient = (err) => TRANSIENT.test([err && err.message, err && err.stderr, err && err.stdout].map((x) => String(x || '')).join('\n'));
+
+export function ghJson(bin, args, env = process.env, { attempts = 5, wait = sleep, pauseMs = 5000 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return JSON.parse(execFileSync(bin, args, { encoding: 'utf8', env, maxBuffer: GH_MAX_BUFFER }));
+    } catch (err) {
+      if (attempt >= attempts || !isTransient(err)) throw err;
+      wait(pauseMs * attempt);
+    }
+  }
+}
 
 const ghApi = (endpoint, env = process.env) => ghJson('gh', ['api', endpoint], env);
 
