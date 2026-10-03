@@ -45,6 +45,9 @@ export function restoreDataDir({ file, dataDir, log = null, force = false } = {}
   const present = STATE_FILES.filter((n) => existsSync(path.join(dataDir, n)));
   if (present.length && !force) throw new Error('the data folder is not empty (' + present.join(', ') + '): restore into an empty one');
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  // A restored state.db must not be read with the write-ahead log of the database it replaces, which SQLite would
+  // otherwise replay over it on the next open.
+  for (const name of ['state.db-wal', 'state.db-shm']) rmSync(path.join(dataDir, name), { force: true });
   for (const [name, content] of Object.entries(doc.files)) writeFileSync(path.join(dataDir, name), Buffer.from(content, 'base64'), { mode: 0o600 });
   const bytes = statSync(file).size;
   if (log) log.emit('backup.restored', { files: Object.keys(doc.files).length, bytes });

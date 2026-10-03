@@ -27,6 +27,10 @@ export const SETTINGS_SCHEMA = {
     // download nobody asked for spends someone's bandwidth, and the setting is how they asked. The check still runs
     // with it off, because knowing a release exists is what makes installing by hand possible.
     'updates.autoDownload': { group: 'updates', label: 'Download updates automatically', type: 'toggle', default: false },
+    // Whether the installed server installs a verified release by itself. On by default for now (issue 117): every
+    // install is verified, backed up, health checked and rolled back on failure. Off, the server still checks and
+    // installs nothing; service update --pause on the Mac does the same from there.
+    'updates.serverAuto': { group: 'updates', label: 'Update the server automatically', type: 'toggle', default: true },
   },
 };
 
