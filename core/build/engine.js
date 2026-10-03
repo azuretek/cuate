@@ -160,6 +160,7 @@ var engine = (() => {
     matchesTerm: () => matchesTerm,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
+    messageActions: () => messageActions,
     messageNotice: () => messageNotice,
     messageSearchText: () => messageSearchText,
     moveGroup: () => moveGroup,
@@ -237,6 +238,8 @@ var engine = (() => {
     themeId: () => themeId,
     themeName: () => themeName,
     themeVars: () => themeVars,
+    threadIds: () => threadIds,
+    threadRoot: () => threadRoot,
     toBase64: () => toBase64,
     toggleChecked: () => toggleChecked,
     toggleZoom: () => toggleZoom,
@@ -1672,6 +1675,32 @@ var engine = (() => {
   }
   var MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
   var canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
+  function messageActions(m, { sending = false } = {}) {
+    if (!sending || !canTarget(m)) return [];
+    return m.fromMe ? ["react"] : ["reply", "react"];
+  }
+  function threadRoot(messages, id) {
+    return rootIn(new Map((messages || []).map((m) => [m.id, m])), id);
+  }
+  function rootIn(byId, start) {
+    let at = start;
+    const seen = /* @__PURE__ */ new Set();
+    while (!seen.has(at)) {
+      seen.add(at);
+      const parent = byId.get(at)?.replyTo;
+      if (!parent) return at;
+      at = parent;
+    }
+    return start;
+  }
+  function threadIds(messages, id) {
+    const byId = new Map((messages || []).map((m) => [m.id, m]));
+    const rootOf = (start) => rootIn(byId, start);
+    const root = rootOf(id);
+    const ids = /* @__PURE__ */ new Set([root, id]);
+    for (const m of byId.values()) if (rootOf(m.id) === root) ids.add(m.id);
+    return ids;
+  }
   function myReaction(m) {
     return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;
   }

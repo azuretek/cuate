@@ -4,17 +4,14 @@ import { press, runPress, emit, respond } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { chatTitle, initials } from '../rules/chats.js';
-import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, canTarget, TAPBACKS } from '../rules/messages.js';
+import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, messageActions, threadIds, threadRoot } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
 import { windowControlsHtml } from './window-controls.js';
-import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
 import './app-composer.js';
 import './app-attachment.js';
 
-// How long a finger rests on a message before its menu opens, and how long a quoted parent stays lit after the
-// quote is pressed. Interaction timings, not styles: the light itself is a token-driven animation in app.css.
+// How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
 const LONG_PRESS_MS = 500;
-const FLASH_MS = 1600;
 // How far a resting finger may drift and still be a long press rather than the start of a scroll, in CSS pixels.
 const PRESS_SLOP = 10;
 
@@ -24,9 +21,10 @@ class AppConversation extends KitElement {
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
-    // The menu or the emoji panel open on one message ({ id, kind: 'menu' | 'picker', side }), the message being
-    // replied to as the composer quotes it, and the parent a pressed quote lit.
-    pop: { state: true }, replyingTo: { state: true }, flashId: { state: true }, frequent: { state: true },
+    // The menu open on one message ({ id, kind: 'menu', side }), the thread open over the conversation and being
+    // replied to ({ id } of its first message), and the message the composer's emoji panel is choosing a reaction for
+    // (issues 169 and 183).
+    pop: { state: true }, replyingTo: { state: true }, reactFor: { state: true },
   };
 
   constructor() {
@@ -41,22 +39,24 @@ class AppConversation extends KitElement {
     // The conversation follows its latest message while it is there, and otherwise stays on the message it was on,
     // through new messages, older ones loading above, a picture loading, a resize and a new text size (issue 142).
     this.keep = keepScroll(this, { scroller: '.messages', items: '.bubble-row', follow: true });
+    // An open thread keeps its own place the same way.
+    this.keepThread = keepScroll(this, { scroller: '.thread-view', items: '.bubble-row' });
     this.reacting = null;
     this.note = null;
     this.pop = null;
     this.replyingTo = null;
-    this.flashId = null;
-    this.frequent = [];
+    this.reactFor = null;
     this.pressTimer = null;
-    // The message menu and its emoji panel close on a press outside them and on Escape, through the kit's one
-    // behaviour (core/kit/dismiss.js); the open message's own React control keeps it, since it toggles the menu.
+    this.swallowClick = { handleEvent: (e) => this.swallow(e), capture: true };
+    // The message menu and an open thread close on a press outside them and on Escape, through the kit's one behaviour
+    // (core/kit/dismiss.js). The composer keeps the thread open, since replying in it is typing there.
     dismissable(this, { name: 'pop', open: () => Boolean(this.pop), close: () => this.closePop() });
+    dismissable(this, { name: 'thread', open: () => Boolean(this.replyingTo), close: () => this.closeThread() });
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     clearTimeout(this.pressTimer);
-    clearTimeout(this.flashTimer);
   }
 
   // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
@@ -70,6 +70,7 @@ class AppConversation extends KitElement {
       this.keep.reset();
       this.pop = null;
       this.replyingTo = null;
+      this.reactFor = null;
     }
   }
 
@@ -90,55 +91,88 @@ class AppConversation extends KitElement {
     pop.scrollIntoView({ block: 'nearest' });
   }
 
+  // The one menu a message has: its time on any message, and whatever messageActions offers on it.
   openMenu(m, e) {
     if (e) e.preventDefault();
-    if (!canTarget(m) || !this.sending) return;
     this.pop = { id: m.id, kind: 'menu', side: 'above' };
   }
 
-  async openPicker(m) {
-    this.pop = { id: m.id, kind: 'picker', side: 'above' };
-    this.frequent = await loadRecentEmoji();
+  // React chooses from the composer's own emoji panel, the one used for typing, rather than a second picker. The list
+  // makes room above the panel and brings the message into that room, so the panel never covers what it reacts to.
+  async openReact(m) {
+    this.pop = null;
+    this.reactFor = m.id;
+    await this.updateComplete;
+    this.rowOf?.(m.id)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  reactPicked(char) {
+    const m = (this.messages || []).find((x) => x.id === this.reactFor);
+    this.reactFor = null;
+    return m ? this.react(m, char) : undefined;
   }
 
   closePop() {
     this.pop = null;
   }
 
-  // A finger held on a message opens its menu, as a right click does with a mouse. Moving or lifting first cancels.
+  // A finger or the main mouse button held on a message opens its menu, as a right click does. Moving or lifting
+  // first cancels, so a drag still scrolls and a click is still a click.
   pressStart(m, e) {
-    if (e.pointerType !== 'touch') return;
+    const held = e.pointerType === 'touch' || (e.pointerType === 'mouse' && e.button === 0);
+    if (!held || e.target?.closest?.('.message-pop')) return;
     clearTimeout(this.pressTimer);
+    this.held = false;
     this.pressAt = { x: e.clientX, y: e.clientY };
-    this.pressTimer = setTimeout(() => this.openMenu(m), LONG_PRESS_MS);
+    this.pressTimer = setTimeout(() => { this.held = true; this.openMenu(m); }, LONG_PRESS_MS);
   }
 
   pressMove(e) {
     if (this.pressAt && Math.hypot(e.clientX - this.pressAt.x, e.clientY - this.pressAt.y) > PRESS_SLOP) this.pressEnd();
   }
 
+  // Releasing a long press may click what it was held on (a mouse always does, a finger usually does not); that one
+  // click is swallowed, and only that one, so the next press, in the menu or anywhere, is a press.
   pressEnd() {
     clearTimeout(this.pressTimer);
     this.pressAt = null;
+    if (this.held) setTimeout(() => { this.held = false; }, 0);
   }
 
-  // Pressing the reaction already yours takes it off; any other replaces it, one reaction per person.
+  swallow(e) {
+    if (!this.held || e.target?.closest?.('.message-pop')) return;
+    this.held = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  // Choosing the reaction already yours takes it off; any other replaces it, one reaction per person. The work shows on
+  // the composer's emoji button, the control the reaction was chosen from, since the panel itself has closed.
   react(m, emoji) {
     const mine = myReaction(m);
     const remove = Boolean(mine) && reactionGlyph(mine).replace(/\ufe0f/g, '') === String(emoji).replace(/\ufe0f/g, '');
     this.pop = null;
-    const control = [...this.querySelectorAll('.bubble-row')].find((row) => row.dataset.id === m.id)?.querySelector('.message-action[aria-label="React"]');
+    const control = this.querySelector('app-composer button.tool[aria-label="Emoji"]');
     return runPress(control, () => this.fire('react', { messageId: m.id, emoji, remove }));
   }
 
-  async pickEmoji(m, char) {
-    this.react(m, char);
-    this.frequent = await rememberEmoji(this.frequent, char);
+  // Reply in thread, or a reply's thread mark, opens the thread as its own conversation over the rest, which blurs
+  // behind it, and the composer replies into it. A thread is one level deep, as on the Mac: it is named by its first
+  // message, so answering a reply joins the same thread (issues 169 and 183).
+  openThread(m) {
+    this.pop = null;
+    this.reactFor = null;
+    this.replyingTo = { id: threadRoot(this.messages, m.id) };
   }
 
-  startReply(m) {
-    this.pop = null;
-    this.replyingTo = replyQuote([m], { replyTo: m.id });
+  closeThread() {
+    this.replyingTo = null;
+  }
+
+  // The row for a message where it is showing: in the thread while one is open, in the conversation otherwise.
+  rowOf(id) {
+    const scope = (this.replyingTo && this.querySelector('.thread-view')) || this;
+    return [...scope.querySelectorAll('.bubble-row')].find((r) => r.dataset.id === id) || null;
   }
 
   onSend(detail) {
@@ -146,64 +180,53 @@ class AppConversation extends KitElement {
     return this.fire('send', detail);
   }
 
-  // A quote takes the reader to the message it answers and lights it for a moment.
-  goTo(id) {
-    const row = [...this.querySelectorAll('.bubble-row')].find((r) => r.dataset.id === id);
-    if (!row) return;
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
-    this.flashId = id;
-    clearTimeout(this.flashTimer);
-    this.flashTimer = setTimeout(() => { this.flashId = null; }, FLASH_MS);
-  }
-
+  // The menu: when the message arrived (or was sent), then Reply in thread and React as icons from the shared set.
   menu(m) {
-    const mine = myReaction(m);
-    const chosen = mine ? reactionGlyph(mine).replace(/\ufe0f/g, '') : null;
-    return html`<div class="message-pop message-menu" role="menu" aria-label="React or reply" data-dismiss="pop" data-side=${this.pop.side}>
-      <div class="tapback-row">
-        ${TAPBACKS.map((t) => html`<button type="button" role="menuitemcheckbox" class="tapback" aria-checked=${chosen === t.glyph.replace(/\ufe0f/g, '') ? 'true' : 'false'} aria-label=${t.type} title=${t.type} @click=${press(() => this.react(m, t.glyph))}>${t.glyph}</button>`)}
-        <button type="button" role="menuitem" class="tapback tapback-more" aria-label="More emoji" title="More emoji" @click=${press(() => this.openPicker(m))}>+</button>
-      </div>
-      <button type="button" role="menuitem" class="menu-item" @click=${press(() => this.startReply(m))}>Reply</button>
-      ${mine ? html`<button type="button" role="menuitem" class="menu-item" @click=${press(() => this.react(m, reactionGlyph(mine)))}>Remove reaction</button>` : nothing}
+    const actions = messageActions(m, { sending: this.sending });
+    const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
+    return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side}>
+      <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
+      ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
+      ${actions.includes('react') ? html`<button type="button" class="message-action" aria-label="React" title="React" @click=${press(() => this.openReact(m))}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>` : nothing}
     </div>`;
   }
 
-  picker(m) {
-    return html`<div class="message-pop message-picker" data-dismiss="pop" data-side=${this.pop.side}><app-emoji-picker dismiss="pop" .frequent=${this.frequent} @pick=${(e) => this.pickEmoji(m, e.detail)}></app-emoji-picker></div>`;
-  }
-
-  bubble(it, lastMine, sms) {
+  // where is 'list' for the conversation and 'thread' for the open thread. Only the surface in front draws a menu, and a
+  // reply in the conversation carries a quiet mark back to its thread rather than a label naming who it answers.
+  bubble(it, lastMine, sms, where = 'list') {
     const m = it.message;
     const mine = m.fromMe;
-    const flash = this.flashId === m.id;
-    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', flash ? 'flash' : ''].filter(Boolean).join(' ');
+    const front = where === 'thread' || !this.replyingTo;
+    const targeted = this.reactFor === m.id;
+    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : ''].filter(Boolean).join(' ');
     const kind = mine ? (sms ? 'sms' : 'me') : 'them';
     const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
-    const quote = replyQuote(this.messages, m);
+    const quote = where === 'list' ? replyQuote(this.messages, m) : null;
     const own = myReaction(m);
     const ownGlyph = own ? reactionGlyph(own) : null;
-    const target = canTarget(m);
     const busy = this.reacting === m.id;
-    const open = this.pop && this.pop.id === m.id ? this.pop.kind : null;
+    const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
     const note = this.note && this.note.id === m.id ? this.note.text : '';
-    return html`<div class=${row} data-id=${m.id} aria-busy=${busy ? 'true' : 'false'} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
+    return html`<div class=${row} data-id=${m.id} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
-      ${quote ? html`<button type="button" class="reply-link" aria-label=${quote.found ? 'Go to the message replied to' : 'Replied to an earlier message'} ?disabled=${!quote.found} @click=${press(() => this.goTo(quote.id))}><span aria-hidden="true">↩</span><span>${quote.who ? 'Reply to ' + quote.who : 'Reply to earlier message'}</span></button>` : nothing}
+      ${quote ? html`<button type="button" class="reply-mark" aria-label=${'In a thread' + (quote.who ? ' with ' + quote.who : '') + '. Open the thread'} title="Open the thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.text ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')}>${m.text}</div>` : nothing}
-        ${target ? html`<div class="message-actions">
-          <button type="button" class="message-action" aria-label="React" title="React" aria-haspopup="menu" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} ?disabled=${!this.sending} @click=${press(() => (open ? this.closePop() : this.openMenu(m)))}>\u{1F642}</button>
-          <button type="button" class="message-action" aria-label="Reply" title="Reply" ?disabled=${!this.sending} @click=${press(() => this.startReply(m))}>\u21A9\uFE0E</button>
-        </div>` : nothing}
+        ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
-        ${open === 'picker' ? this.picker(m) : nothing}
       </div>
-      ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
       ${label ? html`<div class="delivery">${label}${m.note ? ' \u00b7 ' + m.note : ''}</div>` : nothing}
       ${note ? html`<div class="message-note" role="status">${note}</div>` : nothing}
+    </div>`;
+  }
+
+  // The open thread: its first message and every reply, in order, as a conversation of their own.
+  threadView(lastMine, sms) {
+    const ids = threadIds(this.messages, this.replyingTo.id);
+    const items = groupMessages((this.messages || []).filter((m) => ids.has(m.id)));
+    return html`<div class="thread-view">
+      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread">${items.filter((it) => it.kind === 'message').map((it) => this.bubble(it, lastMine, sms, 'thread'))}</div>
     </div>`;
   }
 
@@ -213,14 +236,18 @@ class AppConversation extends KitElement {
     const items = groupMessages(this.messages || []);
     const lastMine = [...(this.messages || [])].reverse().find((m) => m.fromMe) || null;
     const sms = this.chat.service === 'SMS' || this.chat.service === 'RCS';
+    const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
     return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
-      <div class="messages" role="log" aria-live="polite">
-        ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
-        ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms)))}
+      <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
+        <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
+          ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
+          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, 'list')))}
+        </div>
+        ${thread ? this.threadView(lastMine, sms) : nothing}
       </div>
-      <app-composer .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} .replyTo=${this.replyingTo} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => { this.replyingTo = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 

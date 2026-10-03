@@ -18,16 +18,17 @@ function words(value) {
   return '';
 }
 
-test('a reply renders one compact relationship, never the original body', () => {
+test('a reply renders one quiet mark back to its thread, never the original body or a reply-to label', () => {
   const parent = { id: 'parent', text: 'Unique original body', senderName: 'Avery', fromMe: false };
   const host = { messages: [parent], chat: {}, sending: true };
   const message = { id: 'reply', replyTo: 'parent', text: 'Answer', attachments: [], reactions: [], fromMe: true };
-  const markup = words(proto.bubble.call(host, { message }, message, false));
+  const markup = words(proto.bubble.call(host, { message }, message, false, 'list'));
   assert.ok(!markup.includes(parent.text));
-  assert.ok(markup.includes('Reply to Avery'));
-  assert.equal((markup.match(/class="reply-link"/g) || []).length, 1);
-  const missing = words(proto.bubble.call(host, { message: { ...message, replyTo: 'missing' } }, message, false));
-  assert.ok(missing.includes('Reply to earlier message'));
+  assert.ok(!markup.includes('Reply to'));
+  assert.equal((markup.match(/class="reply-mark"/g) || []).length, 1);
+  assert.ok(markup.includes('In a thread with Avery'));
+  const missing = words(proto.bubble.call(host, { message: { ...message, replyTo: 'missing' } }, message, false, 'list'));
+  assert.equal((missing.match(/class="reply-mark"/g) || []).length, 1, 'a thread whose first message is not loaded is still marked');
 });
 
 test('reply send returns the same work and preserves the parent id', async () => {
@@ -38,7 +39,7 @@ test('reply send returns the same work and preserves the parent id', async () =>
   assert.equal(host.replyingTo, null);
 });
 
-test('reaction closes its menu but leaves shared pending and failure feedback on the persistent control', async () => {
+test('reaction closes its menu but leaves shared pending and failure feedback on the composer\'s emoji button, the control it was chosen from', async () => {
   configurePress({ timers: { setTimeout() { return 1; }, clearTimeout() {} } });
   try {
     const attrs = new Map();
@@ -46,7 +47,7 @@ test('reaction closes its menu but leaves shared pending and failure feedback on
     let resolve;
     let calls = 0;
     const work = new Promise((r) => { resolve = r; });
-    const host = { pop: { id: 'parent' }, querySelectorAll() { return [{ dataset: { id: 'parent' }, querySelector() { return control; } }]; }, fire() { calls++; return work; } };
+    const host = { pop: { id: 'parent' }, querySelector(sel) { assert.equal(sel, 'app-composer button.tool[aria-label="Emoji"]'); return control; }, fire() { calls++; return work; } };
     const message = { id: 'parent', reactions: [] };
     const first = proto.react.call(host, message, '👍');
     proto.react.call(host, message, '👍');
