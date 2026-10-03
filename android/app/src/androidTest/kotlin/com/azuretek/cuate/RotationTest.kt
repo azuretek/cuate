@@ -38,7 +38,7 @@ class RotationTest {
         return result
     }
 
-    private fun awaitProof(scenario: ActivityScenario<MainActivity>, landscape: Boolean) {
+    private fun awaitProof(scenario: ActivityScenario<MainActivity>, landscape: Boolean): JSONObject {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         var result = "null"
         do {
@@ -47,10 +47,59 @@ class RotationTest {
             if (result != "null") {
                 val proof = JSONObject(result)
                 if (proof.has("error")) throw AssertionError("Rotation fixture failed: " + proof.getString("error"))
-                if (proof.getBoolean("ok") && (proof.getInt("width") > proof.getInt("height")) == landscape) return
+                if (proof.getBoolean("ok") && (proof.getInt("width") > proof.getInt("height")) == landscape) return proof
             }
         } while (System.nanoTime() < deadline)
         throw AssertionError("Rotation retention failed: $result")
+    }
+
+    // Where the verdict's fill lands in a capture: the web view's place on the screen plus the marker's CSS box, scaled
+    // by the web view's pixels per CSS pixel. The point is inside the marker's left padding, clear of its text.
+    private fun markerPoint(scenario: ActivityScenario<MainActivity>, proof: JSONObject): Pair<Int, Int> {
+        val origin = IntArray(2)
+        var widthPx = 0
+        scenario.onActivity { activity ->
+            val view = webView(activity.findViewById(android.R.id.content))!!
+            view.getLocationOnScreen(origin)
+            widthPx = view.width
+        }
+        val scale = widthPx.toDouble() / proof.getInt("width")
+        val box = proof.getJSONObject("marker")
+        val x = origin[0] + ((box.getDouble("left") + 3) * scale).toInt()
+        val y = origin[1] + ((box.getDouble("top") + box.getDouble("height") / 2) * scale).toInt()
+        return x to y
+    }
+
+    // The fixture fills its verdict green for pass and red for fail, so the capture itself says which it caught.
+    private fun verdictShown(capture: android.graphics.Bitmap, point: Pair<Int, Int>): String {
+        val (x, y) = point
+        if (x !in 0 until capture.width || y !in 0 until capture.height) return "off-screen at $x,$y"
+        val pixel = capture.getPixel(x, y)
+        val r = android.graphics.Color.red(pixel)
+        val g = android.graphics.Color.green(pixel)
+        val b = android.graphics.Color.blue(pixel)
+        return when {
+            g > r + 60 && g > b + 30 -> "pass"
+            r > g + 60 && r > b + 60 -> "fail"
+            else -> "unknown rgb($r,$g,$b) at $x,$y"
+        }
+    }
+
+    // The capture is kept only if the verdict read pass when it was asked for, still reads pass, did not fail on any
+    // frame in between, and the captured pixels show the pass fill. A run can then never keep a fail label.
+    private fun assertVerdictHeld(scenario: ActivityScenario<MainActivity>, before: JSONObject, capture: android.graphics.Bitmap, scheme: String) {
+        val after = JSONObject(evaluate(scenario, "window.rotationProof || null"))
+        val shown = verdictShown(capture, markerPoint(scenario, after))
+        val held = after.optString("label") == "portrait:pass" && after.getBoolean("ok")
+            && after.getInt("lastFail") < before.getInt("seq")
+        if (!held || shown != "pass") {
+            throw AssertionError(
+                "The $scheme capture did not keep a passing verdict: page says " + after.optString("label") +
+                    " (failing " + after.optJSONArray("failing") + ", last fail at sample " + after.optInt("lastFail") +
+                    ", passed at sample " + before.optInt("seq") + "), capture shows " + shown +
+                    ", history " + after.optJSONArray("history"),
+            )
+        }
     }
 
     // The DOM can report the proof before the compositor presents that frame, and a
@@ -118,8 +167,9 @@ class RotationTest {
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
-            awaitProof(scenario, false)
+            val passed = awaitProof(scenario, false)
             val capture = captureScheme(scheme)
+            assertVerdictHeld(scenario, passed, capture, scheme)
             // AGP copies this directory before uninstalling the app and its data.
             val outputDir = java.io.File(requireNotNull(
                 InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
