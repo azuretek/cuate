@@ -93,8 +93,10 @@
   // raises its own keyboard; the page reports whether anything slid: the page's scroll, the visual viewport's offset,
   // where the surface at the top now sits, and where the focused field is against the visible height.
   let kind = 'conversation';
+  let settingsReady = false;
   const field = () => (kind === 'settings' ? document.querySelector('[data-bars-field]') : document.querySelector('app-composer textarea'));
   window.systemBarsField = () => {
+    if (kind === 'settings' && !settingsReady) return null;
     const f = field();
     if (!f) return null;
     const r = f.getBoundingClientRect();
@@ -109,10 +111,16 @@
     // The last text field, low in the sheet, so a keyboard covers where it sits until the sheet scrolls it into sight.
     const f = fields[fields.length - 1];
     if (!f) throw new Error('settings must offer a text field');
-    f.dataset.barsField = '';
-    f.setAttribute('aria-label', 'bars-field');
+    // The sheet slides up as it opens; the field is only where it will stay once that has finished.
+    const sheet = document.querySelector('.sheet-scrim > .sheet');
+    const settle = (sheet ? sheet.getAnimations({ subtree: true }) : []).map((a) => a.finished.catch(() => {}));
+    await Promise.race([Promise.all(settle), new Promise((resolve) => setTimeout(resolve, 3000))]);
     f.scrollIntoView({ block: 'end' });
     await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    f.dataset.barsField = '';
+    f.setAttribute('aria-label', 'bars-field');
+    settingsReady = true;
     keys();
     return window.systemBarsField();
   };
@@ -123,7 +131,7 @@
   const keys = () => {
     const f = field();
     const r = f ? f.getBoundingClientRect() : { top: -1, bottom: -1 };
-    const surface = kind === 'settings' ? document.querySelector('app-settings .sheet') : document.querySelector('.conv-head');
+    const surface = kind === 'settings' ? document.querySelector('.sheet-scrim > .sheet') : document.querySelector('.conv-head');
     const s = surface ? surface.getBoundingClientRect() : { top: -1 };
     const vv = window.visualViewport || { offsetTop: 0, height: innerHeight, scale: 1 };
     const proof = {
