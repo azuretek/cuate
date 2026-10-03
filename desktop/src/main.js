@@ -306,9 +306,10 @@ async function runSmoke(w) {
   report.tray = Object.values(trayChecks).every(Boolean);
   console.log('tray: ' + JSON.stringify({ checks: trayChecks, minimised }));
 
-  // The emoji panel: the grid draws first, the search field and the categories sit below it, and the panel keeps one
-  // height, so typing a query narrows the grid without moving the composer or the grid's top edge. The order the eye
-  // reads is the order the keyboard walks: the grid, then the field, then the tabs.
+  // The emoji panel: the grid draws first, the search field and the categories sit below it, the recently used row
+  // (once there is one) sits last, nearest the emoji button, and the panel keeps one height, so typing a query
+  // narrows the grid without moving the composer or the grid's top edge. The order the eye reads is the order the
+  // keyboard walks: the grid, then the field, then the tabs, then the recents.
   await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
   await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-grid'))");
   await pause(250);
@@ -316,8 +317,25 @@ async function runSmoke(w) {
   await js("(() => { const f = document.querySelector('app-emoji-picker .emoji-search'); f.value = 'heart'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
   await pause(250);
   const emojiAfter = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid ? grid.getBoundingClientRect().top : null, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length }; })()");
+  // With recents present (issue 123), the recently used row is the edge of the panel facing the emoji button: the
+  // panel opens upward from the composer, so the row is its last child and sits at its bottom, just above the composer.
+  await js("(() => { const f = document.querySelector('app-emoji-picker .emoji-search'); f.value = ''; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await pause(150);
+  await js("(() => { const cells = [...document.querySelectorAll('app-emoji-picker .emoji-grid .emoji-cell')].slice(0, 3); cells.forEach((c) => c.click()); cells[0].click(); return cells.length; })()");
+  await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-row'))", 5000);
+  await pause(250);
+  const emojiRecents = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const panel = picker.querySelector('.emoji-picker'); const row = picker.querySelector('.emoji-row'); const grid = picker.querySelector('.emoji-grid'); const button = document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').getBoundingClientRect(); const r = row.getBoundingClientRect(); const p = panel.getBoundingClientRect(); return { side: panel.dataset.side, last: panel.lastElementChild === row, cells: row.querySelectorAll('.emoji-cell').length, rowBottom: r.bottom, panelBottom: p.bottom, gridBottom: grid.getBoundingClientRect().bottom, rowTop: r.top, buttonTop: button.top, order: [...panel.children].map((n) => n.className) }; })()");
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03c-emoji-recents-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('03d-emoji-recents-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
   const emojiOrder = emojiBefore.order.join('|');
   const emojiPanelChecks = {
+    recentsNearButton: emojiRecents.side === 'above' && emojiRecents.last && emojiRecents.cells === 3 && emojiRecents.rowTop > emojiRecents.gridBottom && emojiRecents.panelBottom - emojiRecents.rowBottom < 40 && emojiRecents.rowBottom <= emojiRecents.buttonTop,
     order: emojiOrder.indexOf('emoji-grid') >= 0 && emojiOrder.indexOf('emoji-grid') < emojiOrder.indexOf('emoji-search') && emojiOrder.indexOf('emoji-search') < emojiOrder.indexOf('emoji-tabs'),
     active: emojiBefore.active === 1,
     tabs: emojiBefore.tabs > 4 && emojiAfter.tabs === emojiBefore.tabs,
@@ -326,7 +344,7 @@ async function runSmoke(w) {
     composerHeld: Math.abs(emojiBefore.composerTop - emojiAfter.composerTop) < 1,
   };
   report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
-  console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, order: emojiOrder }));
+  console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, recents: emojiRecents, order: emojiOrder }));
   await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
 
   // The attach menu (issue 72): the attach button sits beside the emoji button, opens a short menu upward from the
@@ -361,6 +379,44 @@ async function runSmoke(w) {
   const held = async () => (await (await fetch(srv + '/api/v1/settings', { headers: auth })).json()).values || {};
   const cdp = (method, params) => wc.debugger.sendCommand(method, params);
   const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
+
+  // The sidebar's Add group control stays on one line (issue 122): at the smallest window the shell allows and at every
+  // text size from 50% to 300%, the label renders as one line, in full at 100%, and shortens with an ellipsis rather
+  // than wrapping where the row is too narrow for it. The line count is read from the label's own text boxes and
+  // checked against the button's height, so a wrap fails here on whichever platform drew it.
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  const [minW, minH] = w.getMinimumSize();
+  await cdp('Emulation.setDeviceMetricsOverride', { width: minW, height: minH, deviceScaleFactor: 1, mobile: false });
+  const addGroupLine = () => js(`(() => {
+    const b = document.querySelector('.add-group .add-group-button');
+    if (!b) return null;
+    const s = getComputedStyle(b);
+    const size = parseFloat(s.fontSize);
+    const line = parseFloat(s.lineHeight) || size * 1.2;
+    const inner = b.getBoundingClientRect().height - ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((n, k) => n + (parseFloat(s[k]) || 0), 0);
+    const range = document.createRange();
+    range.selectNodeContents(b);
+    const lines = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size;
+    return { size, line, inner, lines, full: b.scrollWidth <= b.clientWidth, label: b.textContent.trim(), title: b.title, wide: window.innerWidth };
+  })()`);
+  const addGroupSizes = {};
+  const labelPx = "parseFloat(getComputedStyle(document.querySelector('.add-group .add-group-button')).fontSize)";
+  const plainLabel = await js(labelPx);
+  for (const scale of [50, 100, 200, 300]) {
+    const scaleSet = await putSettings({ 'appearance.textScale': scale });
+    if (!scaleSet.ok) throw new Error('the server refused the text size write: ' + scaleSet.status);
+    await waitFor('Math.abs(' + labelPx + ' - ' + (plainLabel * scale / 100) + ') < 0.6', 10000);
+    await pause(200);
+    const m = await addGroupLine();
+    addGroupSizes[scale] = m;
+    if (scale !== 50) await shot('10-add-group-' + scale + '.png');
+  }
+  await putSettings({ 'appearance.textScale': 100 });
+  await waitFor('Math.abs(' + labelPx + ' - ' + plainLabel + ') < 0.6', 10000);
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  report.addGroup = Object.values(addGroupSizes).every((m) => m && m.lines === 1 && m.inner < m.line * 1.5 && m.label === 'Add group' && m.title === 'Add group' && m.wide === minW)
+    && addGroupSizes[100].full;
+  console.log('add group: ' + JSON.stringify({ minW, minH, sizes: addGroupSizes }));
 
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).

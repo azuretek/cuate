@@ -93,7 +93,10 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-tab { border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); font-size: var(--font-size-xs); padding: var(--space-1) var(--space-2); cursor: pointer; }
 .emoji-tab.active { background: var(--color-selection); color: var(--color-fg); }
 .emoji-row, .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--size-emoji), 1fr)); gap: var(--space-1); overflow-y: auto; }
-.emoji-row { flex: none; border-bottom: var(--size-border) solid var(--color-border); padding-bottom: var(--space-2); }
+/* The recently used row sits on the edge facing the emoji button, and its divider faces the grid from whichever side it is on. */
+.emoji-row { flex: none; }
+.emoji-row.at-bottom { border-top: var(--size-border) solid var(--color-border); padding-top: var(--space-2); }
+.emoji-row.at-top { border-bottom: var(--size-border) solid var(--color-border); padding-bottom: var(--space-2); }
 .emoji-grid { flex: 1; min-height: 0; }
 .emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
 .emoji-cell:hover { background: var(--color-bg-sunken); }
@@ -246,7 +249,13 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .active-filters { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .active-chip { display: inline-flex; align-items: center; gap: var(--space-1); background: var(--color-selection); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-2); font-size: var(--font-size-sm); }
 .chip-clear { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-sm); line-height: 1; padding: 0 var(--space-1); }
+/* Add group stays on one line at every width and text size (issue 122). The name field gives way first: its basis is
+   nothing, so the label takes the width it needs and the field takes the rest. Where the label alone would need more
+   than half the row (a large text size in the fixed-width sidebar), it shortens with an ellipsis, as the chat names in
+   the same column do, and its title still carries the whole label. */
 .add-group { display: flex; align-items: center; gap: var(--space-2); }
+.add-group .new-group-name { flex: 1 1 0; }
+.add-group-button { flex: 0 1 auto; max-width: 50%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-sections { display: flex; flex-direction: column; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
 .section-name { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
