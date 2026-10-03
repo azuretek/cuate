@@ -160,7 +160,18 @@ class AboutPageTest {
             waitFor(scenario, "(function (b) { return Boolean(b) && b.dataset.command === 'updates.install' && !b.dataset.press; })(document.querySelector('app-about [data-action=check-updates]'))", "About to offer the install")
             val label = evaluate(scenario, "document.querySelector('app-about [data-action=check-updates]').textContent.trim()")
             assertTrue("About's button is the notice's Install: $label", label == "\"Install\"")
-            keep(settledCapture(), "update-ready-light.png")
+            // The press that started the download holds its own success mark for a moment, so the capture is kept only
+            // when the button reads Install both before and after it was taken.
+            val idleInstall = "(function (b) { return Boolean(b) && !b.dataset.press && b.textContent.trim() === 'Install'; })(document.querySelector('app-about [data-action=check-updates]'))"
+            val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+            var ready: android.graphics.Bitmap? = null
+            while (ready == null) {
+                assertTrue("About never settled on Install", System.nanoTime() < until)
+                waitFor(scenario, idleInstall, "About's Install to settle")
+                val capture = settledCapture()
+                if (evaluate(scenario, idleInstall) == "true") ready = capture else capture.recycle()
+            }
+            keep(requireNotNull(ready), "update-ready-light.png")
             evaluate(scenario, "document.querySelector('app-about [data-action=check-updates]').click()")
             // Android has not yet allowed this app to install apps, so the app says why before sending the person there.
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
