@@ -275,11 +275,16 @@ class AppRoot extends KitElement {
     this.problem = reason || '';
   }
 
-  async open(chatId, { show = false } = {}) {
+  // keep: refetch the conversation already open in place. What is on screen stays until the fresh page replaces it in
+  // one step, so a resync (every first connection that missed an event, and every reconnect) never blanks it.
+  async open(chatId, { show = false, keep = false } = {}) {
+    const refresh = keep && this.openChatId === chatId;
     this.openChatId = chatId;
     if (show) this.listOpen = false;
-    this.messages = [];
-    this.hasMore = false;
+    if (!refresh) {
+      this.messages = [];
+      this.hasMore = false;
+    }
     const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
     // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
@@ -317,7 +322,7 @@ class AppRoot extends KitElement {
     try {
       const { chats } = await this.client.chats();
       this.chats = orderChats(chats);
-      if (this.openChatId) await this.open(this.openChatId);
+      if (this.openChatId) await this.open(this.openChatId, { keep: true });
     } catch (e) {
       this.problem = this.describe(e);
     }
