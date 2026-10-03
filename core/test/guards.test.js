@@ -114,9 +114,8 @@ test('no shell wears a platform accent: the phone shells and the page take their
   const shells = [...walk(ios), ...walk('android/app/src/main')].filter((f) => /\.(?:json|xml|swift|kt|plist)$/.test(f));
   for (const f of shells) assert.equal(SYSTEM_BLUES.test(read(f)), false, f + ' carries a platform system blue');
   assert.deepEqual(json(ios + '/Assets.xcassets/AccentColor.colorset/Contents.json'), accentColorset(spec), 'the iOS accent colour set is the tokens\' accent, light and dark (pnpm run tokens)');
-  const tile = /<rect\b[^>]*\bfill="(#[0-9a-f]{6})"/i.exec(read('desktop/build/icon.svg'))[1].toLowerCase();
   const launcher = /<color name="ic_launcher_background">(#[0-9A-Fa-f]{6})<\/color>/.exec(read('android/app/src/main/res/values/colors.xml'))[1].toLowerCase();
-  assert.equal(launcher, tile, 'the Android launcher tile is the app icon\'s own tile colour (desktop/build/icon.svg)');
+  assert.equal(launcher, spec.color.light.accent.toLowerCase(), 'the Android launcher tile is the tokens\' accent, as the app icon\'s tile is (issue 189)');
   const css = read('core/app/styles/app.css');
   assert.match(css, /:root\s*\{[^}]*caret-color:\s*var\(--color-accent\)/, 'the caret is the theme\'s accent');
   assert.match(css, /:root\s*\{[^}]*accent-color:\s*var\(--color-accent\)/, 'native form controls take the theme\'s accent');
