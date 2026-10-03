@@ -1,12 +1,10 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import {
-  chatTitle, chatPreview, initials, sortChats, filterChats, groupSections, emptyFilters,
-  UNGROUPED, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat,
+  chatTitle, chatPreview, initials, sortChats, filterChats, groupSections, emptyFilters, emptyListText,
+  UNGROUPED, renameGroup, moveGroup, placeChat,
 } from '../rules/chats.js';
 import { formatListTime } from '../rules/time.js';
-
-const newGroupId = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 // The chat list: it draws the chats sorted, filtered and gathered into the person's groups. It holds no state of its
 // own: a sort, a group or a placement is sent up to the page, which writes it to the server, and the page hands the
@@ -14,8 +12,8 @@ const newGroupId = () => 'g' + Date.now().toString(36) + Math.random().toString(
 // of opening it; the selection itself lives with the page, so the header can select all and act on the count.
 class AppChatList extends KitElement {
   static properties = {
-    chats: { attribute: false }, selected: {},
-    sort: {}, groups: { attribute: false }, placement: { attribute: false }, order: { attribute: false },
+    chats: { attribute: false }, selected: {}, texts: { attribute: false },
+    sort: {}, groups: { attribute: false }, placement: { attribute: false },
     filters: { attribute: false }, editing: { attribute: false }, checked: { attribute: false },
   };
 
@@ -26,7 +24,7 @@ class AppChatList extends KitElement {
     this.sort = 'recent';
     this.groups = [];
     this.placement = {};
-    this.order = [];
+    this.texts = {};
     this.filters = emptyFilters();
     this.editing = false;
     this.checked = [];
@@ -70,14 +68,6 @@ class AppChatList extends KitElement {
 
   patch(settings) { this.fire('chatsettings', { patch: settings }); }
 
-  createGroup() {
-    const input = this.querySelector('.new-group-name');
-    const name = String((input && input.value) || '').trim();
-    if (!name) return;
-    if (input) input.value = '';
-    this.patch({ 'chats.groups': addGroup(this.groups, { id: newGroupId(), name }) });
-  }
-
   startRename(id) {
     this.renaming = id;
     this.updateComplete.then(() => {
@@ -102,20 +92,6 @@ class AppChatList extends KitElement {
 
   moveGroupBy(section, delta) { this.patch({ 'chats.groups': moveGroup(this.groups, section.id, delta) }); }
   setPlacement(chatId, groupId) { this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
-  moveChatBy(chatId, delta) { this.patch({ 'chats.order': moveChat(manualOrder(this.chats, this.order), chatId, delta) }); }
-
-  // The list's own tools: the groups row. The sort control, the search field, the filter menu and the settings gear
-  // live in the page header above the list, where the filters themselves live. In edit mode the page's edit bar holds
-  // the group actions, so this row stands aside.
-  tools() {
-    if (this.editing) return nothing;
-    return html`<div class="list-tools">
-      <div class="add-group">
-        <input class="new-group-name" type="text" placeholder="New group" aria-label="New group name" @keydown=${(e) => { if (e.key === 'Enter') this.createGroup(); }}>
-        <button type="button" class="text-button add-group-button" title="Add group" @click=${() => this.createGroup()}>Add group</button>
-      </div>
-    </div>`;
-  }
 
   sectionHead(section) {
     if (section.id === UNGROUPED) return html`<header class="section-head"><span class="section-name">${section.name}</span></header>`;
@@ -152,10 +128,6 @@ class AppChatList extends KitElement {
         <option value=${UNGROUPED} ?selected=${placed === UNGROUPED}>No group</option>
         ${groups.map((g) => html`<option value=${g.id} ?selected=${placed === g.id}>${g.name}</option>`)}
       </select>` : nothing}
-      ${!editing && this.sort === 'manual' ? html`<span class="row-move">
-        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' up'} @click=${(e) => { e.stopPropagation(); this.moveChatBy(c.id, -1); }}>↑</button>
-        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' down'} @click=${(e) => { e.stopPropagation(); this.moveChatBy(c.id, 1); }}>↓</button>
-      </span>` : nothing}
     </li>`;
   }
 
@@ -173,13 +145,12 @@ class AppChatList extends KitElement {
     const locale = navigator.language;
     const groups = this.groups || [];
     const placement = this.placement || {};
-    const sorted = sortChats(this.chats, { sort: this.sort || 'recent', order: this.order || [] });
-    const visible = filterChats(sorted, this.f, { placement });
+    const sorted = sortChats(this.chats, { sort: this.sort || 'recent', locale });
+    const visible = filterChats(sorted, this.f, { placement, texts: this.texts || {} });
     const sections = groupSections(visible, { groups, placement });
     const split = groups.length > 0;
-    return html`${this.tools()}
-      ${visible.length === 0
-        ? html`<p class="list-empty" role="status">No conversations match these filters.</p>`
+    return html`${visible.length === 0
+        ? html`<p class="list-empty" role="status">${emptyListText(this.f)}</p>`
         : html`<div class="chat-sections">${sections.map((s) => this.section(s, split, now, locale))}</div>`}`;
   }
 }
