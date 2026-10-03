@@ -314,7 +314,8 @@ class AppRoot extends KitElement {
   // is on screen stays until the fresh page replaces it in one step, so a resync (every first connection that missed
   // an event, and every reconnect) never blanks it. Another conversation is marked in the list at once, while the pane
   // keeps drawing the one it has until the new page arrives, and then the header, the messages and the phone's pane
-  // change together.
+  // change together. A message delivered live while the page is in flight is kept: the page was read before it
+  // arrived, so it is merged into the page rather than replaced by it (issue 66).
   async open(chatId, { show = false } = {}) {
     const refresh = this.openChatId === chatId;
     this.selecting = refresh ? null : chatId;
@@ -323,19 +324,25 @@ class AppRoot extends KitElement {
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
     // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
     if (wasUnread && this.client) this.client.markRead(chatId).catch(() => {});
+    const arrived = [];
+    const watch = (m) => { if (m.chatId === chatId) arrived.push(m); };
+    if (!this.arrivals) this.arrivals = new Set();
+    this.arrivals.add(watch);
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50 });
       if (refresh ? this.openChatId !== chatId : this.selecting !== chatId) return;
       if (!refresh) this.messageNote = null;
       this.openChatId = chatId;
       this.selecting = null;
-      this.messages = mergeMessages([], messages);
+      this.messages = mergeMessages(arrived, messages);
       this.hasMore = hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
     } catch (e) {
       if (this.selecting === chatId) this.selecting = null;
       this.problem = this.describe(e);
+    } finally {
+      this.arrivals.delete(watch);
     }
   }
 
@@ -371,6 +378,7 @@ class AppRoot extends KitElement {
     if (name === 'resync') { this.reload(); return; }
     if (name === 'message.new') {
       const m = data.message;
+      if (this.arrivals) for (const watch of this.arrivals) watch(m);
       this.reconcile(m);
       const r = applyMessageToChats(this.chats, m, { openChatId: this.openChatId });
       if (r.known) this.chats = r.chats;

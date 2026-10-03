@@ -19,7 +19,10 @@ two CSS pixels, unchanged draft and collapsed caret selection, and the original
 focused textarea. A mutation observer latches an empty or replaced conversation
 as a failure even when it recovers before the final assertion. The native tests
 also require the page dimensions to change orientation, so an ignored rotation
-cannot pass. The fixture never restores the anchor or the draft itself.
+cannot pass. The fixture never restores the anchor or the draft itself. The iOS
+screenshot of each orientation is taken only once the window and web view have
+turned, the web view fills the window, and consecutive screenshots match, so a
+frame caught mid-rotation is never kept as proof and a clipped layout fails.
 
 Run with the existing iOS scheme's test action or, from android,
 `./gradlew --no-daemon :app:connectedDebugAndroidTest`.
