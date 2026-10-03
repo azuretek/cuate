@@ -47,16 +47,13 @@ test('the client version comes from the shell and the server version from the se
   assert.equal(model.serverRows.find((r) => r.label === 'Engine').value, 'fake');
 });
 
-test('the About section wires each half to its own report', () => {
+test('the About page wires each half to its own report', () => {
   const page = read('core/app/components/app-about.js').replace(/\s+/g, ' ');
   assert.ok(page.includes('aboutModel(BUILD_SPEC, this.host || {}, this.info || {})'), 'the client half is the shell and the server half is the server');
   assert.ok(page.includes('aboutRows(this.host || {}, this.info || {})'), 'the rows take the shell report first and the server report second');
-  // The reports travel app-root, then the settings page, then its About section.
+  // The reports travel from app-root straight to the About page (issue 171), a page of its own.
   const root = read('core/app/components/app-root.js').replace(/\s+/g, ' ');
-  assert.ok(root.includes('.host=${this.host}'), 'the shell report reaches the settings page');
-  assert.ok(root.includes('.info=${this.info}'), 'the server report reaches the settings page');
-  const settings = read('core/app/components/app-settings.js').replace(/\s+/g, ' ');
-  assert.ok(settings.includes('<app-about .info=${this.info} .host=${this.host}>'), 'the settings page hands both reports to its About section');
+  assert.ok(root.includes(".info=${this.info} .host=${this.host} .backLabel="), 'app-root hands both reports to the About page');
 });
 
 test('a pair on different commits is stated, and an unmatched pair is never called a match', () => {

@@ -174,6 +174,21 @@ test('the app icon on About is generated from desktop/build/icon.svg by the shar
 test('every shell declares and answers updates.check', () => {
   const spec = JSON.parse(read('core/spec/host-bridge.json'));
   assert.ok(spec.commands['updates.check'], 'the bridge spec declares the check');
-  assert.match(read('ios/Cuate/HostBridge.swift'), /case "updates\.check":/);
-  assert.match(read('android/app/src/main/kotlin/com/azuretek/cuate/HostBridge.kt'), /"updates\.check" ->/);
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  assert.match(read('ios/' + naming.product + '/HostBridge.swift'), /case "updates\.check":/);
+  assert.match(read('android/app/src/main/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/HostBridge.kt'), /"updates\.check" ->/);
+});
+
+test('the phone About fixture cannot be activated in a release build, and both phones keep their captures', () => {
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  const shell = read('ios/' + naming.product + '/ShellView.swift');
+  assert.match(shell, /#if DEBUG[\s\S]*--about-fixture[\s\S]*#endif/);
+  assert.match(read('ios/project.yml'), /CONFIGURATION.*Debug[\s\S]*core\/test\/about-fixture/);
+  const android = 'android/app/src/';
+  const pkg = naming.ids.android.replaceAll('.', '/');
+  assert.doesNotMatch(read(android + 'main/kotlin/' + pkg + '/MainActivity.kt'), /about-fixture|aboutProof/);
+  assert.doesNotMatch(read('core/app/main.js'), /about-fixture|aboutProof/);
+  assert.match(read(android + 'androidTest/kotlin/' + pkg + '/AboutPageTest.kt'), /about-fixture\.js/);
+  assert.match(read('ios/' + naming.product + 'UITests/AboutPageTests.swift'), /--about-fixture/);
+  assert.match(read('.github/workflows/android.yml'), /about-light\.png[\s\S]*about-dark\.png/);
 });

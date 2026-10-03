@@ -35,7 +35,20 @@ export function capability({ platform, packaged, appImage = false }) {
       ? { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: 'an AppImage replaces itself in place' }
       : { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: 'not running as an AppImage, so there is no file an update could replace' };
   }
+  // The phones have no self-updater: a new build reaches them through the platform's own channel, so they never check,
+  // and a check someone asks for (About's Check for updates) says how this build is updated instead (issue 171).
+  if (platform === 'ios') return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: 'updates to this app arrive through TestFlight' };
+  if (platform === 'android') return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: 'updates to this app are installed from a newer APK' };
   return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, reason: 'no install path on this platform' };
+}
+
+// What a shell answered to updates.check (issue 171), as the update state the page draws. The desktop answers the state
+// the tray's own check reached, with its reason; a phone answers that it does not update itself and leaves the reason
+// to this module, so the words for a platform live in one place. A state updateBanner does not know draws nothing.
+export function checkAnswer(answer, platform) {
+  if (!answer || typeof answer !== 'object' || !updateBanner(answer.state, { canInstall: true })) return null;
+  const detail = answer.detail ?? (answer.state === 'unsupported' ? capability({ platform, packaged: true }).reason : null);
+  return { state: answer.state, version: answer.version ?? null, percent: answer.percent ?? null, detail: detail ?? null, canInstall: Boolean(answer.canInstall) };
 }
 
 // What to do given what the platform allows and what the person asked for. The preference only narrows the platform's

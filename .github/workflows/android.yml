@@ -72,6 +72,8 @@ jobs:
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/chat-light.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/chat-dark.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/about-light.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/about-dark.png
 
       - name: Keep the boot proof
         if: always()

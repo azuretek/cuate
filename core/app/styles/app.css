@@ -203,10 +203,31 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .button.primary { background: var(--color-accent); color: var(--color-accent-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
-/* Settings draws in the app's one sheet surface: a top strip that is itself the back control, the page's title and its
-   one-line description, then its sections, the last of which is About (issue 134). The chrome is drawn by app-sheet. */
-app-settings { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
-app-about { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+/* Settings and About are the two pages of the app's one sheet surface: a top strip that is itself the back control, the
+   page's title and its one-line description, then its sections. Settings ends with the row that opens About, a page of
+   its own on every platform (issue 171). The chrome is drawn by app-sheet. */
+app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+/* A row that opens another page: the whole row is the control, the value beside its label, and the chevron at its end. */
+.setting-nav { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: none; color: var(--color-fg); font: inherit; text-align: left; cursor: pointer; }
+.setting-nav:first-child { border-top: 0; }
+.setting-nav:hover { background: var(--color-bg-sunken); }
+.setting-nav:focus-visible { outline: none; box-shadow: inset 0 0 0 var(--size-border) var(--color-accent); }
+.setting-nav .setting-label { color: var(--color-fg); }
+.setting-nav-value { margin-left: auto; color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); overflow-wrap: anywhere; text-align: right; min-width: 0; }
+.setting-nav .icon { flex: none; color: var(--color-fg-muted); }
+/* About opens with the app's own icon, its name and its version, centred over the page, then Check for updates. */
+.about-head { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); text-align: center; }
+.about-icon { width: var(--size-app-icon); height: var(--size-app-icon); margin-bottom: var(--space-2); }
+.about-name { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); }
+.about-version { color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.about-check { align-self: flex-start; }
+/* A page moved inside the sheet that is up (About from Settings, and back) slides across on the screen-push token and
+   the sheet's curve, Chela's screen motion; the sheet itself does not move. */
+@keyframes page-push { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes page-pop { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+app-settings[data-motion="push"], app-about[data-motion="push"] { animation: page-push var(--motion-screen) var(--motion-sheet-ease) both; }
+app-settings[data-motion="pop"], app-about[data-motion="pop"] { animation: page-pop var(--motion-screen) var(--motion-sheet-ease) both; }
+@media (prefers-reduced-motion: reduce) { app-settings[data-motion], app-about[data-motion] { animation: none; } }
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
 .sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
@@ -238,8 +259,8 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .about-link-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); min-width: 0; }
 .about-link { text-decoration: none; font-size: var(--font-size-sm); }
 .about-link:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.about-copy { align-self: flex-start; }
-.about-compare { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
+.about-copy { align-self: flex-start; margin-top: var(--space-2); }
+.about-compare { margin: var(--space-2) 0 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .about-compare.mismatch { color: var(--color-danger); }
 /* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
 .theme-import { flex-direction: column; align-items: stretch; gap: var(--space-2); }

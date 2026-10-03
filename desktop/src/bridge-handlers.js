@@ -58,7 +58,7 @@ export function createSecureStore({ file, safeStorage, fs }) {
 // bar (the phones) still shares the one bridge spec.
 const noWindow = { minimize: () => false, toggleMaximize: () => false, close: () => false };
 
-export function createHandlers({ secure, notify, info, openExternal, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow }) {
+export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -66,6 +66,9 @@ export function createHandlers({ secure, notify, info, openExternal, configureUp
     'app.info': async () => info(),
     notify: async ({ title, body }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500)),
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
+    // About's Check for updates (issue 171): the tray's own check, answering the state it reached; the outcome that
+    // follows arrives on update.state as the tray's does.
+    'updates.check': async () => checkUpdates() ?? null,
     // The page holds the server's settings, so it tells the shell whether a found release may be fetched on its own.
     'updates.configure': async ({ autoDownload }) => configureUpdates(autoDownload === true),
     // An explicit download and install, asked for by the page. Each answers whether the shell accepted it, so the page

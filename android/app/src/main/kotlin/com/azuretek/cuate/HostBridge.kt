@@ -90,6 +90,10 @@ class HostBridge(
             )
             "notify" -> success(notify(args))
             "open.external" -> success(openExternal(args))
+            // About's Check for updates (issue 171). A build reaches this phone as a newer APK, so there is no check to
+            // run: the answer says this build does not update itself, and the page gives the reason from
+            // core/app/rules/updates.js, so the words for each platform live in one place.
+            "updates.check" -> success(JSONObject().put("state", "unsupported").put("canInstall", false))
             // No self-updater on Android, so there is nothing to configure, download or install; each answers false
             // and the page offers no action. The one bridge spec still declares them for the desktop.
             "updates.configure" -> success(false)
