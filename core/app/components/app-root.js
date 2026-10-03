@@ -19,7 +19,7 @@ import './app-notices.js';
 import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
-import { resolveScheme, systemBars, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
+import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { backdropReturns, sheetLeaveDeadline } from '../rules/sheet.js';
 import { pageZoomAttempt } from '../rules/zoom.js';
@@ -219,6 +219,12 @@ class AppRoot extends KitElement {
     for (const [name] of this.themeApplied) root.style.removeProperty(name);
     const themed = themeVars(this.settings['appearance.theme'], scheme);
     for (const [name, value] of themed) root.style.setProperty(name, value);
+    // A phone draws its status and navigation bars over the page, so the shell is told the scheme and the page's fill,
+    // and the bars' icons stay readable on the colour behind them. A shell with no bars of its own answers false.
+    if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
+      const background = getComputedStyle(root).getPropertyValue('--color-bg').trim();
+      this.bridge('window.appearance', { scheme, background }).catch(() => {});
+    }
     // Text size scales the type sizes the theme and the tokens resolve to, read back once the theme is in place, so a
     // theme's own type sizes are scaled too. At 100% nothing is written and the tokens draw what they always did.
     const style = getComputedStyle(root);
@@ -227,18 +233,6 @@ class AppRoot extends KitElement {
     for (const [name, value] of scaled) root.style.setProperty(name, value);
     this.themeApplied = [...themed, ...scaled];
     this.loadThemeFonts(this.settings['appearance.theme']);
-    this.applySystemBars(scheme);
-  }
-
-  // The page paints behind the phone's system bars, so the shell is told the scheme it drew and sets the bar icons to
-  // contrast with it; a theme or skin change made at runtime reaches the bars the same way. Sent only when it changes.
-  applySystemBars(scheme) {
-    if (typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function') return;
-    const bars = systemBars(this.settings['appearance.skin'], scheme);
-    const key = bars.scheme + ':' + bars.followSystem;
-    if (key === this.systemBarsSent) return;
-    this.systemBarsSent = key;
-    this.bridge('system.bars', bars).catch(() => { this.systemBarsSent = null; });
   }
 
   // A theme's type is fetched by the server when the theme is imported; the page reads each file once, with its token,

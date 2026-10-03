@@ -107,7 +107,6 @@ struct ShellWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             model.ready()
-            model.bridge.applySystemBars()
             webView.scrollView.pinchGestureRecognizer?.isEnabled = false
         }
 

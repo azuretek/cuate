@@ -5,7 +5,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { systemBars } from '../app/rules/theme.js';
 import { surfaceColorset, androidSurfaceColors } from '../kit/rules/tokens.js';
 import { createHandlers } from '../../desktop/src/bridge-handlers.js';
 
@@ -18,37 +17,28 @@ const android = 'android/app/src/main/';
 const packagePath = naming.ids.android.replaceAll('.', '/');
 const kotlin = android + 'kotlin/' + packagePath + '/';
 
-test('the page reports the scheme it drew, and whether it is the system\'s own', () => {
-  assert.deepEqual(systemBars('light', 'light'), { scheme: 'light', followSystem: false });
-  assert.deepEqual(systemBars('dark', 'dark'), { scheme: 'dark', followSystem: false });
-  assert.deepEqual(systemBars('system', 'dark'), { scheme: 'dark', followSystem: true });
-  assert.deepEqual(systemBars(undefined, 'light'), { scheme: 'light', followSystem: true }, 'a skin never chosen follows the system');
-  assert.deepEqual(systemBars('sepia', 'nonsense'), { scheme: 'light', followSystem: true }, 'an unknown value is never sent on');
-});
-
-test('the page tells its shell the scheme every time it applies a theme, and only when it changed', () => {
+test('the page tells its shell the scheme and fill it drew every time it applies a theme', () => {
   const root = read('core/app/components/app-root.js');
   const apply = /\n {2}applyTheme\(\) \{[\s\S]*?\n {2}\}\n/.exec(root)[0];
-  assert.match(apply, /this\.applySystemBars\(scheme\)/, 'applyTheme hands the scheme it resolved to the bars');
-  const bars = /\n {2}applySystemBars\(scheme\) \{[\s\S]*?\n {2}\}\n/.exec(root)[0];
-  assert.match(bars, /this\.bridge\('system\.bars', bars\)/);
-  assert.match(bars, /systemBars\(this\.settings\['appearance\.skin'\], scheme\)/);
-  assert.match(bars, /if \(key === this\.systemBarsSent\) return;/, 'an unchanged scheme is not sent again');
+  assert.match(apply, /this\.bridge\('window\.appearance', \{ scheme, background \}\)/, 'a skin or theme changed at runtime reaches the bars');
+  assert.match(apply, /getPropertyValue\('--color-bg'\)/);
 });
 
-test('every shell answers system.bars: the phones set the bar icons, the desktop has no bars', async () => {
+test('every shell answers window.appearance: the phones set the bar icons, the desktop has no bars', async () => {
   const spec = json('core/spec/host-bridge.json');
-  assert.deepEqual(spec.commands['system.bars'].args, { scheme: 'string', followSystem: 'boolean' });
+  assert.deepEqual(spec.commands['window.appearance'].args, { scheme: 'string', background: 'string' });
   const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true });
-  assert.equal(await h['system.bars']({ scheme: 'dark', followSystem: false }), false);
+  assert.equal(await h['window.appearance']({ scheme: 'dark', background: '#000000' }), false);
   const swift = read(ios + 'HostBridge.swift');
-  assert.match(swift, /case "system\.bars":/);
-  assert.match(swift, /overrideUserInterfaceStyle = barsStyle/, 'iOS takes the status bar style from the window\'s');
-  assert.match(swift, /followsSystem \? \.unspecified/, 'following the system leaves the window to follow it too');
-  assert.match(read(kotlin + 'HostBridge.kt'), /"system\.bars" -> success\(systemBars\(args\)\)/);
+  assert.match(swift, /case "window\.appearance":/);
+  assert.match(swift, /window\.overrideUserInterfaceStyle = dark \? \.dark : \.light/, 'iOS takes the status bar style from the window\'s');
+  assert.match(swift, /webView\.overrideUserInterfaceStyle = scene\.traitCollection\.userInterfaceStyle/, 'while the page keeps seeing the system\'s scheme');
+  assert.match(read(kotlin + 'HostBridge.kt'), /"window\.appearance" -> success\(appearance\(/);
   const activity = read(kotlin + 'MainActivity.kt');
   assert.match(activity, /APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController\.APPEARANCE_LIGHT_NAVIGATION_BARS/);
   assert.match(activity, /SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View\.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR/, 'and on releases before 11');
+  assert.doesNotMatch(activity, /setPadding\(bars\./, 'the window is not padded by the bars: the page paints behind them and pads itself');
+  assert.doesNotMatch(activity, /statusBarColor = fill|navigationBarColor = fill/, 'the bars stay transparent over the page');
 });
 
 test('the page paints behind the system bars and every edge surface pads by one set of insets', () => {

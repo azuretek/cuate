@@ -38,7 +38,7 @@ class RotationTest {
         return result
     }
 
-    private fun awaitProof(scenario: ActivityScenario<MainActivity>, landscape: Boolean) {
+    private fun awaitProof(scenario: ActivityScenario<MainActivity>, landscape: Boolean): JSONObject {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         var result = "null"
         do {
@@ -47,16 +47,68 @@ class RotationTest {
             if (result != "null") {
                 val proof = JSONObject(result)
                 if (proof.has("error")) throw AssertionError("Rotation fixture failed: " + proof.getString("error"))
-                if (proof.getBoolean("ok") && (proof.getInt("width") > proof.getInt("height")) == landscape) return
+                if (proof.getBoolean("ok") && (proof.getInt("width") > proof.getInt("height")) == landscape) return proof
             }
         } while (System.nanoTime() < deadline)
         throw AssertionError("Rotation retention failed: $result")
     }
 
+    // Where the verdict's fill lands in a capture: the web view's place on the screen plus the marker's CSS box, scaled
+    // by the web view's pixels per CSS pixel. The point is inside the marker's left padding, clear of its text.
+    private fun markerPoint(scenario: ActivityScenario<MainActivity>, proof: JSONObject): Pair<Int, Int> {
+        val origin = IntArray(2)
+        var widthPx = 0
+        scenario.onActivity { activity ->
+            val view = webView(activity.findViewById(android.R.id.content))!!
+            view.getLocationOnScreen(origin)
+            widthPx = view.width
+        }
+        val scale = widthPx.toDouble() / proof.getInt("width")
+        val box = proof.getJSONObject("marker")
+        val x = origin[0] + ((box.getDouble("left") + 3) * scale).toInt()
+        val y = origin[1] + ((box.getDouble("top") + box.getDouble("height") / 2) * scale).toInt()
+        return x to y
+    }
+
+    // The fixture fills its verdict green for pass and red for fail, so the capture itself says which it caught.
+    private fun verdictShown(capture: android.graphics.Bitmap, point: Pair<Int, Int>): String {
+        val (x, y) = point
+        if (x !in 0 until capture.width || y !in 0 until capture.height) return "off-screen at $x,$y"
+        val pixel = capture.getPixel(x, y)
+        val r = android.graphics.Color.red(pixel)
+        val g = android.graphics.Color.green(pixel)
+        val b = android.graphics.Color.blue(pixel)
+        return when {
+            g > r + 60 && g > b + 30 -> "pass"
+            r > g + 60 && r > b + 60 -> "fail"
+            else -> "unknown rgb($r,$g,$b) at $x,$y"
+        }
+    }
+
+    // The capture is kept only if the verdict read pass when it was asked for, still reads pass, did not fail on any
+    // frame in between, and the captured pixels show the pass fill. A run can then never keep a fail label.
+    private fun assertVerdictHeld(scenario: ActivityScenario<MainActivity>, before: JSONObject, capture: android.graphics.Bitmap, scheme: String) {
+        val after = JSONObject(evaluate(scenario, "window.rotationProof || null"))
+        val shown = verdictShown(capture, markerPoint(scenario, after))
+        val held = after.optString("label") == "portrait:pass" && after.getBoolean("ok")
+            && after.getInt("lastFail") < before.getInt("seq")
+        if (!held || shown != "pass") {
+            keep(capture, "chat-$scheme-refused.png")
+            throw AssertionError(
+                "The $scheme capture did not keep a passing verdict: page says " + after.optString("label") +
+                    " (failing " + after.optJSONArray("failing") + ", last fail at sample " + after.optInt("lastFail") +
+                    ", passed at sample " + before.optInt("seq") + "), capture shows " + shown +
+                    ", history " + after.optJSONArray("history"),
+            )
+        }
+    }
+
     // The DOM can report the proof before the compositor presents that frame, and a
     // starting window or a system dialog can cover it. Keep capturing until the pixels
-    // themselves show a populated conversation in the requested scheme, and two captures
-    // in a row are identical, so a frame still drawing the previous proof label is never kept.
+    // themselves show a populated conversation in the requested scheme with the verdict's
+    // pass fill, and two captures in a row are identical. Two identical captures alone only
+    // prove the screen is still: just after launch the web view can hold a frame drawn before
+    // the verdict turned pass for longer than two captures take, and that frame was kept.
     private fun schemeShown(capture: android.graphics.Bitmap, scheme: String): Boolean {
         val top = capture.height / 10
         val bottom = capture.height * 85 / 100
@@ -80,23 +132,54 @@ class RotationTest {
         return if (scheme == "dark") mean < 80 else mean > 160
     }
 
-    private fun captureScheme(scheme: String): android.graphics.Bitmap {
+    private fun captureScheme(scenario: ActivityScenario<MainActivity>, scheme: String, passed: JSONObject): android.graphics.Bitmap {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        val point = markerPoint(scenario, passed)
         var previous: android.graphics.Bitmap? = null
+        var refused: android.graphics.Bitmap? = null
+        var taken = 0
+        var shown = 0
+        var verdict = "none"
         do {
             instrumentation.waitForIdleSync()
             val capture = instrumentation.uiAutomation.takeScreenshot()
-            if (capture != null && schemeShown(capture, scheme)) {
+            if (capture != null) {
+                taken++
+                verdict = verdictShown(capture, point)
+            }
+            if (capture != null && schemeShown(capture, scheme) && verdict == "pass") {
+                shown++
                 val last = previous
-                if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
+                if (last != null && last.sameAs(capture)) { last.recycle(); refused?.recycle(); return capture }
                 last?.recycle()
                 previous = capture
-            } else {
-                capture?.recycle()
+            } else if (capture != null) {
+                refused?.recycle()
+                refused = capture
             }
         } while (System.nanoTime() < deadline)
+        // Only a failing run keeps what the screen drew, so a passing run's artifact holds only the captures it kept.
+        (previous ?: refused)?.let { keep(it, "chat-$scheme-unsettled.png") }
         previous?.recycle()
-        throw AssertionError("The screen never showed the populated $scheme conversation")
+        refused?.recycle()
+        throw AssertionError(
+            "The screen never showed the passing $scheme conversation: $taken captures, $shown in the scheme with the " +
+                "pass fill, none twice alike, last verdict shown $verdict; page " +
+                evaluate(scenario, "JSON.stringify(window.rotationProof || null)"),
+        )
+    }
+
+    private fun outputDir(): java.io.File {
+        val dir = java.io.File(requireNotNull(
+            InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+        ) { "The test runner must provide a retained output directory" })
+        assertTrue("Cannot create capture directory", dir.isDirectory || dir.mkdirs())
+        return dir
+    }
+
+    // A failing run keeps the capture it refused, so the failure shows what the screen drew.
+    private fun keep(capture: android.graphics.Bitmap, name: String) {
+        java.io.File(outputDir(), name).outputStream().use { capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     @Test
@@ -118,14 +201,11 @@ class RotationTest {
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
-            awaitProof(scenario, false)
-            val capture = captureScheme(scheme)
+            val passed = awaitProof(scenario, false)
+            val capture = captureScheme(scenario, scheme, passed)
+            assertVerdictHeld(scenario, passed, capture, scheme)
             // AGP copies this directory before uninstalling the app and its data.
-            val outputDir = java.io.File(requireNotNull(
-                InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
-            ) { "The test runner must provide a retained output directory" })
-            assertTrue("Cannot create capture directory", outputDir.isDirectory || outputDir.mkdirs())
-            val output = java.io.File(outputDir, "chat-$scheme.png")
+            val output = java.io.File(outputDir(), "chat-$scheme.png")
             output.outputStream().use {
                 assertTrue("Screenshot encoding failed", capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
             }
