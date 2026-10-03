@@ -103,6 +103,23 @@ class SystemBarsTest {
 
     private fun hex(c: Int) = String.format("#%06x", c and 0xFFFFFF)
 
+    private fun contrast(capture: Bitmap, from: Int, to: Int, surface: Int, scheme: String, what: String): String? {
+        val base = luma(surface)
+        var count = 0
+        var sum = 0L
+        for (y in from.coerceAtLeast(0) until to.coerceAtMost(capture.height)) {
+            for (x in 0 until capture.width) {
+                val l = luma(capture.getPixel(x, y))
+                if (abs(l - base) >= 64) { count++; sum += l }
+            }
+        }
+        if (count < 20) return "the $what do not stand out from the strip ($count pixels)"
+        val mean = sum / count
+        if (scheme == "light" && mean >= base) return "the $what (luma $mean) are not darker than the light strip (luma $base)"
+        if (scheme == "dark" && mean <= base) return "the $what (luma $mean) are not lighter than the dark strip (luma $base)"
+        return null
+    }
+
     /** Every way the capture breaks the contract, empty when it holds. */
     private fun problems(capture: Bitmap, proof: JSONObject, statusBar: Int, navBar: Int, scheme: String): List<String> {
         val out = ArrayList<String>()
@@ -121,23 +138,10 @@ class SystemBarsTest {
         val aboveBottom = dominant(capture, h - navBar - 2 * band, h - navBar - band)
         if (!near(bottom, aboveBottom, 3)) out.add("the navigation bar strip is ${hex(bottom)}, the surface above it ${hex(aboveBottom)}")
 
-        // The icons: the pixels in the status bar strip that stand well off its surface must lie on the scheme's side.
-        val base = luma(top)
-        var icons = 0
-        var sum = 0L
-        for (y in 0 until statusBar) {
-            for (x in 0 until capture.width) {
-                val l = luma(capture.getPixel(x, y))
-                if (abs(l - base) >= 64) { icons++; sum += l }
-            }
-        }
-        if (icons < 20) {
-            out.add("no status bar icons stand out from the strip ($icons pixels)")
-        } else {
-            val mean = sum / icons
-            if (scheme == "light" && mean >= base) out.add("the status bar icons (luma $mean) are not darker than the light strip (luma $base)")
-            if (scheme == "dark" && mean <= base) out.add("the status bar icons (luma $mean) are not lighter than the dark strip (luma $base)")
-        }
+        // The icons, and the gesture handle or the navigation buttons: the pixels in each strip that stand well off its
+        // surface must lie on the scheme's side, dark on light and light on dark.
+        contrast(capture, 0, statusBar, top, scheme, "status bar icons")?.let { out.add(it) }
+        contrast(capture, h - navBar, h, bottom, scheme, "navigation bar handle")?.let { out.add(it) }
 
         // The content keeps clear of the bars, and the edge surfaces reach the edges.
         val headContentTop = proof.getDouble("headContentTop") * dpr
