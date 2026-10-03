@@ -5,7 +5,9 @@ import { jsonSchema, modelJsonSchema } from './schema.js';
 
 const COMPONENT = '#/components/schemas/';
 const ref = (name) => ({ $ref: COMPONENT + name });
-const pathParams = (p) => [...p.matchAll(/:([A-Za-z]+)/g)].map((m) => m[1]);
+// The parameter names a spec route path declares (`/api/chats/:id` gives `['id']`), in order. The OpenAPI document and the
+// server's MCP tools both read them from here.
+export const pathParams = (p) => [...p.matchAll(/:([A-Za-z]+)/g)].map((m) => m[1]);
 const openapiPath = (p) => p.replace(/:([A-Za-z]+)/g, '{$1}');
 const tagFor = (route) => (route.path.startsWith('/api/') ? 'api' : 'meta');
 

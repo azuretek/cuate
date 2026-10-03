@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openapiDocument } from '../kit/rules/openapi.js';
+import { openapiDocument, pathParams } from '../kit/rules/openapi.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const json = (f) => JSON.parse(readFileSync(path.join(ROOT, f), 'utf8'));
@@ -14,6 +14,11 @@ const document = () => openapiDocument(api, naming);
 
 test('the committed OpenAPI document is fresh', () => {
   assert.deepEqual(json('core/spec/openapi.json'), document());
+});
+
+test('a route path names its parameters in order', () => {
+  assert.deepEqual(pathParams('/api/chats/:chatId/messages/:id'), ['chatId', 'id']);
+  assert.deepEqual(pathParams('/api/chats'), []);
 });
 
 test('every route is a path and an operation named for its id', () => {
