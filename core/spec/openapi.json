@@ -932,6 +932,9 @@
           "product": {
             "type": "string"
           },
+          "repository": {
+            "type": "string"
+          },
           "apiVersion": {
             "type": "number"
           },
@@ -968,6 +971,7 @@
         },
         "required": [
           "product",
+          "repository",
           "apiVersion",
           "serverVersion",
           "serverChannel",

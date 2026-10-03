@@ -7,7 +7,8 @@ import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel } from '../app/rules/settings.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel, ABOUT_ORDER, aboutRows, aboutLinks } from '../app/rules/settings.js';
+import { BUILD_SPEC as ABOUT_SPEC } from '../app/rules/build-spec.js';
 import { backdropReturns } from '../app/rules/sheet.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars } from '../app/rules/theme.js';
@@ -268,9 +269,10 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScale', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload'], 'every key the schema declares lands in one section, once, in the schema order');
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
-  for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups().filter((g) => g.kind === 'settings')) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups().filter((g) => g.kind !== 'settings')) assert.deepEqual(g.fields, [], g.id + ' draws its own rows, and no setting lands in it');
   for (const g of settingsGroups()) assert.ok(typeof g.description === 'string' && g.description.length > 0, g.id + ' carries a one-line description for its section');
-  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates'], 'the page draws one section per group');
+  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates', 'device', 'about'], 'the page draws one section per group');
   assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload'], 'the updates section holds the download preference');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.autoDownload'), {}), false, 'automatic download is off until the server says otherwise');
@@ -677,4 +679,48 @@ test('a refused write rolls back only the keys it named', () => {
   const before = { 'appearance.skin': 'system' };
   const current = { 'appearance.skin': 'dark', 'appearance.textScale': 150, 'chats.order': ['a'] };
   assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.textScale': 150 }, 'the named keys return to what they held, and one that did not exist is removed');
+});
+
+// Issue 134: About is the last section of Settings, with chela's full details inline and in chela's order.
+test('About is the last section of Settings, and This device sits just above it with no About link', () => {
+  const groups = settingsGroups();
+  assert.equal(groups.at(-1).id, 'about', 'About is the last section');
+  assert.equal(groups.at(-1).kind, 'about');
+  assert.equal(groups.at(-2).id, 'device');
+  const page = readFileSync(new URL('../app/components/app-settings.js', import.meta.url), 'utf8');
+  assert.equal(/data-action="about"/.test(page), false, 'the separate About link has gone');
+  assert.ok(page.includes('<app-about'), 'the settings page draws the About section itself');
+});
+
+test('the About section shows every field in chela\'s order, each from its own half', () => {
+  const host = { product: 'App', version: '1.2.3-dev.4.abcdef0123', channel: 'dev', build: '4', commit: 'a'.repeat(40), builtAt: '2026-10-02T00:00:00Z', electron: '38.0.0', chromium: '140.0', node: '22.13.0', platform: 'linux', arch: 'x64', packaged: false, installSource: 'source', updateChannel: 'dev' };
+  const info = { product: 'App', repository: 'https://example.test/owner/app', serverVersion: '9.9.9', serverChannel: 'stable', serverBuild: '7', serverCommit: 'b'.repeat(40), serverBuiltAt: 'then', serverPlatform: 'darwin', engine: { kind: 'fake', version: '0.1' }, apiVersion: 1 };
+  const rows = aboutRows(host, info);
+  assert.deepEqual(rows.map((r) => r.key), [
+    'product', 'version', 'channel', 'build', 'commit', 'builtAt',
+    'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt',
+    'platform', 'arch', 'electron', 'chromium', 'node',
+    'installSource', 'packaged', 'updateChannel',
+    'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion',
+  ], 'name and version, channel, build and commit, the server\'s version and commit, platform and architecture, Electron, Chromium and Node, install source, then the rest');
+  assert.deepEqual(rows.slice(0, 2).map((r) => [r.label, r.value]), [['App', 'App'], ['Client version', host.version]]);
+  assert.equal(rows.find((r) => r.key === 'serverVersion').value, '9.9.9', 'the server\'s version comes from the server');
+  assert.equal(rows.find((r) => r.key === 'version').value, host.version, 'the client\'s version comes from the shell');
+  assert.equal(rows.find((r) => r.key === 'electron').value, '38.0.0');
+  // Every field the build spec declares is on the page once, so a field added there cannot be left off.
+  const declared = Object.entries(ABOUT_SPEC.halves).flatMap(([half, h]) => h.fields.map((f) => half + ':' + f.key));
+  const shown = ABOUT_ORDER.filter(([, key]) => key !== 'product').map(([half, key]) => half + ':' + key);
+  assert.deepEqual([...shown].sort(), [...declared].sort());
+  assert.equal(new Set(shown).size, shown.length, 'no field is shown twice');
+  for (const row of rows) assert.ok(typeof row.value === 'string' && row.value.length > 0, row.key + ' has a value to copy');
+  assert.equal(aboutRows({}, {}).find((r) => r.key === 'commit').value, 'Unknown', 'a missing value reads Unknown');
+});
+
+test('the About links go to the source, the licence and the issues, and only over https', () => {
+  const links = aboutLinks('https://example.test/owner/app.git');
+  assert.deepEqual(links.map((l) => [l.key, l.label]), [['source', 'Source code'], ['licence', 'Licence'], ['report', 'Report a problem']]);
+  assert.deepEqual(links.map((l) => l.href), ['https://example.test/owner/app', 'https://example.test/owner/app/blob/main/LICENSE', 'https://example.test/owner/app/issues/new']);
+  assert.deepEqual(aboutLinks('http://example.test/owner/app'), [], 'not over plain http');
+  assert.deepEqual(aboutLinks('javascript:alert(1)'), []);
+  assert.deepEqual(aboutLinks(undefined), [], 'a server that names no repository draws no links');
 });

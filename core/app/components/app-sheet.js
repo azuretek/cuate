@@ -12,12 +12,17 @@ import { KitElement } from '../../kit/element.js';
 //
 // It takes its body as a property rather than a <slot>, because components here render into light DOM and a slot
 // only projects in a shadow root.
+//
+// `reveal` asks for one section of the body to be brought to the top of the scrolling body: { id } names the section
+// by its data-section. Settings uses it for its About section, which the tray's About opens (issue 134). A new object
+// each time, so asking for the same section twice brings it back twice.
 class AppSheet extends KitElement {
   static properties = {
     title: {},
     description: {},
     label: {},
     content: { attribute: false },
+    reveal: { attribute: false },
   };
 
   constructor() {
@@ -26,6 +31,22 @@ class AppSheet extends KitElement {
     this.description = '';
     this.label = 'Back';
     this.content = null;
+    this.reveal = null;
+  }
+
+  // The section is scrolled to on the next frame rather than at once: the body's own elements (About's rows) render in
+  // their own update after this one, and until they have, the body is too short to scroll the last section up.
+  updated(changed) {
+    super.updated?.(changed);
+    if (!changed.has('reveal') || !this.reveal || !this.reveal.id) return;
+    const want = this.reveal;
+    requestAnimationFrame(() => {
+      if (this.reveal !== want) return;
+      const body = this.querySelector('.sheet-body');
+      const target = body && [...body.querySelectorAll('[data-section]')].find((el) => el.dataset.section === want.id);
+      if (!target) return;
+      body.scrollTop += target.getBoundingClientRect().top - body.getBoundingClientRect().top;
+    });
   }
 
   connectedCallback() {
