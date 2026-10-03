@@ -57,3 +57,33 @@ test('the packaging leg states its cache outcome in the log', () => {
     assert.ok(stated.length >= 2, 'the cache ' + cache.id + ' must be stated before and after packaging, found ' + stated.length);
   }
 });
+
+// Issue 66: the iOS leg's slow launch was the cost of a FIRST simulator boot (run 37120809399: the data
+// migration, then minutes of first-boot background work holding the runner's cores, 63 s before the first unit
+// test and 55 s more before the first UI test reached the app). The device is therefore restored, already booted
+// once, from a cache keyed per runner image, runtime build and device, the outcome is stated in the log, and a
+// device is saved only after every test passed and the simulator shut down cleanly.
+test('the iOS leg boots a cached, already booted simulator and states the outcome', () => {
+  const workflow = parse(readFileSync(new URL('ios.yml', WORKFLOWS), 'utf8'));
+  const steps = workflow.jobs['build-and-boot'].steps;
+  const index = (predicate, what) => {
+    const found = steps.findIndex(predicate);
+    assert.ok(found >= 0, 'the iOS leg has no step that ' + what);
+    return found;
+  };
+  const restore = index((step) => String(step.uses ?? '').startsWith('actions/cache/restore'), 'restores the simulator');
+  const boot = index((step) => /simctl bootstatus/.test(String(step.run ?? '')), 'starts the boot');
+  const tests = index((step) => /test-without-building/.test(String(step.run ?? '')), 'runs the tests');
+  const shutdown = index((step) => /simctl shutdown/.test(String(step.run ?? '')), 'shuts the simulator down');
+  const save = index((step) => String(step.uses ?? '').startsWith('actions/cache/save'), 'saves the simulator');
+  assert.ok(restore < boot, 'the simulator must be restored before it boots');
+  assert.ok(tests < shutdown && shutdown < save, 'the simulator is saved only after the tests and a clean shutdown');
+  const id = steps[restore].id;
+  assert.ok(id, 'the restore step has no id, so its outcome cannot be stated');
+  assert.equal(steps[save].with.key, steps[restore].with.key, 'the save and the restore must use one key');
+  assert.match(String(steps[shutdown].if), new RegExp('success\\(\\).*steps\\.' + id + '\\.outputs\\.cache-hit'),
+    'only a passing run whose key missed may save a device');
+  assert.ok(steps.some((step) => String(step.run ?? '').includes('scripts/ci/state-cache.sh')
+    && Object.values(step.env ?? {}).some((value) => String(value).includes('steps.' + id + '.outputs.cache-hit'))),
+  'the simulator cache outcome must be stated in the log');
+});

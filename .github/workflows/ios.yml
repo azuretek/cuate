@@ -94,7 +94,22 @@ jobs:
       # minutes on run 37114535529). The boot runs detached with its own log;
       # boot-proof.sh waits for it with bootstatus, which joins a boot already
       # under way, and prints the log so the time it took is in this job's log.
-      - name: Resolve an iPhone simulator and start booting it
+      #
+      # The boot overlapping the build did not make the first boot cheaper, it
+      # moved it: on run 37120809399 the device finished booting in 83 s, but
+      # the image's device had never been booted, so its first boot (the data
+      # migration, 55 s there and up to minutes on earlier runs, then the
+      # first-boot background work of Spotlight, suggestions and the system
+      # posters) kept the runner's three cores busy for minutes after. The
+      # Homebrew install went from 8 s to 102 s, the build from 41 s to 181 s,
+      # and the test step from 109 s to 205 s, of which 63 s passed before the
+      # first unit test and 55 s more before the first UI test reached the app.
+      # That is the cost of a FIRST boot, so the device is not booted for the
+      # first time here at all: its data folder, as left by a completed boot and
+      # a clean shutdown, is cached per runner image and simulator runtime, and
+      # restored before the boot below. The boot log's data migration count
+      # (boot-proof.sh) is the evidence a restore took: zero on a warm device.
+      - name: Resolve an iPhone simulator
         run: |
           set -eo pipefail
           sim="$(python3 scripts/resolve-simulator.py)"
@@ -105,6 +120,27 @@ jobs:
           fi
           echo "SIMULATOR_UDID=$sim" >> "$GITHUB_ENV"
           echo "resolved simulator for the newest iOS runtime: $sim"
+          # The key names everything the cached device depends on: the runner
+          # image (which owns the runtime and the device), the runtime's build
+          # and the device itself, so an image or runtime update starts clean.
+          runtime="$(python3 scripts/resolve-simulator.py --runtime-build "$sim")"
+          echo "SIMULATOR_CACHE_KEY=ios-simulator-v1-${ImageOS:-unknown}-${ImageVersion:-unknown}-$runtime-$sim" >> "$GITHUB_ENV"
+          echo "SIMULATOR_DEVICE_DIR=$HOME/Library/Developer/CoreSimulator/Devices/$sim" >> "$GITHUB_ENV"
+
+      - name: Restore the booted simulator
+        id: simulator-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SIMULATOR_DEVICE_DIR }}
+          key: ${{ env.SIMULATOR_CACHE_KEY }}
+
+      - name: Start booting the simulator
+        env:
+          CACHE_HIT: ${{ steps.simulator-cache.outputs.cache-hit }}
+        run: |
+          set -eo pipefail
+          sim="$SIMULATOR_UDID"
+          bash ../scripts/ci/state-cache.sh "simulator device cache ($SIMULATOR_CACHE_KEY)" "$CACHE_HIT" "$SIMULATOR_DEVICE_DIR"
           echo "SIMULATOR_BOOT_LOG=$RUNNER_TEMP/simulator-boot.log" >> "$GITHUB_ENV"
           date +%s > "$RUNNER_TEMP/simulator-boot.start"
           nohup xcrun simctl bootstatus "$sim" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
@@ -186,6 +222,30 @@ jobs:
           name: ios-boot-proof
           path: ios/proof
           if-no-files-found: warn
+
+      # Only a device that booted, ran every test and shuts down cleanly is
+      # cached, and only when no device was restored for this key, since a
+      # cache entry cannot be replaced. Our two apps are removed first, so a
+      # restored device holds nothing of an earlier run's build: what boots on
+      # the next run is the image's device after its first boot, and nothing
+      # else.
+      - name: Shut the simulator down for the cache
+        id: simulator-shutdown
+        if: success() && steps.simulator-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 3
+        run: |
+          set -eo pipefail
+          xcrun simctl uninstall "$SIMULATOR_UDID" com.azuretek.cuate || true
+          xcrun simctl uninstall "$SIMULATOR_UDID" com.azuretek.cuate.uitests.xctrunner || true
+          xcrun simctl shutdown "$SIMULATOR_UDID"
+          echo "saving the simulator device for $SIMULATOR_CACHE_KEY: $(find "$SIMULATOR_DEVICE_DIR" -type f | wc -l | tr -d ' ') files, $(du -sk "$SIMULATOR_DEVICE_DIR" | cut -f1) KiB"
+
+      - name: Cache the booted simulator
+        if: steps.simulator-shutdown.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SIMULATOR_DEVICE_DIR }}
+          key: ${{ env.SIMULATOR_CACHE_KEY }}
 
   # The publish half: the iOS client, archived for a real device, signed with
   # the account's distribution certificate and uploaded to TestFlight.
