@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { naming } from '../src/paths.js';
-import { LABEL, describeInfo, fillHandoff, lastEvent, parseLaunchd, renderPlist, serveDecision, servicePaths, which } from '../src/service.js';
+import { installLayout } from '../src/install.js';
+import { LABEL, agentFor, describeInfo, fillHandoff, lastEvent, parseLaunchd, renderPlist, serveDecision, serviceLabel, servicePaths, which } from '../src/service.js';
 import { boot } from './helpers.js';
 
 const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
@@ -28,6 +29,64 @@ test('the LaunchAgent is named from naming.json, and so is its log', () => {
   const p = servicePaths('/h');
   assert.equal(p.plist, path.join('/h', 'Library', 'LaunchAgents', naming.ids.server + '.plist'));
   assert.equal(p.log, path.join('/h', 'Library', 'Logs', naming.slug + '-server.log'));
+});
+
+test('a second install root gets its own LaunchAgent label and log, and the usual one keeps the server id', () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'srv-label-'));
+  try {
+    const usual = installLayout(path.join(home, 'Library', 'Application Support', naming.slug + '-server-install'));
+    assert.equal(serviceLabel(null, home), LABEL, 'a checkout');
+    assert.equal(serviceLabel(usual, home), LABEL, 'the install root under the home folder');
+    const other = serviceLabel(installLayout(path.join(home, 'rehearsal')), home);
+    assert.match(other, new RegExp('^' + LABEL.replace(/\./g, '\\.') + '\\.[a-f0-9]{10}$'));
+    assert.notEqual(serviceLabel(installLayout(path.join(home, 'another')), home), other, 'each root has its own');
+    assert.equal(serviceLabel(installLayout(path.join(home, 'rehearsal')), home), other, 'and keeps it');
+    const p = servicePaths(home, other);
+    assert.equal(p.plist, path.join(home, 'Library', 'LaunchAgents', other + '.plist'));
+    assert.equal(p.log, path.join(home, 'Library', 'Logs', naming.slug + '-server-' + other.slice(LABEL.length + 1) + '.log'));
+    assert.notEqual(p.log, servicePaths(home).log, 'it never writes into the usual service log');
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('status and restart with --install-root reach that root\'s own LaunchAgent, never the usual one', { skip: process.platform !== 'darwin' && 'the service is a macOS LaunchAgent' }, () => {
+  const dir = scratch();
+  try {
+    const data = path.join(dir, 'data');
+    const root = path.join(dir, 'rehearsal');
+    assert.equal(run(['init', '--engine', 'fake', '--port', '1', '--data', data]).status, 0);
+    const label = serviceLabel(installLayout(root));
+    // The label is never loaded, so each command stops at launchd and names the label it would have acted on.
+    const restarted = run(['service', 'restart', '--install-root', root, '--data', data]);
+    assert.notEqual(restarted.status, 0);
+    assert.ok(restarted.stderr.includes(label + ' is not loaded'), restarted.stderr);
+    const status = run(['service', 'status', '--install-root', root, '--data', data]);
+    assert.ok(status.stdout.includes('warn  ' + label + ': not loaded'), status.stdout);
+    assert.ok(!status.stdout.includes(LABEL + ':'), 'the usual service is not reported as this one');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a config change reaches the loaded LaunchAgent that runs that data folder, the usual one or a second install\'s', () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'srv-agent-'));
+  try {
+    const dir = path.join(home, 'Library', 'LaunchAgents');
+    mkdirSync(dir, { recursive: true });
+    const second = serviceLabel(installLayout(path.join(home, 'rehearsal')), home);
+    const plist = (label, dataDir) => writeFileSync(path.join(dir, label + '.plist'), renderPlist({ label, node: '/n', main: '/m', dataDir, root: '/r', log: '/l', pathDirs: ['/usr/bin'] }));
+    plist(LABEL, '/data/usual');
+    plist(second, '/data/rehearsal');
+    plist(LABEL + '.other', '/data/other');
+    plist('com.example.other', '/data/foreign');
+    const loaded = new Set([LABEL, second, LABEL + '.other', 'com.example.other']);
+    const find = (dataDir) => agentFor({ dataDir, home, loaded: (l) => loaded.has(l) });
+    assert.equal(find('/data/usual'), LABEL);
+    assert.equal(find('/data/rehearsal'), second, 'the second install, not the usual service');
+    assert.equal(find('/data/other'), null, 'a label that is not ours, or not a root hash, is never touched');
+    assert.equal(find('/data/foreign'), null);
+    assert.equal(find('/data/none'), null);
+    loaded.delete(second);
+    assert.equal(find('/data/rehearsal'), null, 'an agent launchd has not loaded is not restarted');
+    assert.equal(agentFor({ dataDir: '/data/usual', home: path.join(home, 'nowhere'), loaded: () => true }), null);
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test('the LaunchAgent runs this server with its data folder, at login and after a crash', () => {
