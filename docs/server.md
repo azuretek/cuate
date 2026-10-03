@@ -33,6 +33,10 @@ The server drains sends and exports, holds new work, backs up its state, records
 
 Pause with `node server/src/main.js service update --pause --install-root ROOT`, resume with `--resume`, or turn off **Update the server automatically** in Settings. A paused server still checks. A pause arriving during download or drain is checked again before switching; a switch already committed finishes its health check or rollback. `service update --release` requests a check now. Without `--release`, a development checkout keeps its git fast-forward update path.
 
+Each install root has its own LaunchAgent. The root under the home folder uses the server id from `core/spec/naming.json`, as a checkout does; any other `--install-root` adds a short hash of its path to the label and to the log name, so a second install on the same Mac, such as a rehearsal on a scratch data folder, can never boot out, restart or rewrite the usual service. Pass the same `--install-root` to `service status`, `service restart` and `service remove` to reach it.
+
+To rehearse a rollback against a real release, arm a drill with `node server/src/main.js service update --drill-rollback --install-root ROOT`. The next switch restarts into the new version as usual and waits for it to answer its health check, then fails it on purpose, so the real rollback runs: `current` goes back, the previous version must pass its own health check, and the drilled version is marked bad and not tried again. That finish disarms the drill whatever happens; `--drill-rollback off` disarms it by hand. `service status` names an armed drill.
+
 ### Recovery
 
 Read `ROOT/update-state.json`, `ROOT/update.log` and `service status`. An interrupted pending switch is recovered before startup opens the data, returning `current` to the recorded previous version. A live finisher holds a cross-process lock; process death releases it. A running candidate whose finisher disappeared requests recovery at its next check. Failed recovery keeps probation and the backup rather than accepting writes.

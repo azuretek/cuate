@@ -16,7 +16,7 @@ import { createLogger } from '../../core/kit/log.js';
 import { compareVersions } from '../../core/kit/rules/build.js';
 import { serverUpdateNotice } from '../../core/app/rules/notifications.js';
 import { artifactNames, digestText, manifestOf, sha256, writeTarball } from '../src/artifact.js';
-import { assertInstalledPlatform, currentVersion, installLayout, installRootOf, nodeSatisfies, pointCurrent, presentVersions, pruneList, readState, updateState } from '../src/install.js';
+import { assertInstalledPlatform, currentVersion, installLayout, installRootOf, nodeSatisfies, pointCurrent, presentVersions, pruneList, readDrill, readState, updateState } from '../src/install.js';
 import { naming, logSpec } from '../src/paths.js';
 import { DATA_FORMAT, DATA_NEWER, dataFormatOf, openStore } from '../src/store.js';
 import { backoffMs, createUpdater, downloadPrefix, drain, finishSwitch, installRelease, pickRelease, releasesUrl } from '../src/updater.js';
@@ -327,6 +327,37 @@ test('a healthy version stays, and the oldest beyond two previous go only after 
   assert.deepEqual(presentVersions(s.L), [2, 3, 4].map((n) => release(n).version), 'release 1 went once release 4 passed');
   assert.equal(s.events('update.healthy').at(-1).removed, 1);
   assert.equal(serverUpdateNotice(readState(s.L).outcome), null, 'a healthy update raises no notice');
+});
+
+test('a rollback drill fails one healthy switch on purpose: the real rollback runs, the version is marked bad, and the drill disarms', SWITCHES, async (t) => {
+  const s = await installed(t);
+  s.gh.add(build(2));
+  const cliRun = (...args) => spawnSync(process.execPath, [cli, 'service', 'update', ...args, '--install-root', s.L.root, '--data', s.dataDir], { encoding: 'utf8' });
+  assert.notEqual(cliRun('--drill-rollback', '--pause').status, 0, 'one at a time');
+  const armed = cliRun('--drill-rollback');
+  assert.equal(armed.status, 0, armed.stderr);
+  assert.match(armed.stdout, /rollback drill armed/);
+  assert.equal(readDrill(s.L), true);
+  assert.equal((await s.updater.check()).state, 'switched');
+  const outcome = await s.finished();
+  assert.equal(outcome.state, 'rolled_back');
+  assert.match(outcome.detail, /rollback drill: .* answered its health check and was failed on purpose/, 'the candidate came up and answered before it was failed');
+  assert.equal(currentVersion(s.L), release(1).version);
+  assert.deepEqual(await health(s.port), { ok: true, version: release(1).version, commit: release(1).commit }, 'the previous version serves again, by its real health check');
+  const state = readState(s.L);
+  assert.ok(state.bad[release(2).version], 'the drilled version is marked bad');
+  assert.equal(state.pending, null);
+  assert.equal(s.events('update.rolled_back').at(-1).healthy, true);
+  assert.equal(readDrill(s.L), false, 'the drill fails exactly one switch');
+
+  // Disarming by hand leaves nothing behind, and the next release updates for real.
+  assert.equal(cliRun('--drill-rollback').status, 0);
+  assert.equal(cliRun('--drill-rollback', 'off').status, 0);
+  assert.equal(readDrill(s.L), false);
+  s.gh.add(build(3));
+  assert.equal((await s.updater.check()).state, 'switched');
+  assert.equal((await s.finished()).state, 'healthy');
+  assert.equal((await health(s.port)).version, release(3).version);
 });
 
 test('a send in flight finishes before the switch, and new sends and exports wait for it', async (t) => {
