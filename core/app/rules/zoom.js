@@ -25,6 +25,17 @@ export const ZOOM_DOUBLE_TAP_PX = 32;
 
 export const zoomFit = () => ({ scale: ZOOM_FIT, x: 0, y: 0 });
 
+// Whether an event asks to zoom or resize the whole page (issue 180): a pinch, which arrives as a wheel with ctrl held or
+// as a WebKit gesture, or a zoom key with ctrl or cmd held. Only the media viewer zooms, so the page refuses each of
+// these everywhere else; the viewer handles its own. Text size is the text-size setting's, never a page zoom.
+const PAGE_ZOOM_KEYS = new Set(['+', '=', '-', '_', '0']);
+export function pageZoomAttempt({ type, ctrlKey = false, metaKey = false, key = '' } = {}) {
+  if (type === 'wheel') return Boolean(ctrlKey);
+  if (type === 'gesturestart' || type === 'gesturechange') return true;
+  if (type === 'keydown') return Boolean(ctrlKey || metaKey) && PAGE_ZOOM_KEYS.has(key);
+  return false;
+}
+
 // The most the picture may be zoomed: four times fit, or twice the picture's own pixels where that is further, so a
 // large photo can still be read pixel for pixel; never past sixteen, where a pan would be hunting in the dark.
 // native is how many of the picture's own pixels sit in one fitted screen pixel (natural width over fitted width).

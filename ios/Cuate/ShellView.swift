@@ -8,12 +8,16 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
+            // The page runs under the status bar and the home indicator but never under the keyboard: the web view
+            // ends at the keyboard's top edge, so the page's own views scroll a focused field into sight rather than
+            // the whole page sliding up under the status bar (issues 175 and 180).
             ShellWebView(model: model)
-                .ignoresSafeArea()
+                .ignoresSafeArea(.container)
             if model.phase != .ready {
                 LoadingCover(product: model.product, phase: model.phase)
             }
         }
+        .background(Color("Surface").ignoresSafeArea())
     }
 }
 
@@ -44,6 +48,12 @@ struct ShellWebView: UIViewRepresentable {
             let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
             controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        if ProcessInfo.processInfo.arguments.contains("--system-bars-fixture"),
+           let url = Bundle.main.url(forResource: "system-bars-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
+            controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The About page fixture (issue 171), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--about-fixture"),
            let url = Bundle.main.url(forResource: "about-fixture", withExtension: "js"),
@@ -55,10 +65,13 @@ struct ShellWebView: UIViewRepresentable {
         configuration.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        // The page paints behind the status bar and the home indicator (viewport-fit=cover), and until it has painted
+        // the shell shows the tokens' own surface rather than a system white or black (issue 175).
         webView.isOpaque = false
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        webView.backgroundColor = UIColor(named: "Surface") ?? .systemBackground
+        webView.scrollView.backgroundColor = UIColor(named: "Surface") ?? .systemBackground
         webView.navigationDelegate = context.coordinator
+        context.coordinator.hold(webView.scrollView)
         model.attach(webView)
         webView.load(URLRequest(url: BundleSchemeHandler.startURL))
         return webView
@@ -74,6 +87,26 @@ struct ShellWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         private let model: ShellModel
+        private var holds: [NSKeyValueObservation] = []
+
+        /// The page never scrolls or zooms as a whole (issue 180): its own views scroll inside it, and only the media
+        /// viewer zooms, in the page. WebKit moves the page to reveal a focused field and the viewport allows no zoom, so
+        /// both are put back here should either happen anyway, which keeps the header pinned under the status bar.
+        func hold(_ scrollView: UIScrollView) {
+            scrollView.isScrollEnabled = false
+            scrollView.bounces = false
+            scrollView.bouncesZoom = false
+            scrollView.pinchGestureRecognizer?.isEnabled = false
+            holds = [
+                scrollView.observe(\.contentOffset, options: [.new]) { view, _ in
+                    let rest = CGPoint(x: -view.adjustedContentInset.left, y: -view.adjustedContentInset.top)
+                    if view.contentOffset != rest { view.contentOffset = rest }
+                },
+                scrollView.observe(\.zoomScale, options: [.new]) { view, _ in
+                    if view.zoomScale != 1 { view.setZoomScale(1, animated: false) }
+                },
+            ]
+        }
 
         init(model: ShellModel) {
             self.model = model
@@ -81,6 +114,7 @@ struct ShellWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             model.ready()
+            webView.scrollView.pinchGestureRecognizer?.isEnabled = false
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -153,6 +187,6 @@ struct LoadingCover: View {
                 .font(.headline)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
+        .background(Color("Surface").ignoresSafeArea())
     }
 }
