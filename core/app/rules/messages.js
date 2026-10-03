@@ -18,6 +18,42 @@ export function tapbackType(emoji) {
 export const MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
 export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
 
+// What a message's menu offers (issue 169): React on any message the engine can target, and Reply in thread only on
+// someone else's, since a thread is started by answering another person. Sending off on the server offers neither.
+export function messageActions(m, { sending = false } = {}) {
+  if (!sending || !canTarget(m)) return [];
+  return m.fromMe ? ['react'] : ['reply', 'react'];
+}
+
+// The first message of the thread a message belongs to, followed up through replyTo (a parent not loaded included).
+// Threads are one level deep, as on the Mac, so a reply to a reply belongs to the same thread and a reply sent from
+// the thread names this message (issue 183). A loop in the data ends rather than spinning.
+export function threadRoot(messages, id) {
+  return rootIn(new Map((messages || []).map((m) => [m.id, m])), id);
+}
+
+function rootIn(byId, start) {
+  let at = start;
+  const seen = new Set();
+  while (!seen.has(at)) {
+    seen.add(at);
+    const parent = byId.get(at)?.replyTo;
+    if (!parent) return at;
+    at = parent;
+  }
+  return start;
+}
+
+// The ids of the thread a message belongs to: its first message and every message whose replies lead back to it.
+export function threadIds(messages, id) {
+  const byId = new Map((messages || []).map((m) => [m.id, m]));
+  const rootOf = (start) => rootIn(byId, start);
+  const root = rootOf(id);
+  const ids = new Set([root, id]);
+  for (const m of byId.values()) if (rootOf(m.id) === root) ids.add(m.id);
+  return ids;
+}
+
 // The reaction this device's owner has on a message, or null.
 export function myReaction(m) {
   return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;
