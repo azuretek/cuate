@@ -2,10 +2,12 @@
 // base64 in the one JSON shape every surface shares (HTTP, MCP and the OpenAPI document), are written under the
 // data folder, and get an attachment id like any other, so a send names an upload exactly as it names a file already
 // in Messages. Messages copies what it sends into its own store, so an upload is kept only long enough to be sent
-// (apiSpec.uploads.keepHours) and swept when the next one arrives.
+// (apiSpec.uploads.keepHours) and swept when the next one arrives. The name and type it is held under are the ones its
+// bytes call for (file-type.js), since Messages decides from the name how the file arrives.
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { sendShape } from './file-type.js';
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -41,11 +43,13 @@ export function createUploads({ dataDir, store, limits, now = Date.now }) {
       const id = randomBytes(16).toString('base64url');
       const dir = path.join(root, id);
       await mkdir(dir, { recursive: true });
-      const file = path.join(dir, safeName(name));
+      // Messages types a file by its extension, so the file is written under the name its bytes call for, and that
+      // is the name the recipient sees (issue 197).
+      const shape = sendShape({ name: safeName(name), mime, bytes });
+      const file = path.join(dir, shape.name);
       await writeFile(file, bytes, { mode: 0o600 });
-      const type = typeof mime === 'string' && /^[\w.+-]+\/[\w.+-]+$/.test(mime) ? mime.toLowerCase() : 'application/octet-stream';
-      store.putAttachment(id, file, type, safeName(name));
-      return { id, name: safeName(name), mime: type, bytes: bytes.length, sticker: false, missing: false };
+      store.putAttachment(id, file, shape.mime, shape.name);
+      return { id, name: shape.name, mime: shape.mime, bytes: bytes.length, sticker: false, missing: false };
     },
   };
 }
