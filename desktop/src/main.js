@@ -9,6 +9,7 @@ import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js
 import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
+import { contrastRatio } from '../../core/app/rules/theme.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
@@ -1176,9 +1177,16 @@ async function runSmoke(w) {
   // stores nothing. The theme is served from a loopback server this smoke owns, in tweakcn's registry shape.
   const registry = { name: 'smoke-url', title: 'Smoke URL', cssVars: { theme: { radius: '0.5rem' }, light: { primary: '#1d4ed8', background: '#f0f4ff' }, dark: { primary: '#93c5fd', background: '#0b1020' } } };
   let themeFetches = 0;
+  // The same host also answers as tweakcn does for Elegant Luxury (issue 132): its editor page is HTML, and its theme is
+  // a registry item at /r/themes/elegant-luxury.json (a fixture copy of tweakcn's own), so pasting the page URL
+  // proves the page is read from its registry.
+  // The runner names the fixture, since a packaged app carries no fixtures of its own.
+  const elegant = readFileSync(process.env.SMOKE_THEME_FIXTURE || path.join(CORE, 'fixtures/themes/elegant-luxury.json'), 'utf8');
   const themeHost = http.createServer((req, res) => {
     if (req.url === '/theme.json') themeFetches += 1;
     if (req.url === '/theme.json') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(registry)); return; }
+    if (req.url === '/r/themes/elegant-luxury.json') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(elegant); return; }
+    if (req.url.startsWith('/editor/theme')) { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>tweakcn</title>'); return; }
     res.writeHead(404, { 'content-type': 'text/plain' }); res.end('no theme here');
   });
   await new Promise((resolve) => themeHost.listen(0, '127.0.0.1', resolve));
@@ -1212,6 +1220,70 @@ async function runSmoke(w) {
     report.themeUrlCard = cardAccent === (scheme === 'dark' ? 'rgb(147, 197, 253)' : 'rgb(29, 78, 216)');
     report.themeUrl = report.themeUrlRefused && report.themeUrlHeld && report.themeUrlCard;
     console.log('theme url: ' + JSON.stringify({ badNote, goodNote, scheme, cardAccent, refused: report.themeUrlRefused, held: report.themeUrlHeld, card: report.themeUrlCard }));
+
+    // A tweakcn theme PAGE URL imports the theme the page shows, its whole design language: put in force from the
+    // picker, light and dark each resolve its colours, and both share its type, radius, spacing and shadows (issue
+    // 132). Its fonts come from Google Fonts through the server, so whether they drew is logged, not required: a
+    // runner without the network still imports the theme, named in the note. The System, Light, Dark switch and the
+    // text size chips are read in each scheme, in this theme and in the default palette, and every label must hold
+    // 4.5:1 against what it is drawn on, with the thumb under the selected label (issue 135).
+    const pageNote = await importUrl(themeBase + '/editor/theme?theme=elegant-luxury');
+    const lux = ((await held())['appearance.themes'] || []).find((t) => t.id === 'elegant-luxury');
+    report.themePageHeld = Boolean(lux) && lux.name === 'Elegant Luxury' && lux.font?.family === 'Poppins, sans-serif' && lux.radius?.md === '0.375rem' && Boolean(lux.shadow?.md);
+    await waitFor("Boolean(document.querySelector('app-settings .theme-card[data-theme-id=\"elegant-luxury\"]'))", 10000);
+    await waitFor("!document.querySelector('app-settings').busy", 10000);
+    await js("document.querySelector('app-settings .theme-card[data-theme-id=\"elegant-luxury\"]').click()");
+    for (let i = 0; i < 50 && (await held())['appearance.theme']?.id !== 'elegant-luxury'; i += 1) await pause(200);
+    const readVars = "(() => { const s = getComputedStyle(document.documentElement); const v = (n) => s.getPropertyValue(n).trim(); return { accent: v('--color-accent'), bg: v('--color-bg'), radius: v('--radius-md'), family: v('--font-family'), shadow: v('--shadow-md'), space: v('--space-5'), tracking: v('--font-tracking'), poppins: document.fonts.check('16px Poppins') }; })()";
+    const choicePairs = `(() => {
+      const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1; const g = cv.getContext('2d', { willReadFrequently: true });
+      const rgb = (c) => { g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3).map((n) => n / 255); };
+      const s = document.querySelector('app-settings');
+      const seg = s.querySelector('.segmented[data-key="appearance.skin"]');
+      const thumb = seg.querySelector('.segment-thumb');
+      const track = getComputedStyle(seg).backgroundColor;
+      const fill = getComputedStyle(thumb).backgroundColor;
+      const out = [];
+      for (const l of seg.querySelectorAll('.segment')) {
+        const on = l.hasAttribute('data-selected');
+        const a = l.getBoundingClientRect(); const b = thumb.getBoundingClientRect();
+        out.push({ what: 'switch ' + l.textContent.trim(), on, under: on ? Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 2 : true, fg: rgb(getComputedStyle(l).color), bg: rgb(on ? fill : track) });
+      }
+      for (const l of s.querySelectorAll('.scale-choice')) out.push({ what: 'size ' + l.textContent.trim(), on: l.hasAttribute('data-selected'), under: true, fg: rgb(getComputedStyle(l).color), bg: rgb(getComputedStyle(l).backgroundColor) });
+      return out;
+    })()`;
+    const contrastIn = async (label) => {
+      await pause(400);
+      const pairs = await js(choicePairs);
+      const rows = pairs.map((p) => ({ what: p.what, on: p.on, under: p.under, ratio: Math.round(contrastRatio(p.fg, p.bg) * 100) / 100 }));
+      const ok = rows.length >= 10 && rows.filter((r) => r.on).length === 2 && rows.every((r) => r.under && r.ratio >= 4.5);
+      console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, rows }));
+      return ok;
+    };
+    const drawn = {};
+    const contrast = {};
+    for (const skin of ['light', 'dark']) {
+      await clickSkin(skin);
+      await waitFor(`document.documentElement.dataset.scheme === ${JSON.stringify(skin)} && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === ${JSON.stringify(lux?.color?.[skin]?.accent ?? '')}`, 10000);
+      // A font the server fetched is added by the page once it is read; give it the moment it takes before the capture.
+      for (let i = 0; i < 20 && lux?.fonts?.length && !(await js("document.fonts.check('16px Poppins')")); i += 1) await pause(200);
+      const v = await js(readVars);
+      drawn[skin] = v.bg === lux.color[skin].bg && v.radius === '0.375rem' && v.family === 'Poppins, sans-serif' && v.shadow === lux.shadow.md && v.space === 'calc(0.25rem * 6)' && v.tracking === '0em';
+      contrast['elegant-' + skin] = await contrastIn('elegant luxury ' + skin);
+      console.log('theme page ' + skin + ': ' + JSON.stringify({ drawn: drawn[skin], ...v, fontsHeld: (lux.fonts || []).length }));
+      await shot('05c-theme-page-' + skin + '.png');
+    }
+    report.themePage = report.themePageHeld && drawn.light && drawn.dark;
+    console.log('theme page: ' + JSON.stringify({ pageNote, held: report.themePageHeld, drawn }));
+    await putSettings({ 'appearance.theme': null });
+    await waitFor("document.querySelector('app-settings .theme-card[data-theme-id=\"default\"]')?.getAttribute('aria-checked') === 'true'", 10000);
+    for (const skin of ['light', 'dark']) {
+      await clickSkin(skin);
+      await waitFor(`document.documentElement.dataset.scheme === ${JSON.stringify(skin)}`, 10000);
+      contrast['default-' + skin] = await contrastIn('default ' + skin);
+      await shot('05d-switch-default-' + skin + '.png');
+    }
+    report.choiceContrast = Object.values(contrast).length === 4 && Object.values(contrast).every(Boolean);
   } finally {
     themeHost.close();
   }

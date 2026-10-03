@@ -54,6 +54,13 @@ test('component CSS carries no literal colours or lengths', () => {
   }
 });
 
+test('no component writes a style attribute, which the page\'s Content-Security-Policy drops', () => {
+  // style-src 'self' refuses inline style attributes, so one written in a template never applies: the System, Light,
+  // Dark thumb's position was one, and it never left System (issue 135). Custom properties are set with
+  // style.setProperty or chosen by an attribute selector in the stylesheet.
+  for (const f of walk('core/app/components')) assert.equal(/\sstyle=/.test(read(f)), false, f + ' writes a style attribute');
+});
+
 test('the scrollbars are one set, on the containers that scroll', () => {
   // One set for the whole app, on the scroll containers rather than a component each, and no ::-webkit-scrollbar:
   // a width there turns an overlay scrollbar into a classic one, which ends the overlay behaviour a platform draws

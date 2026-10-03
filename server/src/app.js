@@ -9,6 +9,7 @@ import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommi
 import { createSender } from './send.js';
 import { createAttachments } from './attachments.js';
 import { createUploads } from './uploads.js';
+import { createThemeFonts } from './theme-fonts.js';
 import { createSearch } from './search.js';
 import { createSettings } from './settings.js';
 import { loadRoutes } from './routes/index.js';
@@ -200,6 +201,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     restarts,
     // How a theme URL is fetched; injected so a test can stand in for the network.
     themeFetch,
+    // A theme's fonts, fetched at import and served to the clients (issue 132).
+    themeFonts: dataDir ? createThemeFonts({ dataDir, fetchImpl: themeFetch }) : null,
     // The installed server's last update outcome, which info reports so a client that reconnects after a rollback
     // still hears about it. Null for a checkout.
     updateOutcome,

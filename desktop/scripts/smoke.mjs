@@ -49,7 +49,7 @@ const port = await new Promise((resolve, reject) => {
 });
 
 const electron = packed || createRequire(path.join(root, 'desktop', 'package.json'))('electron');
-const env = { ...process.env, SMOKE_OUT: out, SMOKE_SERVER_URL: 'http://127.0.0.1:' + port, SMOKE_TOKEN: token, SMOKE_LIVE_TEXT: LIVE, SMOKE_SEND_TEXT: SENT };
+const env = { ...process.env, SMOKE_OUT: out, SMOKE_SERVER_URL: 'http://127.0.0.1:' + port, SMOKE_TOKEN: token, SMOKE_LIVE_TEXT: LIVE, SMOKE_SEND_TEXT: SENT, SMOKE_THEME_FIXTURE: path.join(root, 'core/fixtures/themes/elegant-luxury.json') };
 const appProc = spawn(electron, packed ? [] : [path.join(root, 'desktop')], { env, stdio: ['ignore', 'pipe', 'inherit'] });
 let report = null;
 let output = '';
@@ -69,7 +69,7 @@ await new Promise((resolve) => {
 });
 rmSync(data, { recursive: true, force: true });
 rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
-const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.resyncKeeps && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.noBlank && report.searchTerms && report.sort && report.editMode && report.editLine && report.react && report.reply;
+const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.resyncKeeps && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.themePage && report.choiceContrast && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.noBlank && report.searchTerms && report.sort && report.editMode && report.editLine && report.react && report.reply;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
   process.exit(1);
