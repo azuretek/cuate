@@ -65,6 +65,8 @@ class AppRoot extends KitElement {
     editing: { state: true }, checked: { state: true }, pendingDelete: { state: true },
     // The picture open in the viewer ({ src, alt }), raised by a preview in a message or in the composer.
     viewing: { state: true },
+    // The message whose reaction is with the server, and a line said under one message when a reaction did not go.
+    reacting: { state: true }, messageNote: { state: true },
   };
 
   constructor() {
@@ -104,6 +106,8 @@ class AppRoot extends KitElement {
     this.checked = [];
     this.pendingDelete = null;
     this.viewing = null;
+    this.reacting = null;
+    this.messageNote = null;
     // Escape dismisses the confirm modal, bound once so the same function is added and removed.
     this.confirmKey = (event) => { if (event.key === 'Escape') { event.preventDefault(); this.cancelDelete(); } };
     // The custom properties last written from a theme, so a change removes the ones it no longer sets.
@@ -297,6 +301,7 @@ class AppRoot extends KitElement {
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50 });
       if (refresh ? this.openChatId !== chatId : this.selecting !== chatId) return;
+      if (!refresh) this.messageNote = null;
       this.openChatId = chatId;
       this.selecting = null;
       this.messages = mergeMessages([], messages);
@@ -431,17 +436,17 @@ class AppRoot extends KitElement {
   // A staged file is uploaded first and then sent by the id the server gives it, with the text as its caption, so the
   // send itself keeps one client key and the server's once only rule whatever it carries. The answer is the Send
   // press's outcome: false when the send failed, which the bubble says in words.
-  async send({ text = '', file = null } = {}) {
+  async send({ text = '', file = null, replyTo = null } = {}) {
     const chatId = this.openChatId;
     if (!chatId || !this.client) return false;
     const clientKey = newKey();
     const localId = 'local:' + clientKey;
     this.pending.set(clientKey, { localId, chatId, text, messageId: null });
-    const local = { id: localId, chatId, fromMe: true, sender: null, senderName: null, text, sentAt: new Date().toISOString(), replyTo: null, read: null, attachments: file ? [localAttachment(file)] : [], reactions: [], state: 'sending' };
+    const local = { id: localId, chatId, fromMe: true, sender: null, senderName: null, text, sentAt: new Date().toISOString(), replyTo: replyTo || null, read: null, attachments: file ? [localAttachment(file)] : [], reactions: [], state: 'sending' };
     this.messages = mergeMessages(this.messages, [local]);
     try {
       const upload = file ? await this.client.upload({ name: file.name || 'file', mime: file.type || undefined, data: toBase64(new Uint8Array(await file.arrayBuffer())) }) : null;
-      const r = await this.client.send(chatId, { text, file: upload ? upload.id : undefined, clientKey });
+      const r = await this.client.send(chatId, { text, file: upload ? upload.id : undefined, clientKey, replyTo: replyTo || undefined });
       const p = this.pending.get(clientKey);
       if (!p) return true;
       if (r.status === 'uncertain') {
@@ -461,6 +466,27 @@ class AppRoot extends KitElement {
       this.pending.delete(clientKey);
       this.mark(localId, 'failed', e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e));
       return false;
+    }
+  }
+
+  // A reaction is sent through the server like a message. It shows at once on success, and the event stream's copy of
+  // it lands on the same slot (one reaction per person per message). A refusal is said under the message.
+  async react({ messageId, emoji, remove = false }) {
+    const chatId = this.openChatId;
+    if (!chatId || !this.client || this.reacting) return false;
+    this.reacting = messageId;
+    this.messageNote = null;
+    try {
+      const r = await this.client.react(chatId, messageId, { emoji, remove });
+      if (chatId !== this.openChatId) return;
+      if (r.status === 'uncertain') this.messageNote = { id: messageId, text: 'The reaction may not have sent.' };
+      else this.messages = applyReaction(this.messages, { targetId: messageId, type: r.type, emoji: null, add: r.add, fromMe: true, sender: null });
+      return r.status !== 'uncertain';
+    } catch (e) {
+      if (chatId === this.openChatId) this.messageNote = { id: messageId, text: e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e) };
+      return false;
+    } finally {
+      this.reacting = null;
     }
   }
 
@@ -910,7 +936,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} @send=${(e) => respond(e, this.send(e.detail))} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .reacting=${this.reacting} .note=${this.messageNote} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 

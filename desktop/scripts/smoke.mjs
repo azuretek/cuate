@@ -7,6 +7,7 @@
 // in light and dark (issue 140). Resizing and a new text size keep the conversation, the chat list and the composer
 // where they were, and a reconnect, a resync, a theme change and a setting change never empty a view or show a
 // loading state (issue 142).
+// Reactions and threaded replies retain their existing smoke coverage.
 // Run it under a display (xvfb-run on Linux).
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
@@ -70,7 +71,7 @@ await new Promise((resolve) => {
 rmSync(data, { recursive: true, force: true });
 rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
 const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.resyncKeeps && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.addGroup
-  && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.noBlank;
+  && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.noBlank && report.react && report.reply;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
   process.exit(1);

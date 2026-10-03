@@ -86,6 +86,48 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .reactions { display: flex; gap: var(--space-1); margin: var(--space-1) var(--space-2) 0; font-size: var(--font-size-sm); }
 .reaction { background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: 0 var(--space-2); }
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+/* A message's own controls (issue 138). React and Reply sit beside the bubble and show on hover or keyboard focus,
+   where there is a pointer that hovers; a touch screen opens the same menu with a long press, and a right click does
+   anywhere. The menu and the emoji panel open above the message, and below it when the list has no room above. */
+.bubble-body { position: relative; display: flex; flex-direction: column; align-items: flex-start; max-width: var(--size-bubble-max); }
+.bubble-row.mine .bubble-body { align-items: flex-end; }
+.bubble-body > .bubble, .bubble-body > app-attachment { max-width: 100%; }
+.message-actions { position: absolute; top: 50%; left: 100%; transform: translateY(-50%); display: flex; gap: var(--space-1); padding: 0 var(--space-1); opacity: 0; transition: opacity var(--motion-fast) var(--motion-ease); }
+.bubble-row.mine .message-actions { left: auto; right: 100%; flex-direction: row-reverse; }
+.bubble-row:hover .message-actions, .bubble-row:focus-within .message-actions { opacity: 1; }
+@media (hover: none) { .message-actions { display: none; } }
+.message-action { flex: none; width: var(--size-message-action); height: var(--size-message-action); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-md); line-height: 1; cursor: pointer; }
+.message-action:hover, .message-action:focus-visible { background: var(--color-bg-sunken); color: var(--color-fg); outline: none; }
+.message-action:disabled { opacity: 0.4; cursor: default; }
+.message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: var(--space-1); z-index: 3; }
+.message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; }
+.bubble-row.mine .message-pop { left: auto; right: 0; }
+.message-picker .emoji-picker { position: static; }
+.message-menu { display: flex; flex-direction: column; min-width: max-content; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); }
+.tapback-row { display: flex; gap: var(--space-1); padding-bottom: var(--space-1); margin-bottom: var(--space-1); border-bottom: var(--size-border) solid var(--color-border); }
+.tapback { flex: none; width: var(--size-emoji); height: var(--size-emoji); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font-size: var(--font-size-lg); line-height: 1; cursor: pointer; }
+.tapback:hover, .tapback:focus-visible { background: var(--color-bg-sunken); outline: none; }
+.tapback[aria-checked="true"] { background: var(--color-selection); box-shadow: inset 0 0 0 var(--size-border) var(--color-accent); }
+.tapback:disabled { opacity: 0.4; cursor: default; }
+.menu-item { border: 0; background: none; color: var(--color-fg); text-align: left; white-space: nowrap; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--color-bg-sunken); outline: none; }
+.menu-item:disabled { opacity: 0.4; cursor: default; }
+.reaction.mine { background: var(--color-selection); border-color: var(--color-accent); }
+.message-note { font-size: var(--font-size-xs); color: var(--color-danger); margin: var(--space-1) var(--space-2) 0; }
+/* A reply quotes the message it answers above its bubble; pressing the quote goes to that message and lights it. */
+.reply-quote { display: flex; flex-direction: column; align-items: flex-start; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); padding: var(--space-1) var(--space-3); border: 0; border-inline-start: calc(var(--size-border) * 3) solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-sunken); color: var(--color-fg-muted); font-size: var(--font-size-sm); text-align: left; cursor: pointer; }
+.reply-quote:hover:not(:disabled), .reply-quote:focus-visible { border-inline-start-color: var(--color-accent); outline: none; }
+.reply-quote:disabled { cursor: default; }
+.reply-who { font-weight: var(--font-weight-medium); color: var(--color-fg); }
+.reply-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bubble-row.flash .bubble, .bubble-row.flash .attachment-image { animation: flash var(--motion-sheet-out) var(--motion-ease) 3; }
+@keyframes flash { 50% { box-shadow: 0 0 0 calc(var(--size-border) * 3) var(--color-accent); } }
+.composer-reply { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) var(--space-4) 0; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-inline-start: calc(var(--size-border) * 3) solid var(--color-accent); border-radius: var(--radius-sm); background: var(--color-bg-sunken); }
+.reply-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .message-actions { transition: none; }
+  .bubble-row.flash .bubble, .bubble-row.flash .attachment-image { animation: none; box-shadow: 0 0 0 calc(var(--size-border) * 3) var(--color-accent); }
+}
 app-attachment { display: block; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); }
 .attachment-image { display: block; max-width: 100%; max-height: var(--size-image-max); border-radius: var(--radius-lg); }
 .attachment-image.placeholder { width: var(--size-image-placeholder); aspect-ratio: 4 / 3; height: auto; background: var(--color-bg-sunken); border: var(--size-border) solid var(--color-image-edge); box-shadow: var(--shadow-image); }
