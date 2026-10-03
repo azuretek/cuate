@@ -13,7 +13,7 @@
 // scroller is a selector inside the host (or the host's own tag, for a host that is itself the scroller). items picks
 // the elements a place holds on to, and key names one (its data-id, data-chat or data-key, else its position). A view
 // that follows its newest item passes follow, and starts at its end.
-import { anchorFrom, scrollFor } from './rules/scroll.js';
+import { anchorFrom, scrollFor, revealDelta } from './rules/scroll.js';
 
 const keyOf = (el, i) => el.dataset.id ?? el.dataset.chat ?? el.dataset.key ?? String(i);
 
@@ -116,6 +116,17 @@ export class KeepScroll {
     if (!this.el || !this.el.isConnected || !this.anchor) return;
     const next = scrollFor(this.anchor, this.measure());
     if (Math.abs(next - this.el.scrollTop) >= 1) this.el.scrollTop = next;
+    this.reveal();
+  }
+
+  // A field being typed in is the person's place above any anchor (issue 180): when the view shrinks under it, an
+  // on-screen keyboard opening, the view brings the field into sight, and that scroll becomes the place it keeps.
+  reveal() {
+    const field = typeof document === 'undefined' ? null : document.activeElement;
+    if (!field || field === this.el || !this.el.contains(field) || typeof field.matches !== 'function') return;
+    if (!field.matches('input, textarea, [contenteditable]')) return;
+    const delta = revealDelta(this.el.getBoundingClientRect(), field.getBoundingClientRect());
+    if (delta) this.el.scrollTop += delta;
   }
 }
 
