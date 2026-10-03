@@ -40,6 +40,8 @@ class AppComposer extends KitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.setPreview(null);
+    if (this.fit) this.fit.disconnect();
+    this.fit = null;
   }
 
   // A staged picture shows the picture itself, not only its name; anything else, or a picture this engine cannot
@@ -71,6 +73,31 @@ class AppComposer extends KitElement {
   // Choosing a message to reply to puts the caret in the field, ready to type the reply.
   updated(changed) {
     if (changed.has('replyTo') && this.replyTo) this.field()?.focus();
+    this.watchFit();
+  }
+
+  // The field's height is set from its text, so anything that moves where its lines wrap or how tall they are sets it
+  // again: a new width (a resized window, a rotated phone, the sidebar) or a new text size or font, which the hidden
+  // ruler beside the field follows. Without it the field kept the height of its old width or size and hid the lines
+  // that no longer fit, with no bar to reach them (issue 139). Only a change of the field's own width or the ruler's
+  // size counts, never the height the field is given here, and the field is set in the next frame, outside the
+  // observer's own delivery.
+  watchFit() {
+    if (this.fit || typeof ResizeObserver !== 'function') return;
+    const t = this.field();
+    const ruler = this.querySelector('.composer-ruler');
+    if (!t || !ruler) return;
+    let seen = '';
+    this.fit = new ResizeObserver(() => {
+      const now = t.offsetWidth + ' ' + ruler.offsetWidth + ' ' + ruler.offsetHeight;
+      if (now === seen) return;
+      seen = now;
+      requestAnimationFrame(() => {
+        if (t.isConnected && t.offsetWidth) this.grow({ currentTarget: t });
+      });
+    });
+    this.fit.observe(t);
+    this.fit.observe(ruler);
   }
 
   submit(e) {
@@ -222,6 +249,7 @@ class AppComposer extends KitElement {
         <input type="file" hidden @change=${this.picked}>
         <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}>\u{1F642}</button>
       </div>
+      <span class="composer-ruler" aria-hidden="true">M</span>
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.grow} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}>\u2191</button>
       ${this.attachOpen
