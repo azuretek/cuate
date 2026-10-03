@@ -118,3 +118,19 @@ test('a scroll the browser makes while a turn relays the view out never moves th
   keep.record();
   assert.deepEqual(keep.anchor, { key: 'm60', offset: 0 });
 });
+
+test('a scroll made while the view only changed height is still the person\'s, so going to the end as the composer empties stays at the end', () => {
+  const el = fakeScroller({ heights: Array(40).fill(80), width: 674, height: 300 });
+  const host = { addController() {}, matches: () => false, querySelector: () => el };
+  const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row', follow: true });
+  keep.hostUpdated();
+  el.scrollTop = 10 * 80;
+  keep.record();
+  keep.restore();
+  assert.deepEqual(keep.anchor, { key: 'm10', offset: 0 });
+  // The composer empties, so the view grows taller, and the page goes to the end before the resize is put back.
+  el.clientHeight = 340;
+  el.scrollTop = el.scrollHeight;
+  keep.record();
+  assert.deepEqual(keep.anchor, { end: true });
+});
