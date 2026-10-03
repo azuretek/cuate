@@ -5,7 +5,25 @@
 //
 // While the updater is about to switch versions it holds new sends (503 updating) and waits for the ones in flight to
 // finish, so a restart never cuts a send off halfway: inFlight() is how many are going out, hold() and release() the gate.
+import os from 'node:os';
+import nodePath from 'node:path';
+import { constants } from 'node:fs';
+import { access, stat } from 'node:fs/promises';
 import { tapbackType } from '../../core/app/rules/messages.js';
+import { internalPayload } from './file-type.js';
+
+// Whether a held file can go out as an attachment: null, or a refusal [code, the reason in words]. A message's own
+// data is never a file to send; a file that is gone, unreadable or empty would reach the recipient as a blank
+// document, so it is refused with the reason instead (issue 197). Messages records its own paths from ~/.
+async function unsendable(rec) {
+  if (internalPayload(rec)) return ['attachment_internal', "That is part of a message's own data (a link preview or an app's message), not a file, so it was not sent."];
+  const file = rec.path.startsWith('~/') ? nodePath.join(os.homedir(), rec.path.slice(2)) : rec.path;
+  const st = await stat(file).catch(() => null);
+  const readable = st && st.isFile() && (await access(file, constants.R_OK).then(() => true, () => false));
+  if (!readable) return ['attachment_unreadable', 'The server cannot read that file any more, so it was not sent.'];
+  if (st.size === 0) return ['attachment_empty', 'That file is empty, so it was not sent.'];
+  return null;
+}
 
 export function createSender({ engine, store, config, log, now = Date.now }) {
   const recent = [];
@@ -49,13 +67,19 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     if (!String(text).trim() && !file) return { http: 400, error: ['bad_text', 'Send text, a file, or a file with a caption'] };
     const refused = admit(chatId);
     if (refused) return refused;
-    // Resolved before the window is charged, so a request naming a file we do not hold costs no rate budget.
+    // Resolved and checked before the window is charged, so a request naming a file we do not hold, or one we would not
+    // send, costs no rate budget.
     let path = null;
     if (file) {
       const rec = store.getAttachment(file);
       if (!rec) {
         log.emit('send.refused', { reason: 'unknown_attachment', chat: chatId });
         return { http: 404, error: ['attachment_unknown', 'The server does not hold that file.'] };
+      }
+      const refusal = await unsendable(rec);
+      if (refusal) {
+        log.emit('send.refused', { reason: refusal[0], chat: chatId });
+        return { http: 422, error: refusal };
       }
       path = rec.path;
     }
