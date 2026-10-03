@@ -8,7 +8,8 @@
 // A message opens one menu (its time, Reply in thread on someone else's, React) by a right click, a long click and,
 // at phone width, a long press; React takes the reaction from the composer's emoji panel and comes off again, an emoji
 // the engine cannot send is refused, a reaction floats at the bubble's top outer corner without moving any message, and
-// Reply in thread opens the thread over the blurred conversation, where a reply sent lands.
+// Reply in thread opens the thread over the blurred conversation, where a reply sent lands. Every field's placeholder
+// is dimmed from its token in both schemes, at desktop and phone width.
 // Run it under a display (xvfb-run on Linux).
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
@@ -86,7 +87,7 @@ await new Promise((resolve) => {
 });
 rmSync(data, { recursive: true, force: true });
 rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
-const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.resyncKeeps && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.composerGrows && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.themePage && report.themePicker && report.choiceContrast && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.phoneMessageMenu && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.headerPinned && report.noPageZoom && report.noBlank && report.searchTerms && report.sort && report.icons && report.editMode && report.editLine && report.react && report.reply && report.dismiss;
+const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.resyncKeeps && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.composerGrows && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.themePage && report.themePicker && report.choiceContrast && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.phoneMessageMenu && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.headerPinned && report.noPageZoom && report.noBlank && report.searchTerms && report.sort && report.icons && report.editMode && report.editLine && report.react && report.reply && report.dismiss && report.placeholder;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
   writeFailureNote(code, output);
