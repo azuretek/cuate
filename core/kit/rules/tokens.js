@@ -18,6 +18,24 @@ function iconRules(spec) {
   return Object.entries(glyphs).map(([name, glyph]) => `.icon[data-icon="${name}"] { --icon-glyph: url("data:image/svg+xml,${encodeURIComponent(iconSvg(glyph, spec.icon))}"); }`);
 }
 
+// The iOS asset catalog's accent colour set, from the tokens' accent in each scheme. An empty set leaves iOS on its
+// system blue, which the web view's caret, text selection and every native control draw in (issue 59), so the shell
+// wears the tokens' accent instead. scripts/gen-tokens.mjs writes it; a guard fails when it is stale.
+export function accentColorset(spec) {
+  const srgb = (hex) => {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    if (!m) throw new Error('the accent token must be a #rrggbb colour, not ' + hex);
+    return { 'color-space': 'srgb', components: { alpha: '1.000', blue: '0x' + m[3].toUpperCase(), green: '0x' + m[2].toUpperCase(), red: '0x' + m[1].toUpperCase() } };
+  };
+  return {
+    colors: [
+      { color: srgb(spec.color.light.accent), idiom: 'universal' },
+      { appearances: [{ appearance: 'luminosity', value: 'dark' }], color: srgb(spec.color.dark.accent), idiom: 'universal' },
+    ],
+    info: { author: 'xcode', version: 1 },
+  };
+}
+
 export function tokensCss(spec) {
   const flat = (prefix, obj, indent) => Object.entries(obj).map(([k, v]) => `${indent}--${prefix}-${k}: ${v};`);
   const lines = ['/* Generated from core/spec/tokens.json by scripts/gen-tokens.mjs. Do not edit. */', ':root {', '  color-scheme: light dark;'];
