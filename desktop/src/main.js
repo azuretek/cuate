@@ -728,8 +728,9 @@ async function runSmoke(w) {
     const row = rows[Math.min(2, rows.length - 1)];
     m.scrollTop = row.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 7;
     const l = document.querySelector('app-chat-list');
-    const chat = l.querySelectorAll('.chat-row')[1];
-    l.scrollTop = chat.getBoundingClientRect().top - l.getBoundingClientRect().top + l.scrollTop - 9;
+    const room = l.scrollHeight - l.clientHeight;
+    const targets = [...l.querySelectorAll('.chat-row')].map((c) => c.getBoundingClientRect().top - l.getBoundingClientRect().top + l.scrollTop - 9);
+    l.scrollTop = targets.find((y) => y > 0 && y < room - 20) ?? Math.round(room / 2);
     const t = document.querySelector('app-composer textarea');
     t.value = ${JSON.stringify(COMPOSED)};
     t.focus();
@@ -744,7 +745,8 @@ async function runSmoke(w) {
     await pause(500);
     steps.push({ step: width + 'x' + height, ...(await place()) });
   }
-  for (const scale of [300, 150, 200]) {
+  // Text sizes at or above the one the views were scrolled at, so neither view is ever too short to hold its place.
+  for (const scale of [300, 200]) {
     await putSettings({ 'appearance.textScale': scale });
     await pause(700);
     steps.push({ step: scale + '%', ...(await place()) });

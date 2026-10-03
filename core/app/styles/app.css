@@ -16,7 +16,7 @@ app-root { display: block; height: 100%; }
 
 /* Press states, the one look of core/kit/press.js on every button (issue 140). While a press's work runs the label
    steps aside for a spinner drawn in the control's own text colour, so it reads on a filled button and a bare one
-   alike; then a tick (success) or a mark in the danger colour with a ring (failure) shows for --motion-press-hold and
+   alike; then a tick (success), or a mark ringed in the danger colour (failure), shows for --motion-press-hold and
    the control is idle again. The control keeps its size throughout, so nothing around it moves. Every value is a
    token, so an imported theme styles the states with the rest of the app. These rules sit before every component's
    own, so a control that is itself positioned (a fixed scrim, an absolute close) keeps its position. */
@@ -27,7 +27,7 @@ app-root { display: block; height: 100%; }
 [data-press]::after { position: absolute; inset: 0; margin: auto; display: grid; place-items: center; width: var(--size-press-spinner); height: var(--size-press-spinner); line-height: 1; -webkit-text-fill-color: currentColor; pointer-events: none; }
 [data-press="pending"]::after { content: ''; border-radius: var(--radius-pill); border: calc(var(--size-border) * 2) solid currentColor; border-right-color: transparent; animation: spin var(--motion-spin) linear infinite; }
 [data-press="success"]::after { content: '\2713'; font-weight: var(--font-weight-bold); animation: press-settle var(--motion-normal) var(--motion-ease) both; }
-[data-press="failure"]::after { content: '!'; font-weight: var(--font-weight-bold); -webkit-text-fill-color: var(--color-danger); animation: press-settle var(--motion-normal) var(--motion-ease) both; }
+[data-press="failure"]::after { content: '!'; font-weight: var(--font-weight-bold); animation: press-settle var(--motion-normal) var(--motion-ease) both; }
 [data-press="failure"] { box-shadow: 0 0 0 calc(var(--size-border) * 2) var(--color-danger); }
 @keyframes press-settle { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 /* Reduced motion: the states still show, the spinner as a still ring, and nothing turns or grows. */

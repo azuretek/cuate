@@ -2,8 +2,11 @@
 // phone, opening the sidebar or a sheet, a new text size, new items above or below, a picture that loads. Every
 // scrolled view in the app holds one of these; core/test/guards.test.js fails on a scroll container that does not.
 //
-// It is a Lit reactive controller. It reads the view's place (rules/scroll.js) before every render and on every
-// scroll, and puts the view back after every render and whenever the view or anything in it changes size.
+// It is a Lit reactive controller. The view's place (rules/scroll.js) is what the person last scrolled to: it is read on
+// a scroll, and only on a scroll that moved the view away from that place, so the browser clamping a view that grew
+// shorter, or this controller putting it back, never moves the place itself. The view is put back after every render
+// and whenever the view or anything in it changes size. A render never reads the place: by then a new text size or a
+// new width may already have moved everything, and reading it there is how a place gets lost.
 //
 //   this.keep = keepScroll(this, { scroller: '.messages', follow: true });
 //
@@ -23,8 +26,6 @@ export class KeepScroll {
     this.follow = follow;
     this.anchor = follow ? { end: true } : null;
     this.el = null;
-    // Set by reset(): the next render starts at the new place rather than recording the old view's.
-    this.pinned = false;
     this.onScroll = () => this.record();
     this.resized = null;
     this.added = null;
@@ -51,22 +52,15 @@ export class KeepScroll {
     this.added = null;
   }
 
-  // Before a render: where the view is now, while the old layout still stands.
-  hostUpdate() {
-    if (!this.pinned && this.el && this.el.isConnected) this.record();
-  }
-
   // After a render: the view may be a new element, and its items may have moved.
   hostUpdated() {
     this.attach();
     this.restore();
-    this.pinned = false;
   }
 
   // A different subject (another conversation): start again at the end, or the top.
   reset() {
     this.anchor = this.follow ? { end: true } : { top: 0 };
-    this.pinned = true;
   }
 
   attach() {
@@ -76,6 +70,9 @@ export class KeepScroll {
     this.el = el;
     if (!el) return;
     el.addEventListener('scroll', this.onScroll, { passive: true });
+    // The browser's own scroll anchoring would move the view on a layout change by its own choice of anchor, before
+    // this one is asked; with it off, the only mover is this controller (CSSOM, which the page's CSP allows).
+    el.style.overflowAnchor = 'none';
     if (this.added) this.added.observe(el, { childList: true });
     this.observeItems();
   }
@@ -106,9 +103,13 @@ export class KeepScroll {
     return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, items };
   }
 
+  // A scroll that left the view where its place says it should be (this controller's own restore, or the browser
+  // clamping a view that cannot reach it) keeps the place; any other is the person scrolling, and becomes the place.
   record() {
     if (!this.el) return;
-    this.anchor = anchorFrom({ ...this.measure(), follow: this.follow });
+    const now = this.measure();
+    if (this.anchor && Math.abs(scrollFor(this.anchor, now) - now.scrollTop) < 1) return;
+    this.anchor = anchorFrom({ ...now, follow: this.follow });
   }
 
   restore() {
