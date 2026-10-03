@@ -105,8 +105,10 @@ class RotationTest {
 
     // The DOM can report the proof before the compositor presents that frame, and a
     // starting window or a system dialog can cover it. Keep capturing until the pixels
-    // themselves show a populated conversation in the requested scheme, and two captures
-    // in a row are identical, so a frame still drawing the previous proof label is never kept.
+    // themselves show a populated conversation in the requested scheme with the verdict's
+    // pass fill, and two captures in a row are identical. Two identical captures alone only
+    // prove the screen is still: just after launch the web view can hold a frame drawn before
+    // the verdict turned pass for longer than two captures take, and that frame was kept.
     private fun schemeShown(capture: android.graphics.Bitmap, scheme: String): Boolean {
         val top = capture.height / 10
         val bottom = capture.height * 85 / 100
@@ -130,16 +132,21 @@ class RotationTest {
         return if (scheme == "dark") mean < 80 else mean > 160
     }
 
-    private fun captureScheme(scenario: ActivityScenario<MainActivity>, scheme: String): android.graphics.Bitmap {
+    private fun captureScheme(scenario: ActivityScenario<MainActivity>, scheme: String, passed: JSONObject): android.graphics.Bitmap {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        val point = markerPoint(scenario, passed)
         var previous: android.graphics.Bitmap? = null
         var taken = 0
         var shown = 0
+        var verdict = "none"
         do {
             instrumentation.waitForIdleSync()
             val capture = instrumentation.uiAutomation.takeScreenshot()
-            if (capture != null) taken++
-            if (capture != null && schemeShown(capture, scheme)) {
+            if (capture != null) {
+                taken++
+                verdict = verdictShown(capture, point)
+            }
+            if (capture != null && schemeShown(capture, scheme) && verdict == "pass") {
                 shown++
                 val last = previous
                 if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
@@ -153,8 +160,9 @@ class RotationTest {
         previous?.let { keep(it, "chat-$scheme-unsettled.png") }
         previous?.recycle()
         throw AssertionError(
-            "The screen never showed the populated $scheme conversation: $taken captures, $shown in the scheme, " +
-                "none twice alike; page " + evaluate(scenario, "JSON.stringify(window.rotationProof || null)"),
+            "The screen never showed the passing $scheme conversation: $taken captures, $shown in the scheme with the " +
+                "pass fill, none twice alike, last verdict shown $verdict; page " +
+                evaluate(scenario, "JSON.stringify(window.rotationProof || null)"),
         )
     }
 
@@ -191,7 +199,7 @@ class RotationTest {
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             val passed = awaitProof(scenario, false)
-            val capture = captureScheme(scenario, scheme)
+            val capture = captureScheme(scenario, scheme, passed)
             assertVerdictHeld(scenario, passed, capture, scheme)
             // AGP copies this directory before uninstalling the app and its data.
             val output = java.io.File(outputDir(), "chat-$scheme.png")
