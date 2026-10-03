@@ -1,16 +1,24 @@
 // Sending, which is the dangerous half: off until switched on, rate limited, one send per client key, and an
 // uncertain outcome is reported as uncertain and never retried. A send carries text, a file, or a file with a
 // caption, optionally as a reply to one message; the file is an attachment id the server already holds, resolved to
-// its path only here. A reaction is a send too: it passes the same switch and the same rate window (issue 138).
+// its path only here. A reaction is a send too: it passes the same gate, switch and rate window (issue 138).
+//
+// While the updater is about to switch versions it holds new sends (503 updating) and waits for the ones in flight to
+// finish, so a restart never cuts a send off halfway: inFlight() is how many are going out, hold() and release() the gate.
 import { tapbackType } from '../../core/app/rules/messages.js';
 
 export function createSender({ engine, store, config, log, now = Date.now }) {
   const recent = [];
   const inFlight = new Set();
   const reacting = new Set();
+  let held = false;
 
-  // The switch and the rate window every send passes. A refusal here costs nothing.
+  // The update gate, the switch and the rate window every send passes. A refusal here costs nothing.
   function admit(chatId) {
+    if (held) {
+      log.emit('send.refused', { reason: 'updating', chat: chatId });
+      return { http: 503, error: ['updating', 'The server is updating. Send it again in a moment.'] };
+    }
     if (!config.sending.enabled) {
       log.emit('send.refused', { reason: 'sending_off', chat: chatId });
       return { http: 403, error: ['sending_off', 'Sending is switched off on the server.'] };
@@ -24,7 +32,7 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     return null;
   }
   // An admitted send takes one slot in the window, and gets it back when the engine says it cannot do the thing at
-  // all, since nothing reached Messages.
+  // all, since nothing reached the Mac.
   const charge = () => {
     const t = now();
     recent.push(t);
@@ -34,7 +42,7 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     };
   };
 
-  async function send(chatId, { text = '', file = '', replyTo = '' } = {}, clientKey) {
+  const send = async function send(chatId, { text = '', file = '', replyTo = '' } = {}, clientKey) {
     const prev = store.getSend(clientKey);
     if (prev) return { http: 200, body: { status: prev.status, clientKey, messageId: prev.message_id ?? null, duplicate: true } };
     if (inFlight.has(clientKey)) return { http: 409, error: ['in_flight', 'That message is still being sent.'] };
@@ -77,7 +85,7 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     } finally {
       inFlight.delete(clientKey);
     }
-  }
+  };
 
   // Add or remove this device owner's reaction on one message. Only the six standard tapbacks can be sent, so any
   // other emoji is refused before it costs rate budget or reaches the engine. One reaction per message is in flight
@@ -114,7 +122,11 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     }
   }
 
-  // The sender stays one function, as every caller has it; the reaction path rides on it.
+  // The sender stays one function, as every caller has it; the reaction path and the update gate ride on it. A
+  // reaction going out counts as in flight, so an update waits for it too.
   send.react = react;
+  send.inFlight = () => inFlight.size + reacting.size;
+  send.hold = () => { held = true; };
+  send.release = () => { held = false; };
   return send;
 }

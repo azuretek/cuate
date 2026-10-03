@@ -5,7 +5,7 @@
 // it is written means the client went away, and the sweep stops at its next page rather than paging on for nobody.
 // A second export while one is sweeping is answered 409 export_running instead of competing for the engine, which is
 // what pushed single pages past the engine timeout and took every other request down with it (issue 107).
-import { EXPORT_RUNNING, EXPORT_ABANDONED } from '../export.js';
+import { EXPORT_RUNNING, EXPORT_ABANDONED, EXPORT_HELD } from '../export.js';
 
 // What a server logs for a request whose client closed it before the answer: no response reached anyone.
 const CLIENT_CLOSED = 499;
@@ -23,6 +23,7 @@ export default {
       doc = await exporter.collect({ mode, signal: abandoned.signal });
     } catch (e) {
       if (e.code === EXPORT_RUNNING) throw badRequest(EXPORT_RUNNING, e.message, 409);
+      if (e.code === EXPORT_HELD) throw badRequest(EXPORT_HELD, e.message, 503);
       if (e.code === EXPORT_ABANDONED) { res.statusCode = CLIENT_CLOSED; return; }
       throw e;
     } finally {

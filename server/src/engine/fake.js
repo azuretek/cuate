@@ -16,9 +16,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   let attempts = 0;
   let liveSent = false;
   const sends = [];
-  // send: how a send answers. afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
+  // send: how a send answers. sendDelayMs: how long a send takes to answer, so a test can hold one in flight.
+  // afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
   // bridge: 'ready', or 'down' to answer the bridge-only calls (a tapback, a reply) the way imsg does with no bridge.
-  const behavior = { send: 'ok', afterDelayMs: 0, bridge: 'ready' };
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready' };
   const tapbacks = [];
   const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
@@ -133,7 +134,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
             const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(p.reply_to ? { reply_to_guid: p.reply_to } : {}) });
             sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null, replyTo: p.reply_to || null });
-            reply(req.id, { ok: true, id: m.id, guid: m.guid });
+            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: m.guid }), behavior.sendDelayMs).unref();
+            else reply(req.id, { ok: true, id: m.id, guid: m.guid });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }

@@ -329,3 +329,21 @@ test('a reply the engine cannot thread is refused, not sent outside the thread',
   s.world.behavior.bridge = 'ready';
   assert.equal((await s.send('1', { text: 'Synthetic after' }, 'key-reply-00004')).http, 201, 'the refusal gave its slot back');
 });
+
+test('while an update holds sends, a reaction is held too, and one going out counts as in flight', async (t) => {
+  const s = sender({ sendTimeoutMs: 5000 });
+  t.after(() => s.close());
+  await s.start();
+  s.send.hold();
+  const held = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2753' });
+  assert.equal(held.http, 503);
+  assert.equal(held.error[0], 'updating');
+  s.send.release();
+  s.world.behavior.send = 'hang';
+  const going = s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2753' });
+  await tick();
+  assert.equal(s.send.inFlight(), 1, 'the updater waits for a reaction going out');
+  s.world.crashAll();
+  await going;
+  assert.equal(s.send.inFlight(), 0);
+});

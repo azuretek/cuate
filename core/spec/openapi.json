@@ -968,6 +968,26 @@
           }
         }
       }
+    },
+    "server.update": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1029,6 +1049,9 @@
           },
           "uploadMaxBytes": {
             "type": "number"
+          },
+          "serverUpdate": {
+            "$ref": "#/components/schemas/ServerUpdate"
           }
         },
         "required": [
@@ -1724,6 +1747,31 @@
         "required": [
           "engine",
           "sending"
+        ],
+        "additionalProperties": false
+      },
+      "ServerUpdate": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "at"
         ],
         "additionalProperties": false
       },
