@@ -274,10 +274,9 @@ class AppComposer extends KitElement {
 
   render() {
     const s = this.staged;
-    const q = this.replyTo;
-    return html`${q
-      ? html`<div class="composer-thread" role="status"><span class="icon" data-icon="reply" aria-hidden="true"></span><span class="composer-thread-label">Replying in thread</span><button type="button" class="staged-remove" aria-label="Cancel reply" title="Cancel reply" @click=${press(() => this.cancelReply())}><span class="icon" data-icon="x" aria-hidden="true"></span></button></div>`
-      : nothing}${s || this.stageProblem
+    // An open thread shows in the conversation and in the field's own Reply placeholder; the composer adds no row of its
+    // own, and Escape or the thread's close control leaves it (issue 195).
+    return html`${s || this.stageProblem
       ? html`<div class="composer-staged" role="status">
           ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${press(() => this.openPreview())}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${press(() => this.unstage())}>\u00D7</button></span>` : nothing}
           ${s && !this.preview ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${press(() => this.unstage())}>\u00D7</button></span>` : nothing}

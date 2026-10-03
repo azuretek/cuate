@@ -137,23 +137,31 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .conv-body[data-reacting] > .messages, .conv-body[data-reacting] > .thread-view { padding-bottom: calc(var(--size-picker-h) + var(--space-4)); scroll-padding-bottom: calc(var(--size-picker-h) + var(--space-4)); }
 .bubble-row.targeted .bubble, .bubble-row.targeted .attachment-image { box-shadow: 0 0 0 calc(var(--size-border) * 2) var(--color-accent); }
 .message-note { font-size: var(--font-size-xs); color: var(--color-danger); margin: var(--space-1) var(--space-2) 0; }
-/* A reply in the conversation keeps its place in time and carries a quiet mark back to its thread: a dashed stroke on
-   the inner side and the reply icon, never a label repeating who it answers. The mark opens the thread (issue 183). */
-.reply-mark { display: inline-flex; align-items: center; margin: 0 var(--space-2) var(--space-1); padding: 0 var(--space-1); border: 0; border-inline-start: var(--size-border) dashed var(--color-fg-muted); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; }
-.bubble-row.mine .reply-mark { border-inline-start: 0; border-inline-end: var(--size-border) dashed var(--color-fg-muted); }
-.reply-mark .icon { width: var(--font-size-sm); height: var(--font-size-sm); }
-.reply-mark:hover, .reply-mark:focus-visible { color: var(--color-fg); outline: none; }
-/* An open thread is its own conversation: its first message and replies in order, in a card above the rest of the
-   conversation, which blurs behind it. The composer says it is replying, with a way to cancel, and repeats nothing. */
+/* Threads as the phone draws them (issue 195). A reply keeps its place in time. Above the run of replies holding a
+   thread's newest reply, the original repeats as a small outlined ghost on its own side, no fill, with the reply count
+   under it. A reply from the other side carries a thin curved line on its outer edge, from the bubble up toward the
+   ghost, with a small open circle at its top. Every other message carries nothing. */
+.thread-ghost-row { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); margin-top: var(--space-4); }
+.thread-ghost-row.mine { align-items: flex-end; }
+.thread-ghost-row + .bubble-row { margin-top: var(--space-1); }
+.thread-ghost { max-width: calc(var(--size-bubble-max) * 0.75); padding: var(--space-1) var(--space-3); border: var(--size-border) solid var(--color-fg-muted); border-radius: var(--radius-lg); background: none; color: var(--color-fg-muted); font-size: var(--font-size-sm); text-align: start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.thread-count { padding: 0 var(--space-3); border: 0; background: none; color: var(--color-accent); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); cursor: pointer; }
+.thread-ghost:hover, .thread-ghost:focus-visible, .thread-count:hover, .thread-count:focus-visible { color: var(--color-fg); outline: none; }
+.bubble-row.theirs.thread-reply { padding-inline-start: var(--space-4); }
+.bubble-row.thread-reply .bubble { cursor: pointer; }
+.thread-line { position: absolute; inset-inline-start: calc(var(--space-3) * -1); top: calc(var(--space-3) * -1); width: var(--space-3); height: calc(50% + var(--space-3)); padding: 0; background: none; border: 0; border-inline-start: var(--size-border) solid var(--color-fg-muted); border-block-end: var(--size-border) solid var(--color-fg-muted); border-end-start-radius: var(--radius-md); cursor: pointer; }
+.thread-line::before { content: ''; position: absolute; top: calc(var(--space-2) * -1); inset-inline-start: calc(var(--space-1) * -1 - var(--size-border) / 2); width: var(--space-2); height: var(--space-2); box-sizing: border-box; border: var(--size-border) solid var(--color-fg-muted); border-radius: var(--radius-pill); background: var(--color-bg); }
+/* An open thread is its own conversation over the rest, which blurs and dims behind it: only the thread's original and
+   replies, each under its time, with the contact header kept and a close control in place of the way back. */
+.thread-close { display: inline-flex; align-items: center; justify-content: center; padding: var(--space-1); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); cursor: pointer; -webkit-app-region: no-drag; }
+.thread-close .icon { width: var(--font-size-lg); height: var(--font-size-lg); }
+.thread-close:hover, .thread-close:focus-visible { color: var(--color-fg); background: var(--color-bg-sunken); outline: none; }
 .conv-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .messages { transition: filter var(--motion-normal) var(--motion-ease), opacity var(--motion-normal) var(--motion-ease); }
-.messages.behind { filter: blur(var(--size-scrim-blur)); opacity: 0.5; }
+.messages.behind { filter: blur(var(--size-scrim-blur)); opacity: 0.25; }
 .thread-view { position: absolute; inset: 0; z-index: 2; overflow-y: auto; padding: var(--space-4); animation: thread-in var(--motion-normal) var(--motion-ease) both; }
-.thread-list { display: flex; flex-direction: column; padding: 0 var(--space-4) var(--space-4); background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.thread-list { display: flex; flex-direction: column; min-height: 100%; justify-content: flex-end; padding: 0 0 var(--space-2); }
 @keyframes thread-in { from { opacity: 0; transform: translateY(calc(var(--space-2) * -1)); } to { opacity: 1; transform: none; } }
-.composer-thread { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) var(--space-4) 0; color: var(--color-fg-muted); font-size: var(--font-size-xs); }
-.composer-thread-label { flex: 1; min-width: 0; }
-.composer-thread .staged-remove { display: inline-flex; align-items: center; padding: var(--space-1); }
 @media (prefers-reduced-motion: reduce) {
   .messages { transition: none; }
   .thread-view { animation: none; }

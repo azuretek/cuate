@@ -1,0 +1,135 @@
+// Threads as iMessage draws them (issue 195). Only a message the engine records with a thread originator is a reply:
+// imsg also reports `reply_to_guid`, which Messages fills on ordinary rows with the message before it, and reading that
+// as a thread marked every consecutive message as a reply to the one above it. The rows below are shaped like imsg's
+// real history output (the keys it emits on ordinary and threaded rows, measured on a Mac), with synthetic handles,
+// guids and text.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mapMessage } from '../app/rules/engine-imsg.js';
+import { threadMarks, threadIds, replyCountLabel, mergeMessages } from '../app/rules/messages.js';
+
+const defined = {};
+globalThis.HTMLElement = class { addEventListener() {} removeAttribute() {} setAttribute() {} hasAttribute() { return false; } getAttribute() { return null; } dispatchEvent() {} };
+globalThis.customElements = { define(name, cls) { defined[name] = cls; }, get() { return undefined; } };
+globalThis.document = { createTreeWalker() { return {}; }, createComment() { return {}; }, importNode() { return {}; }, createElement() { return { content: {} }; } };
+await import('../app/components/app-conversation.js');
+const conversation = defined['app-conversation'].prototype;
+const composer = defined['app-composer'].prototype;
+
+function words(value) {
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(words).join('');
+  if (value?.strings) return value.strings.map((s, i) => s + words(value.values[i])).join('');
+  return '';
+}
+
+const HANDLE = '+15555550100';
+const row = (id, minute, fields) => ({
+  id,
+  chat_id: 7,
+  chat_identifier: HANDLE,
+  chat_guid: 'iMessage;-;' + HANDLE,
+  chat_name: '',
+  participants: [HANDLE],
+  is_group: false,
+  guid: 'SYN-' + String(id).padStart(4, '0'),
+  sender: HANDLE,
+  is_from_me: false,
+  text: '',
+  created_at: new Date(Date.UTC(2026, 0, 15, 10, minute)).toISOString(),
+  attachments: [],
+  reactions: [],
+  ...fields,
+});
+const mine = { is_from_me: true, sender: '', destination_caller_id: 'synthetic@example.com' };
+const theirs = { is_read: true, date_read: '2026-01-15T11:00:00.000Z' };
+// Messages fills reply_to_guid on an ordinary row with the guid of the row before it, and imsg resolves that row's sender
+// and text into reply_to_sender and reply_to_text. None of the three means the row is in a thread.
+const chained = (prev) => ({ reply_to_guid: prev, reply_to_sender: HANDLE, reply_to_text: 'Synthetic earlier text' });
+const IMSG_ROWS = [
+  row(1, 0, { ...theirs, text: 'Are we still on for the hike?' }),
+  row(2, 1, { ...mine, ...chained('SYN-0001'), text: 'Yes, nine at the trailhead.' }),
+  row(3, 2, { ...theirs, ...chained('SYN-0002'), text: 'Great.' }),
+  row(4, 3, { ...mine, ...chained('SYN-0003'), text: 'I will bring water.' }),
+  // A real reply: the person used Reply on message 2. Its reply_to_guid still names the row before it (4); only
+  // thread_originator_guid, with the part of the original it answers, names the thread.
+  row(5, 9, { ...theirs, ...chained('SYN-0004'), thread_originator_guid: 'SYN-0002', thread_originator_part: '0:0:27', text: 'Could we make it half past?' }),
+  row(6, 10, { ...mine, ...chained('SYN-0005'), thread_originator_guid: 'SYN-0002', thread_originator_part: '0:0:27', text: 'Half past works.' }),
+  row(7, 12, { ...theirs, ...chained('SYN-0006'), text: 'See you there.' }),
+];
+const attachmentId = (a) => 'att:' + a.filename;
+const mapped = () => mergeMessages([], IMSG_ROWS.map((m) => mapMessage(m, { attachmentId })));
+const chat = { id: '7', name: 'Avery Quinn', participants: [HANDLE], isGroup: false, service: 'iMessage' };
+const host = (o = {}) => ({ messages: mapped(), chat, sending: true, pop: null, replyingTo: null, reactFor: null, reacting: null, note: null, hasMore: false, windowControls: null, uploadMaxBytes: 1, ...o });
+const withParts = (h) => { for (const k of ['bubble', 'threadView', 'menu', 'ghost', 'composerPlaceholder']) h[k] = conversation[k]; return h; };
+
+test('only a message the engine records with a thread originator is a reply, never one that reply_to_guid chains to the row before it', () => {
+  const byId = new Map(mapped().map((m) => [m.id, m]));
+  for (const id of ['SYN-0001', 'SYN-0002', 'SYN-0003', 'SYN-0004', 'SYN-0007']) assert.equal(byId.get(id).replyTo, null, id + ' is an ordinary message');
+  assert.equal(byId.get('SYN-0005').replyTo, 'SYN-0002', 'the reply names its thread\'s original, not the row before it');
+  assert.equal(byId.get('SYN-0006').replyTo, 'SYN-0002');
+});
+
+test('two ordinary consecutive messages show no thread mark', () => {
+  const h = withParts(host());
+  const list = mapped();
+  const ordinary = [list[1], list[2]];
+  assert.deepEqual(ordinary.map((m) => m.text), ['Yes, nine at the trailhead.', 'Great.']);
+  const marks = threadMarks(list);
+  for (const m of ordinary) {
+    assert.equal(marks.has(m.id), false, m.id + ' carries no mark');
+    const markup = words(conversation.bubble.call(h, { message: m, first: true, last: true }, null, false, 'list'));
+    assert.ok(!/thread-line|thread-ghost|thread-count|thread-reply|reply-mark/.test(markup), m.id + ' draws nothing extra');
+  }
+  const page = words(conversation.render.call(h));
+  assert.equal((page.match(/class="thread-ghost"/g) || []).length, 1, 'one ghost in the whole conversation, for the one real thread');
+  assert.ok(!page.includes('reply-mark'), 'the old per-message mark is gone');
+});
+
+test('a real reply connects to its original: a ghost of the original with its reply count above the replies, and a line on the reply from the other side', () => {
+  const list = mapped();
+  const marks = threadMarks(list);
+  assert.deepEqual([...marks.keys()].sort(), ['SYN-0005', 'SYN-0006']);
+  assert.deepEqual(marks.get('SYN-0005'), { root: 'SYN-0002', ghost: { root: 'SYN-0002', count: 2 }, connector: true }, 'the ghost sits above the run of replies that holds the newest');
+  assert.deepEqual(marks.get('SYN-0006'), { root: 'SYN-0002', ghost: null, connector: false }, 'a reply on your own side needs no line');
+  assert.equal(replyCountLabel(1), '1 Reply');
+  assert.equal(replyCountLabel(2), '2 Replies');
+  const h = withParts(host());
+  const page = words(conversation.render.call(h));
+  const ghostAt = page.indexOf('class="thread-ghost"');
+  assert.ok(ghostAt > page.indexOf('Great.') && ghostAt < page.indexOf('Could we make it half past?'), 'the ghost sits in time order, just above the replies');
+  assert.ok(page.slice(ghostAt, page.indexOf('Could we make it half past?')).includes('Yes, nine at the trailhead.'), 'the ghost repeats the original');
+  assert.ok(page.includes('2 Replies'));
+  assert.match(page, /thread-ghost-row mine/, 'the ghost is on the original\'s side');
+  const received = words(conversation.bubble.call(h, { message: list[4], first: true, last: true }, null, false, 'list'));
+  assert.equal((received.match(/class="thread-line"/g) || []).length, 1, 'the reply from the other side carries the line');
+  assert.ok(received.includes('aria-label="Open the thread"'));
+  const own = words(conversation.bubble.call(h, { message: list[5], first: true, last: true }, null, false, 'list'));
+  assert.ok(!own.includes('thread-line'));
+  // Tapping the line, the ghost, the count or a reply opens the thread named by its original.
+  const t = host();
+  conversation.openThread.call(t, list[4]);
+  assert.deepEqual(t.replyingTo, { id: 'SYN-0002' });
+});
+
+test('the thread view lists exactly the original and its replies, with time separators and delivery, under the contact header with a close control, and the composer reads Reply', () => {
+  const h = withParts(host({ replyingTo: { id: 'SYN-0002' } }));
+  assert.deepEqual([...threadIds(h.messages, 'SYN-0002')].sort(), ['SYN-0002', 'SYN-0005', 'SYN-0006']);
+  const view = words(conversation.threadView.call(h, false));
+  const ids = [...view.matchAll(/data-id=(SYN-\d{4})/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ['SYN-0002', 'SYN-0005', 'SYN-0006'], 'exactly the thread, in order');
+  assert.equal((view.match(/class="separator"/g) || []).length, 3, 'each message under its time');
+  assert.ok(view.includes('class="delivery"'), 'the delivery status of your last message in the thread');
+  assert.ok(!/thread-line|thread-ghost/.test(view), 'no marks inside the thread');
+  const page = words(conversation.render.call(h));
+  assert.match(page, /class=messages behind/);
+  assert.ok(page.includes('aria-label="Close thread"') && page.includes('data-icon="x"'), 'a close control');
+  assert.ok(!page.includes('aria-label="Conversations"'), 'the back arrow gives way to the close control');
+  assert.ok(page.includes('Avery Quinn'), 'the contact header stays');
+  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: 'SYN-0002' }, frequent: [], preview: '', disabled: false, placeholder: 'Reply' };
+  const markup = words(composer.render.call(c));
+  assert.ok(!markup.includes('Replying in thread') && !markup.includes('composer-thread'), 'the composer carries no indicator row');
+  assert.equal(conversation.composerPlaceholder.call(h), 'Reply');
+  assert.equal(conversation.composerPlaceholder.call(host()), 'Message');
+  assert.equal(conversation.composerPlaceholder.call(host({ sending: false })), 'Sending is off on the server');
+});
