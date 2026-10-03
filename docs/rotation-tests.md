@@ -23,9 +23,10 @@ cannot pass. The fixture never restores the anchor or the draft itself. The iOS
 screenshot of each orientation is taken only once the window and web view have
 turned, the web view fills the window, and consecutive screenshots match, so a
 frame caught mid-rotation is never kept as proof and a clipped layout fails. The
-simulator returns a landscape screenshot in the device's portrait frame, so the
-test turns it upright before keeping it; kept as returned, Xcode saves it on its
-side and cut in half, which reads as a clipped layout that is not there.
+capture is of the whole screen, turned upright: the app's own screenshot crops a
+landscape screen by the app's portrait frame, which Xcode saved on its side and
+cut in half, and which read as a clipped layout that is not there. The screen as
+the simulator returned it is kept beside it as `landscape-as-returned`.
 
 Run with the existing iOS scheme's test action or, from android,
 `./gradlew --no-daemon :app:connectedDebugAndroidTest`.

@@ -19,14 +19,21 @@ final class RotationTests: XCTestCase {
             attachment.name = label
             attachment.lifetime = .keepAlways
             add(attachment)
+            if label == "landscape" {
+                // The screen exactly as the simulator returned it, so the turn applied above can be checked.
+                let raw = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                raw.name = "landscape-as-returned"
+                raw.lifetime = .keepAlways
+                add(raw)
+            }
         }
     }
 
     // The capture waits until the window and the web view both have the new orientation, the web view fills the window,
     // and two screenshots in a row draw the same picture (a blinking caret is too small to count), so a frame caught
-    // mid-rotation is never kept and a clipped layout fails. In landscape the simulator hands back the screen as the
-    // device holds it, upright for portrait, so the picture is turned to the way the person reads it; kept as it came,
-    // Xcode saved it on its side and cut in half, which looked like a clipped layout when the web view filled the window.
+    // mid-rotation is never kept and a clipped layout fails. It is a screenshot of the whole screen: the app's own
+    // screenshot crops a landscape screen by the app's portrait frame, which Xcode saved sideways and cut in half and
+    // which read as a clipped layout while the web view filled the window.
     private func settled(_ app: XCUIApplication, landscape: Bool) -> UIImage {
         let deadline = Date().addingTimeInterval(20)
         var previous: [UInt8]?
@@ -34,32 +41,33 @@ final class RotationTests: XCTestCase {
         repeat {
             let window = app.windows.firstMatch.frame
             let web = app.webViews.firstMatch.frame
-            let image = upright(app.screenshot().image, landscape: landscape)
+            let image = upright(XCUIScreen.main.screenshot().image, landscape: landscape)
             let size = image.size
             let current = thumbnail(image)
             let turned = (window.width > window.height) == landscape && (size.width > size.height) == landscape
             let fills = web.width * web.height >= window.width * window.height * 0.8
             let change = previous.map { difference($0, current) } ?? Double.infinity
-            last = "window \(window) web \(web) image \(size) change \(change)"
+            let pixels = image.cgImage.map { "\($0.width)x\($0.height)" } ?? "none"
+            last = "window \(window) web \(web) image \(size) pixels \(pixels) change \(change)"
             if turned && fills && change < 1.0 { return image }
             previous = current
         } while Date() < deadline
         XCTFail("Rotation never settled: " + last)
-        return app.screenshot().image
+        return XCUIScreen.main.screenshot().image
     }
 
-    // The device is turned landscapeLeft, so the top of the page lies along the screen's right edge: a quarter turn
-    // anticlockwise stands it up.
+    // The simulator hands back a landscape screen in the device's portrait frame. The device is turned landscapeLeft,
+    // so the top of the page lies along that frame's right edge, and a quarter turn anticlockwise stands it up.
     private func upright(_ image: UIImage, landscape: Bool) -> UIImage {
-        guard landscape, image.size.width < image.size.height, let cg = image.cgImage else { return image }
-        let size = CGSize(width: image.size.height, height: image.size.width)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = image.scale
-        return UIGraphicsImageRenderer(size: size, format: format).image { context in
-            context.cgContext.translateBy(x: 0, y: size.height)
-            context.cgContext.rotate(by: -.pi / 2)
-            UIImage(cgImage: cg, scale: image.scale, orientation: .up).draw(in: CGRect(origin: .zero, size: image.size))
-        }
+        guard landscape, let cg = image.cgImage, cg.width < cg.height,
+              let context = CGContext(data: nil, width: cg.height, height: cg.width, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return image }
+        context.translateBy(x: CGFloat(cg.height), y: 0)
+        context.rotate(by: .pi / 2)
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        guard let turned = context.makeImage() else { return image }
+        return UIImage(cgImage: turned, scale: image.scale, orientation: .up)
     }
 
     private func thumbnail(_ image: UIImage) -> [UInt8] {
