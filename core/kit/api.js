@@ -70,12 +70,19 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     info: () => call('GET', '/api/v1/info'),
     chats: (o = {}) => call('GET', '/api/v1/chats' + query({ limit: o.limit })),
     messages: (chatId, o = {}) => call('GET', `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
-    send: (chatId, { text, file, clientKey }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, file ? { text, file, clientKey } : { text, clientKey }),
+    send: (chatId, { text, file, clientKey, replyTo }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...(file ? { file } : {}), clientKey, ...(replyTo ? { replyTo } : {}) }),
+    react: (chatId, messageId, { emoji, remove = false }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
     upload: ({ name, mime, data }) => call('POST', '/api/v1/attachments', { name, mime, data }),
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
     settings: () => call('GET', '/api/v1/settings'),
     settingsWrite: (values) => call('PUT', '/api/v1/settings', { values }),
     themeImport: ({ url, name }) => call('POST', '/api/v1/themes', name ? { url, name } : { url }),
+    // One font file a held theme names, as bytes for the FontFace API.
+    async themeFont(id) {
+      const res = await fetchImpl(base + `/api/v1/themes/fonts/${encodeURIComponent(id)}`, { headers: auth });
+      if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
+      return res.arrayBuffer();
+    },
     async attachment(id, o = {}) {
       const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
       if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });

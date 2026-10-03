@@ -1,16 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, matchesSearch, SORT_ORDERS, SORT_LABELS, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, DELETE_STEPS } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, addGroup, renameGroup, moveGroup, placeChat, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, defaultGroupName, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, DELETE_STEPS } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
-import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
+import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions, TAPBACKS, tapbackType, myReaction, replyQuote, canTarget } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
-import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel } from '../app/rules/settings.js';
+import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel, ABOUT_ORDER, aboutRows, aboutLinks } from '../app/rules/settings.js';
+import { BUILD_SPEC as ABOUT_SPEC } from '../app/rules/build-spec.js';
 import { backdropReturns } from '../app/rules/sheet.js';
+import { slideProgress, slideConfirms, slideRelease, slideKey, SLIDE_CONFIRM_AT } from '../app/rules/slide.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
-import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars } from '../app/rules/theme.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars, themeFonts, contrastRatio } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -268,9 +270,10 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScale', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'every key the schema declares lands in one section, once, in the schema order');
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
-  for (const g of settingsGroups()) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups().filter((g) => g.kind === 'settings')) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
+  for (const g of settingsGroups().filter((g) => g.kind !== 'settings')) assert.deepEqual(g.fields, [], g.id + ' draws its own rows, and no setting lands in it');
   for (const g of settingsGroups()) assert.ok(typeof g.description === 'string' && g.description.length > 0, g.id + ' carries a one-line description for its section');
-  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates'], 'the page draws one section per group');
+  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates', 'device', 'about'], 'the page draws one section per group');
   assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
   assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload', 'updates.serverAuto'], 'the updates section holds the client and server preferences');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.autoDownload'), {}), false, 'automatic download is off until the server says otherwise');
@@ -335,6 +338,54 @@ test('a theme URL answer in tweakcn registry form converts through the same conv
   assert.equal(importSummary(importTheme('{"name":"x","cssVars":{}}')).ok, false, 'a registry item that carries nothing is not a theme');
   assert.equal(importSummary(importTheme('<html><body>Not found</body></html>')).ok, false, 'a page that is not a theme is not a theme');
   assert.equal(importSummary(importTheme('{"not": "a theme"}')).ok, false);
+});
+
+test('a theme carries its whole design language: radius and spacing scales, shadows, letter spacing, and dark-only values', () => {
+  const css = [
+    ':root { --radius: 0rem; --spacing: 0.3rem; --letter-spacing: 0.01em; --shadow-sm: 0 1px 2px #0002; --shadow-md: 0 2px 4px #0002; --shadow-xl: 0 9px 9px #0002; --destructive-foreground: #ffffff; }',
+    '.dark { --radius: 0rem; --shadow-md: 0 2px 4px #0008; --destructive-foreground: #111111; }',
+  ].join('\n');
+  const { theme, accepted, refused } = importTweakcn(css, { name: 'square' });
+  assert.deepEqual(theme.radius, { md: '0rem', sm: 'calc(0rem * 0.6)', lg: 'calc(0rem * 1.4)' }, 'a radius of 0 is square at every size');
+  assert.deepEqual(theme.space, { 1: '0.3rem', 2: 'calc(0.3rem * 2)', 3: 'calc(0.3rem * 3)', 4: 'calc(0.3rem * 4)', 5: 'calc(0.3rem * 6)', 6: 'calc(0.3rem * 8)' });
+  assert.equal(theme.font.tracking, '0.01em');
+  assert.deepEqual(theme.shadow, { sm: '0 1px 2px #0002', md: '0 2px 4px #0002' });
+  assert.deepEqual(theme.schemes, { dark: { shadow: { md: '0 2px 4px #0008' } } }, 'only what dark says differently is held for dark');
+  assert.equal(theme.color.dark['danger-fg'], '#111111');
+  assert.ok(refused.includes('shadow-xl'));
+  assert.ok(!accepted.includes('shadow-xl'));
+  assert.equal(importSummary({ accepted, refused }).text, 'Imported 6 values. Refused: shadow-xl.', 'a derived scale step is not a value of its own');
+  const light = Object.fromEntries(themeVars(theme, 'light'));
+  const dark = Object.fromEntries(themeVars(theme, 'dark'));
+  assert.equal(light['--shadow-md'], '0 2px 4px #0002');
+  assert.equal(dark['--shadow-md'], '0 2px 4px #0008', 'dark draws its own shadow over the shared one');
+  assert.equal(dark['--space-5'], 'calc(0.3rem * 6)');
+  assert.equal(light['--font-tracking'], '0.01em');
+  // A .dark block written first is read after the light one all the same.
+  assert.deepEqual(importTweakcn('.dark { --shadow-md: b; } :root { --shadow-md: a; }').theme.schemes, { dark: { shadow: { md: 'b' } } });
+  assert.equal(importTheme(JSON.stringify({ name: 'elegant-luxury', cssVars: { light: { primary: '#000' } } })).theme.name, 'Elegant Luxury', 'a registry slug with no title reads as the theme page names it');
+});
+
+test('a theme\'s fonts reach the FontFace API only as a family, a digest, a weight and a style', () => {
+  const id = 'a'.repeat(64);
+  assert.deepEqual(themeFonts({ fonts: [{ family: 'Poppins', id, weight: '400', style: 'normal', extra: 1 }] }), [{ family: 'Poppins', id, weight: '400', style: 'normal' }]);
+  assert.deepEqual(themeFonts({ fonts: [{ family: 'Poppins", x', id, weight: '400' }, { family: 'Poppins', id: '../x', weight: '400' }, { family: 'Poppins', id, weight: 'bold' }, null] }), []);
+  assert.deepEqual(themeFonts(null), []);
+});
+
+test('the System, Light, Dark switch and the text size chips read at 4.5:1 in both schemes of the default palette', () => {
+  // The pairs app.css draws them with (issue 135): on-accent words on the accent thumb or chip, muted words on the page
+  // surface that is the track and an unselected chip.
+  const spec = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url), 'utf8'));
+  for (const scheme of ['light', 'dark']) {
+    const c = spec.color[scheme];
+    assert.ok(contrastRatio(c['accent-fg'], c.accent) >= 4.5, scheme + ' selected ' + contrastRatio(c['accent-fg'], c.accent));
+    assert.ok(contrastRatio(c['fg-muted'], c.bg) >= 4.5, scheme + ' unselected ' + contrastRatio(c['fg-muted'], c.bg));
+  }
+  assert.equal(Math.round(contrastRatio('#ffffff', '#000000')), 21);
+  assert.equal(contrastRatio('#777', '#777'), 1);
+  assert.ok(Math.abs(contrastRatio('oklch(1 0 0)', 'rgb(0, 0, 0)') - 21) < 0.01, 'oklch and rgb are read');
+  assert.equal(contrastRatio('hsl(0 0% 0%)', '#fff'), null, 'a form it cannot read gives no ratio rather than a wrong one');
 });
 
 test('a theme value that could end the declaration or reach the network is refused', () => {
@@ -424,19 +475,25 @@ test('one release is announced once, however many checks report it', () => {
   for (const state of SILENT_UPDATE_STATES) assert.equal(updateNoticeKey(state, '1.2.3'), null, state + ' raises no notice to remember');
 });
 
-test('the list sorts by activity, unread, name and the manual order the server holds', () => {
+test('the list sorts by activity, or by name A to Z and Z to A (issue 136)', () => {
   const chats = [
-    { id: '1', name: 'Bea', lastMessageAt: '2026-01-03T00:00:00.000Z', unread: 0, isGroup: false },
+    { id: '1', name: 'bea', lastMessageAt: '2026-01-03T00:00:00.000Z', unread: 0, isGroup: false },
     { id: '2', name: 'Al', lastMessageAt: '2026-01-01T00:00:00.000Z', unread: 3, isGroup: true },
     { id: '3', name: 'Cy', lastMessageAt: '2026-01-02T00:00:00.000Z', unread: 1, isGroup: false },
-    { id: '4', name: 'Di', lastMessageAt: null, unread: 0, isGroup: false },
+    { id: '4', name: 'Ál', lastMessageAt: null, unread: 0, isGroup: false },
+    { id: '5', name: '', participants: ['Dee'], lastMessageAt: '2026-01-04T00:00:00.000Z', unread: 0, isGroup: false },
   ];
-  assert.deepEqual(sortChats(chats, { sort: 'recent' }).map((c) => c.id), ['1', '3', '2', '4']);
-  // Unread first, and the unread ones keep their own activity order rather than the order they arrived.
-  assert.deepEqual(sortChats(chats, { sort: 'unread' }).map((c) => c.id), ['3', '2', '1', '4']);
-  assert.deepEqual(sortChats(chats, { sort: 'name' }).map((c) => c.id), ['2', '1', '3', '4']);
-  assert.deepEqual(sortChats(chats, { sort: 'manual', order: ['4', '2'] }).map((c) => c.id), ['4', '2', '1', '3']);
-  assert.deepEqual(SORT_ORDERS, ['recent', 'unread', 'name', 'manual']);
+  assert.deepEqual(sortChats(chats, { sort: 'recent' }).map((c) => c.id), ['5', '1', '3', '2', '4']);
+  // Case and accents do not split the order: "bea" sits between "Al" and "Cy", and "Ál" ties "Al", broken by id.
+  assert.deepEqual(sortChats(chats, { sort: 'name', locale: 'en' }).map((c) => c.id), ['2', '4', '1', '3', '5']);
+  assert.deepEqual(sortChats(chats, { sort: 'name-desc', locale: 'en' }).map((c) => c.id), ['5', '3', '1', '4', '2'], 'Z to A is A to Z reversed');
+  // The name is the one drawn on the row, so a chat with no name sorts by its people.
+  assert.equal(sortChats(chats, { sort: 'name', locale: 'en' }).at(-1).id, '5');
+  // A stored order the menu no longer offers reads as Recent.
+  assert.deepEqual(sortChats(chats, { sort: 'manual' }).map((c) => c.id), sortChats(chats, { sort: 'recent' }).map((c) => c.id));
+  assert.equal(normalizeSort('unread'), 'recent');
+  assert.equal(normalizeSort(undefined), 'recent');
+  assert.equal(normalizeSort('name-desc'), 'name-desc');
 });
 
 test('filters compose, clear one at a time, and search names and last messages', () => {
@@ -453,23 +510,66 @@ test('filters compose, clear one at a time, and search names and last messages',
   assert.deepEqual(by({ group: UNGROUPED }), ['3'], 'the chats in no group');
   assert.deepEqual(by({ kind: 'direct' }), ['1', '3']);
   assert.deepEqual(by({ kind: 'group' }), ['2']);
-  assert.deepEqual(by({ text: 'lake' }), ['1'], 'searches the last message text');
-  assert.deepEqual(by({ text: 'weekend' }), ['2'], 'searches the name');
+  assert.deepEqual(by({ text: 'lake', mode: 'text' }), ['1'], 'Full text searches the last message text');
+  assert.deepEqual(by({ text: 'lake' }), [], 'Contact, the default, does not read message text');
+  assert.deepEqual(by({ text: 'weekend' }), ['2'], 'Contact searches the name');
   assert.deepEqual(by({ unread: true, kind: 'direct' }), ['1', '3'], 'two filters narrow together');
   assert.deepEqual(by({ unread: true, kind: 'group' }), [], 'a filter matching nothing returns nothing');
-  assert.ok(chatSearchText(chats[0]).includes('lake'));
+  assert.ok(messageSearchText(chats[0]).includes('lake'));
+  assert.ok(!contactSearchText(chats[0]).includes('lake'));
 });
 
-test('the search predicate reads the name, the participants and the last message', () => {
+test('a search term reads the contact or the message text, by its own mode', () => {
   const chat = { id: '1', name: 'Bea', isGroup: false, participants: ['bea@example.com'], lastMessage: { text: 'see you at the lake', fromMe: false, attachments: 0 } };
-  assert.equal(matchesSearch(chat, ''), true, 'an empty query matches');
-  assert.equal(matchesSearch(chat, '   '), true, 'a blank query matches');
-  assert.equal(matchesSearch(chat, 'bea'), true, 'reads the name');
-  assert.equal(matchesSearch(chat, 'example.com'), true, 'reads the participants');
-  assert.equal(matchesSearch(chat, 'LAKE'), true, 'reads the last message, case-insensitively');
-  assert.equal(matchesSearch(chat, ' lake '), true, 'trims the query');
-  assert.equal(matchesSearch(chat, 'ocean'), false, 'a query that is nowhere does not match');
-  assert.equal(matchesSearch({ id: '2', name: 'Al', participants: [] }, 'al'), true, 'reads a chat with no last message');
+  const contact = (text) => matchesTerm(chat, { text, mode: 'contact' });
+  const full = (text, texts) => matchesTerm(chat, { text, mode: 'text' }, { texts });
+  assert.deepEqual(SEARCH_MODES, ['contact', 'text']);
+  assert.deepEqual(SEARCH_MODES.map((m) => SEARCH_MODE_LABELS[m]), ['Contact', 'Full text']);
+  assert.equal(contact(''), true, 'an empty term matches');
+  assert.equal(contact('   '), true, 'a blank term matches');
+  assert.equal(contact('BEA'), true, 'Contact reads the name, case-insensitively');
+  assert.equal(contact('example.com'), true, 'Contact reads the participants');
+  assert.equal(contact('lake'), false, 'Contact does not read message text');
+  assert.equal(full(' LAKE '), true, 'Full text reads the last message, trimmed and case-insensitively');
+  assert.equal(full('bea'), false, 'Full text does not read the name');
+  assert.equal(full('cooler', { '1': ['I can bring the cooler'] }), true, 'Full text reads the history the client has loaded');
+  assert.equal(full('cooler', { '2': ['I can bring the cooler'] }), false, 'another chat\'s history is not this chat\'s');
+  assert.equal(full('lake', undefined), true);
+  assert.equal(matchesTerm({ id: '2', name: 'Al', participants: [] }, { text: 'x', mode: 'text' }), false, 'a chat with no last message has no text to match');
+});
+
+test('Enter adds a search term, each term refines, and a chip can be removed or switch its mode (issue 133)', () => {
+  const chats = [
+    { id: '1', name: 'Avery Quinn', participants: ['+15555550100'], lastMessage: { text: 'See you soon' } },
+    { id: '2', name: 'Weekend plans', participants: ['jordan@example.com'], lastMessage: { text: 'Meet at the corner' } },
+    { id: '3', name: '+15555550142', participants: ['+15555550142'], lastMessage: { text: 'Thank you' } },
+  ];
+  const ids = (f) => filterChats(chats, { ...emptyFilters(), ...f }).map((c) => c.id);
+  let terms = addTerm([], '  a  ', 'contact');
+  assert.deepEqual(terms, [{ text: 'a', mode: 'contact' }], 'the text is trimmed and keeps the mode it was added in');
+  assert.deepEqual(ids({ terms }), ['1', '2']);
+  terms = addTerm(terms, 'corner', 'text');
+  assert.deepEqual(terms, [{ text: 'a', mode: 'contact' }, { text: 'corner', mode: 'text' }]);
+  assert.deepEqual(ids({ terms }), ['2'], 'the second term refines the first');
+  assert.deepEqual(ids({ terms, text: 'week', mode: 'contact' }), ['2'], 'what is being typed refines the terms live');
+  assert.deepEqual(ids({ terms, text: 'zzz', mode: 'contact' }), []);
+  assert.equal(addTerm(terms, '', 'text'), terms, 'a blank entry adds nothing');
+  assert.equal(addTerm(terms, 'CORNER', 'text'), terms, 'a repeat in the same mode adds nothing');
+  assert.equal(addTerm(terms, 'corner', 'contact').length, 3, 'the same text in the other mode is its own term');
+  assert.deepEqual(addTerm([], 'x', 'bogus'), [{ text: 'x', mode: 'contact' }], 'an unknown mode reads as Contact');
+  const switched = setTermMode(terms, 1, 'contact');
+  assert.deepEqual(switched, [{ text: 'a', mode: 'contact' }, { text: 'corner', mode: 'contact' }], 'a chip keeps its text and changes its mode');
+  assert.deepEqual(terms[1].mode, 'text', 'switching a mode is a new list');
+  assert.deepEqual(ids({ terms: switched }), [], 'no chat is named "corner"');
+  assert.deepEqual(removeTerm(terms, 1), [{ text: 'a', mode: 'contact' }]);
+  assert.deepEqual(ids({ terms: removeTerm(terms, 1) }), ['1', '2'], 'removing a term widens the list again');
+  assert.deepEqual(removeTerm(terms, 9), terms);
+  // The empty list names the terms in force.
+  assert.equal(termsSentence(switched), '"a" (Contact) and "corner" (Contact)');
+  assert.equal(emptyListText({ terms: switched }), 'No conversations match "a" (Contact) and "corner" (Contact).');
+  assert.equal(emptyListText({ terms: [{ text: 'a', mode: 'contact' }], text: ' lake ', mode: 'text' }), 'No conversations match "a" (Contact) and "lake" (Full text).');
+  assert.equal(emptyListText({ terms: addTerm(addTerm(switched, 'b', 'text'), 'c', 'text') }), 'No conversations match "a" (Contact), "corner" (Contact), "b" (Full text) and "c" (Full text).');
+  assert.equal(emptyListText({ unread: true }), 'No conversations match these filters.');
 });
 
 test('groups keep their own order, draw as sections, and never lose an ungrouped chat', () => {
@@ -486,21 +586,9 @@ test('groups keep their own order, draw as sections, and never lose an ungrouped
   assert.deepEqual(moveGroup(groups, 'g1', 1).map((g) => g.id), ['g2', 'g1']);
   assert.deepEqual(moveGroup(groups, 'g2', 1).map((g) => g.id), ['g1', 'g2'], 'a move past the end is a no-op');
   assert.deepEqual(addGroup([], { id: 'g9', name: '  New  ' }), [{ id: 'g9', name: 'New' }]);
+  assert.deepEqual(addGroup([], { id: 'g9', name: '   ' }), [{ id: 'g9', name: 'Group 1' }], 'an unnamed group takes a default');
   assert.deepEqual(placeChat({ '1': 'g1' }, '1', UNGROUPED), {}, 'moving a chat out drops its placement');
   assert.deepEqual(placeChat({}, '1', 'g2'), { '1': 'g2' });
-});
-
-test('the manual order covers every chat and a move swaps one step', () => {
-  const chats = [
-    { id: 'a', lastMessageAt: '2026-01-03T00:00:00.000Z' },
-    { id: 'b', lastMessageAt: '2026-01-02T00:00:00.000Z' },
-    { id: 'c', lastMessageAt: '2026-01-01T00:00:00.000Z' },
-  ];
-  assert.deepEqual(manualOrder(chats, ['c']), ['c', 'a', 'b'], 'a stored head keeps its place and the rest follow activity');
-  assert.deepEqual(moveChat(['a', 'b', 'c'], 'b', -1), ['b', 'a', 'c']);
-  assert.deepEqual(moveChat(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c'], 'the first chat cannot move up');
-  assert.deepEqual(moveChat(['a', 'b', 'c'], 'c', 1), ['a', 'b', 'c']);
-  assert.deepEqual(moveChat(['a', 'b', 'c'], 'z', 1), ['a', 'b', 'c']);
 });
 
 test('the emoji picker searches by name, keeps categories, and inserts whole characters', () => {
@@ -617,9 +705,47 @@ test('a late write answer never rolls back a change the event stream already del
   assert.deepEqual(settingsAfterWrite({ 'appearance.skin': 'dark' }, written, undefined), { 'appearance.skin': 'dark' }, 'an empty answer keeps what the page holds');
 });
 
-test('the sort control names the four choices, and every order has a label', () => {
-  assert.deepEqual(SORT_ORDERS, ['recent', 'unread', 'name', 'manual']);
-  assert.deepEqual(SORT_ORDERS.map((o) => SORT_LABELS[o]), ['Recent activity', 'Unread first', 'Name', 'Manual order']);
+test('the sort menu names its three choices, and every order has a label', () => {
+  assert.deepEqual(SORT_ORDERS, ['recent', 'name', 'name-desc']);
+  assert.deepEqual(SORT_ORDERS.map((o) => SORT_LABELS[o]), ['Recent', 'Name A to Z', 'Name Z to A']);
+});
+
+test('grouping a selection takes an optional name, and an unnamed group gets the first free default (issue 137)', () => {
+  assert.equal(defaultGroupName([]), 'Group 1');
+  assert.equal(defaultGroupName([{ id: 'a', name: 'Group 1' }, { id: 'b', name: 'Family' }]), 'Group 2');
+  assert.equal(defaultGroupName([{ id: 'a', name: 'Group 2' }]), 'Group 1', 'a gap is filled first');
+  const named = groupFromSelection([], {}, ['1', '2'], { id: 'g1', name: 'Lake trip' });
+  assert.deepEqual(named, { groups: [{ id: 'g1', name: 'Lake trip' }], placement: { '1': 'g1', '2': 'g1' } });
+  const unnamed = groupFromSelection(named.groups, named.placement, ['3'], { id: 'g2', name: '' });
+  assert.deepEqual(unnamed.groups, [{ id: 'g1', name: 'Lake trip' }, { id: 'g2', name: 'Group 1' }]);
+  assert.deepEqual(unnamed.placement, { '1': 'g1', '2': 'g1', '3': 'g2' });
+  const again = groupFromSelection(unnamed.groups, unnamed.placement, ['1'], { id: 'g3' });
+  assert.equal(again.groups.at(-1).name, 'Group 2', 'two unnamed groups never read alike');
+  assert.equal(again.placement['1'], 'g3', 'a chat moves to the new group');
+});
+
+test('slide to confirm only confirms at the end of the track, by drag or by key', () => {
+  assert.equal(slideProgress(0, 200), 0);
+  assert.equal(slideProgress(100, 200), 0.5);
+  assert.equal(slideProgress(400, 200), 1, 'past the end is the end');
+  assert.equal(slideProgress(-20, 200), 0, 'before the start is the start');
+  assert.equal(slideProgress(50, 0), 0, 'a track with no travel never moves');
+  assert.equal(slideConfirms(0.5), false);
+  assert.equal(slideConfirms(SLIDE_CONFIRM_AT), true);
+  assert.equal(slideRelease(0.85), 0, 'let go short of the end and the thumb returns');
+  assert.equal(slideRelease(0.95), 1, 'let go at the end and it stays there');
+  assert.equal(slideKey(0, 'ArrowRight'), 0.1);
+  assert.equal(slideKey(0.9, 'ArrowRight'), 1);
+  assert.equal(slideKey(1, 'ArrowRight'), 1);
+  assert.equal(slideKey(0, 'ArrowLeft'), 0);
+  assert.equal(slideKey(0.3, 'Home'), 0);
+  assert.equal(slideKey(0.3, 'End'), 1);
+  assert.equal(slideKey(0.3, 'Enter'), null, 'Enter is not a slide, so a press alone never confirms');
+  assert.equal(slideKey(0.3, ' '), null);
+  // Ten arrow presses reach the end without drifting short of it.
+  let p = 0;
+  for (let i = 0; i < 10; i += 1) p = slideKey(p, 'ArrowRight');
+  assert.equal(p, 1);
 });
 
 test('a selection counts, selects all and clears together, and agrees with the rows on screen', () => {
@@ -678,4 +804,80 @@ test('a refused write rolls back only the keys it named', () => {
   const before = { 'appearance.skin': 'system' };
   const current = { 'appearance.skin': 'dark', 'appearance.textScale': 150, 'chats.order': ['a'] };
   assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.textScale': 150 }, 'the named keys return to what they held, and one that did not exist is removed');
+});
+
+// Issue 134: About is the last section of Settings, with chela's full details inline and in chela's order.
+test('About is the last section of Settings, and This device sits just above it with no About link', () => {
+  const groups = settingsGroups();
+  assert.equal(groups.at(-1).id, 'about', 'About is the last section');
+  assert.equal(groups.at(-1).kind, 'about');
+  assert.equal(groups.at(-2).id, 'device');
+  const page = readFileSync(new URL('../app/components/app-settings.js', import.meta.url), 'utf8');
+  assert.equal(/data-action="about"/.test(page), false, 'the separate About link has gone');
+  assert.ok(page.includes('<app-about'), 'the settings page draws the About section itself');
+});
+
+test('the About section shows every field in chela\'s order, each from its own half', () => {
+  const host = { product: 'App', version: '1.2.3-dev.4.abcdef0123', channel: 'dev', build: '4', commit: 'a'.repeat(40), builtAt: '2026-10-02T00:00:00Z', electron: '38.0.0', chromium: '140.0', node: '22.13.0', platform: 'linux', arch: 'x64', packaged: false, installSource: 'source', updateChannel: 'dev' };
+  const info = { product: 'App', repository: 'https://example.test/owner/app', serverVersion: '9.9.9', serverChannel: 'stable', serverBuild: '7', serverCommit: 'b'.repeat(40), serverBuiltAt: 'then', serverPlatform: 'darwin', engine: { kind: 'fake', version: '0.1' }, apiVersion: 1 };
+  const rows = aboutRows(host, info);
+  assert.deepEqual(rows.map((r) => r.key), [
+    'product', 'version', 'channel', 'build', 'commit', 'builtAt',
+    'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt',
+    'platform', 'arch', 'electron', 'chromium', 'node',
+    'installSource', 'packaged', 'updateChannel',
+    'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion',
+  ], 'name and version, channel, build and commit, the server\'s version and commit, platform and architecture, Electron, Chromium and Node, install source, then the rest');
+  assert.deepEqual(rows.slice(0, 2).map((r) => [r.label, r.value]), [['App', 'App'], ['Client version', host.version]]);
+  assert.equal(rows.find((r) => r.key === 'serverVersion').value, '9.9.9', 'the server\'s version comes from the server');
+  assert.equal(rows.find((r) => r.key === 'version').value, host.version, 'the client\'s version comes from the shell');
+  assert.equal(rows.find((r) => r.key === 'electron').value, '38.0.0');
+  // Every field the build spec declares is on the page once, so a field added there cannot be left off.
+  const declared = Object.entries(ABOUT_SPEC.halves).flatMap(([half, h]) => h.fields.map((f) => half + ':' + f.key));
+  const shown = ABOUT_ORDER.filter(([, key]) => key !== 'product').map(([half, key]) => half + ':' + key);
+  assert.deepEqual([...shown].sort(), [...declared].sort());
+  assert.equal(new Set(shown).size, shown.length, 'no field is shown twice');
+  for (const row of rows) assert.ok(typeof row.value === 'string' && row.value.length > 0, row.key + ' has a value to copy');
+  assert.equal(aboutRows({}, {}).find((r) => r.key === 'commit').value, 'Unknown', 'a missing value reads Unknown');
+});
+
+test('the About links go to the source, the licence and the issues, and only over https', () => {
+  const links = aboutLinks('https://example.test/owner/app.git');
+  assert.deepEqual(links.map((l) => [l.key, l.label]), [['source', 'Source code'], ['licence', 'Licence'], ['report', 'Report a problem']]);
+  assert.deepEqual(links.map((l) => l.href), ['https://example.test/owner/app', 'https://example.test/owner/app/blob/main/LICENSE', 'https://example.test/owner/app/issues/new']);
+  assert.deepEqual(aboutLinks('http://example.test/owner/app'), [], 'not over plain http');
+  assert.deepEqual(aboutLinks('javascript:alert(1)'), []);
+  assert.deepEqual(aboutLinks(undefined), [], 'a server that names no repository draws no links');
+});
+
+test('a reaction is one of the six standard tapbacks or none, whichever presentation the emoji arrives in (issue 138)', () => {
+  assert.deepEqual(TAPBACKS.map((t) => t.type), ['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
+  for (const t of TAPBACKS) assert.equal(tapbackType(t.glyph), t.type);
+  assert.equal(tapbackType('\u2764'), 'love', 'the text heart is the love tapback');
+  assert.equal(tapbackType('\u203c'), 'emphasis');
+  for (const other of ['\u{1F389}', '\u{1F44D}\u{1F3FD}', '', null, 'love']) assert.equal(tapbackType(other), null, String(other));
+});
+
+test('my reaction, and which messages can be reacted to or replied to', () => {
+  assert.equal(myReaction(msg({ reactions: [{ type: 'like', emoji: null, fromMe: false, sender: 'a@example.com' }] })), null);
+  assert.deepEqual(myReaction(msg({ reactions: [{ type: 'like', emoji: null, fromMe: false, sender: 'a@example.com' }, { type: 'love', emoji: null, fromMe: true, sender: null }] })), { type: 'love', emoji: null, fromMe: true, sender: null });
+  assert.equal(canTarget(msg({ id: 'FAKE-0013' })), true);
+  assert.equal(canTarget(msg({ id: '8DF0A1B2-3C4D-4E5F-8A9B-0C1D2E3F4A5B' })), true);
+  assert.equal(canTarget(msg({ id: 'local:abc', state: 'sending' })), false, 'not sent yet');
+  assert.equal(canTarget(msg({ id: 'row:12' })), false, 'no guid to target');
+});
+
+test('a reply quotes its parent by who wrote it and a line of it, and says so when the parent is not loaded', () => {
+  const parent = msg({ id: 'p1', senderName: 'Avery Quinn', text: 'Are we   still on\nfor coffee?' });
+  const mine = msg({ id: 'p2', fromMe: true, sender: null, text: '' , attachments: [{ id: 'a', name: 'sunset.png', mime: 'image/png', bytes: 1, sticker: false, missing: false }] });
+  const long = msg({ id: 'p3', sender: 'jordan@example.com', text: 'x'.repeat(100) });
+  const all = [parent, mine, long];
+  assert.equal(replyQuote(all, msg({ replyTo: null })), null);
+  assert.deepEqual(replyQuote(all, msg({ replyTo: 'p1' })), { id: 'p1', found: true, who: 'Avery Quinn', text: 'Are we still on for coffee?' });
+  assert.deepEqual(replyQuote(all, msg({ replyTo: 'p2' })), { id: 'p2', found: true, who: 'You', text: 'sunset.png' });
+  const q = replyQuote(all, msg({ replyTo: 'p3' }));
+  assert.equal(q.who, 'jordan@example.com');
+  assert.equal(Array.from(q.text).length, 80);
+  assert.ok(q.text.endsWith('\u2026'));
+  assert.deepEqual(replyQuote(all, msg({ replyTo: 'gone' })), { id: 'gone', found: false, who: '', text: 'An earlier message' });
 });

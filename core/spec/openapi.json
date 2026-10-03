@@ -309,6 +309,71 @@
         }
       }
     },
+    "/api/v1/chats/{chatId}/messages/{messageId}/reactions": {
+      "post": {
+        "operationId": "react",
+        "summary": "POST /api/v1/chats/:chatId/messages/:messageId/reactions",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "send",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chatId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/attachments": {
       "post": {
         "operationId": "upload",
@@ -651,6 +716,54 @@
         }
       }
     },
+    "/api/v1/themes/fonts/{fontId}": {
+      "get": {
+        "operationId": "theme-font",
+        "summary": "GET /api/v1/themes/fonts/:fontId",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "The attachment bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fontId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/mac": {
       "get": {
         "operationId": "mac",
@@ -952,6 +1065,9 @@
           "product": {
             "type": "string"
           },
+          "repository": {
+            "type": "string"
+          },
           "apiVersion": {
             "type": "number"
           },
@@ -991,6 +1107,7 @@
         },
         "required": [
           "product",
+          "repository",
           "apiVersion",
           "serverVersion",
           "serverChannel",
@@ -1239,10 +1356,52 @@
           },
           "clientKey": {
             "type": "string"
+          },
+          "replyTo": {
+            "type": "string"
           }
         },
         "required": [
           "clientKey"
+        ],
+        "additionalProperties": false
+      },
+      "ReactionRequest": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string"
+          },
+          "remove": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "emoji"
+        ],
+        "additionalProperties": false
+      },
+      "ReactionResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "add": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "targetId",
+          "type",
+          "add"
         ],
         "additionalProperties": false
       },

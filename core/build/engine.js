@@ -21,6 +21,7 @@ var engine = (() => {
   // core/app/engine.js
   var engine_exports = {};
   __export(engine_exports, {
+    ABOUT_ORDER: () => ABOUT_ORDER,
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
     BUILD_SPEC: () => BUILD_SPEC,
     DELETE_STEPS: () => DELETE_STEPS,
@@ -32,6 +33,7 @@ var engine = (() => {
     LEVELS: () => LEVELS,
     MANUAL: () => MANUAL,
     MAX_THEMES: () => MAX_THEMES,
+    MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
@@ -39,15 +41,20 @@ var engine = (() => {
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
     SCHEMES: () => SCHEMES,
+    SEARCH_MODES: () => SEARCH_MODES,
+    SEARCH_MODE_LABELS: () => SEARCH_MODE_LABELS,
     SERVER_UPDATE_ERRORS: () => SERVER_UPDATE_ERRORS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
     SILENT_UPDATE_STATES: () => SILENT_UPDATE_STATES,
+    SLIDE_CONFIRM_AT: () => SLIDE_CONFIRM_AT,
+    SLIDE_KEY_STEP: () => SLIDE_KEY_STEP,
     SLOP: () => SLOP,
     SORT_LABELS: () => SORT_LABELS,
     SORT_ORDERS: () => SORT_ORDERS,
     STALL_MS: () => STALL_MS,
     SWATCH_TOKENS: () => SWATCH_TOKENS,
+    TAPBACKS: () => TAPBACKS2,
     TEXT_SCALES: () => TEXT_SCALES,
     THEME_GROUPS: () => THEME_GROUPS,
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
@@ -61,9 +68,12 @@ var engine = (() => {
     ZOOM_PAN_STEP: () => ZOOM_PAN_STEP,
     ZOOM_SLOP: () => ZOOM_SLOP,
     ZOOM_STEP: () => ZOOM_STEP,
+    aboutLinks: () => aboutLinks,
     aboutModel: () => aboutModel,
+    aboutRows: () => aboutRows,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
+    addTerm: () => addTerm,
     addTheme: () => addTheme,
     allChecked: () => allChecked,
     applyMessageToChats: () => applyMessageToChats,
@@ -73,10 +83,10 @@ var engine = (() => {
     backdropReturns: () => backdropReturns,
     bugReportBlock: () => bugReportBlock,
     buildNumberOf: () => buildNumberOf,
+    canTarget: () => canTarget,
     capability: () => capability,
     channelOf: () => channelOf,
     chatPreview: () => chatPreview,
-    chatSearchText: () => chatSearchText,
     chatTitle: () => chatTitle,
     checkedCount: () => checkedCount,
     checksumMatches: () => checksumMatches,
@@ -88,6 +98,8 @@ var engine = (() => {
     commitState: () => commitState,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
+    contactSearchText: () => contactSearchText,
+    contrastRatio: () => contrastRatio,
     controlLayout: () => controlLayout,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
@@ -95,6 +107,7 @@ var engine = (() => {
     cssVarName: () => cssVarName,
     currentBanner: () => currentBanner,
     daysAgo: () => daysAgo,
+    defaultGroupName: () => defaultGroupName,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
     downloadProgress: () => downloadProgress,
@@ -102,6 +115,7 @@ var engine = (() => {
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
+    emptyListText: () => emptyListText,
     failedBanner: () => failedBanner,
     filterChats: () => filterChats,
     forgetChats: () => forgetChats,
@@ -127,23 +141,25 @@ var engine = (() => {
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
     localAttachment: () => localAttachment,
-    manualOrder: () => manualOrder,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
-    matchesSearch: () => matchesSearch,
+    matchesTerm: () => matchesTerm,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     messageNotice: () => messageNotice,
-    moveChat: () => moveChat,
+    messageSearchText: () => messageSearchText,
     moveGroup: () => moveGroup,
+    myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
+    normalizeSort: () => normalizeSort,
     noticeEnabled: () => noticeEnabled,
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
     orderChats: () => orderChats,
     panBounds: () => panBounds,
     panBy: () => panBy,
+    parseColour: () => parseColour,
     parseTraceparent: () => parseTraceparent,
     pick: () => pick,
     pickerSide: () => pickerSide,
@@ -154,8 +170,10 @@ var engine = (() => {
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     removeGroup: () => removeGroup,
+    removeTerm: () => removeTerm,
     removeTheme: () => removeTheme,
     renameGroup: () => renameGroup,
+    replyQuote: () => replyQuote,
     reportRows: () => reportRows,
     requestDelete: () => requestDelete,
     requestDeleteGroup: () => requestDeleteGroup,
@@ -168,6 +186,7 @@ var engine = (() => {
     searchEmoji: () => searchEmoji,
     serverUpdateNotice: () => serverUpdateNotice,
     setAllChecked: () => setAllChecked,
+    setTermMode: () => setTermMode,
     settingValue: () => settingValue,
     settingsAfterRefusal: () => settingsAfterRefusal,
     settingsAfterWrite: () => settingsAfterWrite,
@@ -175,6 +194,10 @@ var engine = (() => {
     settingsGroups: () => settingsGroups,
     settlesOpen: () => settlesOpen,
     sizeLabel: () => sizeLabel,
+    slideConfirms: () => slideConfirms,
+    slideKey: () => slideKey,
+    slideProgress: () => slideProgress,
+    slideRelease: () => slideRelease,
     sortChats: () => sortChats,
     stageCheck: () => stageCheck,
     stalledNotice: () => stalledNotice,
@@ -182,9 +205,12 @@ var engine = (() => {
     stripInlineObjects: () => stripInlineObjects,
     summarizeReactions: () => summarizeReactions,
     swatchVars: () => swatchVars,
+    tapbackType: () => tapbackType,
+    termsSentence: () => termsSentence,
     textScale: () => textScale,
     textScaleVars: () => textScaleVars,
     themeChoices: () => themeChoices,
+    themeFonts: () => themeFonts,
     themeId: () => themeId,
     themeName: () => themeName,
     themeVars: () => themeVars,
@@ -286,12 +312,19 @@ var engine = (() => {
       info: () => call("GET", "/api/v1/info"),
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
-      send: (chatId, { text, file, clientKey }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, file ? { text, file, clientKey } : { text, clientKey }),
+      send: (chatId, { text, file, clientKey, replyTo }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...file ? { file } : {}, clientKey, ...replyTo ? { replyTo } : {} }),
+      react: (chatId, messageId, { emoji, remove = false }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
       themeImport: ({ url, name }) => call("POST", "/api/v1/themes", name ? { url, name } : { url }),
+      // One font file a held theme names, as bytes for the FontFace API.
+      async themeFont(id) {
+        const res = await fetchImpl(base + `/api/v1/themes/fonts/${encodeURIComponent(id)}`, { headers: auth });
+        if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
+        return res.arrayBuffer();
+      },
       async attachment(id, o = {}) {
         const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
@@ -839,37 +872,71 @@ var engine = (() => {
   }
 
   // core/app/rules/chats.js
-  var SORT_ORDERS = ["recent", "unread", "name", "manual"];
-  var SORT_LABELS = { recent: "Recent activity", unread: "Unread first", name: "Name", manual: "Manual order" };
+  var SORT_ORDERS = ["recent", "name", "name-desc"];
+  var SORT_LABELS = { recent: "Recent", name: "Name A to Z", "name-desc": "Name Z to A" };
+  function normalizeSort(sort) {
+    return SORT_ORDERS.includes(sort) ? sort : "recent";
+  }
   var UNGROUPED = "ungrouped";
+  var SEARCH_MODES = ["contact", "text"];
+  var SEARCH_MODE_LABELS = { contact: "Contact", text: "Full text" };
   function emptyFilters() {
-    return { unread: false, group: null, kind: null, text: "" };
+    return { unread: false, group: null, kind: null, text: "", mode: "contact", terms: [] };
   }
   function orderChats(chats) {
     return [...chats].sort(byActivity);
   }
   var byActivity = (a, b) => (b.lastMessageAt || "").localeCompare(a.lastMessageAt || "") || String(a.id).localeCompare(String(b.id));
-  var byName = (a, b) => chatTitle(a).localeCompare(chatTitle(b)) || String(a.id).localeCompare(String(b.id));
-  function sortChats(chats, { sort = "recent", order = [] } = {}) {
+  function byName(locale) {
+    const collator = new Intl.Collator(locale || void 0, { sensitivity: "base", numeric: true });
+    return (a, b) => collator.compare(chatTitle(a), chatTitle(b)) || String(a.id).localeCompare(String(b.id));
+  }
+  function sortChats(chats, { sort = "recent", locale } = {}) {
     const list = [...chats];
-    if (sort === "unread") return [...list.filter((c) => c.unread > 0).sort(byActivity), ...list.filter((c) => !(c.unread > 0)).sort(byActivity)];
-    if (sort === "name") return list.sort(byName);
-    if (sort === "manual") {
-      const rank = new Map(order.map((id, i) => [id, i]));
-      const at = (c) => rank.has(c.id) ? rank.get(c.id) : Infinity;
-      return list.sort((a, b) => at(a) - at(b) || byActivity(a, b));
-    }
-    return list.sort(byActivity);
+    const order = normalizeSort(sort);
+    if (order === "recent") return list.sort(byActivity);
+    const compare = byName(locale);
+    return order === "name" ? list.sort(compare) : list.sort((a, b) => compare(b, a));
   }
-  function chatSearchText(chat) {
-    return [chatTitle(chat), (chat.participants || []).join(" "), chat.lastMessage && chat.lastMessage.text || ""].join(" ").toLowerCase();
+  function contactSearchText(chat) {
+    return [chatTitle(chat), (chat.participants || []).join(" ")].join(" ").toLowerCase();
   }
-  function matchesSearch(chat, query) {
-    const q = String(query || "").trim().toLowerCase();
-    return !q || chatSearchText(chat).includes(q);
+  function messageSearchText(chat, texts = {}) {
+    const loaded = texts && texts[chat.id] || [];
+    return [chat.lastMessage && chat.lastMessage.text || "", ...loaded].join(" ").toLowerCase();
   }
-  function filterChats(chats, filters = {}, { placement = {} } = {}) {
+  function matchesTerm(chat, term, { texts = {} } = {}) {
+    const q = String(term && term.text || "").trim().toLowerCase();
+    if (!q) return true;
+    return (term.mode === "text" ? messageSearchText(chat, texts) : contactSearchText(chat)).includes(q);
+  }
+  var searchMode = (mode) => SEARCH_MODES.includes(mode) ? mode : "contact";
+  function addTerm(terms = [], text, mode = "contact") {
+    const t = String(text || "").trim();
+    const m = searchMode(mode);
+    if (!t || terms.some((x) => x.mode === m && x.text.toLowerCase() === t.toLowerCase())) return terms;
+    return [...terms, { text: t, mode: m }];
+  }
+  function removeTerm(terms = [], index) {
+    return terms.filter((_, i) => i !== index);
+  }
+  function setTermMode(terms = [], index, mode) {
+    return terms.map((x, i) => i === index ? { ...x, mode: searchMode(mode) } : x);
+  }
+  function termsSentence(terms = []) {
+    const parts = terms.map((t) => '"' + t.text + '" (' + SEARCH_MODE_LABELS[searchMode(t.mode)] + ")");
+    if (parts.length < 2) return parts.join("");
+    return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+  }
+  function emptyListText(filters = {}) {
     const f = { ...emptyFilters(), ...filters };
+    const terms = [...f.terms];
+    if (String(f.text || "").trim()) terms.push({ text: String(f.text).trim(), mode: f.mode });
+    return terms.length ? "No conversations match " + termsSentence(terms) + "." : "No conversations match these filters.";
+  }
+  function filterChats(chats, filters = {}, { placement = {}, texts = {} } = {}) {
+    const f = { ...emptyFilters(), ...filters };
+    const terms = [...Array.isArray(f.terms) ? f.terms : [], { text: f.text, mode: f.mode }];
     return chats.filter((c) => {
       if (f.unread && !(c.unread > 0)) return false;
       if (f.group) {
@@ -878,7 +945,7 @@ var engine = (() => {
       }
       if (f.kind === "direct" && c.isGroup) return false;
       if (f.kind === "group" && !c.isGroup) return false;
-      if (!matchesSearch(c, f.text)) return false;
+      if (!terms.every((t) => matchesTerm(c, t, { texts }))) return false;
       return true;
     });
   }
@@ -891,23 +958,14 @@ var engine = (() => {
     }
     return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: "Ungrouped", chats: ungrouped }];
   }
-  function manualOrder(chats, order = []) {
-    const ids = new Set(chats.map((c) => c.id));
-    const head = order.filter((id) => ids.has(id));
-    const seen = new Set(head);
-    const rest = orderChats(chats.filter((c) => !seen.has(c.id))).map((c) => c.id);
-    return [...head, ...rest];
-  }
-  function moveChat(order, id, delta) {
-    const list = [...order];
-    const i = list.indexOf(id);
-    const j = i < 0 ? -1 : i + delta;
-    if (i < 0 || j < 0 || j >= list.length) return list;
-    [list[i], list[j]] = [list[j], list[i]];
-    return list;
+  function defaultGroupName(groups = []) {
+    const taken = new Set(groups.map((g) => g.name));
+    let n = 1;
+    while (taken.has("Group " + n)) n += 1;
+    return "Group " + n;
   }
   function addGroup(groups, { id, name }) {
-    return [...groups, { id, name: String(name || "").trim() || "Group" }];
+    return [...groups, { id, name: String(name || "").trim() || defaultGroupName(groups) }];
   }
   function renameGroup(groups, id, name) {
     return groups.map((g) => g.id === id ? { ...g, name: String(name || "").trim() || g.name } : g);
@@ -1316,6 +1374,28 @@ var engine = (() => {
 
   // core/app/rules/messages.js
   var GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
+  var TAPBACKS2 = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
+  function tapbackType(emoji) {
+    const bare = String(emoji || "").replace(/\ufe0f/g, "");
+    for (const t of TAPBACKS2) if (t.glyph.replace(/\ufe0f/g, "") === bare) return t.type;
+    return null;
+  }
+  var MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
+  var canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
+  function myReaction(m) {
+    return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;
+  }
+  function replyQuote(messages, m, { max = 80 } = {}) {
+    if (!m || !m.replyTo) return null;
+    const parent = (messages || []).find((x) => x.id === m.replyTo) || null;
+    if (!parent) return { id: m.replyTo, found: false, who: "", text: "An earlier message" };
+    const who = parent.fromMe ? "You" : parent.senderName || parent.sender || "";
+    const words = String(parent.text || "").replace(/\s+/g, " ").trim();
+    const first = parent.attachments && parent.attachments[0];
+    const body = words || (first ? first.name : "");
+    const text = Array.from(body).length > max ? Array.from(body).slice(0, max - 1).join("") + "\u2026" : body;
+    return { id: parent.id, found: true, who, text };
+  }
   function mergeMessages(existing, incoming) {
     const map = new Map(existing.map((m) => [m.id, m]));
     for (const m of incoming) map.set(m.id, { ...map.get(m.id), ...m });
@@ -1376,18 +1456,21 @@ var engine = (() => {
     return group === "color" ? `--color-${key}` : `--${group}-${key}`;
   }
   function themeVars(theme, scheme = "light") {
-    const out = [];
-    if (!theme || typeof theme !== "object") return out;
-    for (const group of THEME_GROUPS) {
-      const values = theme[group];
-      if (!values || typeof values !== "object") continue;
-      for (const [key, value] of Object.entries(values)) if (value !== null && value !== void 0 && safeValue(value)) out.push([cssVarName(group, key), String(value)]);
-    }
-    const colours = theme.color && theme.color[scheme];
-    if (colours && typeof colours === "object") {
-      for (const [key, value] of Object.entries(colours)) if (value !== null && value !== void 0 && safeValue(value)) out.push([cssVarName("color", key), String(value)]);
-    }
-    return out;
+    const out = /* @__PURE__ */ new Map();
+    if (!theme || typeof theme !== "object") return [];
+    const put = (group, values) => {
+      if (!values || typeof values !== "object") return;
+      for (const [key, value] of Object.entries(values)) if (value !== null && value !== void 0 && safeValue(value)) out.set(cssVarName(group, key), String(value));
+    };
+    for (const group of THEME_GROUPS) put(group, theme[group]);
+    const own = theme.schemes && typeof theme.schemes === "object" ? theme.schemes[scheme] : null;
+    if (own && typeof own === "object") for (const group of THEME_GROUPS) put(group, own[group]);
+    put("color", theme.color && theme.color[scheme]);
+    return [...out];
+  }
+  function themeFonts(theme) {
+    const list = theme && typeof theme === "object" && Array.isArray(theme.fonts) ? theme.fonts : [];
+    return list.filter((f) => f && typeof f === "object" && /^[A-Za-z0-9][A-Za-z0-9 ]{0,59}$/.test(String(f.family)) && /^[a-f0-9]{64}$/.test(String(f.id)) && /^[1-9]00$/.test(String(f.weight))).map((f) => ({ family: f.family, id: f.id, weight: String(f.weight), style: f.style === "italic" ? "italic" : "normal" }));
   }
   function themeName(theme) {
     return theme && typeof theme === "object" && typeof theme.name === "string" ? theme.name : "";
@@ -1405,10 +1488,21 @@ var engine = (() => {
     secondary: ["color", "bubble-them"],
     "secondary-foreground": ["color", "bubble-them-fg"],
     destructive: ["color", "danger"],
+    "destructive-foreground": ["color", "danger-fg"],
     accent: ["color", "selection"],
     radius: ["radius", "md"],
     "font-sans": ["font", "family"],
-    "font-mono": ["font", "mono"]
+    "font-mono": ["font", "mono"],
+    "letter-spacing": ["font", "tracking"],
+    "tracking-normal": ["font", "tracking"],
+    spacing: ["space", "1"],
+    "shadow-sm": ["shadow", "sm"],
+    "shadow-md": ["shadow", "md"],
+    "shadow-lg": ["shadow", "lg"]
+  };
+  var SCALE = {
+    radius: (v) => [["sm", "calc(" + v + " * 0.6)"], ["lg", "calc(" + v + " * 1.4)"]],
+    spacing: (v) => [["2", "calc(" + v + " * 2)"], ["3", "calc(" + v + " * 3)"], ["4", "calc(" + v + " * 4)"], ["5", "calc(" + v + " * 6)"], ["6", "calc(" + v + " * 8)"]]
   };
   var REFUSE = {
     popover: "the app draws no popover surface",
@@ -1416,6 +1510,24 @@ var engine = (() => {
     "card-foreground": "the app takes its words from fg, not a per-surface foreground",
     "accent-foreground": "the app has no colour on the selection highlight",
     ring: "the app derives its focus ring from accent",
+    "font-serif": "the app sets no serif type",
+    "tracking-tighter": "the app has one letter spacing, tracking-normal",
+    "tracking-tight": "the app has one letter spacing, tracking-normal",
+    "tracking-wide": "the app has one letter spacing, tracking-normal",
+    "tracking-wider": "the app has one letter spacing, tracking-normal",
+    "tracking-widest": "the app has one letter spacing, tracking-normal",
+    "shadow-2xs": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-xs": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    shadow: "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-xl": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-2xl": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-color": "already composed into the shadow-* values the app takes",
+    "shadow-opacity": "already composed into the shadow-* values the app takes",
+    "shadow-blur": "already composed into the shadow-* values the app takes",
+    "shadow-spread": "already composed into the shadow-* values the app takes",
+    "shadow-offset-x": "already composed into the shadow-* values the app takes",
+    "shadow-offset-y": "already composed into the shadow-* values the app takes",
+    sidebar: "the app draws no sidebar block",
     "chart-1": "the app draws no charts",
     "chart-2": "the app draws no charts",
     "chart-3": "the app draws no charts",
@@ -1460,8 +1572,19 @@ var engine = (() => {
     const accepted = [];
     const refused = [];
     const theme = { name, source: "tweakcn", color: { light: {}, dark: {} } };
-    for (const block of parseBlocks(text)) {
-      const scheme = schemeOf(block.selector);
+    const blocks = parseBlocks(text).map((b) => ({ ...b, scheme: schemeOf(b.selector) }));
+    const ordered = [...blocks.filter((b) => b.scheme !== "dark"), ...blocks.filter((b) => b.scheme === "dark")];
+    const neutral = (scheme, group, key, value) => {
+      var _a, _b;
+      const held = theme[group] && theme[group][key];
+      if (scheme === "dark" && held !== void 0) {
+        if (held !== value) ((_b = (_a = theme.schemes ?? (theme.schemes = {})).dark ?? (_a.dark = {}))[group] ?? (_b[group] = {}))[key] = value;
+        return;
+      }
+      (theme[group] ?? (theme[group] = {}))[key] = value;
+    };
+    for (const block of ordered) {
+      const { scheme } = block;
       for (const [raw, value] of Object.entries(block.vars)) {
         if (Object.hasOwn(REFUSE, raw)) {
           refused.push(raw);
@@ -1482,8 +1605,12 @@ var engine = (() => {
           continue;
         }
         if (group === "color") theme.color[scheme][key] = value;
-        else (theme[group] ?? (theme[group] = {}))[key] = value;
+        else neutral(scheme, group, key, value);
         accepted.push(raw);
+        for (const [extra, derived] of SCALE[raw] ? SCALE[raw](value) : []) {
+          neutral(scheme, group, extra, derived);
+          accepted.push(raw + " -> " + extra);
+        }
         for (const [extra] of DERIVE[raw] ?? []) {
           if (group !== "color") break;
           theme.color[scheme][extra] = value;
@@ -1513,6 +1640,10 @@ var engine = (() => {
     };
     return block(":root", vars.theme, vars.light) + "\n" + block(".dark", vars.dark);
   }
+  function slugTitle(name) {
+    if (typeof name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(name)) return "";
+    return name.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+  }
   function importTheme(text, { name } = {}) {
     const raw = String(text ?? "");
     let item = null;
@@ -1525,7 +1656,7 @@ var engine = (() => {
     }
     const css = registryCss(item);
     const given = typeof name === "string" && name.trim() ? name.trim() : "";
-    const fromItem = item && typeof item === "object" ? [item.title, item.name].find((v) => typeof v === "string" && v.trim()) : "";
+    const fromItem = item && typeof item === "object" ? [item.title, slugTitle(item.name), item.name].find((v) => typeof v === "string" && v.trim()) : "";
     return importTweakcn(css ?? raw, { name: (given || fromItem || "Imported theme").slice(0, 60) });
   }
   var MAX_THEMES = 24;
@@ -1579,13 +1710,52 @@ var engine = (() => {
     }
     return out;
   }
+  function parseColour(value) {
+    const v = String(value ?? "").trim().toLowerCase();
+    let m = v.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
+    if (m) {
+      const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join("") : m[1];
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+    }
+    m = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
+    if (m) return [m[1], m[2], m[3]].map((n) => Math.min(1, Number(n) / 255));
+    m = v.match(/^oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)/);
+    if (m) {
+      const L = Number(m[1]) / (m[2] ? 100 : 1);
+      const h = Number(m[4]) * Math.PI / 180;
+      const a = Number(m[3]) * Math.cos(h);
+      const b = Number(m[3]) * Math.sin(h);
+      const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+      const mm = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+      const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+      const lin = [4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s];
+      return lin.map((c) => {
+        const x = Math.min(1, Math.max(0, c));
+        return x <= 31308e-7 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
+      });
+    }
+    return null;
+  }
+  function luminance(rgb) {
+    const [r, g, b] = rgb.map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function contrastRatio(a, b) {
+    const x = Array.isArray(a) ? a : parseColour(a);
+    const y = Array.isArray(b) ? b : parseColour(b);
+    if (!x || !y) return null;
+    const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p);
+    return (hi + 0.05) / (lo + 0.05);
+  }
 
   // core/app/rules/settings.js
   var SETTINGS_SCHEMA = {
     groups: [
       { id: "appearance", label: "Appearance", description: "How the app looks and how much text it shows." },
       { id: "notifications", label: "Notifications", description: "Which events raise a notice on this device." },
-      { id: "updates", label: "Updates", description: "How a release this app finds is fetched." }
+      { id: "updates", label: "Updates", description: "How a release this app finds is fetched." },
+      { id: "device", kind: "device", label: "This device", description: "The server this app talks to, and the way out of it." },
+      { id: "about", kind: "about", label: "About", description: "The build this device is running and the server it talks to. Select a value to copy it." }
     ],
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
@@ -1612,7 +1782,52 @@ var engine = (() => {
     const fields = settingsFields(schema);
     const groups = schema.groups || [];
     const fallback = groups.length ? groups[0].id : null;
-    return groups.map((g) => ({ id: g.id, label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+    return groups.map((g) => ({ id: g.id, kind: g.kind || "settings", label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+  }
+  var ABOUT_ORDER = [
+    ["client", "product"],
+    ["client", "version"],
+    ["client", "channel"],
+    ["client", "build"],
+    ["client", "commit"],
+    ["client", "builtAt"],
+    ["server", "serverVersion"],
+    ["server", "serverCommit"],
+    ["server", "serverChannel"],
+    ["server", "serverBuild"],
+    ["server", "serverBuiltAt"],
+    ["client", "platform"],
+    ["client", "arch"],
+    ["client", "electron"],
+    ["client", "chromium"],
+    ["client", "node"],
+    ["client", "installSource"],
+    ["client", "packaged"],
+    ["client", "updateChannel"],
+    ["server", "serverPlatform"],
+    ["server", "engine.kind"],
+    ["server", "engine.version"],
+    ["server", "apiVersion"]
+  ];
+  var PRODUCT = { key: "product", label: "App" };
+  function aboutRows(host, info, spec = BUILD_SPEC) {
+    const halves = { client: reportRows(spec, "client", host || {}), server: reportRows(spec, "server", info || {}) };
+    return ABOUT_ORDER.map(([half, key]) => {
+      if (key === PRODUCT.key) {
+        const name = host && host.product || info && info.product;
+        return { ...PRODUCT, value: name ? String(name) : UNKNOWN };
+      }
+      return halves[half].find((row) => row.key === key) || { key, label: key, value: UNKNOWN };
+    });
+  }
+  function aboutLinks(repository) {
+    const base = typeof repository === "string" ? repository.trim().replace(/\.git$/, "").replace(/\/+$/, "") : "";
+    if (!/^https:\/\/[^\s/]+\/\S+$/.test(base)) return [];
+    return [
+      { key: "source", label: "Source code", href: base },
+      { key: "licence", label: "Licence", href: base + "/blob/main/LICENSE" },
+      { key: "report", label: "Report a problem", href: base + "/issues/new" }
+    ];
   }
   function optionLabel(field, option) {
     if (field.labels && Object.hasOwn(field.labels, option)) return field.labels[option];
@@ -1693,6 +1908,28 @@ var engine = (() => {
   // core/app/rules/sheet.js
   function backdropReturns(startsOnBackdrop, endsOnBackdrop) {
     return startsOnBackdrop === true && endsOnBackdrop === true;
+  }
+
+  // core/app/rules/slide.js
+  var SLIDE_CONFIRM_AT = 0.9;
+  var SLIDE_KEY_STEP = 0.1;
+  function slideProgress(offset, travel) {
+    if (!(travel > 0) || !Number.isFinite(offset)) return 0;
+    return Math.min(1, Math.max(0, offset / travel));
+  }
+  function slideConfirms(progress) {
+    return progress >= SLIDE_CONFIRM_AT;
+  }
+  function slideRelease(progress) {
+    return slideConfirms(progress) ? 1 : 0;
+  }
+  function slideKey(progress, key) {
+    const p = Number(progress) || 0;
+    if (key === "ArrowRight" || key === "ArrowUp") return Math.min(1, Math.round((p + SLIDE_KEY_STEP) * 10) / 10);
+    if (key === "ArrowLeft" || key === "ArrowDown") return Math.max(0, Math.round((p - SLIDE_KEY_STEP) * 10) / 10);
+    if (key === "Home") return 0;
+    if (key === "End") return 1;
+    return null;
   }
 
   // core/app/rules/zoom.js
