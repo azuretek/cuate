@@ -155,6 +155,17 @@
     return proof;
   };
   window.systemBarsKeysProof = keys;
+  // A strip of a fixed fill along the bottom of the visible page, drawn only for the keyboard checks: a capture shows
+  // it just above the keyboard once the screen draws the view the keyboard shrank, and nowhere while it still shows
+  // the frame from before, so a native test can tell a stale capture from a real one by its pixels.
+  window.systemBarsEdge = () => {
+    if (document.querySelector('[data-bars-edge]')) return true;
+    const edge = document.createElement('div');
+    edge.dataset.barsEdge = '';
+    Object.assign(edge.style, { position: 'fixed', left: '0', right: '0', bottom: '0', height: '4px', background: '#1b7f3b', zIndex: '9999', pointerEvents: 'none' });
+    document.body.append(edge);
+    return true;
+  };
   const tick = () => { keys(); requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
   await report();
