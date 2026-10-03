@@ -52,6 +52,19 @@ export function updateNotice(state, version, detail = null) {
   return null;
 }
 
+// The installed server's update outcomes that raise the update-error notice: a release it refused, and a version it
+// rolled back from (or could not). The server reports its last outcome on info and as the server.update event, so a
+// client that was disconnected by the rollback's restart hears of it when it reconnects. A healthy update is silent.
+export const SERVER_UPDATE_ERRORS = ['refused', 'rolled_back', 'rollback_failed'];
+
+// The update-error notice for a server update outcome, with the key it is remembered by so one outcome is announced
+// once however many times info reports it; null for an outcome that raises none.
+export function serverUpdateNotice(outcome) {
+  if (!outcome || !SERVER_UPDATE_ERRORS.includes(outcome.state)) return null;
+  const notice = updateNotice('error', outcome.version, outcome.detail || null);
+  return { ...notice, title: 'Server update failed', key: 'server:' + outcome.state + ':' + (outcome.version || '') + ':' + (outcome.at || '') };
+}
+
 // The native notice for an incoming message: the chat's title, and the message's own text exactly as it arrived, so
 // an emoji reads in the notice as it does in the conversation. A message with no text names its attachment instead.
 export function messageNotice(title, m) {

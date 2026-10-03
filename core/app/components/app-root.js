@@ -10,7 +10,7 @@ import {
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
-import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice } from '../rules/notifications.js';
+import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
 import { updateBanner, DISMISS } from '../rules/updates.js';
 import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
@@ -217,6 +217,7 @@ class AppRoot extends KitElement {
       this.phase = 'ready';
       client.connect();
       this.releaseHeldUpdate();
+      this.noticeServerUpdate(info.serverUpdate);
       this.releaseHeldScreen();
       if (this.chats.length) await this.open(this.chats[0].id);
       this.dataset.state = 'ready';
@@ -240,7 +241,7 @@ class AppRoot extends KitElement {
   onConnState(s) {
     this.conn = s;
     if (s === 'unauthorized') this.signOut("The server no longer accepts this device's token. Connect again with a new one.");
-    if (s === 'open' && this.client) this.client.info().then((info) => { this.info = info; this.sending = Boolean(info.sending); }, () => {});
+    if (s === 'open' && this.client) this.client.info().then((info) => { this.info = info; this.sending = Boolean(info.sending); this.noticeServerUpdate(info.serverUpdate); }, () => {});
   }
 
   async onConnect({ url, token }) {
@@ -278,11 +279,16 @@ class AppRoot extends KitElement {
     this.problem = reason || '';
   }
 
-  async open(chatId, { show = false } = {}) {
+  // keep: refetch the conversation already open in place. What is on screen stays until the fresh page replaces it in
+  // one step, so a resync (every first connection that missed an event, and every reconnect) never blanks it.
+  async open(chatId, { show = false, keep = false } = {}) {
+    const refresh = keep && this.openChatId === chatId;
     this.openChatId = chatId;
     if (show) this.listOpen = false;
-    this.messages = [];
-    this.hasMore = false;
+    if (!refresh) {
+      this.messages = [];
+      this.hasMore = false;
+    }
     const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
     // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
@@ -320,7 +326,7 @@ class AppRoot extends KitElement {
     try {
       const { chats } = await this.client.chats();
       this.chats = orderChats(chats);
-      if (this.openChatId) await this.open(this.openChatId);
+      if (this.openChatId) await this.open(this.openChatId, { keep: true });
     } catch (e) {
       this.problem = this.describe(e);
     }
@@ -349,6 +355,8 @@ class AppRoot extends KitElement {
       this.chats = this.chats.map((c) => (c.id === id ? { ...c, unread } : c));
     } else if (name === 'server.state') {
       this.sending = Boolean(data.sending);
+    } else if (name === 'server.update') {
+      this.noticeServerUpdate(data);
     } else if (name === 'settings.changed') {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
@@ -380,6 +388,15 @@ class AppRoot extends KitElement {
     const key = updateNoticeKey(state, version);
     if (key && this.noticedUpdates.has(key)) return;
     if (key) this.noticedUpdates.add(key);
+    this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
+  }
+
+  // The installed server's refused or rolled-back update raises the existing update-error notice, under its own switch,
+  // once per outcome however often info reports it.
+  noticeServerUpdate(outcome) {
+    const notice = serverUpdateNotice(outcome);
+    if (!notice || !this.settingsRead || !noticeEnabled(this.settings, notice.type) || this.noticedUpdates.has(notice.key)) return;
+    this.noticedUpdates.add(notice.key);
     this.bridge('notify', { title: notice.title, body: notice.body }).catch(() => {});
   }
 

@@ -1,14 +1,22 @@
 // Sending, which is the dangerous half: off until switched on, rate limited, one send per client key, and an
 // uncertain outcome is reported as uncertain and never retried. A send carries text, a file, or a file with a
 // caption; the file is an attachment id the server already holds, resolved to its path only here.
+//
+// While the updater is about to switch versions it holds new sends (503 updating) and waits for the ones in flight to
+// finish, so a restart never cuts a send off halfway: inFlight() is how many are going out, hold() and release() the gate.
 export function createSender({ engine, store, config, log, now = Date.now }) {
   const recent = [];
   const inFlight = new Set();
-  return async function send(chatId, { text = '', file = '' } = {}, clientKey) {
+  let held = false;
+  const send = async function send(chatId, { text = '', file = '' } = {}, clientKey) {
     const prev = store.getSend(clientKey);
     if (prev) return { http: 200, body: { status: prev.status, clientKey, messageId: prev.message_id ?? null, duplicate: true } };
     if (inFlight.has(clientKey)) return { http: 409, error: ['in_flight', 'That message is still being sent.'] };
     if (!String(text).trim() && !file) return { http: 400, error: ['bad_text', 'Send text, a file, or a file with a caption'] };
+    if (held) {
+      log.emit('send.refused', { reason: 'updating', chat: chatId });
+      return { http: 503, error: ['updating', 'The server is updating. Send it again in a moment.'] };
+    }
     if (!config.sending.enabled) {
       log.emit('send.refused', { reason: 'sending_off', chat: chatId });
       return { http: 403, error: ['sending_off', 'Sending is switched off on the server.'] };
@@ -50,4 +58,8 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
       inFlight.delete(clientKey);
     }
   };
+  send.inFlight = () => inFlight.size;
+  send.hold = () => { held = true; };
+  send.release = () => { held = false; };
+  return send;
 }

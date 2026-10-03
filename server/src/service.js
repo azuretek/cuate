@@ -10,6 +10,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { ROOT, naming } from './paths.js';
+import { assertSeparateData, currentVersion, defaultInstallRoot, installLayout, installRootOf, readState, setPaused } from './install.js';
 
 export const LABEL = naming.ids.server;
 const MAIN = path.join(ROOT, 'server', 'src', 'main.js');
@@ -220,7 +221,20 @@ async function publish({ port, print, env }) {
 }
 
 /** Write and load the LaunchAgent after doctor passes, and prove a new run answers; --tailscale publishes it. */
-export async function install({ dataDir, config, doctor, tailscale = false, node = null, print = console.log, env = process.env, home = os.homedir() }) {
+export async function install({ dataDir, config, doctor, tailscale = false, node = null, release = false, installRoot = null, version = null, print = console.log, env = process.env, home = os.homedir() }) {
+  // --release moves the service to the installed path: the newest release (or --version) is verified and unpacked
+  // under the install root, and the LaunchAgent runs whatever its current link points at from then on.
+  let main = MAIN;
+  let workdir = ROOT;
+  if (release) {
+    const L = installLayout(installRoot || defaultInstallRoot({ env, home }));
+    const { installRelease } = await import('./updater.js');
+    assertSeparateData(L, dataDir);
+    const r = await installRelease({ L, only: version });
+    print((r.already ? 'ok    ' : 'done  ') + 'release ' + r.version + (r.already ? ' is already installed' : ' verified and installed') + ' in ' + L.versions);
+    main = path.join(L.current, 'server', 'src', 'main.js');
+    workdir = L.current;
+  }
   if (!Number.isInteger(config.port) || config.port < 1) {
     throw new Error('a service needs a fixed port, and the config says ' + config.port + ': set port in ' + path.join(dataDir, 'config.json'));
   }
@@ -237,7 +251,7 @@ export async function install({ dataDir, config, doctor, tailscale = false, node
   if (config.engine.kind === 'imsg' && !engineBin) throw new Error('cannot find the engine ' + config.engine.bin + ' on PATH');
   const pathDirs = [...new Set([path.dirname(bin), ...(engineBin ? [path.dirname(engineBin)] : []), ...SYSTEM_PATH])];
   const P = servicePaths(home);
-  const want = renderPlist({ node: bin, dataDir, log: P.log, pathDirs });
+  const want = renderPlist({ node: bin, main, root: workdir, dataDir, log: P.log, pathDirs });
   const have = existsSync(P.plist) ? readFileSync(P.plist, 'utf8') : null;
   if (have !== want) {
     mkdirSync(path.dirname(P.plist), { recursive: true });
@@ -270,6 +284,45 @@ export async function install({ dataDir, config, doctor, tailscale = false, node
   return true;
 }
 
+/** launchd's three moves on the service, for the updater's post-switch half. Each returns once launchd has acted. */
+export function launchdControl({ home = os.homedir() } = {}) {
+  const P = servicePaths(home);
+  return {
+    async restart() {
+      const r = sh('/bin/launchctl', ['kickstart', '-k', target()], { timeout: 30000 });
+      if (r.code !== 0) throw new Error('launchctl kickstart failed: ' + (r.err || r.out));
+    },
+    async stop() {
+      sh('/bin/launchctl', ['bootout', target()], { timeout: 30000 });
+      for (let i = 0; i < 20 && launchdState().loaded; i++) await sleep(500);
+      if (launchdState().loaded) throw new Error(LABEL + ' is still loaded');
+    },
+    async start() {
+      await bootstrap(P.plist);
+    },
+  };
+}
+
+/** Whether the LaunchAgent runs the installed path under this install root, which is what lets the updater restart it. */
+export function runsInstalled(L, home = os.homedir()) {
+  if (process.platform !== 'darwin') return false;
+  const P = servicePaths(home);
+  return existsSync(P.plist) && readFileSync(P.plist, 'utf8').includes('<string>' + xml(path.join(L.current, 'server', 'src', 'main.js')) + '</string>');
+}
+
+/** The install root a command works on: --install-root, else the one this code runs from, else the default. */
+export const installRootFor = (flag, { env = process.env, home = os.homedir() } = {}) => installLayout(flag || installRootOf(ROOT) || defaultInstallRoot({ env, home }));
+
+/** One line about the installed path: the version current names, a pause, and the last update outcome. */
+export function describeInstall(L) {
+  const state = readState(L);
+  const v = currentVersion(L);
+  if (!v) return null;
+  const o = state.outcome;
+  const last = o ? ', last update: ' + o.state + ' ' + (o.version || '') + ' at ' + o.at : '';
+  return 'installed ' + v + ' under ' + L.root + (state.paused ? ', updates paused' : ', updates on') + last;
+}
+
 /** The LaunchAgent, the port, the switch the running server started with, its log, and the tailnet entry. */
 export async function status({ config, print = console.log, env = process.env, home = os.homedir() }) {
   const P = servicePaths(home);
@@ -284,6 +337,8 @@ export async function status({ config, print = console.log, env = process.env, h
     print((differs ? 'warn  ' : 'ok    ') + 'the server started with sending ' + (start.sending ? 'on' : 'off') + (differs ? ', and the config now says ' + (config.sending.enabled ? 'on' : 'off') + ': service restart applies it' : ''));
   }
   print('ok    log: ' + P.log);
+  const installed = describeInstall(installRootFor(null, { env, home }));
+  if (installed) print('ok    ' + installed);
   const ts = findTailscale(env);
   if (ts) {
     const d = serveDecision(serveStatus(ts), config.port);
@@ -304,8 +359,20 @@ export async function restart({ config, print = console.log, home = os.homedir()
   return run;
 }
 
-/** Fast-forward this checkout to its upstream, install the server dependency, and restart the service. */
-export async function update({ config, print = console.log, env = process.env, home = os.homedir() }) {
+/**
+ * --pause and --resume: stop or restart installs on the installed path (a paused server still checks). --release: ask
+ * the running installed server to check now, and wait for what it did. With neither, the development path: fast-forward
+ * this checkout to its upstream, install the server dependency, and restart the service.
+ */
+export async function update({ config, print = console.log, env = process.env, home = os.homedir(), pause = false, resume = false, release = false, installRoot = null, seconds = 300 }) {
+  if (pause || resume) {
+    const L = installRootFor(installRoot, { env, home });
+    setPaused(L, pause);
+    print('done  server updates ' + (pause ? 'paused: it still checks, and installs nothing until service update --resume' : 'resumed') + ' (' + L.state + ')');
+    return true;
+  }
+  if (release) return requestRelease({ L: installRootFor(installRoot, { env, home }), print, home, seconds });
+  if (installRootOf(ROOT)) throw new Error('this server runs from an installed release, so it updates from releases: run service update --release');
   const git = (...args) => sh('git', ['-C', ROOT, ...args], { timeout: 300000 });
   if (git('rev-parse', '--git-dir').code !== 0) throw new Error(ROOT + ' is not a git checkout, so update it the way it was installed');
   const dirty = git('status', '--porcelain', '--untracked-files=no').out;
@@ -332,6 +399,31 @@ export async function update({ config, print = console.log, env = process.env, h
   if (launchdState().loaded) await restart({ config, print, home });
   else print('warn  ' + LABEL + ' is not loaded, so nothing was restarted');
   return true;
+}
+
+/** Ask the installed server to check now (SIGUSR1), then report the check and, if it switched, the health check's verdict. */
+async function requestRelease({ L, print, home, seconds }) {
+  if (!runsInstalled(L, home)) throw new Error('the LaunchAgent does not run the installed path under ' + L.root + ': install it with service install --release');
+  if (!launchdState().loaded) throw new Error(LABEL + ' is not loaded; run service install --release');
+  const asked = new Date().toISOString();
+  const r = sh('/bin/launchctl', ['kill', 'SIGUSR1', target()], { timeout: 15000 });
+  if (r.code !== 0) throw new Error('launchctl kill SIGUSR1 failed: ' + (r.err || r.out));
+  const until = Date.now() + seconds * 1000;
+  let check = null;
+  for (;;) {
+    const s = readState(L);
+    if (!check && s.lastCheck && s.lastCheck.at >= asked) {
+      check = s.lastCheck;
+      print((check.state === 'failed' ? 'fail  ' : 'ok    ') + 'checked: ' + check.state + (check.version ? ' ' + check.version : '') + (check.error ? ': ' + check.error : ''));
+      if (check.state !== 'switched') return check.state !== 'failed' && check.state !== 'refused';
+    }
+    if (!s.pending && s.outcome && s.outcome.at >= asked) {
+      print((s.outcome.state === 'healthy' ? 'done  ' : 'fail  ') + s.outcome.state + ' ' + s.outcome.version + (s.outcome.detail ? ': ' + s.outcome.detail : ''));
+      return s.outcome.state === 'healthy';
+    }
+    if (Date.now() > until) throw new Error('no answer from the updater within ' + seconds + ' s; read ' + L.log + ' and ' + L.state);
+    await sleep(1000);
+  }
 }
 
 /** Unload and delete the LaunchAgent and withdraw the tailnet entry it published; keep the data and the code. */

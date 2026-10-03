@@ -17,6 +17,21 @@ export function buildNumberOf(version) {
   return m ? m[1] : null;
 }
 
+// Which of two release versions is newer: -1, 0 or 1. The base version's numbers first, then a stable release above
+// every test build of the same base, then the test build's commit count. The installed server's updater picks a
+// release with it, so a version that is not a release version throws rather than sorting somewhere arbitrary.
+export function compareVersions(a, b) {
+  const parse = (v) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-dev\.(\d+)\.[a-f0-9]{10})?$/.exec(String(v));
+    if (!m) throw new Error('not a release version: ' + v);
+    return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? Infinity : Number(m[4])];
+  };
+  const x = parse(a);
+  const y = parse(b);
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+
 // What is wrong with a server stamp (server/stamp.json, written by scripts/gen-server-stamp.mjs), or null when it is
 // sound. The server refuses to start on a stamp this rejects, and the generator's --check holds a written stamp to it,
 // so a version and a commit that do not belong together are never reported.

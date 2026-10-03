@@ -3,8 +3,42 @@
 // Messages stay in the Mac's Messages history.
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 
 export const SCOPES = ['device', 'tooling', 'admin'];
+
+// The format of the data folder this server understands, kept in state.db's user_version. A server that changes the
+// format raises this number; one handed data newer than it understands refuses to open it rather than reading it
+// wrong, which is what keeps a rollback from running an older server over a newer folder. Raising it means the
+// updater's rollback restores the backup it took before the switch (server/src/updater.js).
+export const DATA_FORMAT = 1;
+export const DATA_NEWER = 'data_newer';
+
+/** The data format a state.db carries, read without opening it as a store: 0 for a folder with none yet. */
+export function dataFormatOf(file) {
+  if (!existsSync(file)) return 0;
+  const db = new DatabaseSync(file, { readOnly: true });
+  try {
+    return db.prepare('pragma user_version').get().user_version;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Revoke one token straight in a state.db, whatever its format. The updater's health check mints a token before a
+ * switch and revokes it after, by which time the folder may carry a format the code doing the revoking cannot open as
+ * a store. The tokens table is the same in every format so far; a format that changes it must change this too.
+ */
+export function revokeTokenIn(file, id, at = new Date().toISOString()) {
+  const db = new DatabaseSync(file);
+  try {
+    db.exec('pragma busy_timeout = 3000;');
+    return db.prepare('update tokens set revoked_at = ? where id = ? and revoked_at is null').run(at, String(id)).changes > 0;
+  } finally {
+    db.close();
+  }
+}
 const SCHEMA = `
 create table if not exists tokens (id text primary key, name text not null, scope text not null, hash text not null unique, created_at text not null, last_used_at text, revoked_at text);
 create table if not exists sends (client_key text primary key, chat_id text not null, status text not null, message_id text, at text not null);
@@ -15,8 +49,14 @@ const hash = (t) => createHash('sha256').update(t).digest('hex');
 
 export function openStore(file, { now = () => new Date().toISOString() } = {}) {
   const db = new DatabaseSync(file);
+  const format = db.prepare('pragma user_version').get().user_version;
+  if (format > DATA_FORMAT) {
+    db.close();
+    throw Object.assign(new Error('the data folder is in format ' + format + ', newer than the ' + DATA_FORMAT + ' this server understands: run a newer server, or restore the backup taken before the update'), { code: DATA_NEWER, format, understands: DATA_FORMAT });
+  }
   db.exec('pragma journal_mode = wal; pragma busy_timeout = 3000;');
   db.exec(SCHEMA);
+  if (format < DATA_FORMAT) db.exec('pragma user_version = ' + DATA_FORMAT);
   const q = (sql) => db.prepare(sql);
   const touched = new Map();
   return {
