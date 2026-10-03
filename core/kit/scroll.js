@@ -13,7 +13,7 @@
 // scroller is a selector inside the host (or the host's own tag, for a host that is itself the scroller). items picks
 // the elements a place holds on to, and key names one (its data-id, data-chat or data-key, else its position). A view
 // that follows its newest item passes follow, and starts at its end.
-import { anchorFrom, scrollFor } from './rules/scroll.js';
+import { anchorFrom, scrollFor, revealDelta } from './rules/scroll.js';
 
 const keyOf = (el, i) => el.dataset.id ?? el.dataset.chat ?? el.dataset.key ?? String(i);
 
@@ -116,6 +116,32 @@ export class KeepScroll {
     if (!this.el || !this.el.isConnected || !this.anchor) return;
     const next = scrollFor(this.anchor, this.measure());
     if (Math.abs(next - this.el.scrollTop) >= 1) this.el.scrollTop = next;
+    this.reveal();
+  }
+
+  // A field being typed in is the person's place above any anchor (issue 180): when the view shrinks under it, an
+  // on-screen keyboard opening, the view brings the field into sight, and that scroll becomes the place it keeps.
+  reveal() {
+    const field = typeof document === 'undefined' ? null : document.activeElement;
+    if (!field || field === this.el || !this.el.contains(field)) return;
+    revealField(field);
+  }
+}
+
+// Brings a focused field into sight inside every view that scrolls around it (issue 180), measured against what is
+// actually visible: each view's own box, cut at the bottom of the visual viewport, which an on-screen keyboard can
+// shrink before the layout does or without it. Each view scrolls the least that shows the field.
+export function revealField(field) {
+  if (!field || typeof field.matches !== 'function' || !field.matches('input, textarea, [contenteditable]')) return;
+  const viewport = typeof window === 'undefined' ? null : window.visualViewport;
+  const visibleBottom = viewport ? viewport.offsetTop + viewport.height : Infinity;
+  for (let el = field.parentElement; el; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight + 1) continue;
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow !== 'auto' && overflow !== 'scroll') continue;
+    const box = el.getBoundingClientRect();
+    const delta = revealDelta({ top: box.top, bottom: Math.min(box.bottom, visibleBottom) }, field.getBoundingClientRect());
+    if (delta) el.scrollTop += delta;
   }
 }
 

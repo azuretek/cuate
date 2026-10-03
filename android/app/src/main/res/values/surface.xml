@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from core/spec/tokens.json by scripts/gen-tokens.mjs. Do not edit. -->
+<resources>
+    <color name="surface">#FAF9F7</color>
+</resources>

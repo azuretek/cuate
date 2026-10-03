@@ -29,3 +29,13 @@ export function scrollFor(anchor, { scrollTop = 0, scrollHeight = 0, clientHeigh
   }
   return clamp(Number.isFinite(anchor.top) ? anchor.top : scrollTop);
 }
+
+// How far a view must scroll so a focused field inside it is in sight, given both boxes as measured on the screen
+// ({ top, bottom }): 0 when it already is. A field taller than the view keeps its top in sight. An on-screen keyboard
+// that shrinks the view is the case this serves (issue 180): the field being typed in is the person's place.
+export function revealDelta(view, field) {
+  let delta = 0;
+  if (field.bottom > view.bottom) delta = field.bottom - view.bottom;
+  if (field.top - delta < view.top) delta = field.top - view.top;
+  return Math.abs(delta) < 1 ? 0 : delta;
+}
