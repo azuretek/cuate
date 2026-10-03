@@ -287,3 +287,73 @@ test('every icon a component draws is one the icon set holds, and no control dra
   }
   for (const name of ['list-filter', 'arrow-up-down', 'settings', 'check', 'arrow-left', 'x', 'chevron-up', 'chevron-down', 'pencil']) assert.ok(used.has(name), name + ' is drawn');
 });
+
+// Every popover, menu and modal panel closes through the kit's one outside-dismiss behaviour (issue 170): a press
+// outside it or Escape closes it, and the closing press never reaches the control underneath. The inventory is read
+// from the templates, so a new panel fails here until it is registered: a menu, dialog or modal, and any element
+// named as a menu, popover, picker, pop, modal or sheet, carries data-dismiss with a name its component registers
+// with dismissable(), and every control that opens one (aria-haspopup) carries data-dismiss-keep. No component keeps an
+// outside-press or scrim-click dismissal of its own beside the kit's.
+test('every popover and modal panel dismisses through the kit', () => {
+  const openTags = (src) => {
+    const out = [];
+    for (const m of src.matchAll(/<([a-z][\w-]*)[\s>]/g)) {
+      let depth = 0;
+      let j = m.index;
+      for (; j < src.length; j += 1) {
+        if (src[j] === '{') depth += 1;
+        else if (src[j] === '}') depth -= 1;
+        else if (src[j] === '>' && depth === 0) break;
+      }
+      out.push({ name: m[1], tag: src.slice(m.index, j + 1) });
+    }
+    return out;
+  };
+  const PANEL = /role="(?:menu|dialog|alertdialog)"|aria-modal="true"|class="(?:[^"]*\s)?(?:[\w-]+-(?:menu|popover|picker|pop|modal)|sheet)(?![\w-])/;
+  const files = walk('core/app/components').filter((f) => CODE.test(f));
+  const sources = Object.fromEntries(files.map((f) => [f, read(f)]));
+  const registered = (src) => new Set([...src.matchAll(/dismissable\(this,\s*\{\s*name:\s*'([^']+)'/g)].map((m) => m[1]));
+  // A panel component names its root with the name its host hands it (dismiss="..."), so each host registers it.
+  const panelComponents = new Set();
+  const found = [];
+  for (const [f, src] of Object.entries(sources)) {
+    const names = registered(src);
+    for (const { tag } of openTags(src)) {
+      if (PANEL.test(tag)) {
+        found.push(f + ' ' + tag.slice(0, 60));
+        const literal = /data-dismiss="([^"]+)"/.exec(tag);
+        const handed = /data-dismiss=\$\{this\.dismiss\}/.test(tag);
+        assert.ok(literal || handed, f + ': a panel that does not dismiss through the kit (no data-dismiss): ' + tag.slice(0, 100));
+        if (literal) for (const n of literal[1].split(/\s+/)) assert.ok(names.has(n), f + ': data-dismiss="' + n + '" is not registered with dismissable() in this component');
+        if (handed) {
+          const el = /customElements\.define\('([\w-]+)'/.exec(src);
+          assert.ok(el, f + ': a handed-down panel name outside a custom element');
+          panelComponents.add(el[1]);
+        }
+      }
+      if (/aria-haspopup=/.test(tag)) {
+        assert.ok(/data-dismiss-keep=/.test(tag), f + ': a control that opens a panel without data-dismiss-keep, so a press on it would close what it toggles: ' + tag.slice(0, 100));
+      }
+    }
+  }
+  for (const el of panelComponents) {
+    let used = 0;
+    for (const [f, src] of Object.entries(sources)) {
+      const names = registered(src);
+      for (const { name, tag } of openTags(src)) {
+        if (name !== el) continue;
+        used += 1;
+        const handed = /\sdismiss="([^"]+)"/.exec(tag);
+        assert.ok(handed && names.has(handed[1]), f + ': <' + el + '> is drawn without a dismiss name this component registers: ' + tag.slice(0, 100));
+      }
+    }
+    assert.ok(used > 0, el + ' is never drawn');
+  }
+  assert.ok(found.length >= 9, 'the guard found the panels: ' + found.join('; '));
+  for (const f of files) {
+    const src = sources[f];
+    assert.equal(/document\.addEventListener\(\s*'(?:pointerdown|mousedown|click|touchstart)'/.exec(src), null, f + ' listens for presses on the whole document beside the kit');
+    assert.equal(/@click=\$\{\(e\)\s*=>\s*\{\s*if\s*\(e\.target === e\.currentTarget\)/.exec(src), null, f + ' closes a panel on a scrim click of its own');
+    assert.equal(/backdropReturns|onBackdrop(?:Down|Up)/.exec(src), null, f + ' keeps a backdrop rule beside the kit');
+  }
+});
