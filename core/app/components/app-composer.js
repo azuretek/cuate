@@ -1,5 +1,6 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press, emit } from '../../kit/press.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck } from '../rules/attach.js';
 import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
@@ -26,6 +27,9 @@ class AppComposer extends KitElement {
     this.staged = null;
     this.stageProblem = '';
     this.preview = '';
+    // Send is one press however it is made, the button or Enter: both run through this, so the send button shows the
+    // send working and a second press while it runs is dropped rather than sending twice (core/kit/press.js).
+    this.onSubmit = press((e) => this.submit(e), { on: () => this.querySelector('button.send') });
   }
 
   connectedCallback() {
@@ -36,6 +40,8 @@ class AppComposer extends KitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.setPreview(null);
+    if (this.fit) this.fit.disconnect();
+    this.fit = null;
   }
 
   // A staged picture shows the picture itself, not only its name; anything else, or a picture this engine cannot
@@ -67,6 +73,31 @@ class AppComposer extends KitElement {
   // Choosing a message to reply to puts the caret in the field, ready to type the reply.
   updated(changed) {
     if (changed.has('replyTo') && this.replyTo) this.field()?.focus();
+    this.watchFit();
+  }
+
+  // The field's height is set from its text, so anything that moves where its lines wrap or how tall they are sets it
+  // again: a new width (a resized window, a rotated phone, the sidebar) or a new text size or font, which the hidden
+  // ruler beside the field follows. Without it the field kept the height of its old width or size and hid the lines
+  // that no longer fit, with no bar to reach them (issue 139). Only a change of the field's own width or the ruler's
+  // size counts, never the height the field is given here, and the field is set in the next frame, outside the
+  // observer's own delivery.
+  watchFit() {
+    if (this.fit || typeof ResizeObserver !== 'function') return;
+    const t = this.field();
+    const ruler = this.querySelector('.composer-ruler');
+    if (!t || !ruler) return;
+    let seen = '';
+    this.fit = new ResizeObserver(() => {
+      const now = t.offsetWidth + ' ' + ruler.offsetWidth + ' ' + ruler.offsetHeight;
+      if (now === seen) return;
+      seen = now;
+      requestAnimationFrame(() => {
+        if (t.isConnected && t.offsetWidth) this.grow({ currentTarget: t });
+      });
+    });
+    this.fit.observe(t);
+    this.fit.observe(ruler);
   }
 
   submit(e) {
@@ -74,14 +105,15 @@ class AppComposer extends KitElement {
     const t = this.field();
     const text = t.value.trim();
     const file = this.staged;
-    if ((!text && !file) || this.disabled) return;
-    this.dispatchEvent(new CustomEvent('send', { detail: { text, file, replyTo: this.replyTo ? this.replyTo.id : null } }));
+    if ((!text && !file) || this.disabled) return undefined;
+    const work = emit(this, 'send', { text, file, replyTo: this.replyTo ? this.replyTo.id : null });
     this.staged = null;
     this.stageProblem = '';
     this.setPreview(null);
     t.value = '';
-    t.style.height = '';
+    this.grow({ currentTarget: t });
     t.focus();
+    return work;
   }
 
   key(e) {
@@ -98,7 +130,7 @@ class AppComposer extends KitElement {
       this.trim(e);
       return;
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) this.submit(e);
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) this.onSubmit(e);
   }
 
   // Backspace and Delete remove one whole character, so a flag or a skin tone
@@ -117,10 +149,24 @@ class AppComposer extends KitElement {
     this.grow({ currentTarget: t });
   }
 
+  // The field grows a line at a time with its text, up to the composer's maximum height, and nothing scrolls while it
+  // fits (issue 139). The height is the text's own plus the field's border, since the box is sized border-box and the
+  // text's height leaves the border out: the field set to that alone was a border short and drew the platform's bar
+  // over a single line. Past the maximum it scrolls, and only then does it carry the app's themed bar. It is measured
+  // with scrolling off, so a bar's own width never changes where the lines wrap. While it is measured the field drops to
+  // one line, so the composer holds its own height until the field has its new one: a composer that shrank for that
+  // moment made the conversation above it taller, the browser pulled a conversation at its end back by the difference,
+  // and the conversation took that as the person scrolling away from the end.
   grow(e) {
     const t = e.currentTarget;
+    const box = t.parentElement;
+    if (box) box.style.minHeight = box.offsetHeight + 'px';
+    t.classList.remove('scrolls');
     t.style.height = 'auto';
-    t.style.height = t.scrollHeight + 'px';
+    const want = t.scrollHeight + t.offsetHeight - t.clientHeight;
+    t.style.height = want + 'px';
+    t.classList.toggle('scrolls', want > parseFloat(getComputedStyle(t).maxHeight));
+    if (box) box.style.minHeight = '';
   }
 
   toggleEmoji() {
@@ -196,23 +242,24 @@ class AppComposer extends KitElement {
     const s = this.staged;
     const q = this.replyTo;
     return html`${q
-      ? html`<div class="composer-reply" role="status"><span class="reply-meta"><span class="reply-who small">${q.who ? 'Replying to ' + q.who : 'Replying'}</span><span class="reply-text muted small">${q.text}</span></span><button type="button" class="staged-remove" aria-label="Cancel reply" @click=${() => this.cancelReply()}>\u00D7</button></div>`
+      ? html`<div class="composer-reply" role="status"><span class="reply-meta"><span class="reply-who small">${q.who ? 'Replying to ' + q.who : 'Replying'}</span><span class="reply-text muted small">${q.text}</span></span><button type="button" class="staged-remove" aria-label="Cancel reply" @click=${press(() => this.cancelReply())}>\u00D7</button></div>`
       : nothing}${s || this.stageProblem
       ? html`<div class="composer-staged" role="status">
-          ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${() => this.openPreview()}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
-          ${s && !this.preview ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
+          ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${press(() => this.openPreview())}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${press(() => this.unstage())}>\u00D7</button></span>` : nothing}
+          ${s && !this.preview ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${press(() => this.unstage())}>\u00D7</button></span>` : nothing}
           ${this.stageProblem ? html`<span class="staged-problem small">${this.stageProblem}</span>` : nothing}
         </div>`
-      : nothing}<form class="composer" @submit=${this.submit}>
+      : nothing}<form class="composer" @submit=${this.onSubmit}>
       <div class="composer-tools">
-        <button type="button" class="tool" aria-label="Attach" aria-haspopup="menu" aria-expanded=${this.attachOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${() => this.toggleAttach()}>+</button>
+        <button type="button" class="tool" aria-label="Attach" aria-haspopup="menu" aria-expanded=${this.attachOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleAttach())}>+</button>
         <input type="file" hidden @change=${this.picked}>
-        <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${() => this.toggleEmoji()}>\u{1F642}</button>
+        <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}>\u{1F642}</button>
       </div>
+      <span class="composer-ruler" aria-hidden="true">M</span>
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.grow} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}>\u2191</button>
       ${this.attachOpen
-        ? html`<div class="attach-menu" role="menu" aria-label="Attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${() => this.choose(a)}>${a.label}</button>`)}</div>`
+        ? html`<div class="attach-menu" role="menu" aria-label="Attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
         : nothing}
       ${this.emojiOpen ? html`<app-emoji-picker .frequent=${this.frequent} @pick=${(e) => this.insert(e.detail)}></app-emoji-picker>` : nothing}
     </form>`;

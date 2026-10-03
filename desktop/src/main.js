@@ -343,14 +343,102 @@ async function runSmoke(w) {
     await waitFor(`[...document.querySelectorAll('.bubble')].some((b) => b.textContent.includes(${JSON.stringify(live)}))`, 20000);
     report.live = true;
   }
+  // Every send waits for the send button to finish the one before: a press while a send is in flight is dropped
+  // (core/kit/press.js, issue 140), which is the point, so the smoke does not race its own earlier send.
+  const sendIdle = "document.querySelector('app-composer button.send')?.dataset.press !== 'pending'";
+  const sendText = async (value) => {
+    await waitFor(sendIdle, 20000);
+    await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${JSON.stringify(value)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  };
   const text = process.env.SMOKE_SEND_TEXT;
   if (text) {
-    await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${JSON.stringify(text)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+    // A double press sends once (issue 140): the field is filled again and Send pressed again while the first send is
+    // in flight. The second press is dropped and its text stays in the field; the server holds one message.
+    const srvUrl = process.env.SMOKE_SERVER_URL;
+    const srvAuth = { authorization: 'Bearer ' + process.env.SMOKE_TOKEN };
+    const sentCount = async () => {
+      const chatId = await js("document.querySelector('app-root').openChatId");
+      const page = await (await fetch(srvUrl + '/api/v1/chats/' + encodeURIComponent(chatId) + '/messages?limit=100', { headers: srvAuth })).json();
+      return (page.messages || []).filter((m) => m.text === text).length;
+    };
+    await waitFor(sendIdle, 20000);
+    const double = await js(`(() => {
+      const t = document.querySelector('app-composer textarea');
+      const b = document.querySelector('app-composer button.send');
+      t.value = ${JSON.stringify(text)};
+      b.click();
+      const first = { press: b.dataset.press || 'idle', busy: b.getAttribute('aria-busy') };
+      t.value = ${JSON.stringify(text)};
+      b.click();
+      const kept = t.value;
+      t.value = '';
+      return { ...first, kept };
+    })()`);
     await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes(${JSON.stringify(text)}) && !r.dataset.id.startsWith('local:'))`, 20000);
+    await waitFor(sendIdle, 20000);
+    await pause(800);
+    const bubblesSent = await js(`[...document.querySelectorAll('.bubble-row.mine')].filter((r) => r.textContent.includes(${JSON.stringify(text)})).length`);
+    const serverHeld = await sentCount();
+    report.sendOnce = double.press === 'pending' && double.busy === 'true' && double.kept === text && bubblesSent === 1 && serverHeld === 1;
+    console.log('send once: ' + JSON.stringify({ double, bubblesSent, serverHeld }));
     report.sent = true;
   }
   await pause(300);
   await shot('03-after-send.png');
+
+  // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
+  // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a
+  // bar, which is the width the bar takes from the field's box. Shift+Enter is pressed as a real key and adds a line,
+  // Enter sends, and the send brings the field back to one line.
+  const fieldReading = (value) => js(`(() => {
+    const t = document.querySelector('app-composer textarea');
+    t.value = ${JSON.stringify(value)};
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    const s = getComputedStyle(t);
+    const edge = parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth);
+    return { h: t.offsetHeight, max: parseFloat(s.maxHeight), bar: t.offsetWidth - t.clientWidth - edge, overflow: s.overflowY, hidden: t.scrollHeight - t.clientHeight, color: s.scrollbarColor };
+  })()`);
+  const empty = await fieldReading('');
+  const one = await fieldReading('one line');
+  const three = await fieldReading('first line\nsecond line\nthird line');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03e-composer-three-lines-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('03f-composer-three-lines-dark.png');
+  const many = await fieldReading(Array.from({ length: 30 }, (_, i) => 'line ' + (i + 1)).join('\n'));
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.scrollTop = t.scrollHeight; return true; })()");
+  await pause(300);
+  await shot('03g-composer-many-lines-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03h-composer-many-lines-light.png');
+  const cleared = await fieldReading('');
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.focus(); return document.activeElement === t; })()");
+  for (const ch of 'Typed in') wc.sendInputEvent({ type: 'char', keyCode: ch });
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter', modifiers: ['shift'] });
+  wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers: ['shift'] });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter', modifiers: ['shift'] });
+  for (const ch of 'the smoke') wc.sendInputEvent({ type: 'char', keyCode: ch });
+  await pause(200);
+  const typed = await js("(() => { const t = document.querySelector('app-composer textarea'); return { value: t.value, h: t.offsetHeight }; })()");
+  // Enter sends on its key press, so no character follows it into the emptied field.
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+  await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes('Typed in') && r.textContent.includes('the smoke') && !r.dataset.id.startsWith('local:'))`, 20000);
+  const sentBack = await js("(() => { const t = document.querySelector('app-composer textarea'); return { value: t.value, h: t.offsetHeight }; })()");
+  const composerChecks = {
+    oneLine: one.h === empty.h && one.bar === 0 && one.hidden <= 0,
+    threeLines: three.h > one.h * 2 && three.h < three.max && three.bar === 0 && three.hidden <= 0 && three.overflow === 'hidden',
+    atMaximum: Math.abs(many.h - many.max) < 1 && many.hidden > 0 && many.overflow === 'auto',
+    themedBar: many.color !== 'auto' && many.color !== '',
+    shrinks: cleared.h === empty.h && cleared.overflow === 'hidden',
+    shiftEnter: typed.value === 'Typed in\nthe smoke' && typed.h > empty.h,
+    enterSends: sentBack.value === '' && sentBack.h === empty.h,
+  };
+  report.composerGrows = Object.values(composerChecks).every(Boolean);
+  console.log('composer grows: ' + JSON.stringify({ checks: composerChecks, empty, one, three, many, cleared, typed, sentBack }));
 
   // Close goes to the tray (issue 115). A send is started and the window closed before it lands, through the control the
   // platform's user would press: the close in the contact header on Windows and Linux, the native close on macOS. The
@@ -366,7 +454,7 @@ async function runSmoke(w) {
   const closeWindow = barLayout.drawn
     ? () => js("(() => { document.querySelector('.conv-head .window-control.close').click(); return true; })()")
     : () => { w.close(); };
-  await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${JSON.stringify(IN_FLIGHT)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  await sendText(IN_FLIGHT);
   await closeWindow();
   const hid = await visibleWithin(false);
   const kept = !w.isDestroyed() && !lifecycle.quitting;
@@ -469,7 +557,7 @@ async function runSmoke(w) {
   await js(`(() => { const c = document.querySelector('app-composer'); const input = c.querySelector('input[type=file]'); const dt = new DataTransfer(); dt.items.add(new File(['synthetic smoke file'], 'smoke-note.txt', { type: 'text/plain' })); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
   await waitFor("Boolean(document.querySelector('app-composer .staged-file'))");
   const staged = await js("document.querySelector('app-composer .staged-name').textContent");
-  await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${JSON.stringify(ATTACH_CAPTION)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  await sendText(ATTACH_CAPTION);
   await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes(${JSON.stringify(ATTACH_CAPTION)}) && r.textContent.includes('smoke-note.txt') && !r.dataset.id.startsWith('local:'))`, 20000);
   const attachChecks = {
     beside: attachMenu.tools.join('|') === 'Attach|Emoji',
@@ -533,6 +621,83 @@ async function runSmoke(w) {
   const replyFocused = await js("document.activeElement === document.querySelector('app-composer textarea')");
   await pause(200);
   await shot('15-replying-light.png');
+  // The message box grows while the conversation is scrolled back and while it is at its end, and the conversation keeps
+  // its place through both (issues 139 and 142). The reply is typed as real keys, Shift+Enter between its lines, with the
+  // conversation scrolled back: the first message in view must stay within 2px, the reply's quote must stay above the
+  // field, and the text, caret and a selection must survive the growth and window resizes that rewrap its long line,
+  // with the field growing and shrinking to fit each width. At the end of the conversation the same growth and resize
+  // must leave it at its end. The field is then emptied and the reply below is sent as before, still threaded.
+  const typeKeys = async (lines) => {
+    lines.forEach((line, i) => {
+      if (i) {
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter', modifiers: ['shift'] });
+        wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers: ['shift'] });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter', modifiers: ['shift'] });
+      }
+      for (const ch of line) wc.sendInputEvent({ type: 'char', keyCode: ch });
+    });
+    await pause(400);
+  };
+  const growPlace = () => js(`(() => {
+    const m = document.querySelector('.messages');
+    const top = m.getBoundingClientRect().top;
+    const first = [...m.querySelectorAll('.bubble-row')].find((r) => r.getBoundingClientRect().bottom - top > 0);
+    const t = document.querySelector('app-composer textarea');
+    const s = getComputedStyle(t);
+    return {
+      key: first ? first.dataset.id : null, offset: first ? Math.round(first.getBoundingClientRect().top - top) : null,
+      scrollTop: Math.round(m.scrollTop), fromEnd: Math.round(m.scrollHeight - m.clientHeight - m.scrollTop),
+      text: t.value, start: t.selectionStart, end: t.selectionEnd, focused: document.activeElement === t,
+      h: t.offsetHeight, max: parseFloat(s.maxHeight), hidden: t.scrollHeight - t.clientHeight, overflow: s.overflowY,
+      quote: document.querySelector('app-composer .composer-reply .reply-text')?.textContent || '',
+    };
+  })()`);
+  const fits = (s) => s.hidden <= 0 || (s.overflow === 'auto' && Math.abs(s.h - s.max) < 1);
+  const sameRow = (a, b) => Boolean(a.key) && a.key === b.key && Math.abs(a.offset - b.offset) <= 2;
+  const [w0, h0] = w.getSize();
+  const BACK = ['Typed while', 'scrolled back', 'and a last line long enough that a narrower window has to wrap it onto more lines than the wide window needed, so the field must grow again'];
+  await js("(() => { const m = document.querySelector('.messages'); m.scrollTop = Math.round((m.scrollHeight - m.clientHeight) / 2); document.querySelector('app-composer textarea').focus(); return true; })()");
+  await pause(400);
+  const backBefore = await growPlace();
+  await typeKeys(BACK);
+  const backGrown = await growPlace();
+  await shot('15c-composer-scrolled-back-light.png');
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.setSelectionRange(6, 19); return true; })()");
+  const backSteps = [];
+  for (const [width, height] of [[760, 600], [900, 640], [w0, h0]]) {
+    w.setSize(width, height);
+    await pause(600);
+    backSteps.push({ step: width + 'x' + height, ...(await growPlace()) });
+  }
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); const m = document.querySelector('.messages'); m.scrollTop = m.scrollHeight; t.focus(); return true; })()");
+  await pause(500);
+  const END = ['At the end', 'it stays', 'at the end'];
+  const endBefore = await growPlace();
+  await typeKeys(END);
+  const endGrown = await growPlace();
+  await shot('15d-composer-at-end-light.png');
+  w.setSize(760, 600);
+  await pause(600);
+  const endResized = await growPlace();
+  w.setSize(w0, h0);
+  await pause(600);
+  const endBack = await growPlace();
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); t.focus(); return true; })()");
+  await pause(300);
+  const keepChecks = {
+    scrolledBack: backBefore.scrollTop > 0 && backBefore.fromEnd > 100,
+    grewBack: backGrown.h > backBefore.h * 2 && backGrown.text === BACK.join('\n') && backGrown.start === backGrown.text.length && backGrown.end === backGrown.text.length && backGrown.focused,
+    placeOnGrowth: sameRow(backGrown, backBefore),
+    quoteKept: [backGrown, ...backSteps, endGrown, endResized].every((s) => s.quote.includes('See you soon')),
+    placeOnResize: backSteps.every((s) => sameRow(s, backGrown)),
+    draftOnResize: backSteps.every((s) => s.text === backGrown.text && s.start === 6 && s.end === 19),
+    fitsEveryWidth: [backGrown, ...backSteps].every(fits),
+    rewraps: backSteps[0].h > backGrown.h && Math.abs(backSteps[2].h - backGrown.h) <= 1,
+    endStays: endBefore.fromEnd <= 2 && endGrown.fromEnd <= 2 && endResized.fromEnd <= 2 && endBack.fromEnd <= 2,
+    grewAtEnd: endGrown.h > endBefore.h * 2 && endGrown.text === END.join('\n') && endGrown.start === endGrown.text.length && fits(endResized),
+  };
+  report.composerGrows = report.composerGrows && Object.values(keepChecks).every(Boolean);
+  console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
   await waitFor(`Boolean(${replySel}?.querySelector('.reply-quote'))`, 20000);
@@ -892,6 +1057,157 @@ async function runSmoke(w) {
   report.editLine = Object.values(editSizes).every((m) => m && m.lines === 1 && m.inner < m.line * 1.5 && m.label === 'Edit' && m.full && m.wide === minW);
   console.log('edit line: ' + JSON.stringify({ minW, minH, sizes: editSizes }));
 
+  // The press states (issue 140), drawn on real controls in both schemes: the send button and a text button are each
+  // put through pending, success and failure by the kit itself, with the hold token stretched so each capture shows
+  // the state it names. The page's own module is imported, so this is the same press the app runs.
+  const pressStates = {};
+  await js("document.documentElement.style.setProperty('--motion-press-hold', '60s'); true");
+  await js("import('../kit/press.js').then((m) => { window.__press = m; return true; })");
+  const pressAll = (outcome) => js('(() => { const settle = ' + JSON.stringify(outcome) + '; window.__settle = []; for (const sel of ["app-composer button.send", ".edit-toggle"]) { const b = document.querySelector(sel); window.__press.runPress(b, () => new Promise((ok, no) => window.__settle.push(() => (settle === "failure" ? no(new Error("synthetic")) : ok(true))))); } return true; })()');
+  // Motion is asked for explicitly: a runner whose platform has animations switched off (the Windows one) otherwise
+  // reports reduced motion, and every state would rightly draw still.
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  const readPress = () => js("[...document.querySelectorAll('app-composer button.send, .edit-toggle')].map((b) => { const a = getComputedStyle(b, '::after'); return { state: b.dataset.press || 'idle', busy: b.getAttribute('aria-busy'), content: a.content, animation: a.animationName }; })");
+  for (const scheme of ['light', 'dark']) {
+    nativeTheme.themeSource = scheme;
+    await waitFor('document.documentElement.dataset.scheme === ' + JSON.stringify(scheme), 10000);
+    await pressAll('success');
+    await pause(150);
+    const pending = await readPress();
+    await shot('13-press-pending-' + scheme + '.png');
+    await js('window.__settle.forEach((s) => s()); true');
+    await pause(250);
+    const success = await readPress();
+    await shot('13b-press-success-' + scheme + '.png');
+    await pressAll('failure');
+    await js('window.__settle.forEach((s) => s()); true');
+    await pause(250);
+    const failure = await readPress();
+    await shot('13c-press-failure-' + scheme + '.png');
+    pressStates[scheme] = { pending, success, failure };
+  }
+  // Reduced motion: still pending, still busy, and nothing turns.
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await pressAll('success');
+  await pause(150);
+  const pressReduced = await readPress();
+  await js('window.__settle.forEach((s) => s()); true');
+  await cdp('Emulation.setEmulatedMedia', { media: '', features: [] });
+  await js("document.documentElement.style.removeProperty('--motion-press-hold'); for (const b of document.querySelectorAll('[data-press]')) { delete b.dataset.press; b.removeAttribute('aria-busy'); b.removeAttribute('aria-disabled'); } true");
+  nativeTheme.themeSource = 'light';
+  const every = (list, check) => Array.isArray(list) && list.length === 2 && list.every(check);
+  report.pressStates = ['light', 'dark'].every((s) => {
+    const p = pressStates[s];
+    return every(p.pending, (b) => b.state === 'pending' && b.busy === 'true' && b.animation === 'spin')
+      && every(p.success, (b) => b.state === 'success' && b.busy === null && b.content.includes('\u2713'))
+      && every(p.failure, (b) => b.state === 'failure' && b.busy === null && b.content.includes('!'));
+  }) && every(pressReduced, (b) => b.state === 'pending' && b.busy === 'true' && b.animation === 'none');
+  console.log('press states: ' + JSON.stringify({ states: pressStates, reduced: pressReduced }));
+
+  // Resizing keeps your place (issue 142). The conversation and the chat list are scrolled back, text is typed in the
+  // composer with the caret inside it, and then the window is resized several times and the text size changed: each
+  // view must still show the same message or row at the same height, and the composer the same text and caret. The
+  // list is made long enough to scroll with groups, which are put back afterwards.
+  const keptBefore = await held();
+  const smokeGroups = Array.from({ length: 8 }, (_, i) => ({ id: 'smoke-g' + i, name: 'Smoke group ' + (i + 1) }));
+  await putSettings({ 'chats.groups': smokeGroups, 'chats.placement': { 1: 'smoke-g1', 2: 'smoke-g4', 3: 'smoke-g7' }, 'appearance.textScale': 200 });
+  await waitFor("document.querySelectorAll('.chat-section').length >= 8 && document.documentElement.style.getPropertyValue('--font-size-md') !== ''", 10000);
+  await pause(400);
+  const COMPOSED = 'Kept through\nevery resize';
+  const place = () => js(`(() => {
+    const at = (view, sel, key) => {
+      const top = view.getBoundingClientRect().top;
+      const rows = [...view.querySelectorAll(sel)];
+      const first = rows.find((r) => r.getBoundingClientRect().bottom - top > 0);
+      return first ? { key: first.dataset[key], offset: Math.round(first.getBoundingClientRect().top - top), scrollTop: Math.round(view.scrollTop), room: view.scrollHeight - view.clientHeight } : null;
+    };
+    const t = document.querySelector('app-composer textarea');
+    return {
+      conversation: at(document.querySelector('.messages'), '.bubble-row', 'id'),
+      list: at(document.querySelector('app-chat-list'), '.chat-row', 'chat'),
+      open: document.querySelector('app-root').openChatId,
+      text: t.value, caret: t.selectionStart, caretEnd: t.selectionEnd, fieldHidden: t.scrollHeight - t.clientHeight, fieldScrolls: getComputedStyle(t).overflowY === 'auto',
+      width: window.innerWidth, height: window.innerHeight,
+    };
+  })()`);
+  await js(`(() => {
+    const m = document.querySelector('.messages');
+    const rows = [...m.querySelectorAll('.bubble-row')];
+    const row = rows[Math.min(2, rows.length - 1)];
+    m.scrollTop = row.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 7;
+    const l = document.querySelector('app-chat-list');
+    const room = l.scrollHeight - l.clientHeight;
+    const targets = [...l.querySelectorAll('.chat-row')].map((c) => c.getBoundingClientRect().top - l.getBoundingClientRect().top + l.scrollTop - 9);
+    l.scrollTop = targets.find((y) => y > 0 && y < room - 20) ?? Math.round(room / 2);
+    const t = document.querySelector('app-composer textarea');
+    t.value = ${JSON.stringify(COMPOSED)};
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.focus();
+    t.setSelectionRange(5, 15);
+    return true;
+  })()`);
+  await pause(300);
+  const start = await place();
+  const steps = [];
+  for (const [width, height] of [[900, 540], [760, 500], [1040, 560], [820, 520]]) {
+    w.setSize(width, height);
+    await pause(500);
+    steps.push({ step: width + 'x' + height, ...(await place()) });
+  }
+  // Text sizes at or above the one the views were scrolled at, so neither view is ever too short to hold its place.
+  for (const scale of [300, 200]) {
+    await putSettings({ 'appearance.textScale': scale });
+    await pause(700);
+    steps.push({ step: scale + '%', ...(await place()) });
+  }
+  await shot('14-resize-kept.png');
+  const same = (a, b) => Boolean(a && b) && a.key === b.key && Math.abs(a.offset - b.offset) <= 2;
+  const resizeChecks = {
+    scrolledBack: Boolean(start.conversation) && start.conversation.scrollTop > 0 && start.conversation.room - start.conversation.scrollTop > 100 && Boolean(start.list) && start.list.scrollTop > 0,
+    conversation: steps.every((s) => same(s.conversation, start.conversation)),
+    list: steps.every((s) => same(s.list, start.list)),
+    open: steps.every((s) => s.open === start.open),
+    composer: steps.every((s) => s.text === COMPOSED && s.caret === 5 && s.caretEnd === 15 && (s.fieldHidden <= 0 || s.fieldScrolls)),
+    resized: new Set(steps.map((s) => s.width)).size >= 3,
+  };
+  report.resizeKeeps = Object.values(resizeChecks).every(Boolean);
+  console.log('resize keeps: ' + JSON.stringify({ checks: resizeChecks, start, steps }));
+  w.setSize(1100, 720);
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+
+  // Nothing refreshes or shows a loading page (issue 142): while the stream reconnects, a resync runs, the theme
+  // changes and a setting changes, every DOM change is watched, and no view may drop to empty, no splash may appear and
+  // nothing but a pressed button may say it is busy.
+  await js(`(() => {
+    const count = (sel) => document.querySelectorAll(sel).length;
+    const seen = { bubbles: count('.bubble-row'), rows: count('.chat-row'), splash: false, busy: [] };
+    const look = () => {
+      seen.bubbles = Math.min(seen.bubbles, count('.bubble-row'));
+      seen.rows = Math.min(seen.rows, count('.chat-row'));
+      if (document.querySelector('.splash')) seen.splash = true;
+      for (const el of document.querySelectorAll('[aria-busy="true"]')) if (el.tagName !== 'BUTTON') seen.busy.push(el.className || el.tagName);
+    };
+    window.__blank = seen;
+    window.__blankWatch = new MutationObserver(look);
+    window.__blankWatch.observe(document, { childList: true, subtree: true, attributes: true });
+    return true;
+  })()`);
+  await js("(() => { const root = document.querySelector('app-root'); window.__conn = []; const was = root.onConnState.bind(root); root.onConnState = (s) => { window.__conn.push(s); was(s); }; root.client.reconnect(); return true; })()");
+  await waitFor("window.__conn.includes('reconnecting') && document.querySelector('app-root').conn === 'open'", 15000);
+  const connStates = await js('window.__conn');
+  await js("document.querySelector('app-root').onEvent({ name: 'resync', data: {} }); true");
+  await pause(1500);
+  await putSettings({ 'appearance.theme': { name: 'smoke blank', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
+  await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
+  await putSettings({ 'appearance.theme': null, 'appearance.textScale': 125 });
+  await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() !== '#2a6f4b'", 10000);
+  await pause(500);
+  const blank = await js('(() => { window.__blankWatch.disconnect(); return window.__blank; })()');
+  report.noBlank = blank.bubbles > 0 && blank.rows > 0 && !blank.splash && blank.busy.length === 0 && connStates.includes('reconnecting');
+  console.log('no blank: ' + JSON.stringify({ blank, connStates }));
+  await putSettings({ 'chats.groups': keptBefore['chats.groups'] ?? [], 'chats.placement': keptBefore['chats.placement'] ?? {}, 'appearance.textScale': 100 });
+  await waitFor("document.querySelectorAll('.chat-section').length === 0", 10000);
+
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
   const skinInput = (v) => "document.querySelector('app-settings input[data-key=\"appearance.skin\"][value=\"" + v + "\"]')";
@@ -993,12 +1309,14 @@ async function runSmoke(w) {
   // force; the card shows the theme's own colours; a URL that answers with no theme is refused with the reason and
   // stores nothing. The theme is served from a loopback server this smoke owns, in tweakcn's registry shape.
   const registry = { name: 'smoke-url', title: 'Smoke URL', cssVars: { theme: { radius: '0.5rem' }, light: { primary: '#1d4ed8', background: '#f0f4ff' }, dark: { primary: '#93c5fd', background: '#0b1020' } } };
+  let themeFetches = 0;
   // The same host also answers as tweakcn does for Elegant Luxury (issue 132): its editor page is HTML, and its theme is
   // a registry item at /r/themes/elegant-luxury.json (a fixture copy of tweakcn's own), so pasting the page URL
   // proves the page is read from its registry.
   // The runner names the fixture, since a packaged app carries no fixtures of its own.
   const elegant = readFileSync(process.env.SMOKE_THEME_FIXTURE || path.join(CORE, 'fixtures/themes/elegant-luxury.json'), 'utf8');
   const themeHost = http.createServer((req, res) => {
+    if (req.url === '/theme.json') themeFetches += 1;
     if (req.url === '/theme.json') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(registry)); return; }
     if (req.url === '/r/themes/elegant-luxury.json') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(elegant); return; }
     if (req.url.startsWith('/editor/theme')) { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>tweakcn</title>'); return; }
@@ -1006,18 +1324,27 @@ async function runSmoke(w) {
   });
   await new Promise((resolve) => themeHost.listen(0, '127.0.0.1', resolve));
   const themeBase = 'http://127.0.0.1:' + themeHost.address().port;
-  const importUrl = async (url) => {
+  // The Import button shows the import in flight (issue 140), so the step waits for its press to settle. presses is how
+  // many times it is pressed at once: the double press must reach the theme's host once.
+  const importButton = "document.querySelector('app-settings .theme-url-action')";
+  const importUrl = async (url, presses = 1) => {
+    await waitFor(importButton + ".dataset.press !== 'pending'", 15000);
     await js(`(() => { const i = document.querySelector('app-settings .theme-url-input'); i.value = ${JSON.stringify(url)}; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await waitFor("!document.querySelector('app-settings .theme-url-action').disabled");
-    await js("document.querySelector('app-settings .theme-url-action').click()");
-    await waitFor("Boolean(document.querySelector('app-settings .theme-url-note')) && !document.querySelector('app-settings').urlBusy", 15000);
-    return js("document.querySelector('app-settings .theme-url-note').textContent");
+    await waitFor('!' + importButton + '.disabled');
+    const states = await js('(() => { const b = ' + importButton + '; const seen = []; for (let i = 0; i < ' + presses + '; i += 1) { b.click(); seen.push(b.dataset.press || \'idle\'); } return seen; })()');
+    await waitFor(importButton + ".dataset.press !== 'pending' && Boolean(document.querySelector('app-settings .theme-url-note'))", 15000);
+    return { note: await js("document.querySelector('app-settings .theme-url-note').textContent"), states };
   };
   try {
     const before = ((await held())['appearance.themes'] || []).length;
-    const badNote = await importUrl(themeBase + '/missing.json');
+    const bad = await importUrl(themeBase + '/missing.json');
+    const badNote = bad.note;
     report.themeUrlRefused = badNote.includes('404') && ((await held())['appearance.themes'] || []).length === before;
-    const goodNote = await importUrl(themeBase + '/theme.json');
+    const good = await importUrl(themeBase + '/theme.json', 2);
+    const goodNote = good.note;
+    // Pressed twice at once: the first press is pending when the second lands, and the host is fetched once.
+    report.importOnce = good.states.join('|') === 'pending|pending' && themeFetches === 1;
+    console.log('import once: ' + JSON.stringify({ states: good.states, themeFetches }));
     const themes = (await held())['appearance.themes'] || [];
     report.themeUrlHeld = themes.some((t) => t.id === 'smoke-url' && t.color.light.accent === '#1d4ed8') && (await held())['appearance.theme']?.id !== 'smoke-url';
     await waitFor("Boolean(document.querySelector('app-settings .theme-card[data-theme-id=\"smoke-url\"]'))", 10000);
