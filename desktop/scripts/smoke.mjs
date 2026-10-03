@@ -9,11 +9,12 @@
 // and a threaded reply quotes its parent.
 // Run it under a display (xvfb-run on Linux).
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sanitizeText } from '../src/smoke-failure.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const out = process.env.SHOTS || path.join(root, 'desktop', 'out', 'smoke');
@@ -26,6 +27,18 @@ const cli = path.join(root, 'server/src/main.js');
 const run = (...args) => execFileSync(process.execPath, [cli, ...args, '--data', data], { encoding: 'utf8' });
 const LIVE = 'A live message from the fake engine';
 const SENT = 'Sent from the desktop smoke';
+
+// When the app is killed before it can retain its own state (the deadline below), or exits without a
+// report, keep a bounded, sanitized note of how it ended. The app's own failure.json is authoritative and
+// is never overwritten: this only fills the gap when the renderer never got the chance to answer.
+function writeFailureNote(exitCode, applicationOutput) {
+  try {
+    const file = path.join(out, 'failure.json');
+    if (existsSync(file)) return;
+    const tail = sanitizeText(String(applicationOutput || '').slice(-4000), [process.env.SMOKE_TOKEN, process.env.SMOKE_SERVER_URL].filter(Boolean));
+    writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), killedBeforeRetention: true, exitCode, outputTail: tail }, null, 1));
+  } catch { /* the smoke failure stands without the note */ }
+}
 
 run('init', '--engine', 'fake', '--port', '0');
 const token = run('token', 'create', '--scope', 'device', '--name', 'smoke').trim().split('\n').pop().trim();
@@ -72,6 +85,7 @@ rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
 const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.resyncKeeps && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.composerGrows && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.themePage && report.choiceContrast && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.noBlank && report.searchTerms && report.sort && report.icons && report.editMode && report.editLine && report.react && report.reply;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
+  writeFailureNote(code, output);
   process.exit(1);
 }
 console.log('smoke ok: ' + JSON.stringify(report) + '; captures in ' + out);

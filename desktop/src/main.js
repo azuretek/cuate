@@ -14,6 +14,7 @@ import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
+import { retainSmokeFailure, captureRenderer } from './smoke-failure.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
@@ -1742,7 +1743,19 @@ function createWindow() {
   });
   if (SMOKE) {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
-    runSmoke(win).catch((e) => { console.error('smoke failed: ' + (e && e.message)); app.exit(1); });
+    runSmoke(win).catch(async (e) => {
+      console.error('smoke failed: ' + (e && e.message));
+      // Retain what the renderer held when the step failed, bounded and sanitized, so a stuck surface is
+      // read from evidence rather than guessed. It runs only on the failure path and never rethrows.
+      await retainSmokeFailure({
+        evaluate: (code) => win.webContents.executeJavaScript(code, true),
+        capture: () => captureRenderer(win.webContents),
+        write: (name, data) => writeFileSync(path.join(SMOKE, name), data),
+        error: e,
+        secrets: [process.env.SMOKE_TOKEN, process.env.SMOKE_SERVER_URL].filter(Boolean),
+      }).catch(() => {});
+      app.exit(1);
+    });
   }
   win.loadURL('app://bundle/app/index.html');
   return win;
