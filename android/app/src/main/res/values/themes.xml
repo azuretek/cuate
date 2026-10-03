@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The window theme: a plain surface under the web view. The page draws itself
-  from core/spec/tokens.json, so nothing about the app's look lives here.
+  from core/spec/tokens.json, so nothing about the app's look lives here; the
+  surface is the tokens' own page colour (values/surface.xml, generated), so the
+  window shows no system white or black before the page paints. The night
+  variant is in values-night, so the web view reports the system's dark scheme
+  to the page.
 -->
 <resources>
     <style name="Theme.Cuate" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">@color/surface</item>
     </style>
 </resources>

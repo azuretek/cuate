@@ -54,7 +54,7 @@
   const marker = document.createElement('output');
   marker.setAttribute('aria-label', 'rotation-proof');
   Object.assign(marker.style, {
-    position: 'fixed', top: 'env(safe-area-inset-top, 0px)', left: 'env(safe-area-inset-left, 0px)', zIndex: '9999',
+    position: 'fixed', top: 'var(--inset-top, env(safe-area-inset-top, 0px))', left: 'var(--inset-left, env(safe-area-inset-left, 0px))', zIndex: '9999',
     padding: '4px 8px', font: '12px/16px sans-serif', color: '#ffffff', background: FAIL,
   });
   document.body.append(marker);
