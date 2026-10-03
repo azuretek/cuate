@@ -47,6 +47,7 @@ var engine = (() => {
     SERVER_UPDATE_ERRORS: () => SERVER_UPDATE_ERRORS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
+    SHEET_LEAVE_MARGIN_MS: () => SHEET_LEAVE_MARGIN_MS,
     SILENT_UPDATE_STATES: () => SILENT_UPDATE_STATES,
     SLIDE_CONFIRM_AT: () => SLIDE_CONFIRM_AT,
     SLIDE_KEY_STEP: () => SLIDE_KEY_STEP,
@@ -205,6 +206,7 @@ var engine = (() => {
     settingsFields: () => settingsFields,
     settingsGroups: () => settingsGroups,
     settlesOpen: () => settlesOpen,
+    sheetLeaveDeadline: () => sheetLeaveDeadline,
     sizeLabel: () => sizeLabel,
     slideConfirms: () => slideConfirms,
     slideKey: () => slideKey,
@@ -2156,6 +2158,10 @@ var engine = (() => {
   // core/app/rules/sheet.js
   function backdropReturns(startsOnBackdrop, endsOnBackdrop) {
     return startsOnBackdrop === true && endsOnBackdrop === true;
+  }
+  var SHEET_LEAVE_MARGIN_MS = 250;
+  function sheetLeaveDeadline(tokenMs) {
+    return (Number.isFinite(tokenMs) && tokenMs > 0 ? tokenMs : 0) + SHEET_LEAVE_MARGIN_MS;
   }
 
   // core/app/rules/slide.js

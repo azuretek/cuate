@@ -37,7 +37,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # A network step, so it carries its own deadline rather than the job's (issue 66).
       - run: pnpm install --frozen-lockfile --ignore-scripts
+        timeout-minutes: 5
       - uses: actions/download-artifact@v4
         with:
           pattern: installers-*
@@ -87,18 +89,30 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: actions/cache@v4
+      # The Electron and electron-builder downloads are the packaging leg's network reach, so they are cached, and
+      # whether the cache answered is STATED in the log rather than assumed (issue 66): the step below names hit,
+      # partial (an older lockfile's key) or miss, and counts what the restored folder holds, and the step after
+      # packaging counts it again, so a miss that had to download is visible as the difference.
+      - name: Cache the packaging downloads
+        id: packaging-cache
+        uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/packaging-cache
           key: packaging-v2-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            packaging-v2-${{ runner.os }}-${{ matrix.arch }}-
       - name: Set packaging cache outside application module scope
         shell: bash
         env:
           PACKAGING_CACHE: ${{ runner.temp }}/packaging-cache
+          CACHE_HIT: ${{ steps.packaging-cache.outputs.cache-hit }}
         run: |
           echo "ELECTRON_CACHE=$PACKAGING_CACHE/electron" >> "$GITHUB_ENV"
           echo "ELECTRON_BUILDER_CACHE=$PACKAGING_CACHE/electron-builder" >> "$GITHUB_ENV"
+          bash scripts/ci/state-cache.sh "packaging download cache" "$CACHE_HIT" "$PACKAGING_CACHE"
+      # A network step (the package store and Electron's own postinstall download), so it has its own deadline.
       - run: pnpm install --frozen-lockfile
+        timeout-minutes: 8
       - run: pnpm run lint
       - run: pnpm run test
       - run: pnpm run build
@@ -114,9 +128,11 @@ jobs:
         run: node desktop/scripts/package-mac.mjs ${{ matrix.arch }}
       - name: Package unsigned macOS verification build
         if: runner.os == 'macOS' && !inputs.signed
+        timeout-minutes: 15
         run: pnpm --filter desktop package --mac --${{ matrix.arch }} --config.mac.identity=null --config.mac.notarize=false --config.dmg.sign=false
       - name: Package Linux or Windows
         if: runner.os != 'macOS'
+        timeout-minutes: 15
         run: pnpm --filter desktop package --${{ matrix.platform }} --${{ matrix.arch }}
       # The step that flaked, measured on run 36888349385: an unbounded apt-get
       # held this leg for forty-four minutes until the job's own timeout cancelled
@@ -128,14 +144,22 @@ jobs:
         run: |
           bash scripts/ci/install-display-packages.sh xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: State what packaging took from the cache
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.packaging-cache.outputs.cache-hit }}
+        run: bash scripts/ci/state-cache.sh "packaging download cache after packaging" "$CACHE_HIT" "${{ runner.temp }}/packaging-cache"
+      # The smoke bounds its own app at 150 seconds (smoke-packed.mjs); the step deadline is the backstop.
       - name: Packaged Linux boot smoke
         if: runner.os == 'Linux'
+        timeout-minutes: 5
         env:
           SHOTS: ${{ runner.temp }}/packaged-smoke
           SMOKE_SOFTWARE_RENDERING: "1"
         run: xvfb-run -a node desktop/scripts/smoke-packed.mjs
       - name: Packaged Windows and macOS boot smoke
         if: runner.os != 'Linux'
+        timeout-minutes: 5
         env:
           SHOTS: ${{ runner.temp }}/packaged-smoke
         run: node desktop/scripts/smoke-packed.mjs
