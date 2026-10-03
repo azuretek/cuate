@@ -234,3 +234,15 @@ test('the Android shell keeps its page through rotation and resizing', () => {
   const handled = new Set(m[1].split('|'));
   for (const c of ['orientation', 'screenSize', 'smallestScreenSize', 'screenLayout', 'keyboard', 'keyboardHidden', 'navigation', 'uiMode']) assert.ok(handled.has(c), 'a change of ' + c + ' would reload the page');
 });
+// A reactive property named like one of the element's own methods replaces that method on the instance, so the next
+// render calls a value and throws. It happened once (issue 134: a `section` property over the method that draws a
+// section), and only the desktop smoke caught it, so it is held here.
+test('no component declares a property with the name of one of its methods', () => {
+  for (const f of walk('core/app/components').filter((f) => f.endsWith('.js'))) {
+    const src = read(f);
+    const block = /static properties = \{([\s\S]*?)\n {2}\};|static properties = \{([^\n]*)\};/.exec(src);
+    if (!block) continue;
+    const props = [...(block[1] || block[2]).matchAll(/(\w+):\s*\{/g)].map((m) => m[1]);
+    const methods = new Set([...src.matchAll(/^ {2}(?:async |get |set |static )?(\w+)\s*\([^)]*\)\s*\{/gm)].map((m) => m[1]));
+    for (const p of props) assert.ok(!methods.has(p), f + ': the property ' + p + ' would replace the method ' + p + '()');
+  }});

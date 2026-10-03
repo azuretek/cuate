@@ -4,6 +4,7 @@ import { press, emit } from '../../kit/press.js';
 import { settingsFields, settingsGroups, settingValue, coerceSetting, optionLabel } from '../rules/settings.js';
 import { importTheme, importSummary, addTheme, themeChoices, swatchVars, SWATCH_TOKENS } from '../rules/theme.js';
 import './app-sheet.js';
+import './app-about.js';
 
 // The one line the page says about itself, under its title.
 const INTRO = 'Choose how this app looks and which notices it raises.';
@@ -15,10 +16,12 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 // Every section comes from settingsGroups(), so the schema is the one owner of the group list and the page keeps no
 // second one. Each group carries its own one-line description from the schema, and a group's rows sit on one surface
 // with a divider between them. The page and its chrome (the full-width back strip, the title, the description) are
-// drawn by app-sheet, which both this page and About use.
+// drawn by app-sheet. About is the last section (issue 134), drawn by app-about from the shell's and the server's
+// build reports; `reveal` names a section to bring into view, which is how the tray's About opens this page there.
 class AppSettings extends KitElement {
   static properties = {
     values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
+    info: { attribute: false }, host: { attribute: false }, reveal: { attribute: false },
     importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
   };
 
@@ -38,6 +41,12 @@ class AppSettings extends KitElement {
     // and the URL field's Enter is the same press, so a second one while it runs is dropped (core/kit/press.js).
     this.urlNote = '';
     this.importUrlPress = press(() => this.onImportUrl(), { on: () => this.querySelector('.theme-url-action') });
+    // The server's info and the shell's own report, which the About section draws.
+    this.info = null;
+    this.host = null;
+    // A request to bring one section into view: { id }. A new object each time, so asking twice scrolls twice. Not
+    // named section: that is the method below that draws one, and a property of the same name replaces it.
+    this.reveal = null;
   }
 
   // Called by app-root when a URL import lands, so the field empties only on success and keeps a URL that failed.
@@ -165,7 +174,7 @@ class AppSettings extends KitElement {
         <span class="setting-label">Import a theme from a URL</span>
         <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/r/themes/..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy}
           @input=${(e) => { this.importUrl = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') this.importUrlPress(e); }}>
-        <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${!this.importUrl.trim()} @click=${this.importUrlPress}>Import</button>
+        <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${!this.importUrl.trim()} @click=${press(this.importUrlPress)}>Import</button>
         ${this.urlNote ? html`<p class="theme-import-note theme-url-note" role="status">${this.urlNote}</p>` : nothing}
       </div>
       <div class="setting-row theme-import">
@@ -185,35 +194,37 @@ class AppSettings extends KitElement {
     return html`<label class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</label>`;
   }
 
+  // The rows a section draws: a settings group's keys, This device's server and sign out, or the About section.
+  sectionBody(group) {
+    if (group.kind === 'about') return html`<app-about .info=${this.info} .host=${this.host}></app-about>`;
+    if (group.kind === 'device') {
+      return html`<div class="sheet-rows">
+        <div class="setting-row"><span class="setting-label">Server</span><span class="setting-value">${this.serverUrl || 'Not connected'}</span></div>
+        <div class="setting-row"><span class="setting-label">Connection</span><button class="text-button" data-action="signout" @click=${press(() => this.fire('signout'))}>Sign out</button></div>
+      </div>`;
+    }
+    return html`<div class="sheet-rows">
+      ${group.fields.map((field) => this.row(field))}
+      ${group.id === 'appearance' ? this.theme() : nothing}
+    </div>`;
+  }
+
   section(group) {
-    return html`<section class="sheet-section">
+    return html`<section class="sheet-section" data-section=${group.id}>
       <h3 class="sheet-section-title">${group.label}</h3>
       ${group.description ? html`<p class="sheet-section-desc">${group.description}</p>` : nothing}
-      <div class="sheet-rows">
-        ${group.fields.map((field) => this.row(field))}
-        ${group.id === 'appearance' ? this.theme() : nothing}
-      </div>
+      ${this.sectionBody(group)}
     </section>`;
   }
 
   body() {
     return html`
       ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
-      ${settingsGroups().map((group) => this.section(group))}
-      <section class="sheet-section">
-        <h3 class="sheet-section-title">This device</h3>
-        <p class="sheet-section-desc">The server this app talks to, and the way out of it.</p>
-        <div class="sheet-rows">
-          <div class="setting-row"><span class="setting-label">Server</span><span class="setting-value">${this.serverUrl || 'Not connected'}</span></div>
-          <div class="setting-row"><span class="setting-label">About</span><button class="text-button" data-action="about" @click=${press(() => this.fire('about'))}>About this app</button></div>
-          <div class="setting-row"><span class="setting-label">Connection</span><button class="text-button" data-action="signout" @click=${press(() => this.fire('signout'))}>Sign out</button></div>
-        </div>
-      </section>`;
+      ${settingsGroups().map((group) => this.section(group))}`;
   }
 
   render() {
-    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .content=${this.body()}></app-sheet>`;
+    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .content=${this.body()} .reveal=${this.reveal}></app-sheet>`;
   }
 }
-
 customElements.define('app-settings', AppSettings);
