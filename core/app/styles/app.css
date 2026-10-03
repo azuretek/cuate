@@ -559,16 +559,16 @@ app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--
 @keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
-/* While a sheet is up (Settings, About, a confirm, the image viewer) the notices take a band of their own above it on
-   every width, as a phone always does: the sheet's backdrop is placed in the body, so it starts below the band, and a
-   card answering a press on the sheet (About's Check for updates, issue 171) never covers the sheet. The band is the
-   backdrop's own dim, and takes no room while it holds no card. The stack's rules are :where()-wrapped so the phone's
-   own padding below, which holds the safe-area insets, still wins on a phone. */
-.app-window:has(.sheet-scrim) .app-body { position: relative; }
-.app-window:has(.sheet-scrim) .sheet-scrim { position: absolute; }
-.app-window:has(.sheet-scrim) app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-scrim); }
-:where(.app-window:has(.sheet-scrim)) .app-notice-stack { margin: 0; padding: var(--space-3) var(--space-4); }
-:where(.app-window:has(.sheet-scrim)) .app-notice-stack:not(:has(.app-notice)) { display: none; }
+/* While a sheet is up (Settings, About, a confirm, the image viewer) and a notice is showing, the notices take a band of
+   their own above the sheet on every width, as a phone always does: the sheet's backdrop is placed in the body, so it
+   starts below the band, and a card answering a press on the sheet (About's Check for updates, issue 171) never covers
+   the sheet. The band is the backdrop's own dim. With no notice nothing here applies, so the backdrop stays fixed over
+   the whole window. The stack's rule is :where()-wrapped so the phone's own padding below, which holds the safe-area
+   insets, still wins on a phone. */
+.app-window:has(.sheet-scrim):has(.app-notice) .app-body { position: relative; }
+.app-window:has(.sheet-scrim):has(.app-notice) .sheet-scrim { position: absolute; }
+.app-window:has(.sheet-scrim):has(.app-notice) app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-scrim); }
+:where(.app-window:has(.sheet-scrim):has(.app-notice)) .app-notice-stack { margin: 0; padding: var(--space-3) var(--space-4); }
 /* On a phone there is no free corner: a floating card lands on the open drawer's Edit control and its first rows, or on
    the conversation's header and messages. There the notices take a band of their own at the top of the window and the
    surfaces start below it, the drawer included (it is placed in the body, not the viewport), so a notice never covers a
