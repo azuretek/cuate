@@ -2,6 +2,7 @@
 // download and an install. The shell owns the transport, the timer and the install; this module owns the decisions and
 // the copy, so what a person sees during a download is the same on every platform and is tested with no network, no
 // clock and no Electron. No clock, no I/O, no transport names.
+import { channelOf, compareVersions } from '../../kit/rules/build.js';
 
 export const INSTALL = 'install'; // take it and apply it on quit
 export const MANUAL = 'manual'; // could install, but only when the person asks
@@ -35,10 +36,12 @@ export function capability({ platform, packaged, appImage = false }) {
       ? { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: 'an AppImage replaces itself in place' }
       : { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: 'not running as an AppImage, so there is no file an update could replace' };
   }
-  // The phones have no self-updater: a new build reaches them through the platform's own channel, so they never check,
-  // and a check someone asks for (About's Check for updates) says how this build is updated instead (issue 171).
-  if (platform === 'ios') return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: 'updates to this app arrive through TestFlight' };
-  if (platform === 'android') return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: 'updates to this app are installed from a newer APK' };
+  // The phones read the repository's public release feed (issue 192), the way the sibling app's iPhone build does: every
+  // published test build passed the platforms gate, so it is in TestFlight and carries its signed APK. iOS cannot
+  // install anything itself, so a newer build is offered through TestFlight; Android downloads the APK, verifies it
+  // against the release's manifest and hands it to the system installer, which asks the person to confirm.
+  if (platform === 'ios') return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, via: 'testflight', reason: 'updates to this app install through TestFlight' };
+  if (platform === 'android') return { action: MANUAL, check: true, autoDownload: false, canInstall: true, via: 'apk', reason: 'a newer APK from the release is verified, then installed by Android once you confirm' };
   return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, reason: 'no install path on this platform' };
 }
 
@@ -48,7 +51,88 @@ export function capability({ platform, packaged, appImage = false }) {
 export function checkAnswer(answer, platform) {
   if (!answer || typeof answer !== 'object' || !updateBanner(answer.state, { canInstall: true })) return null;
   const detail = answer.detail ?? (answer.state === 'unsupported' ? capability({ platform, packaged: true }).reason : null);
-  return { state: answer.state, version: answer.version ?? null, percent: answer.percent ?? null, detail: detail ?? null, canInstall: Boolean(answer.canInstall) };
+  const state = { state: answer.state, version: answer.version ?? null, percent: answer.percent ?? null, detail: detail ?? null, canInstall: Boolean(answer.canInstall) };
+  return answer.via ? { ...state, via: answer.via } : state;
+}
+
+// A release version, or null. The comparison below throws on anything else, which is right for the server's updater;
+// a feed is a document someone else wrote, so an entry that is not a release is skipped rather than fatal.
+function releaseVersion(text) {
+  const version = String(text || '').trim().replace(/^v/, '');
+  try { compareVersions(version, version); return version; } catch { return null; }
+}
+
+// The versions a release feed names (GitHub's releases.atom: one <entry> per release, its tag at the end of the entry's
+// <id>), in the order the feed lists them, skipping any entry that is not a release. Null when the body is not a feed
+// at all, so a rate-limit page or a proxy's answer is never read as "no releases".
+export function feedVersions(feed) {
+  if (typeof feed !== 'string' || !/<feed[\s>]/.test(feed)) return null;
+  const versions = [];
+  for (const block of feed.split(/<entry[\s>]/).slice(1)) {
+    const id = /<id>([^<]*)<\/id>/.exec(block);
+    const version = id ? releaseVersion(id[1].split('/').pop()) : null;
+    if (version) versions.push(version);
+  }
+  return versions;
+}
+
+// The newest release on one channel, by version and never by where the feed put it. A stable build is offered only a
+// stable release and a test build only a test build, the same split the desktop updater makes.
+export function newestRelease(versions, channel) {
+  const mine = (versions || []).filter((v) => channelOf(v) === channel);
+  return mine.reduce((best, v) => (best === null || compareVersions(v, best) > 0 ? v : best), null);
+}
+
+// What a phone's check found (issue 192), as the update state the page draws: the release feed's newest build on this
+// build's channel against the build that is running. The feed is the public one every published build is listed in,
+// and a build is published only once its TestFlight build is installable and its signed APK is attached, so "newer in
+// the feed" is "newer in TestFlight" without a credential in the app.
+export function phoneUpdate({ platform, current, feed }) {
+  const cap = capability({ platform, packaged: true });
+  const how = { canInstall: Boolean(cap.canInstall), via: cap.via };
+  if (!releaseVersion(current)) return { state: 'unsupported', detail: 'this build carries no release version to compare', ...how };
+  const versions = feedVersions(feed);
+  if (versions === null) return { state: 'error', detail: 'the release list could not be read', ...how };
+  const newest = newestRelease(versions, channelOf(current));
+  if (newest && compareVersions(newest, current) > 0) return { state: 'available', version: newest, ...how };
+  return { state: 'current', version: current, ...how };
+}
+
+// A template from core/spec/releases.json with its {names} filled in. A name the values do not carry throws, so a
+// half-filled address is never fetched.
+export function fillTemplate(template, values) {
+  return String(template).replace(/\{(\w+)\}/g, (_, key) => {
+    if (!Object.hasOwn(values, key) || values[key] === undefined || values[key] === null) throw new Error('the template names a missing value: ' + key);
+    return String(values[key]);
+  });
+}
+
+// Where a release's Android assets are, from core/spec/releases.json and the naming spec. The release pipeline names
+// what it publishes with the same function, and the Android shell fills the same templates, so the three agree.
+export function releaseAssets(spec, naming, version) {
+  if (!releaseVersion(version) || releaseVersion(version) !== version) throw new Error('not a release version: ' + version);
+  const values = { repo: naming.repo, slug: naming.slug, version };
+  const asset = (template) => {
+    const name = fillTemplate(template, values);
+    return { name, url: fillTemplate(spec.asset, { ...values, name }) };
+  };
+  return { feed: fillTemplate(spec.feed, values), apk: asset(spec.android.apk), manifest: asset(spec.android.manifest) };
+}
+
+// What is wrong with an Android release manifest, or null when it is sound. The manifest names the APK, its size, its
+// SHA-256 and the SHA-256 of the certificate that signed it; the shell checks the downloaded bytes against the digest
+// and the APK's signer against both the manifest and the installed app before anything reaches the installer.
+export function apkManifestProblem(manifest, { version, slug }) {
+  if (!manifest || typeof manifest !== 'object') return 'the manifest is not an object';
+  if (manifest.version !== version) return 'the manifest names another version: ' + manifest.version;
+  // A test build's version names its commit, so the two must agree; a stable version names none to compare.
+  const commit = String(manifest.commit);
+  if (!/^[a-f0-9]{40}$/.test(commit) || (channelOf(version) === 'dev' && !String(version).endsWith('.' + commit.slice(0, 10)))) return 'the manifest\'s commit is not the one the version names';
+  if (manifest.file !== slug + '-android-' + version + '.apk') return 'the manifest names an unexpected file: ' + manifest.file;
+  if (!Number.isInteger(manifest.size) || manifest.size <= 0) return 'the manifest carries no size';
+  if (!/^[a-f0-9]{64}$/.test(String(manifest.sha256))) return 'the manifest carries no SHA-256 digest';
+  if (!/^[a-f0-9]{64}$/.test(String(manifest.signer))) return 'the manifest names no signer certificate';
+  return null;
 }
 
 // What to do given what the platform allows and what the person asked for. The preference only narrows the platform's
@@ -161,7 +245,7 @@ export function unsupportedBanner({ detail = null } = {}) {
 // the notice announces and the banner is where a person acts. 'downloading' and 'stalled' draw only the banner, because
 // a native notice cannot show a moving bar. The action names the bridge command the page calls, so what the button does
 // is decided here and tested with no shell, no network and no Electron.
-export function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
+export function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false, via = null } = {}) {
   // A check someone asked for from the tray: it says it is looking, then how it ended. The two answers that end it with
   // nothing to do carry a dismiss rather than a bridge command, because there is nothing for the shell to do.
   if (state === 'checking') return { message: 'Checking for updates.', detail: '', percent: null, action: null };
@@ -172,8 +256,11 @@ export function updateBanner(state, { version = null, percent = null, detail = n
     return { ...unsupportedBanner({ detail }), percent: null, action: { command: DISMISS, label: 'OK' } };
   }
   if (state === 'available') {
+    // iOS installs nothing itself: the release is offered where it is installed, and the action opens TestFlight.
+    if (via === 'testflight') return { ...testFlightBanner({ version }), percent: null, action: { command: 'updates.install', label: 'Open TestFlight' } };
     if (!canInstall) return null; // a platform that cannot install is told about the release by its notice alone
-    return { ...availableBanner({ version }), percent: null, action: { command: 'updates.download', label: 'Download' } };
+    const banner = via === 'apk' ? apkAvailableBanner({ version }) : availableBanner({ version });
+    return { ...banner, percent: null, action: { command: 'updates.download', label: 'Download' } };
   }
   if (state === 'downloading') {
     const n = downloadingNotice({ version, transfer: detail });
@@ -184,10 +271,49 @@ export function updateBanner(state, { version = null, percent = null, detail = n
     return { message: n.message, detail: n.detail, percent: null, action: null };
   }
   if (state === 'ready') {
+    if (via === 'apk') return { ...apkReadyBanner({ version }), percent: null, action: { command: 'updates.install', label: 'Install' } };
     return { ...readyBanner({ version }), percent: null, action: { command: 'updates.install', label: 'Restart and install' } };
   }
   if (state === 'error') {
     return { ...failedBanner({ detail }), percent: null, action: canInstall ? { command: 'updates.download', label: 'Try again' } : null };
   }
   return null;
+}
+
+// The iOS banner when TestFlight holds a newer build. It names no download and no restart, because the phone can do
+// neither: the honest offer is to send the reader to where the build is.
+export function testFlightBanner({ version = null } = {}) {
+  const what = version ? 'Version ' + version : 'A newer build';
+  return { message: what + ' is available in TestFlight.', detail: 'Open TestFlight to install it.' };
+}
+
+// The Android banners: a release whose signed APK can be fetched, and one that has been fetched and verified. Android
+// asks the person to confirm every install, so the copy says so rather than promising an install on quit.
+export function apkAvailableBanner({ version = null } = {}) {
+  const what = version ? 'Version ' + version : 'An update';
+  return { message: what + ' is available.', detail: 'Download it here; Android asks you to confirm before it installs.' };
+}
+
+export function apkReadyBanner({ version = null } = {}) {
+  const what = version ? 'Version ' + version : 'The update';
+  return { message: what + ' is downloaded and verified.', detail: 'Install hands it to Android, which asks you to confirm.' };
+}
+
+// About's Check for updates (issue 192): the button and the line under it follow the same update state the notice
+// draws, so the page that was pressed shows the progress too. While a step is offered (open TestFlight, download,
+// install, try again) the button is that step, labelled as the notice's action is; otherwise it checks. The button never
+// writes its own busy label: a check in progress is the kit press's pending state, and a download's progress is the
+// line and the bar under the button.
+export function aboutUpdate(status) {
+  const idle = { label: 'Check for updates', command: null, line: null, percent: null };
+  if (!status || !status.state) return idle;
+  const banner = updateBanner(status.state, status);
+  if (!banner) return idle;
+  const action = banner.action && banner.action.command !== DISMISS ? banner.action : null;
+  return {
+    label: action ? action.label : idle.label,
+    command: action ? action.command : null,
+    line: status.state === 'checking' ? null : banner.message,
+    percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null,
+  };
 }

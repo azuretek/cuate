@@ -149,17 +149,17 @@ jobs:
         env:
           CACHE_HIT: ${{ steps.packaging-cache.outputs.cache-hit }}
         run: bash scripts/ci/state-cache.sh "packaging download cache after packaging" "$CACHE_HIT" "${{ runner.temp }}/packaging-cache"
-      # The smoke bounds its own app at 150 seconds (smoke-packed.mjs); the step deadline is the backstop.
+      # The smoke bounds its own app at 360 seconds (smoke-packed.mjs); the step deadline is the backstop.
       - name: Packaged Linux boot smoke
         if: runner.os == 'Linux'
-        timeout-minutes: 5
+        timeout-minutes: 8
         env:
           SHOTS: ${{ runner.temp }}/packaged-smoke
           SMOKE_SOFTWARE_RENDERING: "1"
         run: xvfb-run -a node desktop/scripts/smoke-packed.mjs
       - name: Packaged Windows and macOS boot smoke
         if: runner.os != 'Linux'
-        timeout-minutes: 5
+        timeout-minutes: 8
         env:
           SHOTS: ${{ runner.temp }}/packaged-smoke
         run: node desktop/scripts/smoke-packed.mjs

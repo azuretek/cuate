@@ -63,3 +63,23 @@ test('notice geometry clears safe areas, controls and composer with directional 
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }'));
   assert.doesNotMatch(css, /.banner.update/);
 });
+
+// Issue 191 (the layering half): a notice draws above every surface (sheets, About, Settings, the thread view, a
+// confirm and the media viewer), so an update notice is always seen, and it never covers the desktop window controls.
+test('the notice stack draws above every other surface and starts below the header and its window controls', () => {
+  const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }));
+  const z = (body) => { const m = /(?:^|;)\s*z-index:\s*(\d+)/.exec(body); return m ? Number(m[1]) : null; };
+  const stack = rules.filter((r) => /^app-notices$/.test(r.selector) && z(r.body) !== null);
+  assert.equal(stack.length, 1, 'one rule sets the stack\'s layer');
+  const top = z(stack[0].body);
+  for (const r of rules) {
+    if (r.selector.includes('app-notices') || r.selector.includes('app-notice')) continue;
+    const layer = z(r.body);
+    if (layer !== null) assert.ok(layer < top, r.selector + ' (z-index ' + layer + ') would draw over the notices');
+  }
+  for (const surface of ['.sheet-scrim', '.sheet', '.confirm-scrim', '.viewer', '.thread-view']) assert.ok(rules.some((r) => r.selector.includes(surface) && z(r.body) !== null), surface + ' is a layered surface the test covers');
+  for (const r of rules.filter((x) => /app-notices$/.test(x.selector) && /(?:^|;)\s*top:\s*calc/.test(x.body))) {
+    assert.match(r.body, /top:\s*calc\([^;]*var\(--size-header\)/, r.selector + ' starts below the header that carries the window controls');
+  }
+});

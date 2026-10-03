@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 import { serverAssets, verifyServerAssets } from './server-artifact.mjs';
+import { androidAssets, verifyAndroidAssets } from './android-artifact.mjs';
 const naming = JSON.parse(readFileSync(new URL('../../core/spec/naming.json', import.meta.url)));
 // The desktop half: installers, blockmaps and update feeds from the six packaging legs.
 export function desktopAssets(version) {
@@ -14,9 +15,9 @@ export function desktopAssets(version) {
     'dev.yml', 'dev-mac.yml', 'dev-linux.yml', 'dev-linux-arm64.yml',
   ];
 }
-// Every asset a test release carries: the desktop half and the server's tarball, manifest and digest, all built
-// from one commit and one version.
-export const expectedAssets = (version) => [...desktopAssets(version), ...serverAssets(version)];
+// Every asset a test release carries: the desktop half, the server's tarball, manifest and digest, and the signed
+// Android APK with its manifest (issue 192), all built from one commit and one version.
+export const expectedAssets = (version) => [...desktopAssets(version), ...serverAssets(version), ...androidAssets(version)];
 export function verifyDesktopAssets(dir, version) {
   const expected = desktopAssets(version);
   const names = readdirSync(dir);
@@ -43,6 +44,7 @@ export function verifyDesktopAssets(dir, version) {
 export function verifyAssets(dir, version, { commit } = {}) {
   verifyDesktopAssets(dir, version);
   verifyServerAssets(dir, version, { commit });
+  verifyAndroidAssets(dir, version, { commit });
   return expectedAssets(version);
 }
 // --desktop checks the desktop half alone: package.yml's completeness job sees only the six packaging legs.

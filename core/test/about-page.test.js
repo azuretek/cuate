@@ -87,16 +87,59 @@ test('Check for updates asks the shell for the same check the tray runs and show
   assert.match(card.detail, /Running from source/);
 });
 
-test('a phone shell answers with no updater, and the notice says why in the platform\'s words', async () => {
-  for (const platform of ['ios', 'android']) {
+// Issue 192: a phone's check reads the release feed through its shell and the page decides, so a newer build is
+// offered the way the platform installs it, and the same build is answered as the latest.
+const feedOf = (...tags) => '<feed xmlns="http://www.w3.org/2005/Atom">' + tags.map((t) => '<entry><id>tag:github.com,2008:Repository/1/' + t + '</id></entry>').join('') + '</feed>';
+
+test('a phone reads the release feed through its shell and offers a newer build the way it installs', async () => {
+  for (const [platform, label, command] of [['ios', 'Open TestFlight', 'updates.install'], ['android', 'Download', 'updates.download']]) {
     const h = host();
-    h.host = { platform };
-    h.bridge = async () => ({ state: 'unsupported', canInstall: false });
+    h.host = { platform, version: '0.0.1-dev.97.370d8cc7a0' };
+    const calls = [];
+    h.bridge = async (name, args) => { calls.push([name, args]); return feedOf('v0.0.1-dev.98.7699911abc', 'v0.0.1-dev.97.370d8cc7a0'); };
     assert.equal(await h.checkUpdates(), true);
-    const card = h.appNotices.find((n) => n.id === 'app-update');
-    assert.match(card.message, /does not update itself/, platform);
-    assert.equal(card.detail, capability({ platform, packaged: true }).reason.replace(/^./, (c) => c.toUpperCase()) + '.', platform);
+    assert.deepEqual(calls, [['updates.releases', {}]], platform + ' asks its shell for the feed, never the network');
+    // The card shows the check for the min-visible floor first, so the answer is read from the state it will draw.
+    const card = appUpdateNotice(h.updateStatus);
+    assert.match(card.message, /0\.0\.1-dev\.98\.7699911abc/, platform);
+    assert.equal(card.action.label, label, platform);
+    assert.equal(card.action.command, command, platform);
+    assert.equal(h.updateStatus.via, capability({ platform, packaged: true }).via);
   }
+});
+
+test('a phone on the newest build is told so, and a feed it cannot read fails the press with the reason', async () => {
+  const h = host();
+  h.host = { platform: 'ios', version: '0.0.1-dev.98.7699911abc' };
+  h.bridge = async () => feedOf('v0.0.1-dev.98.7699911abc');
+  assert.equal(await h.checkUpdates(), true);
+  assert.match(appUpdateNotice(h.updateStatus).message, /latest version/);
+  h.bridge = async () => { throw new Error('offline'); };
+  assert.equal(await h.checkUpdates(), false);
+  const card = appUpdateNotice(h.updateStatus);
+  assert.equal(card.tone, 'error');
+  assert.match(card.detail, /release list could not be read/);
+  assert.equal(card.action, null, 'a failed check offers no download');
+});
+
+test('the check at launch speaks only when a newer build exists, and the Android download names its release', async () => {
+  const h = host();
+  h.host = { platform: 'android', version: '0.0.1-dev.98.7699911abc' };
+  h.bridge = async () => feedOf('v0.0.1-dev.98.7699911abc');
+  await h.phoneCheck({ asked: false });
+  assert.equal(h.appNotices.some((n) => n.id === 'app-update'), false, 'nothing newer, nothing said');
+  h.bridge = async () => { throw new Error('offline'); };
+  await h.phoneCheck({ asked: false });
+  assert.equal(h.appNotices.some((n) => n.id === 'app-update'), false, 'an unreachable feed at launch is not news');
+  const calls = [];
+  h.bridge = async (name, args) => { calls.push([name, args]); return name === 'updates.releases' ? feedOf('v0.0.1-dev.99.abcdef0123') : true; };
+  await h.phoneCheck({ asked: false });
+  assert.equal(h.updateStatus.state, 'available');
+  assert.equal(await h.aboutPress({ command: 'updates.download' }), true, 'About\'s button is the notice\'s step');
+  assert.deepEqual(calls.at(-1), ['updates.download', { version: '0.0.1-dev.99.abcdef0123' }]);
+  h.onUpdate({ state: 'downloading', version: '0.0.1-dev.99.abcdef0123', percent: 0.5, transferred: 5 * 1024 * 1024, total: 10 * 1024 * 1024, canInstall: true });
+  assert.equal(h.updateStatus.detail, '5.0 MB of 10 MB', 'the shell\'s byte counts are put into words by the page');
+  assert.equal(h.updateStatus.via, 'apk');
 });
 
 test('a second check after the notice was dismissed shows the notice again', async () => {
@@ -128,11 +171,20 @@ test('checkAnswer: a shell\'s answer becomes the update state the notice draws',
   for (const s of states) assert.equal(checkAnswer({ state: s }, 'linux').state, s);
 });
 
-test('the phones name how they are updated, and neither checks', () => {
+test('About takes the update state under a name that is not LitElement\'s own update()', () => {
+  // A reactive property called update shadows the element's render step, and the page throws "this.update is not a
+  // function" the moment About draws; it reached an emulator once (issue 192), so it is held here.
+  const about = read('core/app/components/app-about.js');
+  assert.doesNotMatch(about, /static properties = \{[^}]*\bupdate:/);
+  assert.match(about, /release: \{ attribute: false \}/);
+  assert.match(read('core/app/components/app-root.js'), /<app-about [^>]*\.release=\$\{this\.updateStatus\}/);
+});
+
+test('the phones name how they are updated, and both check', () => {
   assert.match(capability({ platform: 'ios', packaged: true }).reason, /TestFlight/);
   assert.match(capability({ platform: 'android', packaged: true }).reason, /APK/);
-  assert.equal(capability({ platform: 'ios', packaged: true }).check, false);
-  assert.equal(capability({ platform: 'android', packaged: true }).check, false);
+  assert.equal(capability({ platform: 'ios', packaged: true }).check, true);
+  assert.equal(capability({ platform: 'android', packaged: true }).check, true);
 });
 
 test('forgetRead drops only a dismissed card, so a fresh answer is shown', () => {
@@ -154,10 +206,10 @@ test('Settings ends with an About row that opens the page, and About is drawn by
   const about = read('core/app/components/app-about.js');
   assert.match(about, /<app-sheet \.title=\$\{'About'\}/, 'About draws the same sheet chrome as Settings: a title and a back strip');
   assert.match(about, /data-action="check-updates"/, 'About carries Check for updates');
-  assert.match(about, /press\(\(\) => this\.fire\('check-updates'\)\)/, 'the button goes through the kit press and raises the check');
+  assert.match(about, /press\(\(\) => this\.fire\('check-updates', \{ command: update\.command \}\)\)/, 'the button goes through the kit press and raises the check, or the step the notice offers');
   assert.match(about, /class="about-icon"/, 'the app icon sits at the top of About');
   const root = read('core/app/components/app-root.js');
-  assert.match(root, /<app-about [^>]*@check-updates=\$\{\(e\) => respond\(e, this\.checkUpdates\(\)\)\}/, 'the press shows the check until the shell answers');
+  assert.match(root, /<app-about [^>]*@check-updates=\$\{\(e\) => respond\(e, this\.aboutPress\(e\.detail\)\)\}/, 'the press shows the check, or the step, until the shell answers');
 });
 
 test('the app icon on About is generated from the Flor de muerto masters by the shared icon pipeline', () => {

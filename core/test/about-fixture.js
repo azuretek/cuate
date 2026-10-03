@@ -1,5 +1,7 @@
 // Injected only by native test builds (issue 171). The About page on a phone: Settings opens, its last row opens the
-// About page, Check for updates asks the real shell's bridge (updates.check), and its answer arrives as the app notice.
+// About page, Check for updates reads the release feed through the real shell's bridge (updates.releases, issue 192),
+// and its answer arrives as the app notice. The test build's shell serves a synthetic feed naming a newer build, so the
+// page shows the update-available state: the notice and About's button both offer the step this platform installs by.
 // Real components and the real bridge, synthetic records only: no server, token or account.
 (async () => {
   await customElements.whenDefined('app-root');
@@ -34,7 +36,7 @@
   if (parts !== 'identity|updates|build') throw new Error('About draws ' + parts);
   about().querySelector('[data-action=check-updates]').click();
   const notice = () => (document.querySelector('.app-notice') || {}).textContent || '';
-  await until(() => notice().includes('does not update itself'), 'the update notice');
+  await until(() => notice().includes('is available'), 'the update-available notice');
   await until(() => !document.querySelector('.app-notice').getAnimations().some((a) => a.playState === 'running'), 'the notice to arrive');
   // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
   // own centre, so no sheet covers it; and the sheet starts below the notice's band, so the card covers no sheet.
@@ -45,6 +47,11 @@
   if (document.querySelector('.sheet').getBoundingClientRect().top < card.bottom) throw new Error('the notice covers the sheet');
   // The button has shown its answer and is idle again, so the capture shows its label.
   await until(() => !about().querySelector('[data-action=check-updates]').dataset.press, 'the button to settle', 5000);
+  // About's button follows the notice (issue 192): it is now the step the notice offers, labelled as the notice's action.
+  const button = about().querySelector('[data-action=check-updates]');
+  const action = document.querySelector('.app-notice .app-notice-action');
+  await until(() => button.dataset.command !== 'check', 'About\'s button to offer the update', 5000);
+  if (!action || action.textContent.trim() !== button.textContent.trim()) throw new Error('About offers ' + button.textContent.trim() + ' but the notice offers ' + (action ? action.textContent.trim() : 'nothing'));
   await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
   const marker = document.createElement('output');
@@ -52,7 +59,17 @@
   marker.textContent = 'about:pass';
   Object.assign(marker.style, { position: 'fixed', bottom: '0', left: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(marker);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim() };
+  // The build the shell reported (issue 192): the channel and the build number About draws, which a phone's test holds
+  // to a value rather than Unknown.
+  const value = (key) => ((about().querySelector('.about-row[data-key=' + key + '] .about-value-text') || {}).textContent || '').trim();
+  const channel = value('channel');
+  const build = value('build');
+  const reported = document.createElement('output');
+  reported.setAttribute('aria-label', 'about:build channel=' + channel + ' build=' + build);
+  reported.textContent = reported.getAttribute('aria-label');
+  Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
+  document.body.append(reported);
+  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim(), button: button.textContent.trim(), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;

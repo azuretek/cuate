@@ -102,6 +102,8 @@ dependencies {
     implementation("androidx.javascriptengine:javascriptengine:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
+    // The JVM's own org.json for the unit tests: android.jar's is a stub that throws off a device.
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
