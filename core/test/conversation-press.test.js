@@ -18,17 +18,17 @@ function words(value) {
   return '';
 }
 
-test('a reply renders one quiet mark back to its thread, never the original body or a reply-to label', () => {
-  const parent = { id: 'parent', text: 'Unique original body', senderName: 'Avery', fromMe: false };
-  const host = { messages: [parent], chat: {}, sending: true };
-  const message = { id: 'reply', replyTo: 'parent', text: 'Answer', attachments: [], reactions: [], fromMe: true };
-  const markup = words(proto.bubble.call(host, { message }, message, false, 'list'));
+test('a received reply carries one thread line and never the original body or a reply-to label, its original not loaded included', () => {
+  const parent = { id: 'parent', text: 'Unique original body', senderName: 'Avery', fromMe: true, attachments: [], reactions: [] };
+  const message = { id: 'reply', replyTo: 'parent', text: 'Answer', attachments: [], reactions: [], fromMe: false };
+  const host = { messages: [parent, message], chat: {}, sending: true };
+  const markup = words(proto.bubble.call(host, { message }, null, false, 'list'));
   assert.ok(!markup.includes(parent.text));
   assert.ok(!markup.includes('Reply to'));
-  assert.equal((markup.match(/class="reply-mark"/g) || []).length, 1);
-  assert.ok(markup.includes('In a thread with Avery'));
-  const missing = words(proto.bubble.call(host, { message: { ...message, replyTo: 'missing' } }, message, false, 'list'));
-  assert.equal((missing.match(/class="reply-mark"/g) || []).length, 1, 'a thread whose first message is not loaded is still marked');
+  assert.equal((markup.match(/class="thread-line"/g) || []).length, 1);
+  const missing = { ...message, replyTo: 'missing' };
+  const alone = { messages: [missing], chat: {}, sending: true };
+  assert.equal((words(proto.bubble.call(alone, { message: missing }, null, false, 'list')).match(/class="thread-line"/g) || []).length, 1, 'a thread whose original is not loaded is still marked');
 });
 
 test('reply send returns the same work and preserves the parent id', async () => {

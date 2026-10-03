@@ -212,6 +212,7 @@ var engine = (() => {
     removeTheme: () => removeTheme,
     renameGroup: () => renameGroup,
     renderIcon: () => renderIcon,
+    replyCountLabel: () => replyCountLabel,
     replyQuote: () => replyQuote,
     reportRows: () => reportRows,
     requestDelete: () => requestDelete,
@@ -259,6 +260,7 @@ var engine = (() => {
     themeName: () => themeName,
     themeVars: () => themeVars,
     threadIds: () => threadIds,
+    threadMarks: () => threadMarks,
     threadRoot: () => threadRoot,
     toBase64: () => toBase64,
     toHex: () => toHex,
@@ -1167,7 +1169,10 @@ var engine = (() => {
       senderName: fromMe ? null : m.sender_name || null,
       text: stripInlineObjects(m.text),
       sentAt: iso(m.created_at) || "1970-01-01T00:00:00.000Z",
-      replyTo: m.reply_to_guid || m.thread_originator_guid || null,
+      // A message is in a thread only when imsg reports its thread originator. Its reply_to_guid is no such mark: Messages
+      // fills it on ordinary rows with the message before it, so reading it marked every consecutive message as a reply
+      // to the one above (issue 195).
+      replyTo: m.thread_originator_guid ? String(m.thread_originator_guid) : null,
       read: fromMe || typeof m.is_read !== "boolean" ? null : m.is_read,
       attachments: (Array.isArray(m.attachments) ? m.attachments : []).map((a) => mapAttachment(a, attachmentId)),
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean)
@@ -1723,6 +1728,31 @@ var engine = (() => {
     const ids = /* @__PURE__ */ new Set([root, id]);
     for (const m of byId.values()) if (rootOf(m.id) === root) ids.add(m.id);
     return ids;
+  }
+  function threadMarks(messages) {
+    const list = messages || [];
+    const byId = new Map(list.map((m) => [m.id, m]));
+    const rootOf = (id) => rootIn(byId, id);
+    const threads = /* @__PURE__ */ new Map();
+    for (const m of list) {
+      if (!m.replyTo) continue;
+      const root = rootOf(m.id);
+      if (root === m.id) continue;
+      if (!threads.has(root)) threads.set(root, []);
+      threads.get(root).push(m.id);
+    }
+    const marks = /* @__PURE__ */ new Map();
+    const at = new Map(list.map((m, i) => [m.id, i]));
+    for (const [root, replies] of threads) {
+      let i = at.get(replies[replies.length - 1]);
+      while (i > 0 && list[i - 1].replyTo && rootOf(list[i - 1].id) === root) i -= 1;
+      const first = list[i].id;
+      for (const id of replies) marks.set(id, { root, ghost: id === first ? { root, count: replies.length } : null, connector: !byId.get(id).fromMe });
+    }
+    return marks;
+  }
+  function replyCountLabel(count) {
+    return count + (count === 1 ? " Reply" : " Replies");
   }
   function myReaction(m) {
     return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;

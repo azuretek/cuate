@@ -10,7 +10,8 @@ const CHATS = [
   { id: 3, name: '+15555550142', display_name: '', contact_name: '', identifier: '+15555550142', guid: 'SMS;-;+15555550142', service: 'SMS', is_group: false, participants: ['+15555550142'], unread_count: 0 },
 ];
 
-// [chat, minutes before the base time, from me, sender, text, has the photo]
+// [chat, minutes before the base time, from me, sender, text, has the photo, the guid of the message it replies to in a
+// thread]. Messages and its rows are ordered by guid; the two thread replies are appended so every earlier guid stays.
 export const SCRIPT = [
   [3, 4000, false, '+15555550142', 'Your table for two is confirmed for Friday at 7.'],
   [3, 3990, true, null, 'Thank you'],
@@ -25,7 +26,13 @@ export const SCRIPT = [
   [1, 60, false, '+15555550100', 'Look at this sunset from the walk home.', true],
   [1, 58, true, null, 'Wow, that is beautiful.'],
   [1, 5, false, '+15555550100', 'See you soon'],
+  // A thread (issue 195): Avery used Reply on your "Yes! 10 at the usual place?" a while later, and you answered in it.
+  [1, 120, false, '+15555550100', 'Could we make it 10:30 instead?', false, 'FAKE-0009'],
+  [1, 118, true, null, '10:30 works.', false, 'FAKE-0009'],
 ];
+
+// The message Avery has not read yet: the newest in the first conversation.
+const UNREAD = 'FAKE-0013';
 
 // A reaction as imsg names it: a standard tapback by its kind with its glyph, and any other emoji (Messages' type 2006)
 // as "custom" with the emoji itself, which is the shape both its inline reactions and its live rows carry (issue 188).
@@ -41,7 +48,7 @@ const REACTIONS = {
 
 export function buildFixtures({ base, imagePath, imageBytes }) {
   const chats = CHATS.map((c) => ({ ...c, participants: [...c.participants] }));
-  const messages = SCRIPT.map(([chat, minutes, fromMe, sender, text, photo], i) => {
+  const messages = SCRIPT.map(([chat, minutes, fromMe, sender, text, photo, threadOf], i) => {
     const id = i + 1;
     const m = {
       id,
@@ -54,9 +61,23 @@ export function buildFixtures({ base, imagePath, imageBytes }) {
       created_at: new Date(base - minutes * 60000).toISOString(),
       attachments: photo ? [{ filename: 'sunset.png', transfer_name: 'sunset.png', uti: 'public.png', mime_type: 'image/png', total_bytes: imageBytes, is_sticker: false, missing: false, original_path: imagePath }] : [],
     };
-    if (!fromMe) m.is_read = i !== SCRIPT.length - 1;
+    if (!fromMe) m.is_read = m.guid !== UNREAD;
     if (REACTIONS[id]) m.reactions = REACTIONS[id];
+    if (threadOf) {
+      m.thread_originator_guid = threadOf;
+      m.thread_originator_part = '0:0:27';
+    }
     return m;
   });
+  // As Messages records it, an ordinary row's reply_to_guid names the chat's message before it, and imsg resolves that
+  // message's sender and text alongside; none of it means a thread, which only thread_originator_guid does (issue 195).
+  const inOrder = [...messages].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const m of inOrder) {
+    const prev = inOrder.filter((x) => x.chat_id === m.chat_id && x.created_at < m.created_at).pop();
+    if (!prev) continue;
+    m.reply_to_guid = prev.guid;
+    m.reply_to_sender = prev.sender;
+    m.reply_to_text = prev.text;
+  }
   return { chats, messages };
 }

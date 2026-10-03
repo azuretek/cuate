@@ -4,7 +4,7 @@ import { press, runPress, emit, respond } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { chatTitle, initials } from '../rules/chats.js';
-import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, messageActions, threadIds, threadRoot } from '../rules/messages.js';
+import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
 import { windowControlsHtml } from './window-controls.js';
 import './app-composer.js';
@@ -14,6 +14,18 @@ import './app-attachment.js';
 const LONG_PRESS_MS = 500;
 // How far a resting finger may drift and still be a long press rather than the start of a scroll, in CSS pixels.
 const PRESS_SLOP = 10;
+
+// The thread marks of one message list, worked out once per list rather than once per bubble.
+const markCache = new WeakMap();
+function marksOf(messages) {
+  const list = messages || [];
+  let marks = markCache.get(list);
+  if (!marks) {
+    marks = threadMarks(list);
+    markCache.set(list, marks);
+  }
+  return marks;
+}
 
 class AppConversation extends KitElement {
   static properties = {
@@ -156,7 +168,7 @@ class AppConversation extends KitElement {
     return runPress(control, () => this.fire('react', { messageId: m.id, emoji, remove }));
   }
 
-  // Reply in thread, or a reply's thread mark, opens the thread as its own conversation over the rest, which blurs
+  // Reply in thread, or a reply, its line, its thread's ghost original or the reply count, opens the thread as its own conversation over the rest, which blurs
   // behind it, and the composer replies into it. A thread is one level deep, as on the Mac: it is named by its first
   // message, so answering a reply joins the same thread (issues 169 and 183).
   openThread(m) {
@@ -191,17 +203,39 @@ class AppConversation extends KitElement {
     </div>`;
   }
 
-  // where is 'list' for the conversation and 'thread' for the open thread. Only the surface in front draws a menu, and a
-  // reply in the conversation carries a quiet mark back to its thread rather than a label naming who it answers.
+  // What the composer's field says: Reply while a thread is open, as on the phone (issue 195).
+  composerPlaceholder() {
+    if (!this.sending) return 'Sending is off on the server';
+    return this.replyingTo ? 'Reply' : 'Message';
+  }
+
+  // Above the run of replies that holds a thread's newest reply, the thread's original as a small outlined ghost on its
+  // own side, with the reply count under it; either opens the thread (issue 195). Nothing for any other message.
+  ghost(m) {
+    const mark = marksOf(this.messages).get(m.id);
+    if (!mark || !mark.ghost) return nothing;
+    const original = (this.messages || []).find((x) => x.id === mark.root) || null;
+    const q = replyQuote(this.messages, { replyTo: mark.root });
+    const side = original && original.fromMe ? 'mine' : 'theirs';
+    const open = () => this.openThread(m);
+    return html`<div class=${'thread-ghost-row ' + side} data-thread=${mark.root}>
+      <button type="button" class="thread-ghost" aria-label=${'Original message' + (q.who ? ' from ' + q.who : '') + ': ' + q.text + '. Open the thread'} @click=${press(open)}>${q.text}</button>
+      <button type="button" class="thread-count" @click=${press(open)}>${replyCountLabel(mark.ghost.count)}</button>
+    </div>`;
+  }
+
+  // where is 'list' for the conversation and 'thread' for the open thread. Only the surface in front draws a menu. In the
+  // conversation a reply from the other side carries a thin line toward its thread's ghost original, and tapping any
+  // reply opens its thread; every other message carries nothing (issue 195).
   bubble(it, lastMine, sms, where = 'list') {
     const m = it.message;
     const mine = m.fromMe;
     const front = where === 'thread' || !this.replyingTo;
     const targeted = this.reactFor === m.id;
-    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : ''].filter(Boolean).join(' ');
+    const mark = where === 'list' ? marksOf(this.messages).get(m.id) || null : null;
+    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', mark ? 'thread-reply' : ''].filter(Boolean).join(' ');
     const kind = mine ? (sms ? 'sms' : 'me') : 'them';
     const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
-    const quote = where === 'list' ? replyQuote(this.messages, m) : null;
     const own = myReaction(m);
     const ownGlyph = own ? reactionGlyph(own) : null;
     const busy = this.reacting === m.id;
@@ -209,10 +243,10 @@ class AppConversation extends KitElement {
     const note = this.note && this.note.id === m.id ? this.note.text : '';
     return html`<div class=${row} data-id=${m.id} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
-      ${quote ? html`<button type="button" class="reply-mark" aria-label=${'In a thread' + (quote.who ? ' with ' + quote.who : '') + '. Open the thread'} title="Open the thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       <div class="bubble-body">
+        ${mark && mark.connector ? html`<button type="button" class="thread-line" aria-label="Open the thread" title="Open the thread" @click=${press(() => this.openThread(m))}></button>` : nothing}
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
-        ${m.text ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')}>${m.text}</div>` : nothing}
+        ${m.text ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${mark ? () => this.openThread(m) : nothing}>${m.text}</div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
       </div>
@@ -221,12 +255,17 @@ class AppConversation extends KitElement {
     </div>`;
   }
 
-  // The open thread: its first message and every reply, in order, as a conversation of their own.
-  threadView(lastMine, sms) {
+  // The open thread: only its original and every reply, in order, each under its day and time, with the delivery status
+  // of your last message in it, as a conversation of their own (issue 195).
+  threadView(sms) {
     const ids = threadIds(this.messages, this.replyingTo.id);
-    const items = groupMessages((this.messages || []).filter((m) => ids.has(m.id)));
+    const thread = (this.messages || []).filter((m) => ids.has(m.id));
+    const lastMine = [...thread].reverse().find((m) => m.fromMe) || null;
+    const now = Date.now();
+    const locale = navigator.language;
+    const items = groupMessages(thread, { gapMs: 0 });
     return html`<div class="thread-view">
-      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread">${items.filter((it) => it.kind === 'message').map((it) => this.bubble(it, lastMine, sms, 'thread'))}</div>
+      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread">${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, 'thread')))}</div>
     </div>`;
   }
 
@@ -239,15 +278,16 @@ class AppConversation extends KitElement {
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    // An open thread keeps the contact header, with a close control in place of the way back (issue 195).
+    return html`<header class="conv-head">${thread ? nothing : html`<button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button>`}<span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${thread ? html`<button type="button" class="thread-close" aria-label="Close thread" title="Close thread" data-dismiss-keep="thread" @click=${press(() => this.closeThread())}><span class="icon" data-icon="x" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
-          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, 'list')))}
+          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.ghost(it.message), this.bubble(it, lastMine, sms, 'list')]))}
         </div>
-        ${thread ? this.threadView(lastMine, sms) : nothing}
+        ${thread ? this.threadView(sms) : nothing}
       </div>
-      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 

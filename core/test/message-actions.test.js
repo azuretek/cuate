@@ -185,35 +185,24 @@ test('an open thread is its own conversation over the rest, which is blurred and
   const other = msg({ id: 'FAKE-0002', text: 'Unrelated message', sentAt: '2026-01-15T10:05:00.000Z' });
   const reply = msg({ id: 'FAKE-0003', replyTo: 'FAKE-0001', fromMe: true, sender: null, text: 'First reply', sentAt: '2026-01-15T10:06:00.000Z' });
   const h = host({ messages: [root, other, reply], replyingTo: { id: 'FAKE-0001' }, chat: { id: '1', name: 'Avery Quinn', participants: ['+15555550100'], isGroup: false, service: 'iMessage' }, hasMore: false, windowControls: null, uploadMaxBytes: 1 });
-  for (const k of ['bubble', 'threadView', 'menu']) h[k] = conversation[k];
-  const thread = words(conversation.threadView.call(h, null, false));
+  for (const k of ['bubble', 'threadView', 'menu', 'ghost', 'composerPlaceholder']) h[k] = conversation[k];
+  const thread = words(conversation.threadView.call(h, false));
   assert.ok(thread.includes('Unique root body') && thread.includes('First reply'), 'the first message and its replies');
   assert.ok(thread.indexOf('Unique root body') < thread.indexOf('First reply'), 'in order');
   assert.ok(!thread.includes('Unrelated message'), 'nothing outside the thread');
-  assert.ok(!thread.includes('reply-mark'), 'no mark back to the thread inside the thread');
+  assert.ok(!/thread-line|thread-ghost/.test(thread), 'no thread marks inside the thread');
   const page = words(conversation.render.call(h));
   assert.match(page, /class=messages behind/);
   assert.ok(page.includes('class="thread-view"'));
   const closed = words(conversation.render.call({ ...h, replyingTo: null }));
   assert.ok(!closed.includes('thread-view') && !/messages behind/.test(closed), 'closed, the conversation is whole again');
-  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: root.id }, frequent: [], preview: '', disabled: false, placeholder: '' };
+  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: root.id }, frequent: [], preview: '', disabled: false, placeholder: 'Reply' };
   const markup = words(composer.render.call(c));
-  assert.ok(markup.includes('Replying in thread'));
-  assert.ok(markup.includes('aria-label="Cancel reply"'));
+  assert.ok(!markup.includes('Replying in thread') && !markup.includes('composer-thread'), 'no indicator row: the field reads Reply (issue 195)');
   assert.ok(!markup.includes('Unique root body') && !markup.includes('composer-reply'), 'no quote banner');
   const s = host({ replyingTo: { id: root.id }, fire: () => undefined });
   conversation.onSend.call(s, { text: 'x', replyTo: root.id });
   assert.equal(s.replyingTo, null, 'sending brings the whole conversation back');
-});
-
-test('a reply in the conversation carries a quiet mark back to its thread, never a label naming who it answers', () => {
-  const root = msg({ id: 'FAKE-0001', text: 'Root' });
-  const reply = msg({ id: 'FAKE-0003', replyTo: 'FAKE-0001', fromMe: true, sender: null, text: 'Answer' });
-  const h = host({ messages: [root, reply] });
-  const markup = words(conversation.bubble.call(h, { message: reply, first: true, last: true }, null, false, 'list'));
-  assert.equal((markup.match(/class="reply-mark"/g) || []).length, 1);
-  assert.ok(markup.includes('data-icon="reply"'));
-  assert.ok(!/Reply to/.test(markup), 'no reply-to text label');
 });
 
 test('the thread opens over a blur that reduced motion keeps without animation, reactions float, and the old surfaces are gone', () => {
@@ -224,5 +213,5 @@ test('the thread opens over a blur that reduced motion keeps without animation, 
   assert.match(reduced, /\.messages \{ transition: none; \}/);
   assert.match(css, /\.reactions \{ position: absolute; top: 0; right: 0;/);
   assert.match(css, /\.reaction \{ background: none;/);
-  assert.ok(!/\.composer-reply|\.tapback-row|\.message-actions|\.reply-link|\.faded/.test(css), 'the old banner, tapback row, hover buttons, reply label and fade are gone');
+  assert.ok(!/\.composer-reply|\.composer-thread|\.reply-mark|\.tapback-row|\.message-actions|\.reply-link|\.faded/.test(css), 'the old banner, indicator, per-message mark, tapback row, hover buttons, reply label and fade are gone');
 });

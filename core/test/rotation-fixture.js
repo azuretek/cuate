@@ -83,7 +83,7 @@
     frames = previousWidth === innerWidth ? frames + 1 : 0;
     previousWidth = innerWidth;
     const current = rows().find(row => row.dataset.id === key);
-    const relationships = [...scroller.querySelectorAll('.reply-mark')];
+    const relationships = [...scroller.querySelectorAll('.thread-line')];
     const chatDesign = document.documentElement.dataset.scheme === scheme && relationships.length === 25 && relationships.every(link => !link.textContent.includes('Synthetic rotation message') && !/Reply to/.test(link.textContent))
       && !scroller.querySelector('.reply-quote') && scroller.querySelector('.reaction');
     const checks = {
