@@ -42,6 +42,36 @@ export function sanitizeState(value, secrets = [], depth = 0) {
   return value;
 }
 
+// The sheet's own history, recorded as it happens rather than read once at the end. A snapshot taken after a
+// timeout shows where the surface stopped, but not whether the sheet's departure ever STARTED, ended unheard,
+// or was cancelled, nor whether the page was hidden while it should have run. The intermittent macOS packaged
+// smoke failure (job 111169024308, run 37111099406: "timed out waiting for !document.querySelector('.sheet') &&
+// ... does not update itself", after the window was hidden to the tray and raised by Check for updates) is
+// exactly that question, since the sheet then left only on its animationend (it now also finishes at a deadline,
+// core/app/rules/sheet.js, so a window that draws no frames cannot hold it up). This records the sheet and scrim
+// animation events, the body's leaving class and the page's visibility, with page-relative times, bounded to
+// the last TRACE_LIMIT entries so a long run cannot grow it. It is installed once, by the smoke only, and it
+// observes: it never changes what the page does.
+export const TRACE_LIMIT = 40;
+
+export function smokeTraceInstaller() {
+  return [
+    '(() => {',
+    '  if (window.__smokeTrace) return true;',
+    '  const trace = window.__smokeTrace = [];',
+    '  const note = (entry) => { trace.push({ t: Math.round(performance.now()), ...entry }); if (trace.length > ' + TRACE_LIMIT + ') trace.shift(); };',
+    '  const name = (el) => el && el.classList ? (el.classList.contains("sheet") ? "sheet" : el.classList.contains("sheet-scrim") ? "scrim" : null) : null;',
+    '  for (const type of ["animationstart", "animationend", "animationcancel"]) {',
+    '    document.addEventListener(type, (e) => { const who = name(e.target); if (who) note({ e: type, who, anim: e.animationName, vis: document.visibilityState }); }, true);',
+    '  }',
+    '  document.addEventListener("visibilitychange", () => note({ e: "visibility", vis: document.visibilityState }), true);',
+    '  let leaving = document.body.classList.contains("surface--leaving");',
+    '  new MutationObserver(() => { const now = document.body.classList.contains("surface--leaving"); if (now !== leaving) { leaving = now; note({ e: now ? "leaving-on" : "leaving-off", vis: document.visibilityState }); } }).observe(document.body, { attributes: true, attributeFilter: ["class"] });',
+    '  return true;',
+    '})()',
+  ].join('\n');
+}
+
 // What the page says about its own surface. It reads the app's state and the sheet's own animation, which
 // is what tells a sheet that is leaving from one that is stuck: an element still drawing a finite
 // animation is on its way out, while one whose animation never ended or never ran is not.
@@ -76,6 +106,7 @@ export function smokeStateExpression() {
     '    dialogs: [...document.querySelectorAll("[role=dialog]")].map((d) => d.getAttribute("aria-label")),',
     '    reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,',
     '    visibility: document.visibilityState,',
+    '    trace: Array.isArray(window.__smokeTrace) ? window.__smokeTrace.slice(-' + TRACE_LIMIT + ') : null,',
     '  };',
     '})()',
   ].join('\n');
@@ -104,8 +135,13 @@ export async function captureRenderer(wc, boundMs = 8000) {
 // Retain the failure's evidence. Dependencies are injected so the failure path is testable without
 // Electron: evaluate(code) runs in the renderer, capture() answers a PNG Buffer, write(name, data)
 // stores a file, and the outcome is the sanitized state that was written.
-export async function retainSmokeFailure({ evaluate, capture, write, error, secrets = [], boundMs = 8000, now = () => new Date().toISOString() }) {
+// shell() is optional and answers what the main process knows about the window (shown, minimised, focused), the half
+// of a hidden-window question the page cannot see.
+export async function retainSmokeFailure({ evaluate, capture, write, error, shell = null, secrets = [], boundMs = 8000, now = () => new Date().toISOString() }) {
   const state = { at: now(), error: (error && error.message) || String(error) };
+  if (shell) {
+    try { state.shell = shell(); } catch (e) { state.shell = { error: (e && e.message) || String(e) }; }
+  }
   try {
     const renderer = await within(Promise.resolve().then(() => evaluate(smokeStateExpression())),
       boundMs);
