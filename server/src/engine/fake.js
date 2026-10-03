@@ -18,7 +18,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const sends = [];
   // send: how a send answers. sendDelayMs: how long a send takes to answer, so a test can hold one in flight.
   // afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0 };
+  // bridge: 'ready', or 'down' to answer the bridge-only calls (a tapback, a reply) the way imsg does with no bridge.
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready' };
+  const tapbacks = [];
+  const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
 
   const lastAt = (chatId) => messages.filter((m) => m.chat_id === chatId && !m.is_reaction).reduce((a, m) => (m.created_at > a ? m.created_at : a), '');
@@ -33,6 +36,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
 
   const world = {
     sends,
+    tapbacks,
     behavior,
     requests: [],
     get attempts() { return attempts; },
@@ -60,6 +64,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       };
       const reply = (id, result) => out({ jsonrpc: '2.0', id, result });
       const fail = (id, code, message, data) => out({ jsonrpc: '2.0', id, error: { code, message, ...(data ? { data } : {}) } });
+      const noBridge = (id) => fail(id, -32003, 'The bridge is not started. Run imsg launch explicitly before using bridge methods.', { retry_safe: true, disposition: 'not_started', transport: 'bridge', operation: 'send', detail: '' });
       const end = (code) => {
         if (closed) return;
         closed = true;
@@ -125,11 +130,32 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (behavior.send === 'uncertain') return fail(req.id, -32001, 'The send may have completed.', { retry_safe: false, disposition: 'may_have_completed', transport: 'applescript', operation: 'send', detail: '' });
             if (behavior.send === 'fail') return fail(req.id, -32603, 'Messages refused the send.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
             if (!p.text && !p.file) return fail(req.id, -32602, 'send needs text or a file.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
+            if (p.reply_to && behavior.bridge !== 'ready') return noBridge(req.id);
             const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
-            const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file });
-            sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null });
+            const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(p.reply_to ? { reply_to_guid: p.reply_to } : {}) });
+            sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null, replyTo: p.reply_to || null });
             if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: m.guid }), behavior.sendDelayMs).unref();
             else reply(req.id, { ok: true, id: m.id, guid: m.guid });
+            setTimeout(() => broadcast(m), 30).unref();
+            return undefined;
+          }
+          // The bridge's tapback: one of the six standard kinds, added or removed on a message by its guid. The
+          // target's own reactions change as they would in chat.db, and the reaction row streams like any other.
+          case 'tapback': {
+            attempts += 1;
+            if (behavior.bridge !== 'ready') return noBridge(req.id);
+            if (behavior.send === 'hang') return undefined;
+            if (behavior.send === 'uncertain') return fail(req.id, -32001, 'The tapback may have completed.', { retry_safe: false, disposition: 'may_have_completed', transport: 'bridge', operation: 'tapback', detail: '' });
+            if (behavior.send === 'fail') return fail(req.id, -32603, 'Messages refused the tapback.', { retry_safe: true, disposition: 'not_started', transport: 'bridge', operation: 'tapback', detail: '' });
+            if (!KINDS.has(p.kind)) return fail(req.id, -32602, 'kind must be a standard tapback.');
+            const target = messages.find((m) => m.guid === p.message_guid && m.chat_id === p.chat_id && !m.is_reaction);
+            if (!target) return fail(req.id, -32602, 'unknown message_guid');
+            const adding = p.remove !== true;
+            const others = (target.reactions || []).filter((r) => !r.is_from_me);
+            target.reactions = adding ? [...others, { reaction_type: p.kind, is_from_me: true }] : others;
+            const m = add({ chat_id: p.chat_id, is_from_me: true, is_reaction: true, reaction_type: p.kind, is_reaction_add: adding, reacted_to_guid: target.guid });
+            tapbacks.push({ chatId: p.chat_id, targetId: target.guid, kind: p.kind, remove: !adding });
+            reply(req.id, { ok: true });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }

@@ -176,6 +176,40 @@ test('bad send bodies are refused', async () => {
   }
 });
 
+test('a reaction and a threaded reply go through the routes and the client, and reach every client live (issue 138)', async (t) => {
+  const srv = await boot();
+  t.after(() => srv.close());
+  const events = [];
+  const states = [];
+  const client = createApiClient({ baseUrl: srv.base, token: srv.tokens.device, onEvent: (e) => events.push(e), onState: (st) => states.push(st) });
+  t.after(() => client.close());
+  client.connect();
+  await waitFor(() => states.includes('open'));
+  const at = (id) => '/api/v1/chats/1/messages/' + id + '/reactions';
+  const added = await client.react('1', 'FAKE-0013', { emoji: '\u{1F602}' });
+  conforms(added, 'ReactionResult');
+  assert.deepEqual(added, { status: 'sent', targetId: 'FAKE-0013', type: 'laugh', add: true });
+  await waitFor(() => events.some((e) => e.name === 'reaction' && e.data.targetId === 'FAKE-0013' && e.data.fromMe && e.data.add));
+  conforms(events.find((e) => e.name === 'reaction').data, 'ReactionEvent');
+  const mine = (await client.messages('1')).messages.find((m) => m.id === 'FAKE-0013').reactions.filter((r) => r.fromMe);
+  assert.deepEqual(mine.map((r) => r.type), ['laugh']);
+  const removed = await client.react('1', 'FAKE-0013', { emoji: '\u{1F602}', remove: true });
+  assert.equal(removed.add, false);
+  const custom = await srv.post(at('FAKE-0013'), srv.tokens.device, { emoji: '\u{1F389}' });
+  assert.equal(custom.status, 422);
+  assert.equal((await custom.json()).error.code, 'reaction_unsupported');
+  for (const [path, body] of [[at('FAKE-0013'), {}], [at('FAKE-0013'), { emoji: '\u2764', extra: 1 }], [at('FAKE-0013'), { emoji: '\u2764', remove: 'yes' }], [at('row:9'), { emoji: '\u2764' }]]) {
+    assert.equal((await srv.post(path, srv.tokens.device, body)).status, 400, path + ' ' + JSON.stringify(body));
+  }
+  assert.equal((await srv.post(at('FAKE-0013'), srv.tokens.tooling, { emoji: '\u2764' })).status, 403, 'a reaction needs the send scope');
+
+  const reply = await client.send('1', { text: 'Synthetic threaded reply', clientKey: 'key-reply-api-01', replyTo: 'FAKE-0013' });
+  conforms(reply, 'SendResult');
+  await waitFor(() => events.some((e) => e.name === 'message.new' && e.data.message.id === reply.messageId));
+  assert.equal(events.find((e) => e.name === 'message.new' && e.data.message.id === reply.messageId).data.message.replyTo, 'FAKE-0013');
+  assert.equal((await srv.post(route(1), srv.tokens.device, { text: 'x', clientKey: 'key-reply-api-02', replyTo: 'row:9' })).status, 400);
+});
+
 test('a file send goes out once, and an unknown or malformed file is refused', async () => {
   const b = await (await s.get(route(1) + '?limit=50', s.tokens.device)).json();
   const file = b.messages.flatMap((m) => m.attachments)[0];

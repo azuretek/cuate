@@ -2,13 +2,13 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck } from '../rules/attach.js';
-import './app-emoji-picker.js';
-
-const FREQUENT_KEY = 'emoji.frequent';
+import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
 
 class AppComposer extends KitElement {
   static properties = {
     disabled: {}, placeholder: {}, maxBytes: {},
+    // The message being replied to, as the conversation quotes it ({ id, who, text }), or null.
+    replyTo: { attribute: false },
     emojiOpen: { state: true }, attachOpen: { state: true }, frequent: { state: true }, staged: { state: true }, stageProblem: { state: true },
     // A staged picture's preview, as an object URL the composer owns and revokes when the file leaves.
     preview: { state: true },
@@ -19,6 +19,7 @@ class AppComposer extends KitElement {
     this.disabled = false;
     this.placeholder = '';
     this.maxBytes = undefined;
+    this.replyTo = null;
     this.emojiOpen = false;
     this.attachOpen = false;
     this.frequent = [];
@@ -53,25 +54,19 @@ class AppComposer extends KitElement {
     return this.querySelector('textarea');
   }
 
-  // The frequent row is the shell's storage; a plain browser keeps it for the page.
-  // A missing bridge or a rejected read leaves the row empty rather than failing.
   async loadFrequent() {
-    try {
-      const saved = await window.bridge?.call('storage.get', { key: FREQUENT_KEY });
-      if (Array.isArray(saved)) this.frequent = saved.filter(isEmoji);
-    } catch {
-      /* no storage, start empty */
-    }
+    this.frequent = await loadRecentEmoji();
   }
 
   async remember(char) {
-    const next = [...this.frequent, char].slice(-200);
-    this.frequent = next;
-    try {
-      await window.bridge?.call('storage.set', { key: FREQUENT_KEY, value: next });
-    } catch {
-      /* page only */
-    }
+    const before = this.frequent;
+    this.frequent = [...before, char].slice(-200);
+    await rememberEmoji(before, char);
+  }
+
+  // Choosing a message to reply to puts the caret in the field, ready to type the reply.
+  updated(changed) {
+    if (changed.has('replyTo') && this.replyTo) this.field()?.focus();
   }
 
   submit(e) {
@@ -80,7 +75,7 @@ class AppComposer extends KitElement {
     const text = t.value.trim();
     const file = this.staged;
     if ((!text && !file) || this.disabled) return;
-    this.dispatchEvent(new CustomEvent('send', { detail: { text, file } }));
+    this.dispatchEvent(new CustomEvent('send', { detail: { text, file, replyTo: this.replyTo ? this.replyTo.id : null } }));
     this.staged = null;
     this.stageProblem = '';
     this.setPreview(null);
@@ -93,6 +88,10 @@ class AppComposer extends KitElement {
     if (e.key === 'Escape' && (this.emojiOpen || this.attachOpen)) {
       this.emojiOpen = false;
       this.attachOpen = false;
+      return;
+    }
+    if (e.key === 'Escape' && this.replyTo) {
+      this.cancelReply();
       return;
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
@@ -188,9 +187,17 @@ class AppComposer extends KitElement {
     this.remember(char);
   }
 
+  cancelReply() {
+    this.dispatchEvent(new CustomEvent('reply-cancel'));
+    this.field()?.focus();
+  }
+
   render() {
     const s = this.staged;
-    return html`${s || this.stageProblem
+    const q = this.replyTo;
+    return html`${q
+      ? html`<div class="composer-reply" role="status"><span class="reply-meta"><span class="reply-who small">${q.who ? 'Replying to ' + q.who : 'Replying'}</span><span class="reply-text muted small">${q.text}</span></span><button type="button" class="staged-remove" aria-label="Cancel reply" @click=${() => this.cancelReply()}>\u00D7</button></div>`
+      : nothing}${s || this.stageProblem
       ? html`<div class="composer-staged" role="status">
           ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${() => this.openPreview()}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
           ${s && !this.preview ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}

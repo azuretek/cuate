@@ -189,7 +189,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform,
-    send, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
+    send, react: send.react, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),

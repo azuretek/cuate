@@ -132,17 +132,20 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     };
   }
 
-  // One imsg `send` call, for text, a file, or a file with a caption. Whatever comes back, an outcome the engine
-  // cannot vouch for is uncertain, and the sender above never retries it.
-  async function sendOut(params) {
+  // One imsg call that sends something: a message, a file, a reply or a tapback. Whatever comes back, an outcome the
+  // engine cannot vouch for is uncertain, and the sender above never retries it. `unsupported` names the codes that
+  // mean the engine cannot do this at all (a method it lacks, or a bridge method with no bridge running), which the
+  // sender refuses cleanly rather than reporting as a failed send.
+  async function sendOut(params, method = 'send', unsupported = [-32601, -32003]) {
     try {
-      const r = await request('send', params, sendTimeoutMs);
+      const r = await request(method, params, sendTimeoutMs);
       return { ok: true, messageId: r && r.guid ? String(r.guid) : null };
     } catch (e) {
       const disposition = e.data && e.data.disposition;
       if (e.code === -32001 || e.code === 'timeout' || e.code === 'engine_exit' || disposition === 'may_have_completed' || disposition === 'still_in_flight') {
         return { ok: false, uncertain: true, code: String(e.code) };
       }
+      if (unsupported.includes(e.code)) return { ok: false, uncertain: false, unsupported: true, code: String(e.code) };
       return { ok: false, uncertain: false, code: String(e.code ?? 'error'), error: e.message };
     }
   }
@@ -154,11 +157,20 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return { ok: Boolean(r && r.ok) };
   }
 
-  const sendText = (chatId, text) => sendOut({ chat_id: Number(chatId), text });
+  // A reply carries `reply_to`, which imsg sends through its IMCore bridge only. An engine too old to know the key
+  // answers -32602, and one with no bridge running -32003; both mean it cannot thread a reply, so both are refused as
+  // unsupported rather than sent outside the thread. reply_to is never an optional extra the adapter may drop.
+  const replyCodes = [-32601, -32602, -32003];
+  const withReply = (params, replyTo) => (replyTo ? { ...params, reply_to: replyTo } : params);
+  const sendText = (chatId, text, { replyTo = null } = {}) => sendOut(withReply({ chat_id: Number(chatId), text }, replyTo), 'send', replyTo ? replyCodes : undefined);
 
   // imsg stages one file per send under the Messages attachments folder before dispatch. An empty caption is left
   // out, so a file on its own is not a text send carrying nothing.
-  const sendFile = (chatId, file, text = '') => sendOut(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file });
+  const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined);
+
+  // imsg's bridge `tapback` adds or removes one of the six standard reactions on a message by its guid. Messages has
+  // no published way to send any other emoji as a reaction, so the sender refuses those before they reach here.
+  const react = (chatId, targetId, { type, remove = false }) => sendOut({ chat_id: Number(chatId), message_guid: String(targetId), kind: type, remove: Boolean(remove) }, 'tapback');
 
   function stop() {
     stopping = true;
@@ -178,6 +190,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     read,
     sendText,
     sendFile,
+    react,
     info: () => ({ kind: state.kind, version: state.version, ready: state.ready }),
     on: (cb) => listeners.add(cb),
     onState: (cb) => stateListeners.add(cb),

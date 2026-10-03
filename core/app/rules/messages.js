@@ -1,6 +1,42 @@
 // Pure: the conversation's rules.
 const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 
+// The six standard tapbacks, in the order the Mac offers them, as { type, glyph }. These are the reactions the
+// engine can send; any other emoji is shown when it arrives but refused when sent (issue 138).
+export const TAPBACKS = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
+
+// The standard tapback an emoji stands for, or null. The text and emoji presentations of one character (with and
+// without U+FE0F) name the same tapback; a skin tone or any other emoji names none.
+export function tapbackType(emoji) {
+  const bare = String(emoji || '').replace(/\ufe0f/g, '');
+  for (const t of TAPBACKS) if (t.glyph.replace(/\ufe0f/g, '') === bare) return t.type;
+  return null;
+}
+
+// The id the engine can react to or thread a reply to: a message's guid. A message still being sent (local:) or a row
+// the engine gave no guid (row:) has nothing to target yet. The server's routes check the same pattern.
+export const MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
+export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
+
+// The reaction this device's owner has on a message, or null.
+export function myReaction(m) {
+  return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;
+}
+
+// What a reply shows of the message it answers: who wrote it and a line of it. A parent that is not loaded is
+// reported as not found, so the quote says so rather than inventing one.
+export function replyQuote(messages, m, { max = 80 } = {}) {
+  if (!m || !m.replyTo) return null;
+  const parent = (messages || []).find((x) => x.id === m.replyTo) || null;
+  if (!parent) return { id: m.replyTo, found: false, who: '', text: 'An earlier message' };
+  const who = parent.fromMe ? 'You' : parent.senderName || parent.sender || '';
+  const words = String(parent.text || '').replace(/\s+/g, ' ').trim();
+  const first = parent.attachments && parent.attachments[0];
+  const body = words || (first ? first.name : '');
+  const text = Array.from(body).length > max ? Array.from(body).slice(0, max - 1).join('') + '\u2026' : body;
+  return { id: parent.id, found: true, who, text };
+}
+
 export function mergeMessages(existing, incoming) {
   const map = new Map(existing.map((m) => [m.id, m]));
   for (const m of incoming) map.set(m.id, { ...map.get(m.id), ...m });

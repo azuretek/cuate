@@ -1,6 +1,30 @@
 import { html } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
-import { EMOJI_CATEGORIES, emojiInCategory, searchEmoji, frequentEmoji, emojiPickerSections, pickerSide } from '../rules/emoji.js';
+import { EMOJI_CATEGORIES, emojiInCategory, searchEmoji, frequentEmoji, emojiPickerSections, pickerSide, isEmoji } from '../rules/emoji.js';
+
+// The recently used list is the shell's storage, shared by every place the picker opens (the composer, and a
+// message's reaction), so an emoji used in one is recent in the other. A plain browser keeps it for the page, and a
+// missing bridge or a rejected read leaves the list empty rather than failing.
+const FREQUENT_KEY = 'emoji.frequent';
+
+export async function loadRecentEmoji() {
+  try {
+    const saved = await window.bridge?.call('storage.get', { key: FREQUENT_KEY });
+    return Array.isArray(saved) ? saved.filter(isEmoji) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function rememberEmoji(list, char) {
+  const next = [...list, char].slice(-200);
+  try {
+    await window.bridge?.call('storage.set', { key: FREQUENT_KEY, value: next });
+  } catch {
+    /* page only */
+  }
+  return next;
+}
 
 // The emoji panel: the grid, a search field, the categories and a recently used row. It owns nothing but what it is
 // told: it takes the frequent list as a property and hands every pick back as an event, so the composer stays the one

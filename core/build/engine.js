@@ -32,6 +32,7 @@ var engine = (() => {
     LEVELS: () => LEVELS,
     MANUAL: () => MANUAL,
     MAX_THEMES: () => MAX_THEMES,
+    MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
@@ -48,6 +49,7 @@ var engine = (() => {
     SORT_ORDERS: () => SORT_ORDERS,
     STALL_MS: () => STALL_MS,
     SWATCH_TOKENS: () => SWATCH_TOKENS,
+    TAPBACKS: () => TAPBACKS2,
     TEXT_SCALES: () => TEXT_SCALES,
     THEME_GROUPS: () => THEME_GROUPS,
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
@@ -73,6 +75,7 @@ var engine = (() => {
     backdropReturns: () => backdropReturns,
     bugReportBlock: () => bugReportBlock,
     buildNumberOf: () => buildNumberOf,
+    canTarget: () => canTarget,
     capability: () => capability,
     channelOf: () => channelOf,
     chatPreview: () => chatPreview,
@@ -137,6 +140,7 @@ var engine = (() => {
     messageNotice: () => messageNotice,
     moveChat: () => moveChat,
     moveGroup: () => moveGroup,
+    myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
     noticeEnabled: () => noticeEnabled,
     openapiDocument: () => openapiDocument,
@@ -156,6 +160,7 @@ var engine = (() => {
     removeGroup: () => removeGroup,
     removeTheme: () => removeTheme,
     renameGroup: () => renameGroup,
+    replyQuote: () => replyQuote,
     reportRows: () => reportRows,
     requestDelete: () => requestDelete,
     requestDeleteGroup: () => requestDeleteGroup,
@@ -182,6 +187,7 @@ var engine = (() => {
     stripInlineObjects: () => stripInlineObjects,
     summarizeReactions: () => summarizeReactions,
     swatchVars: () => swatchVars,
+    tapbackType: () => tapbackType,
     textScale: () => textScale,
     textScaleVars: () => textScaleVars,
     themeChoices: () => themeChoices,
@@ -286,7 +292,8 @@ var engine = (() => {
       info: () => call("GET", "/api/v1/info"),
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
-      send: (chatId, { text, file, clientKey }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, file ? { text, file, clientKey } : { text, clientKey }),
+      send: (chatId, { text, file, clientKey, replyTo }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...file ? { file } : {}, clientKey, ...replyTo ? { replyTo } : {} }),
+      react: (chatId, messageId, { emoji, remove = false }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       settings: () => call("GET", "/api/v1/settings"),
@@ -1316,6 +1323,28 @@ var engine = (() => {
 
   // core/app/rules/messages.js
   var GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
+  var TAPBACKS2 = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
+  function tapbackType(emoji) {
+    const bare = String(emoji || "").replace(/\ufe0f/g, "");
+    for (const t of TAPBACKS2) if (t.glyph.replace(/\ufe0f/g, "") === bare) return t.type;
+    return null;
+  }
+  var MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
+  var canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
+  function myReaction(m) {
+    return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;
+  }
+  function replyQuote(messages, m, { max = 80 } = {}) {
+    if (!m || !m.replyTo) return null;
+    const parent = (messages || []).find((x) => x.id === m.replyTo) || null;
+    if (!parent) return { id: m.replyTo, found: false, who: "", text: "An earlier message" };
+    const who = parent.fromMe ? "You" : parent.senderName || parent.sender || "";
+    const words = String(parent.text || "").replace(/\s+/g, " ").trim();
+    const first = parent.attachments && parent.attachments[0];
+    const body = words || (first ? first.name : "");
+    const text = Array.from(body).length > max ? Array.from(body).slice(0, max - 1).join("") + "\u2026" : body;
+    return { id: parent.id, found: true, who, text };
+  }
   function mergeMessages(existing, incoming) {
     const map = new Map(existing.map((m) => [m.id, m]));
     for (const m of incoming) map.set(m.id, { ...map.get(m.id), ...m });

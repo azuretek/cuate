@@ -232,3 +232,118 @@ test('a file send is refused while the switch is off, and one whose engine dies 
   assert.equal(s.store.getSend('key-file-00005').status, 'uncertain');
   assert.equal(s.world.attempts, 1, 'the file send was attempted once and never retried');
 });
+
+// Issue 138: reactions and threaded replies go through the same switch and rate window as any send.
+const ofMe = async (s, chatId, guid) => (await s.engine.messages(chatId)).messages.find((m) => m.id === guid).reactions.filter((r) => r.fromMe);
+
+test('a reaction is sent as a standard tapback, shows on the message, and comes off again', async (t) => {
+  const s = sender();
+  t.after(() => s.close());
+  await s.start();
+  const live = [];
+  s.engine.on((name, data) => { if (name === 'reaction') live.push(data); });
+  const added = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2764' });
+  assert.equal(added.http, 201);
+  assert.deepEqual(added.body, { status: 'sent', targetId: 'FAKE-0013', type: 'love', add: true });
+  assert.deepEqual(s.world.tapbacks, [{ chatId: 1, targetId: 'FAKE-0013', kind: 'love', remove: false }], 'the text and emoji forms of a heart are one tapback');
+  assert.deepEqual(await ofMe(s, '1', 'FAKE-0013'), [{ type: 'love', emoji: null, fromMe: true, sender: null }]);
+  await tick(80);
+  assert.deepEqual(live.map((r) => [r.targetId, r.type, r.add, r.fromMe]), [['FAKE-0013', 'love', true, true]], 'it streams like a received one');
+  const removed = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2764\ufe0f', remove: true });
+  assert.equal(removed.http, 201);
+  assert.equal(removed.body.add, false);
+  assert.deepEqual(await ofMe(s, '1', 'FAKE-0013'), []);
+  await tick(80);
+  assert.deepEqual(live.map((r) => r.add), [true, false]);
+});
+
+test('a reaction the engine cannot send is refused cleanly, costs no rate budget, and never reaches it', async (t) => {
+  let clock = 1000;
+  const s = sender({ perMinute: 1, now: () => clock });
+  t.after(() => s.close());
+  await s.start();
+  const custom = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F389}' });
+  assert.equal(custom.http, 422);
+  assert.equal(custom.error[0], 'reaction_unsupported');
+  assert.equal((await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F44D}\u{1F3FD}' })).error[0], 'reaction_unsupported', 'a skin tone is not the like tapback');
+  assert.equal(s.world.attempts, 0);
+  s.world.behavior.bridge = 'down';
+  const noBridge = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F44D}' });
+  assert.equal(noBridge.http, 422);
+  assert.equal(noBridge.error[0], 'reaction_unsupported');
+  s.world.behavior.bridge = 'ready';
+  // Neither refusal kept a slot, so the one send the window allows still goes.
+  assert.equal((await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F44D}' })).http, 201);
+  assert.equal((await s.send.react('1', { targetId: 'FAKE-0012', emoji: '\u{1F44D}' })).error[0], 'rate_limited');
+  assert.equal(s.world.tapbacks.length, 1);
+});
+
+test('a reaction honours the sending switch, and one still in flight is not sent twice', async (t) => {
+  const off = sender({ sending: false });
+  t.after(() => off.close());
+  await off.start();
+  const refused = await off.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F602}' });
+  assert.equal(refused.http, 403);
+  assert.equal(refused.error[0], 'sending_off');
+  assert.equal(off.world.attempts, 0);
+
+  const s = sender({ sendTimeoutMs: 5000 });
+  t.after(() => s.close());
+  await s.start();
+  s.world.behavior.send = 'hang';
+  const held = s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F602}' });
+  await tick();
+  const copy = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F602}' });
+  assert.equal(copy.http, 409);
+  assert.equal(copy.error[0], 'in_flight');
+  s.world.crashAll();
+  const r = await held;
+  assert.equal(r.http, 202, 'a tapback the engine lost is uncertain, never retried');
+  assert.equal(r.body.status, 'uncertain');
+  assert.equal(s.world.attempts, 1);
+});
+
+test('a reply carries its parent to the engine and arrives linked to it', async (t) => {
+  const s = sender();
+  t.after(() => s.close());
+  await s.start();
+  const r = await s.send('1', { text: 'Synthetic reply', replyTo: 'FAKE-0013' }, 'key-reply-00001');
+  assert.equal(r.http, 201);
+  assert.deepEqual(s.world.sends.at(-1), { chatId: 1, text: 'Synthetic reply', file: null, replyTo: 'FAKE-0013' });
+  const sent = (await s.engine.messages('1')).messages.find((m) => m.id === r.body.messageId);
+  assert.equal(sent.replyTo, 'FAKE-0013');
+  // A plain send carries no reply key at all, so an engine that predates replies is unaffected.
+  await s.send('1', { text: 'Synthetic plain' }, 'key-reply-00002');
+  assert.equal(s.world.sends.at(-1).replyTo, null);
+});
+
+test('a reply the engine cannot thread is refused, not sent outside the thread', async (t) => {
+  const s = sender({ perMinute: 1 });
+  t.after(() => s.close());
+  await s.start();
+  s.world.behavior.bridge = 'down';
+  const r = await s.send('1', { text: 'Synthetic unthreaded', replyTo: 'FAKE-0013' }, 'key-reply-00003');
+  assert.equal(r.http, 422);
+  assert.equal(r.error[0], 'reply_unsupported');
+  assert.equal(s.world.sends.length, 0, 'nothing was sent without its thread');
+  s.world.behavior.bridge = 'ready';
+  assert.equal((await s.send('1', { text: 'Synthetic after' }, 'key-reply-00004')).http, 201, 'the refusal gave its slot back');
+});
+
+test('while an update holds sends, a reaction is held too, and one going out counts as in flight', async (t) => {
+  const s = sender({ sendTimeoutMs: 5000 });
+  t.after(() => s.close());
+  await s.start();
+  s.send.hold();
+  const held = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2753' });
+  assert.equal(held.http, 503);
+  assert.equal(held.error[0], 'updating');
+  s.send.release();
+  s.world.behavior.send = 'hang';
+  const going = s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2753' });
+  await tick();
+  assert.equal(s.send.inFlight(), 1, 'the updater waits for a reaction going out');
+  s.world.crashAll();
+  await going;
+  assert.equal(s.send.inFlight(), 0);
+});
