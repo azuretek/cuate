@@ -722,6 +722,10 @@ async function runSmoke(w) {
     };
   })()`);
   await pause(1200); // the refused reaction's failure mark on the emoji button runs out before the capture
+  // Motion is pinned both ways rather than inherited: a Windows runner reports reduced motion of its own, which drops
+  // every transition, so the fade is read with motion allowed here and with it reduced below.
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   await startReply();
   const focused = await focusState();
   await both('15-thread-focus');
@@ -731,7 +735,6 @@ async function runSmoke(w) {
   const cancelled = await focusState();
   await shot('15b-thread-cancelled-light.png');
   // Reduced motion keeps the focus without the fade's animation.
-  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await startReply();
   const still = await focusState();
