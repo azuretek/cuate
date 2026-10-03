@@ -136,6 +136,7 @@ class RotationTest {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         val point = markerPoint(scenario, passed)
         var previous: android.graphics.Bitmap? = null
+        var refused: android.graphics.Bitmap? = null
         var taken = 0
         var shown = 0
         var verdict = "none"
@@ -149,16 +150,18 @@ class RotationTest {
             if (capture != null && schemeShown(capture, scheme) && verdict == "pass") {
                 shown++
                 val last = previous
-                if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
+                if (last != null && last.sameAs(capture)) { last.recycle(); refused?.recycle(); return capture }
                 last?.recycle()
                 previous = capture
-            } else {
-                capture?.let { keep(it, "chat-$scheme-unsettled.png") }
-                capture?.recycle()
+            } else if (capture != null) {
+                refused?.recycle()
+                refused = capture
             }
         } while (System.nanoTime() < deadline)
-        previous?.let { keep(it, "chat-$scheme-unsettled.png") }
+        // Only a failing run keeps what the screen drew, so a passing run's artifact holds only the captures it kept.
+        (previous ?: refused)?.let { keep(it, "chat-$scheme-unsettled.png") }
         previous?.recycle()
+        refused?.recycle()
         throw AssertionError(
             "The screen never showed the passing $scheme conversation: $taken captures, $shown in the scheme with the " +
                 "pass fill, none twice alike, last verdict shown $verdict; page " +
@@ -174,7 +177,7 @@ class RotationTest {
         return dir
     }
 
-    // A capture the test refused is kept beside the passing ones, so a failure shows what the screen drew.
+    // A failing run keeps the capture it refused, so the failure shows what the screen drew.
     private fun keep(capture: android.graphics.Bitmap, name: String) {
         java.io.File(outputDir(), name).outputStream().use { capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
