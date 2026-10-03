@@ -2,9 +2,12 @@ import UIKit
 import XCTest
 
 final class RotationTests: XCTestCase {
-    func testConversationSurvivesPortraitLandscapePortrait() {
+    func testLightConversation() { conversation(scheme: "light") }
+    func testDarkConversation() { conversation(scheme: "dark") }
+
+    private func conversation(scheme: String) {
         let app = XCUIApplication()
-        app.launchArguments = ["--rotation-fixture"]
+        app.launchArguments = ["--rotation-fixture"] + (scheme == "dark" ? ["--fixture-dark"] : [])
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         defer {
@@ -16,7 +19,7 @@ final class RotationTests: XCTestCase {
             let proof = app.webViews.staticTexts[label + ":pass"].firstMatch
             XCTAssertTrue(proof.waitForExistence(timeout: 20), app.debugDescription)
             let attachment = XCTAttachment(image: settled(app, landscape: label == "landscape"))
-            attachment.name = label
+            attachment.name = scheme + "-" + label
             attachment.lifetime = .keepAlways
             add(attachment)
             if label == "landscape" {
