@@ -27,6 +27,8 @@ class HostBridge(
     private val commands: Set<String>,
     private val product: String,
     private val version: String,
+    /** Matches the system bars to the scheme the page draws; answers whether it was applied. */
+    private val appearance: (dark: Boolean, background: String) -> Boolean = { _, _ -> false },
 ) {
 
     companion object {
@@ -104,6 +106,8 @@ class HostBridge(
             "window.minimize" -> success(false)
             "window.toggleMaximize" -> success(false)
             "window.close" -> success(false)
+            // The status and navigation bars draw over the page's colours, so their icons follow the page's scheme.
+            "window.appearance" -> success(appearance(args.optString("scheme") == "dark", args.optString("background")))
             else -> failure("undeclared bridge command: " + name)
         }
     }

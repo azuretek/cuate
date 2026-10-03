@@ -58,7 +58,11 @@ export function createSecureStore({ file, safeStorage, fs }) {
 // bar (the phones) still shares the one bridge spec.
 const noWindow = { minimize: () => false, toggleMaximize: () => false, close: () => false };
 
-export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow }) {
+// The scheme the page draws, so a shell that draws system bars over the page can match their icons and fill to it. The
+// desktop window draws its own bar inside the page, so it has nothing to match and answers false.
+const noAppearance = () => false;
+
+export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -78,6 +82,7 @@ export function createHandlers({ secure, notify, info, openExternal, checkUpdate
     'window.minimize': async () => windowControls.minimize(),
     'window.toggleMaximize': async () => windowControls.toggleMaximize(),
     'window.close': async () => windowControls.close(),
+    'window.appearance': async ({ scheme, background }) => appearance(scheme === 'dark' ? 'dark' : 'light', String(background ?? '')),
   };
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UserNotifications
 import WebKit
 
@@ -21,6 +22,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
     private static let keyPattern = "^[a-z][a-z0-9.]{0,63}$"
 
     weak var webView: WKWebView?
+
+    /// Keeps the web view on the system's scheme while the window shows the page's; registered on the first call.
+    private var systemObserver: UITraitChangeRegistration?
 
     private let store: KeychainSecureStore
     private let commands: Set<String>
@@ -116,9 +120,43 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             settle(id: id, ok: true, value: false)
         case "window.close":
             settle(id: id, ok: true, value: false)
+        // The status bar draws over the page's colours, so its icons follow the page's scheme rather than the system's.
+        case "window.appearance":
+            settle(id: id, ok: true, value: appearance(args))
         default:
             settle(id: id, ok: false, value: "undeclared bridge command: " + name)
         }
+    }
+
+    /// Dark icons on a light page and light icons on a dark one, over the page's own fill, so the clock and the battery
+    /// stay readable in either scheme. The page's choice wins over the system's, since it may differ.
+    ///
+    /// The status bar takes its style from the window, but the page reads the system's scheme from its web view, and a
+    /// page that follows the system must keep seeing the system's. So the window takes the page's scheme and the web
+    /// view keeps the scene's own, which a window's override never reaches, updated whenever the system's changes.
+    private func appearance(_ args: [String: Any]) -> Bool {
+        guard let webView, let window = webView.window, let scene = window.windowScene else { return false }
+        let dark = (args["scheme"] as? String) == "dark"
+        window.overrideUserInterfaceStyle = dark ? .dark : .light
+        webView.overrideUserInterfaceStyle = scene.traitCollection.userInterfaceStyle
+        if systemObserver == nil {
+            systemObserver = scene.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { [weak self] (scene: UIWindowScene, _: UITraitCollection) in
+                self?.webView?.overrideUserInterfaceStyle = scene.traitCollection.userInterfaceStyle
+            }
+        }
+        if let fill = Self.color(args["background"] as? String) {
+            webView.backgroundColor = fill
+            webView.scrollView.backgroundColor = fill
+            webView.underPageBackgroundColor = fill
+        }
+        return true
+    }
+
+    /// A #rrggbb colour, the form the tokens write; anything else leaves the fill as it was.
+    static func color(_ text: String?) -> UIColor? {
+        guard let text, text.count == 7, text.hasPrefix("#"), let value = UInt32(text.dropFirst(), radix: 16) else { return nil }
+        return UIColor(red: CGFloat((value >> 16) & 0xff) / 255, green: CGFloat((value >> 8) & 0xff) / 255,
+                       blue: CGFloat(value & 0xff) / 255, alpha: 1)
     }
 
     private func storageGet(_ args: [String: Any]) -> Any {
