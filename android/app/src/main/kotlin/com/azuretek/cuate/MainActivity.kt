@@ -61,18 +61,29 @@ class MainActivity : Activity() {
     /** The window's insets in CSS pixels (top, right, bottom, left), handed to the page as --shell-inset-*. */
     private var pageInsets = floatArrayOf(0f, 0f, 0f, 0f)
 
+    /** The in-app updater the bridge owns, told when the activity returns to the front. */
+    private var updater: ApkUpdater? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val product = Naming.product(assets).ifEmpty { "Cuate" }
-        val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName()) { dark, background ->
-            runOnUiThread {
-                pageScheme = if (dark) "dark" else "light"
-                pageFill = background
-                applyBarIcons()
-            }
-            true
-        }
+        val bridge = HostBridge(
+            this, SecureStore(this), HostBridge.commandNames(assets), product, versionName(),
+            appearance = { dark, background ->
+                runOnUiThread {
+                    pageScheme = if (dark) "dark" else "light"
+                    pageFill = background
+                    applyBarIcons()
+                }
+                true
+            },
+            build = versionCode(),
+            // A later answer and an update's progress reach the page here, on the UI thread a WebView requires.
+            script = { js -> runOnUiThread { if (::webView.isInitialized) webView.evaluateJavascript(js, null) } },
+        )
+        updater = bridge.updater
+        ApkUpdater.live = bridge.updater
         Diagnostics.remember(this)
 
         webView = WebView(this).apply {
@@ -224,7 +235,14 @@ class MainActivity : Activity() {
         applyBarIcons()
     }
 
+    /** Back from the setting that allows installs: an update waiting on it continues (issue 192). */
+    override fun onResume() {
+        super.onResume()
+        updater?.resumed()
+    }
+
     override fun onDestroy() {
+        if (ApkUpdater.live === updater) ApkUpdater.live = null
         webView.destroy()
         super.onDestroy()
     }
@@ -247,6 +265,14 @@ class MainActivity : Activity() {
     private fun fail(message: String) {
         cover.visibility = View.VISIBLE
         coverMessage.text = message
+    }
+
+    /** The build number this APK carries, which the release pipeline sets to the commit count. */
+    private fun versionCode(): Long = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+    } catch (e: Exception) {
+        0
     }
 
     private fun versionName(): String = try {

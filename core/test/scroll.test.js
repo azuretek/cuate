@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { anchorFrom, scrollFor, END_SLACK, revealDelta } from '../kit/rules/scroll.js';
+import { KeepScroll } from '../kit/scroll.js';
 
 test('a focused field the view shrank over is brought into sight, and one in sight is left alone (issue 180)', () => {
   const view = { top: 40, bottom: 380 };
@@ -67,4 +68,69 @@ test('an item that has gone leaves the view where it is, and never past its ends
 
 test('a view with no items keeps its offset', () => {
   assert.deepEqual(anchorFrom({ scrollTop: 40, scrollHeight: 500, clientHeight: 100, items: [] }), { top: 40 });
+});
+
+// A scrolled element as the controller sees it: items of the given heights in a column, at a scrollTop the browser
+// clamps, of a given width and height. Changing the heights or the size is a relayout, with no scroll event of its own.
+function fakeScroller({ heights, width, height }) {
+  const el = {
+    heights, clientWidth: width, clientHeight: height, top: 0, isConnected: true, style: {},
+    get scrollHeight() { return this.heights.reduce((a, b) => a + b, 0); },
+    get scrollTop() { return this.top; },
+    set scrollTop(v) { this.top = Math.max(0, Math.min(this.scrollHeight - this.clientHeight, v)); },
+    getBoundingClientRect: () => ({ top: 0 }),
+    querySelectorAll() {
+      let y = -el.top;
+      return el.heights.map((h, i) => {
+        const top = y;
+        y += h;
+        return { dataset: { id: 'm' + i }, getBoundingClientRect: () => ({ top, bottom: top + h }) };
+      });
+    },
+    addEventListener() {}, removeEventListener() {},
+    get children() { return []; },
+  };
+  return el;
+}
+
+test('a scroll the browser makes while a turn relays the view out never moves the place', () => {
+  const el = fakeScroller({ heights: Array(100).fill(80), width: 674, height: 300 });
+  const host = { addController() {}, matches: () => false, querySelector: () => el };
+  const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row', follow: true });
+  keep.hostUpdated();
+  // The person scrolls to message 50.
+  el.scrollTop = 50 * 80;
+  keep.record();
+  keep.restore();
+  assert.deepEqual(keep.anchor, { key: 'm50', offset: 0 });
+  // The phone turns: narrower, so every message wraps taller, and the browser fires a scroll for the old scrollTop
+  // before the controller has put the view back for the new layout.
+  el.heights = Array(100).fill(104);
+  el.clientWidth = 402;
+  el.clientHeight = 700;
+  keep.record();
+  assert.deepEqual(keep.anchor, { key: 'm50', offset: 0 }, 'the relayout is not the person scrolling');
+  // The resize that follows puts message 50 back at the top.
+  keep.restore();
+  assert.equal(el.scrollTop, 50 * 104);
+  // And a scroll the person makes afterwards is theirs again.
+  el.scrollTop = 60 * 104;
+  keep.record();
+  assert.deepEqual(keep.anchor, { key: 'm60', offset: 0 });
+});
+
+test('a scroll made while the view only changed height is still the person\'s, so going to the end as the composer empties stays at the end', () => {
+  const el = fakeScroller({ heights: Array(40).fill(80), width: 674, height: 300 });
+  const host = { addController() {}, matches: () => false, querySelector: () => el };
+  const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row', follow: true });
+  keep.hostUpdated();
+  el.scrollTop = 10 * 80;
+  keep.record();
+  keep.restore();
+  assert.deepEqual(keep.anchor, { key: 'm10', offset: 0 });
+  // The composer empties, so the view grows taller, and the page goes to the end before the resize is put back.
+  el.clientHeight = 340;
+  el.scrollTop = el.scrollHeight;
+  keep.record();
+  assert.deepEqual(keep.anchor, { end: true });
 });

@@ -1,6 +1,6 @@
 # Test releases
 
-A push to main that changes a shipped path produces a test build: the desktop apps and the server, one version, one GitHub prerelease. A manual workflow dispatch compares the snapshot with the most recent reachable dev tag and refuses if nothing ships. Documentation, Markdown, root scripts, workflow files, hooks, LICENSE and .gitignore do not trigger a release. A server-only change does: the server ships with the clients. Unknown paths ship by default. The sole classifier is scripts/release/changes.mjs.
+A push to main that changes a shipped path produces a test build: the desktop apps, the server and the Android APK, one version, one GitHub prerelease. A manual workflow dispatch compares the snapshot with the most recent reachable dev tag and refuses if nothing ships. Documentation, Markdown, root scripts, workflow files, hooks, LICENSE and .gitignore do not trigger a release. A server-only change does: the server ships with the clients. Unknown paths ship by default. The sole classifier is scripts/release/changes.mjs.
 
 ## Snapshot and channels
 
@@ -19,6 +19,18 @@ The server, built by `.github/workflows/server-artifact.yml` from the same commi
 - `<slug>-server-<version>.tar.gz`: every tracked file under `core/` and `server/` except their tests, LICENSE, `server/stamp.json` written by `scripts/gen-server-stamp.mjs --root` into the staged copy, and the server's production dependencies copied out of the workspace install as plain files under `server/node_modules`. It is plain ustar, written by `server/src/artifact.js` with every file owned by 0:0 and dated the commit's time, so one commit builds the same bytes on any runner. It holds regular files only.
 - `<slug>-server-<version>.manifest.json`: the version, the commit, the Node range (the root package's `engines.node`) and the path, size and SHA-256 of every file in the tarball.
 - `<slug>-server-<version>.tar.gz.sha256`: the tarball's SHA-256, in the format `sha256sum -c` reads.
+
+The Android APK (issue 192), signed with the release keystore by `.github/workflows/android.yml` from the same commit:
+
+- `<slug>-android-<version>.apk`: the signed APK.
+- `<slug>-android-<version>.manifest.json`: the version, the commit, the file, its size and SHA-256, and the SHA-256 of the certificate that signed it, written by `scripts/release/android-artifact.mjs build` from the signer `apksigner` reads back out of the APK. The release job fetches both from the android run for the commit (the platforms gate has already required it to succeed), and the publisher verifies them with the rest.
+
+## Phone updates
+
+The phones check the repository's public release feed (`releases.atom`, named in `core/spec/releases.json`), with no credential in the app; the page decides with `phoneUpdate` in `core/app/rules/updates.js` whether the newest release on the build's channel is newer than the running build. Every published test build passed the platforms gate, so it is in TestFlight and carries its APK. A check runs at launch (silent unless a newer build exists) and from About's Check for updates.
+
+- iOS: the notice and About's button offer Open TestFlight, which opens TestFlight's own `itms-beta://` scheme and falls back to TestFlight's App Store page.
+- Android: Download fetches the release's manifest and APK, checks the size and SHA-256 against the manifest and the APK's signer against both the manifest and the installed app, then Install hands it to Android's installer, which asks the person to confirm. The first time, the app says why it needs to install apps and opens Android's setting for it; the install continues when the person comes back.
 
 The server leg runs the server's own tests, builds the three files, verifies them, then unpacks the verified bytes into a scratch folder, boots them over the fake engine and requires the health route to answer with the manifest's version and commit. CI runs the same leg on every pull request and push as `server artifact`, which the sole gate check needs. The release workflow runs it again for the release, and the publisher needs it, so a server that fails its tests, its build or its boot holds the whole release. The platforms gate covers it a second time: it names `ci`, whose test leg runs `server/test` and whose server leg builds this artifact.
 
