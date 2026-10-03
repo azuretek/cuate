@@ -3,6 +3,9 @@
   // The verdict's fills. The native tests read them back from a capture, so they are fixed here rather than themed.
   const PASS = '#1b7f3b';
   const FAIL = '#b3261e';
+  // A sample that has not settled yet is neither: the marker must never claim fail while the page is merely still
+  // reflowing after a turn, so an unsettled sample draws this and reads '<orientation>:settling' (issue 201).
+  const SETTLING = '#5a5a5a';
   await customElements.whenDefined('app-root');
   const root = document.querySelector('app-root');
   // Wait for credential-free onboarding before replacing its synthetic record.
@@ -65,6 +68,16 @@
   const history = [];
   let frames = 0;
   let previousWidth = innerWidth;
+  // A compact, machine-readable copy of the last sample, drawn as its own accessible element so a native dump names
+  // the failing checks, the sample the verdict last failed on and the frame counter (issue 201). It is one pixel and
+  // paints nothing, so it never shows in a capture or moves another surface.
+  const diagnosis = document.createElement('output');
+  diagnosis.setAttribute('aria-label', 'rotation-diagnosis');
+  Object.assign(diagnosis.style, {
+    position: 'fixed', top: '0px', left: '0px', width: '1px', height: '1px', overflow: 'hidden',
+    font: '1px/1px sans-serif', color: 'transparent', background: 'transparent', zIndex: '9998', pointerEvents: 'none',
+  });
+  document.body.append(diagnosis);
   const sample = () => {
     observe();
     frames = previousWidth === innerWidth ? frames + 1 : 0;
@@ -77,25 +90,32 @@
       design: Boolean(chatDesign), present: !blank,
       anchored: Boolean(current) && Math.abs(current.getBoundingClientRect().top - top() - offset) <= 2,
       draft: field.value === 'Rotation draft with caret', caret: field.selectionStart === 9 && field.selectionEnd === 9,
-      focused: document.activeElement === field, settled: frames >= 10,
+      focused: document.activeElement === field,
     };
     const failing = Object.keys(checks).filter(name => !checks[name]);
-    const ok = failing.length === 0;
+    // The settling gate is a state of its own, never a failure: a sample still counting the frames after a turn reports
+    // 'settling', and only a settled sample can report pass or fail (issue 201).
+    const settled = frames >= 10;
+    const state = settled ? (failing.length ? 'fail' : 'pass') : 'settling';
+    const ok = state === 'pass';
     seq += 1;
-    if (!ok) lastFail = seq;
-    const label = (innerWidth > innerHeight ? 'landscape' : 'portrait') + ':' + (ok ? 'pass' : 'fail');
+    if (state === 'fail') lastFail = seq;
+    const label = (innerWidth > innerHeight ? 'landscape' : 'portrait') + ':' + state;
     if (marker.textContent !== label) {
       marker.textContent = label;
       marker.setAttribute('aria-label', label);
-      marker.style.background = ok ? PASS : FAIL;
-      history.push({ at: Math.round(performance.now()), label, failing });
+      marker.style.background = state === 'pass' ? PASS : state === 'fail' ? FAIL : SETTLING;
+      history.push({ at: Math.round(performance.now()), label, failing: settled ? failing : [] });
       if (history.length > 40) history.shift();
     }
     const box = marker.getBoundingClientRect();
+    diagnosis.textContent = 'rotation-diagnosis ' + JSON.stringify({ label, state, seq, lastFail, failing, frames, settled, blank,
+      width: innerWidth, height: innerHeight, delta: current ? current.getBoundingClientRect().top - top() - offset : null,
+      history: history.slice(-8) });
     window.rotationProof = { ok, blank, width: innerWidth, height: innerHeight, key,
       delta: current ? current.getBoundingClientRect().top - top() - offset : null,
       draft: field.value, start: field.selectionStart, end: field.selectionEnd,
-      label: marker.textContent, seq, lastFail, failing, history,
+      label, seq, lastFail, failing, settled, frames, history,
       marker: { left: box.left, top: box.top, width: box.width, height: box.height } };
     requestAnimationFrame(sample);
   };

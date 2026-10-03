@@ -27,6 +27,16 @@ test('native fixture supplies the message arrays consumed by the conversation', 
   assert.equal(window.rotationProof.ok, false);
 });
 
+test('an unsettled sample reports settling, never fail, and names its state to a native dump', () => {
+  const fixture = read('core/test/rotation-fixture.js');
+  // The frame gate is a state of its own: a sample that has not counted ten frames cannot report fail.
+  assert.match(fixture, /const settled = frames >= 10;/);
+  assert.match(fixture, /const state = settled \? \(failing\.length \? 'fail' : 'pass'\) : 'settling';/);
+  assert.doesNotMatch(fixture, /settled: frames >= 10/);
+  // The last sample is drawn as an accessible element a native dump can read.
+  assert.match(fixture, /aria-label', 'rotation-diagnosis'/);
+});
+
 const naming = JSON.parse(read('core/spec/naming.json'));
 const android = 'android/app/src/';
 const packagePath = naming.ids.android.replaceAll('.', '/');
