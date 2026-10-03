@@ -1,7 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 const read = path => readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
+test('native fixture supplies the message arrays consumed by the conversation', async () => {
+  const body = {};
+  const root = {
+    phase: 'onboarding',
+    get updateComplete() {
+      for (const message of this.messages) {
+        assert.equal(message.attachments.length, 0);
+        assert.equal(message.reactions.length, 0);
+        assert.equal(message.replyTo, null);
+      }
+      throw new Error('render contract reached');
+    },
+  };
+  const window = {};
+  vm.runInNewContext(read('core/test/rotation-fixture.js'), {
+    customElements: { whenDefined: async () => {} }, document: { querySelector: () => root, body },
+    performance: { now: () => 0 }, window,
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(root.messages.length, 100);
+  assert.equal(window.rotationProof.error, 'render contract reached');
+  assert.equal(window.rotationProof.ok, false);
+});
+
 const naming = JSON.parse(read('core/spec/naming.json'));
 const android = 'android/app/src/';
 const packagePath = naming.ids.android.replaceAll('.', '/');

@@ -46,6 +46,7 @@ class RotationTest {
             result = evaluate(scenario, "window.rotationProof || null")
             if (result != "null") {
                 val proof = JSONObject(result)
+                if (proof.has("error")) throw AssertionError("Rotation fixture failed: " + proof.getString("error"))
                 if (proof.getBoolean("ok") && (proof.getInt("width") > proof.getInt("height")) == landscape) return
             }
         } while (System.nanoTime() < deadline)

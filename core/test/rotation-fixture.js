@@ -11,7 +11,7 @@
   root.openChatId = chat.id;
   root.messages = Array.from({ length: 100 }, (_, i) => ({
     id: 'rotation-' + i, chatId: chat.id, text: 'Synthetic rotation message ' + i + ' with enough words to wrap when the phone turns.',
-    sentAt: '2026-01-01T12:00:00.000Z', fromMe: i % 2 === 0, sender: 'Fixture', attachments: [],
+    sentAt: '2026-01-01T12:00:00.000Z', fromMe: i % 2 === 0, sender: 'Fixture', attachments: [], reactions: [], replyTo: null,
   }));
   root.phase = 'ready';
   root.conn = 'open';
@@ -65,4 +65,7 @@
     requestAnimationFrame(sample);
   };
   requestAnimationFrame(sample);
-})().catch(error => { document.body.textContent = 'rotation fixture failed: ' + error.message; });
+})().catch(error => {
+  window.rotationProof = { ok: false, error: error.message };
+  document.body.textContent = 'rotation fixture failed: ' + error.message;
+});
