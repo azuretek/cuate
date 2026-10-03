@@ -48,10 +48,6 @@ app-root { display: block; height: 100%; }
 .text-button:hover { background: var(--color-bg-sunken); }
 .banner { margin: 0 var(--space-3) var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-banner); font-size: var(--font-size-sm); }
 .banner.problem { color: var(--color-danger); }
-/* The update banner runs the width of the pane it sits in, with the progress bar under the words. */
-.banner.update { margin: 0; border-radius: 0; border-bottom: var(--size-border) solid var(--color-border); display: flex; flex-direction: column; gap: var(--space-2); }
-.update-progress { width: 100%; height: var(--space-1); }
-.banner-action { align-self: flex-start; border: 0; border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); background: var(--color-accent); color: var(--color-accent-fg); font: inherit; cursor: pointer; }
 
 app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); }
@@ -502,3 +498,25 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-close svg { width: 50%; height: 50%; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
 .viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }
+
+/* Floating notice geometry: clear header controls and reserve the composer below. */
+app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--size-header) + var(--space-3)); right: max(env(safe-area-inset-right, calc(var(--space-1) * 0)), var(--space-4)); left: max(env(safe-area-inset-left, calc(var(--space-1) * 0)), var(--space-4)); pointer-events: none; z-index: 2; }
+.app-window { position: relative; }
+.app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
+.app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-1); }
+.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-notice); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-md); font-size: var(--font-size-sm); animation: notice-in var(--motion-normal) var(--motion-ease); }
+.app-notice-body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.app-notice-icon { color: var(--color-accent); flex: none; }
+.app-notice[data-tone="error"] .app-notice-icon { color: var(--color-danger); }
+.app-notice[data-tone="warn"] .app-notice-icon { color: var(--color-warning); }
+.app-notice[data-tone="ok"] .app-notice-icon { color: var(--color-bubble-sms); }
+.app-notice svg { display: block; width: var(--space-4); height: var(--space-4); }
+.app-notice-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
+.app-notice-action, .app-notice-dismiss { pointer-events: auto; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-accent); cursor: pointer; padding: var(--space-1); }
+.app-notice-action { align-self: flex-start; }
+.app-notice-dismiss { flex: none; color: var(--color-fg-muted); }
+.app-notice-action:hover, .app-notice-dismiss:hover { background: var(--color-bg-sunken); }
+@keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+@keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
+@media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }
