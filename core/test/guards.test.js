@@ -200,7 +200,10 @@ test('every scrolled view keeps its place through the kit', () => {
   const scrolled = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
     .filter((m) => /overflow(?:-y|-x)?\s*:\s*(?:auto|scroll)/.test(m[2]))
     .flatMap((m) => m[1].split(',').map((s) => s.trim()))
-    .filter((s) => s && !s.startsWith('@'));
+    .filter((s) => s && !s.startsWith('@'))
+    // A text field is not a view of items: the browser scrolls it to its caret, and the message box past its maximum
+    // height is the one that does (issue 139), with its text, caret and selection kept by the field itself.
+    .filter((s) => !/(?:^|\s)textarea(?:[.:[\s]|$)/.test(s));
   assert.ok(scrolled.length >= 4, 'the guard found the scroll containers: ' + scrolled.join(', '));
   const components = walk('core/app/components').map(read).join('\n');
   const kept = new Set([...components.matchAll(/keepScroll\(this,\s*\{\s*scroller:\s*'([^']+)'/g)].map((m) => m[1]));
