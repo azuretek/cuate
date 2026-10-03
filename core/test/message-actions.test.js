@@ -4,7 +4,7 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { threadIds, messageActions } from '../app/rules/messages.js';
+import { threadIds, threadRoot, messageActions } from '../app/rules/messages.js';
 
 const defined = {};
 globalThis.HTMLElement = class { addEventListener() {} removeAttribute() {} setAttribute() {} hasAttribute() { return false; } getAttribute() { return null; } dispatchEvent() {} };
@@ -67,7 +67,7 @@ test('your own message\'s menu shows its time and React, never Reply in thread',
 
 test('a message carries no action buttons of its own: every action is in the one menu', () => {
   const m = msg({});
-  const markup = words(conversation.bubble.call(host({ messages: [m] }), { message: m, first: true, last: true }, null, false, null));
+  const markup = words(conversation.bubble.call(host({ messages: [m] }), { message: m, first: true, last: true }, null, false, 'list'));
   assert.ok(!markup.includes('message-actions'), 'no hover buttons beside the bubble');
   assert.ok(!markup.includes('data-icon="reply"'));
 });
@@ -170,32 +170,59 @@ test('closing the panel without a pick ends the reaction, and the panel opened f
   assert.equal(inserted, '\u{1F389}');
 });
 
-test('replying fades every message outside the thread, and the composer repeats none of the message', () => {
-  const parent = msg({ id: 'FAKE-0001', text: 'Unique parent body' });
-  const other = msg({ id: 'FAKE-0002', text: 'Unrelated message' });
-  const h = host({ messages: [parent, other], replyingTo: { id: parent.id } });
-  const thread = threadIds(h.messages, parent.id);
-  const inThread = words(conversation.bubble.call(h, { message: parent, first: true, last: true }, null, false, thread));
-  const outside = words(conversation.bubble.call(h, { message: other, first: true, last: true }, null, false, thread));
-  assert.ok(!/\bfaded\b/.test(inThread), 'the thread stays');
-  assert.ok(/\bfaded\b/.test(outside), 'the rest fades');
-  const none = words(conversation.bubble.call(h, { message: other, first: true, last: true }, null, false, null));
-  assert.ok(!/\bfaded\b/.test(none), 'nothing fades when no reply is being written');
-  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: parent.id }, frequent: [], preview: '', disabled: false, placeholder: '' };
+test('a thread is opened by its first message, one level deep, so a reply to a reply joins the same thread', () => {
+  const root = msg({ id: 'FAKE-0001', text: 'Unique root body' });
+  const reply = msg({ id: 'FAKE-0003', replyTo: 'FAKE-0001', fromMe: true, sender: null, text: 'First reply' });
+  const deeper = msg({ id: 'FAKE-0004', replyTo: 'FAKE-0003', text: 'Reply to the reply' });
+  const h = host({ messages: [root, msg({ id: 'FAKE-0002', text: 'Unrelated message' }), reply, deeper] });
+  conversation.openThread.call(h, deeper);
+  assert.deepEqual(h.replyingTo, { id: 'FAKE-0001' }, 'the thread is named by its first message, so a reply sent from it lands in it');
+  assert.equal(threadRoot(h.messages, 'FAKE-0003'), 'FAKE-0001');
+});
+
+test('an open thread is its own conversation over the rest, which is blurred and inert, and the composer repeats none of it', () => {
+  const root = msg({ id: 'FAKE-0001', text: 'Unique root body' });
+  const other = msg({ id: 'FAKE-0002', text: 'Unrelated message', sentAt: '2026-01-15T10:05:00.000Z' });
+  const reply = msg({ id: 'FAKE-0003', replyTo: 'FAKE-0001', fromMe: true, sender: null, text: 'First reply', sentAt: '2026-01-15T10:06:00.000Z' });
+  const h = host({ messages: [root, other, reply], replyingTo: { id: 'FAKE-0001' }, chat: { id: '1', name: 'Avery Quinn', participants: ['+15555550100'], isGroup: false, service: 'iMessage' }, hasMore: false, windowControls: null, uploadMaxBytes: 1 });
+  for (const k of ['bubble', 'threadView', 'menu']) h[k] = conversation[k];
+  const thread = words(conversation.threadView.call(h, null, false));
+  assert.ok(thread.includes('Unique root body') && thread.includes('First reply'), 'the first message and its replies');
+  assert.ok(thread.indexOf('Unique root body') < thread.indexOf('First reply'), 'in order');
+  assert.ok(!thread.includes('Unrelated message'), 'nothing outside the thread');
+  assert.ok(!thread.includes('reply-mark'), 'no mark back to the thread inside the thread');
+  const page = words(conversation.render.call(h));
+  assert.match(page, /class=messages behind/);
+  assert.ok(page.includes('class="thread-view"'));
+  const closed = words(conversation.render.call({ ...h, replyingTo: null }));
+  assert.ok(!closed.includes('thread-view') && !/messages behind/.test(closed), 'closed, the conversation is whole again');
+  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: root.id }, frequent: [], preview: '', disabled: false, placeholder: '' };
   const markup = words(composer.render.call(c));
   assert.ok(markup.includes('Replying in thread'));
   assert.ok(markup.includes('aria-label="Cancel reply"'));
-  assert.ok(!markup.includes('Unique parent body') && !markup.includes('composer-reply'), 'no quote banner');
-  // Sending ends the focus.
-  const s = host({ replyingTo: { id: parent.id }, fire: () => undefined });
-  conversation.onSend.call(s, { text: 'x', replyTo: parent.id });
-  assert.equal(s.replyingTo, null);
+  assert.ok(!markup.includes('Unique root body') && !markup.includes('composer-reply'), 'no quote banner');
+  const s = host({ replyingTo: { id: root.id }, fire: () => undefined });
+  conversation.onSend.call(s, { text: 'x', replyTo: root.id });
+  assert.equal(s.replyingTo, null, 'sending brings the whole conversation back');
 });
 
-test('the fade is a transition the reduced-motion setting turns off, and the old surfaces are gone', () => {
+test('a reply in the conversation carries a quiet mark back to its thread, never a label naming who it answers', () => {
+  const root = msg({ id: 'FAKE-0001', text: 'Root' });
+  const reply = msg({ id: 'FAKE-0003', replyTo: 'FAKE-0001', fromMe: true, sender: null, text: 'Answer' });
+  const h = host({ messages: [root, reply] });
+  const markup = words(conversation.bubble.call(h, { message: reply, first: true, last: true }, null, false, 'list'));
+  assert.equal((markup.match(/class="reply-mark"/g) || []).length, 1);
+  assert.ok(markup.includes('data-icon="reply"'));
+  assert.ok(!/Reply to/.test(markup), 'no reply-to text label');
+});
+
+test('the thread opens over a blur that reduced motion keeps without animation, reactions float, and the old surfaces are gone', () => {
   const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8');
-  assert.match(css, /\.messages\[data-thread\][^{]*\.faded[^{]*\{[^}]*opacity/);
+  assert.match(css, /\.messages\.behind \{[^}]*filter: blur\(var\(--size-scrim-blur\)\)/);
   const reduced = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]).join('\n');
-  assert.match(reduced, /\.bubble-row[^{]*\{[^}]*transition: none/);
-  assert.ok(!/\.composer-reply|\.tapback-row|\.message-actions/.test(css), 'the old banner, tapback row and hover buttons are gone');
+  assert.match(reduced, /\.thread-view \{ animation: none; \}/);
+  assert.match(reduced, /\.messages \{ transition: none; \}/);
+  assert.match(css, /\.reactions \{ position: absolute; top: 0; right: 0;/);
+  assert.match(css, /\.reaction \{ background: none;/);
+  assert.ok(!/\.composer-reply|\.tapback-row|\.message-actions|\.reply-link|\.faded/.test(css), 'the old banner, tapback row, hover buttons, reply label and fade are gone');
 });

@@ -231,6 +231,7 @@ var engine = (() => {
     themeName: () => themeName,
     themeVars: () => themeVars,
     threadIds: () => threadIds,
+    threadRoot: () => threadRoot,
     toBase64: () => toBase64,
     toggleChecked: () => toggleChecked,
     toggleZoom: () => toggleZoom,
@@ -1635,19 +1636,23 @@ var engine = (() => {
     if (!sending || !canTarget(m)) return [];
     return m.fromMe ? ["react"] : ["reply", "react"];
   }
+  function threadRoot(messages, id) {
+    return rootIn(new Map((messages || []).map((m) => [m.id, m])), id);
+  }
+  function rootIn(byId, start) {
+    let at = start;
+    const seen = /* @__PURE__ */ new Set();
+    while (!seen.has(at)) {
+      seen.add(at);
+      const parent = byId.get(at)?.replyTo;
+      if (!parent) return at;
+      at = parent;
+    }
+    return start;
+  }
   function threadIds(messages, id) {
     const byId = new Map((messages || []).map((m) => [m.id, m]));
-    const rootOf = (start) => {
-      let at = start;
-      const seen = /* @__PURE__ */ new Set();
-      while (!seen.has(at)) {
-        seen.add(at);
-        const parent = byId.get(at)?.replyTo;
-        if (!parent) return at;
-        at = parent;
-      }
-      return start;
-    };
+    const rootOf = (start) => rootIn(byId, start);
     const root = rootOf(id);
     const ids = /* @__PURE__ */ new Set([root, id]);
     for (const m of byId.values()) if (rootOf(m.id) === root) ids.add(m.id);

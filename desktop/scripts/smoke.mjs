@@ -7,7 +7,8 @@
 // holds one line at the smallest window and every text size.
 // A message opens one menu (its time, Reply in thread on someone else's, React) by a right click, a long click and,
 // at phone width, a long press; React takes the reaction from the composer's emoji panel and comes off again, an emoji
-// the engine cannot send is refused, and Reply in thread fades every message outside the thread.
+// the engine cannot send is refused, a reaction floats at the bubble's top outer corner without moving any message, and
+// Reply in thread opens the thread over the blurred conversation, where a reply sent lands.
 // Run it under a display (xvfb-run on Linux).
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';

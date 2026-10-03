@@ -18,16 +18,17 @@ function words(value) {
   return '';
 }
 
-test('a reply renders one compact relationship, never the original body', () => {
+test('a reply renders one quiet mark back to its thread, never the original body or a reply-to label', () => {
   const parent = { id: 'parent', text: 'Unique original body', senderName: 'Avery', fromMe: false };
   const host = { messages: [parent], chat: {}, sending: true };
   const message = { id: 'reply', replyTo: 'parent', text: 'Answer', attachments: [], reactions: [], fromMe: true };
-  const markup = words(proto.bubble.call(host, { message }, message, false));
+  const markup = words(proto.bubble.call(host, { message }, message, false, 'list'));
   assert.ok(!markup.includes(parent.text));
-  assert.ok(markup.includes('Reply to Avery'));
-  assert.equal((markup.match(/class="reply-link"/g) || []).length, 1);
-  const missing = words(proto.bubble.call(host, { message: { ...message, replyTo: 'missing' } }, message, false));
-  assert.ok(missing.includes('Reply to earlier message'));
+  assert.ok(!markup.includes('Reply to'));
+  assert.equal((markup.match(/class="reply-mark"/g) || []).length, 1);
+  assert.ok(markup.includes('In a thread with Avery'));
+  const missing = words(proto.bubble.call(host, { message: { ...message, replyTo: 'missing' } }, message, false, 'list'));
+  assert.equal((missing.match(/class="reply-mark"/g) || []).length, 1, 'a thread whose first message is not loaded is still marked');
 });
 
 test('reply send returns the same work and preserves the parent id', async () => {
