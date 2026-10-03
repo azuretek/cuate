@@ -62,7 +62,7 @@ const MEASURE = [
   "    labelled: controls.every((el) => (el.getAttribute('aria-label') || '').length > 0),",
   "    head: rect(head), group: group ? rect(group) : null,",
   "    close: group && group.querySelector('.close') ? rect(group.querySelector('.close')) : null, width: window.innerWidth,",
-  "    dark: matchMedia('(prefers-color-scheme: dark)').matches,",
+  "    dark: matchMedia('(prefers-color-scheme: dark)').matches, overflows: document.documentElement.scrollHeight > document.documentElement.clientHeight || document.documentElement.scrollWidth > document.documentElement.clientWidth,",
   "    alerts: [...document.querySelectorAll('[role=\"alert\"], .problem')].map((el) => el.textContent.trim()),",
   "    banners: [...document.querySelectorAll('.sidebar .banner')].map((el) => el.textContent.trim()),",
   "  };",
@@ -111,7 +111,9 @@ function serve(request) {
 async function draw(BrowserWindow, nativeTheme, testCase, scheme) {
   nativeTheme.themeSource = scheme;
   const host = { product: naming.product, platform: testCase.platform };
-  const window = new BrowserWindow({ width: 900, height: 150, show: true, frame: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: PRELOAD, additionalArguments: ['--proof-host=' + encodeURIComponent(JSON.stringify(host))] } });
+  // The window is the app's own minimum size (desktop/src/main.js): a shorter one overflows the page, and the page's
+  // scrollbar then stands between the controls and the window's right edge, which no real window shows.
+  const window = new BrowserWindow({ width: 900, height: 480, show: true, frame: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: PRELOAD, additionalArguments: ['--proof-host=' + encodeURIComponent(JSON.stringify(host))] } });
   await window.loadURL('app://bundle/app/index.html');
   const wc = window.webContents;
   // The page's boot reads the saved server through the bridge; with none saved it settles on onboarding. Wait for that
@@ -145,6 +147,8 @@ function check(testCase, scheme, measured) {
   const tag = testCase.name + ' ' + scheme + ': ';
   if (measured.dark === (scheme === 'dark')) pass(tag + 'the page draws in the ' + scheme + ' scheme');
   else fail(tag + 'the page is not in the ' + scheme + ' scheme, so its capture would be mislabelled');
+  if (!measured.overflows) pass(tag + 'the page fits the window, with no page scrollbar');
+  else fail(tag + 'the page overflows the window, so a page scrollbar is drawn');
   if (measured.alerts.length === 0) pass(tag + 'no error banner is drawn');
   else fail(tag + 'the page draws an error: ' + measured.alerts.join(' | '));
   if (measured.banners.length === 0) pass(tag + 'the list draws no banner, the page reads as connected');
