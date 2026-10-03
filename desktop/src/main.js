@@ -1815,6 +1815,137 @@ async function runSmoke(w) {
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(200);
 
+  // Every popover and modal panel closes on a press outside it and on Escape, through the kit's one behaviour (issue
+  // 170), at desktop width with a mouse and at phone width with a finger. Each panel is opened, captured, and pressed
+  // outside over a real control (a chat row, the gear, the conversation's back control), with the press sent as real
+  // input so the browser delivers its own click; the panel must close, the control must receive nothing (the press,
+  // its click or its context menu), and the page's state (open chat, pane, edit selection) must not move. A second
+  // pass in dark opens each again and closes it with a real Escape key.
+  const DISMISS_ROW = '.bubble-row[data-id="FAKE-0013"]';
+  const dq = (s) => JSON.stringify(s);
+  const dismissPanels = [
+    { name: 'filter', pane: 'list', open: "document.querySelector('.sidebar-head .filter-button').click()", panel: '.filter-menu' },
+    { name: 'sort', pane: 'list', open: "document.querySelector('.sidebar-head .sort-button').click()", panel: '.sort-menu' },
+    { name: 'attach', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()", panel: 'app-composer .attach-menu' },
+    { name: 'emoji', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()", panel: 'app-composer .emoji-picker' },
+    { name: 'message-menu', pane: 'conversation', open: '(() => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); return true; })()', panel: DISMISS_ROW + ' .message-menu' },
+    { name: 'message-emoji', pane: 'conversation', open: '(async () => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); for (let i = 0; i < 50 && !document.querySelector(' + dq(DISMISS_ROW + ' .tapback-more') + '); i += 1) await new Promise((r) => setTimeout(r, 50)); document.querySelector(' + dq(DISMISS_ROW + ' .tapback-more') + ').click(); return true; })()', panel: DISMISS_ROW + ' .message-picker' },
+    { name: 'group', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-group').click()", panel: '.group-prompt' },
+    { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.group-prompt)' },
+    { name: 'sheet', pane: 'list', open: "document.querySelector('.sidebar-head .gear-button').click()", panel: '.sheet' },
+  ];
+  const dismissState = "(() => { const r = document.querySelector('app-root'); return { chat: r.openChatId, list: r.listOpen, editing: r.editing, checked: (r.checked || []).length }; })()";
+  // Each panel starts from the same page: no edit mode, no sheet up, and on the phone the pane that holds its trigger.
+  const dismissSetup = async (p, phone) => {
+    await js("(() => { const r = document.querySelector('app-root'); if (r.editing) r.exitEdit(); if (r.sheetShowing) r.closeView(); return true; })()");
+    await waitFor("!document.querySelector('.sheet')", 5000);
+    if (phone) await js('(() => { document.querySelector("app-root").listOpen = ' + (p.pane === 'list') + '; return true; })()');
+    await pause(phone ? 450 : 100);
+    if (p.edit) {
+      await js("document.querySelector('.list-tools .edit-toggle').click()");
+      await waitFor("Boolean(document.querySelector('.chat-row .chat-check'))", 5000);
+      await js("document.querySelector('.chat-row .chat-check').click()");
+      await waitFor("(document.querySelector('app-root').checked || []).length === 1", 5000);
+    }
+  };
+  // The control under the press: the first candidate with a point on screen and outside the panel (its centre, or near
+  // either end, which is where a phone's sheet leaves its backdrop showing), where the point lands on the control itself
+  // or on the modal backdrop drawn over it. Probes on it count anything that reaches it.
+  const dismissTarget = (panel) => js('(() => {'
+    + ' const panel = document.querySelector(' + dq(panel) + ');'
+    + ' const cands = [".chat-row:not(.selected)", ".sidebar-head .gear-button", "app-conversation .conv-back"];'
+    + ' for (const sel of cands) {'
+    + '   for (const el of document.querySelectorAll(sel)) {'
+    + '     const b = el.getBoundingClientRect();'
+    + '     if (b.width < 4 || b.height < 4) continue;'
+    + '     const y = b.top + b.height / 2;'
+    + '     const x = [b.left + b.width / 2, b.left + 4, b.right - 4].find((px) => { if (px < 0 || y < 0 || px > innerWidth || y > innerHeight) return false; const hit = document.elementFromPoint(px, y); return Boolean(hit) && !(panel && panel.contains(hit)) && (el.contains(hit) || Boolean(hit.closest(".sheet-scrim"))); });'
+    + '     if (x === undefined) continue;'
+    + '     const at = document.elementFromPoint(x, y);'
+    + '     window.dismissHits = 0;'
+    + '     if (!el.dataset.dismissProbe) { el.dataset.dismissProbe = "1"; for (const t of ["pointerdown", "pointerup", "click", "contextmenu"]) el.addEventListener(t, () => { window.dismissHits += 1; }); }'
+    + '     return { sel, x, y, over: String(at.className || at.tagName) };'
+    + '   }'
+    + ' }'
+    // A sheet that fills the phone leaves only its margin of backdrop: press there, over whatever the backdrop covers.
+    + ' for (const x of [4, 10, innerWidth - 10, innerWidth - 4]) {'
+    + '   for (let y = 60; y < innerHeight - 40; y += 40) {'
+    + '     const hit = document.elementFromPoint(x, y);'
+    + '     if (!hit || !hit.closest(".sheet-scrim") || (panel && panel.contains(hit))) continue;'
+    + '     const under = document.elementsFromPoint(x, y).find((e) => !e.closest(".sheet-scrim") && e !== document.documentElement && e !== document.body);'
+    + '     if (!under) continue;'
+    + '     const el = under.closest("button, .chat-row, textarea, .bubble-row") || under;'
+    + '     window.dismissHits = 0;'
+    + '     if (!el.dataset.dismissProbe) { el.dataset.dismissProbe = "1"; for (const t of ["pointerdown", "pointerup", "click", "contextmenu"]) el.addEventListener(t, () => { window.dismissHits += 1; }); }'
+    + '     return { sel: "backdrop margin", x, y, over: String(hit.className || hit.tagName), under: String(el.className || el.tagName) };'
+    + '   }'
+    + ' }'
+    + ' return null;'
+    + ' })()');
+  const dismissPress = async (x, y, phone) => {
+    if (phone) {
+      await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await pause(40);
+      await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    } else {
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+    }
+  };
+  const panelGone = async (panel) => { try { await waitFor('!document.querySelector(' + dq(panel) + ')', 3000); return true; } catch { return false; } };
+  const dismissChecks = {};
+  const dismissPass = async (width, phone) => {
+    for (const p of dismissPanels) {
+      const key = width + ':' + p.name;
+      await dismissSetup(p, phone);
+      await js(p.open);
+      let opened = true;
+      try { await waitFor('Boolean(document.querySelector(' + dq(p.panel) + '))', 5000); } catch { opened = false; }
+      await pause(300);
+      await shot('20-dismiss-' + width + '-' + p.name + '-light.png');
+      const target = opened ? await dismissTarget(p.panel) : null;
+      const before = await js(dismissState);
+      if (target) await dismissPress(target.x, target.y, phone);
+      const closed = Boolean(target) && await panelGone(p.panel);
+      await pause(150);
+      const hits = await js('window.dismissHits');
+      const after = await js(dismissState);
+      const held = before.chat === after.chat && before.list === after.list && before.editing === after.editing && before.checked === after.checked;
+      dismissChecks[key] = { opened, closed, hits, held, target };
+      if (!(opened && closed && hits === 0 && held)) console.error('dismiss failed: ' + key + ' ' + JSON.stringify({ before, after, target, hits }));
+    }
+    nativeTheme.themeSource = 'dark';
+    await pause(300);
+    for (const p of dismissPanels) {
+      const key = width + ':' + p.name;
+      await dismissSetup(p, phone);
+      await js(p.open);
+      try { await waitFor('Boolean(document.querySelector(' + dq(p.panel) + '))', 5000); } catch { /* the Escape check below reports it */ }
+      await pause(250);
+      await shot('20-dismiss-' + width + '-' + p.name + '-dark.png');
+      await cdp('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+      await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+      dismissChecks[key].escape = await panelGone(p.panel);
+      if (!dismissChecks[key].escape) console.error('dismiss failed: Escape left ' + key + ' open');
+    }
+    nativeTheme.themeSource = 'light';
+    await js("(() => { const r = document.querySelector('app-root'); if (r.editing) r.exitEdit(); return true; })()");
+    await pause(300);
+  };
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await dismissPass('desktop', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await waitFor('window.innerWidth === 375', 5000);
+  await dismissPass('phone', true);
+  await cdp('Emulation.setTouchEmulationEnabled', { enabled: false });
+  await js("(() => { document.querySelector('app-root').listOpen = false; return true; })()");
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  await pause(300);
+  report.dismiss = Object.keys(dismissChecks).length === dismissPanels.length * 2 && Object.values(dismissChecks).every((c) => c.opened && c.closed && c.hits === 0 && c.held && c.escape);
+  console.log('dismiss: ' + JSON.stringify(dismissChecks));
+
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   await waitFor("Boolean(document.querySelector('app-settings [data-action=\"signout\"]'))");
