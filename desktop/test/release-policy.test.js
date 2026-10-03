@@ -62,7 +62,7 @@ test('runner-dependent capture paths are evaluated only in step contexts', () =>
   assert.equal(smoke.length, 2);
   for (const step of smoke) assert.equal(step.env.SHOTS, '${{ runner.temp }}/packaged-smoke');
   const captures = pack.jobs.build.steps.find((step) => step.with?.name === 'smoke-${{ matrix.platform }}-${{ matrix.arch }}');
-  assert.equal(captures.with.path, '${{ runner.temp }}/packaged-smoke/*.png\n${{ runner.temp }}/packaged-smoke/report.json\n');
+  assert.equal(captures.with.path, '${{ runner.temp }}/packaged-smoke/*.png\n${{ runner.temp }}/packaged-smoke/report.json\n${{ runner.temp }}/packaged-smoke/failure.json\n');
 });
 test('publisher CLI refuses an untrusted apply before reading files or reaching GitHub', () => {
   for (const [event, ref] of [['pull_request', 'refs/heads/main'], ['workflow_dispatch', 'refs/heads/topic']]) {

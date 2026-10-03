@@ -1267,6 +1267,9 @@
           "read": {
             "type": "boolean"
           },
+          "readAt": {
+            "type": "string"
+          },
           "attachments": {
             "type": "array",
             "items": {

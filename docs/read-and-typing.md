@@ -1,31 +1,28 @@
 # Read and typing: what the engine gives us
 
-This page states what the engine reports about the other person reading and typing, from the engine's own interface and before any surface is wired to it (issue 72). It is the finding, not the wish. Where the engine is silent, the app stays silent too.
+The engine interface, not a timer or a local read mark, determines what we can say about another person (issue #72).
 
-The engine is the server's interface to the Mac (`imsg`, the open-source tool the server supervises). Its contract is its own documentation and its JSON-RPC method list.
+## Evidence
 
-## Typing
+Verified against upstream revision [640f58f](https://github.com/openclaw/imsg/tree/640f58f4f80220b10082eafe4d725049fe2acb77):
 
-- The engine can show and hide **our** typing bubble on the recipient's device: `imsg typing --to <handle>` (and `--stop true`), and only through the injected helper dylib.
-- It reports the **other person** typing only through `imsg watch --bb-events`, which emits `started-typing` and `stopped-typing` written by that injected helper.
-- That stream is best-effort by the engine's own description: it has **no replay cursor and is not resumable**, and it starts at the event log's current end. The ordinary `imsg watch` the server runs emits messages, tapbacks and polls only, and carries no typing event at all.
-- The injection needs **SIP disabled, library validation off and no private-entitlement gate**. The engine's own guide calls these features "opt-in, SIP-disabled, and increasingly limited on macOS 26", and says typing indicators "frequently fail with an entitlement error" there.
+- [Message JSON](https://github.com/openclaw/imsg/blob/640f58f4f80220b10082eafe4d725049fe2acb77/docs/json.md#message): `is_read` and `date_read` are inbound-only database snapshots. They are our read state, not the recipient's.
+- [Send status](https://github.com/openclaw/imsg/blob/640f58f4f80220b10082eafe4d725049fe2acb77/docs/rpc.md#messagesend_status): `message.send_status` takes an outgoing GUID and returns `status_fields.date_read`. Missing rows have null status fields; delivery alone does not prove reading.
+- [Bridge events](https://github.com/openclaw/imsg/blob/640f58f4f80220b10082eafe4d725049fe2acb77/docs/rpc.md#bridgeeventssubscribe): newer engines expose typing through `bridge.events.subscribe`, not only the CLI's `watch --bb-events`. This requires an already-running injected bridge and readable event log. Events have no replay cursor and are not resumable. Ordinary `watch.subscribe` still supplies no typing signal.
+- [Bridge requirements](https://github.com/openclaw/imsg/blob/640f58f4f80220b10082eafe4d725049fe2acb77/docs/advanced-imcore.md): private bridge availability is not permission to install or activate injected code.
 
-So over the surface the server uses, the ordinary watch and the database, the engine does **not** report the other person typing. An indicator drawn from nothing would be a placeholder that means nothing, so the app draws none.
+## Recipient read snapshots
 
-## Read
+When history loads, the adapter requests status for the latest outgoing message in that page, only if the engine's runtime `status.methods` advertises `message.send_status`. It makes at most one extra request per page, with a two-second ceiling. It does not scan or repeatedly poll the full history.
 
-- **Marking a chat read** is established and outbound: `imsg read --to <handle>` clears the unread counter, and the server already marks a conversation read when a client opens it.
-- In the message JSON, `is_read` and `date_read` are **inbound only**. The engine omits them when the message is ours, and calls the value "a database snapshot" taken when the row is emitted, not a second event when it changes. That is **our** read state of their message, which is the unread state the app already holds.
-- The other side reading **our** message is reachable only as a per-message poll: `message.send_status` returns `status_fields.date_read` for one outgoing message. There is no read event on the live stream, and the value depends on the recipient having read receipts switched on.
+Only an affirmative result for that exact GUID with a valid read timestamp at or after the send time becomes `Message.readAt`. The conversation's existing delivery line shows Read with that reported ISO timestamp. Reopening the conversation refreshes the snapshot. This is not a live read event. Inbound read marks, missing rows, missing receipts, malformed dates and unsupported methods never become a recipient read claim. A failed status request leaves history usable; an unsupported-method response disables further status requests until engine restart.
 
-So the live stream carries no read receipt either. The two honest read surfaces are the unread state we already hold, and, if we choose to poll, our own outgoing message's `date_read` shown as the recipient's read time and only when it is present. Nothing invents a "seen".
+Read receipts depend on the recipient sharing them. Unknown is not unread. The existing outbound mark-read route is separate and unchanged.
 
-## What the surfaces may say
+## Typing boundary
 
-| Surface | The engine gives us | The app draws |
-| --- | --- | --- |
-| Our typing bubble | show and hide, private bridge only | nothing yet |
-| Their typing | private bridge only, not resumable | nothing |
-| Unread of their messages | `is_read` / `date_read` on inbound rows | the unread dot and state we already have |
-| Their read of ours | `message.send_status` `date_read`, a poll | nothing yet, and only ever labelled as read, with the time it reports |
+The configured ordinary database watch cannot report remote typing. The app therefore draws no typing indicator. This change does not launch or inject a bridge, disable platform protections, send our typing state, change production configuration or invent an event. Enabling a bridge-backed typing surface needs a separate authorized engine/bridge decision and non-resumable stream handling, including stop, disconnect and expiry clearing. It is not an emoji or read-poll prerequisite.
+
+## Emoji and attachment acceptance
+
+PRs #77 and #102 supply the searchable/category emoji picker, caret/grapheme editing, attachment menu and synthetic codepoint round-trip through send, history, live events, list preview and notification. PR #125 improves the recent row placement. These paths remain unchanged. Synthetic fixtures exercise read success and refusal without sending any real message. Full platform presentation verification remains with the platform CI legs; a unit test alone is not proof of a phone's rendered composer.
