@@ -192,3 +192,13 @@ test('the phone About fixture cannot be activated in a release build, and both p
   assert.match(read('ios/' + naming.product + 'UITests/AboutPageTests.swift'), /--about-fixture/);
   assert.match(read('.github/workflows/android.yml'), /about-light\.png[\s\S]*about-dark\.png/);
 });
+
+test('Escape and a press outside the sheet go back the way the strip does, so About returns to Settings', () => {
+  const root = read('core/app/components/app-root.js');
+  assert.match(root, /dismissable\(this, \{ name: 'sheet', open: \(\) => this\.sheetShowing && !this\.sheetLeaving, close: \(\) => this\.pageBack\(\) \}\)/);
+  const h = host();
+  h.openSettings();
+  h.openAbout();
+  h.pageBack();
+  assert.equal(h.view, 'settings');
+});

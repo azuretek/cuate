@@ -55,6 +55,7 @@ var engine = (() => {
     SORT_LABELS: () => SORT_LABELS,
     SORT_ORDERS: () => SORT_ORDERS,
     STALL_MS: () => STALL_MS,
+    SWALLOW_MS: () => SWALLOW_MS,
     SWATCH_TOKENS: () => SWATCH_TOKENS,
     TAPBACKS: () => TAPBACKS2,
     TEXT_SCALES: () => TEXT_SCALES,
@@ -85,7 +86,6 @@ var engine = (() => {
     applyReaction: () => applyReaction,
     autoDownloadEnabled: () => autoDownloadEnabled,
     availableBanner: () => availableBanner,
-    backdropReturns: () => backdropReturns,
     bugReportBlock: () => bugReportBlock,
     buildNumberOf: () => buildNumberOf,
     canTarget: () => canTarget,
@@ -100,6 +100,8 @@ var engine = (() => {
     clampScale: () => clampScale,
     clearGroupPlacement: () => clearGroupPlacement,
     clientReport: () => clientReport,
+    closedByEscape: () => closedByEscape,
+    closedByPress: () => closedByPress,
     coerceSetting: () => coerceSetting,
     commitState: () => commitState,
     compareVersions: () => compareVersions,
@@ -180,6 +182,7 @@ var engine = (() => {
     pinch: () => pinch,
     placeChat: () => placeChat,
     policy: () => policy,
+    pressOutside: () => pressOutside,
     progressFor: () => progressFor,
     putNotice: () => putNotice,
     reactionGlyph: () => reactionGlyph,
@@ -217,11 +220,13 @@ var engine = (() => {
     slideRelease: () => slideRelease,
     sortChats: () => sortChats,
     springCurve: () => springCurve,
+    stackOf: () => stackOf,
     stageCheck: () => stageCheck,
     stalledNotice: () => stalledNotice,
     stampProblem: () => stampProblem,
     stripInlineObjects: () => stripInlineObjects,
     summarizeReactions: () => summarizeReactions,
+    swallows: () => swallows,
     swatchVars: () => swatchVars,
     tapbackType: () => tapbackType,
     termsSentence: () => termsSentence,
@@ -655,6 +660,31 @@ var engine = (() => {
       return clamp(scrollTop);
     }
     return clamp(Number.isFinite(anchor.top) ? anchor.top : scrollTop);
+  }
+
+  // core/kit/rules/dismiss.js
+  function pressOutside(startsOutside, endsOutside) {
+    return startsOutside === true && endsOutside === true;
+  }
+  function closedByPress(stack, isInside) {
+    const out = [];
+    for (const entry of stack || []) {
+      if (entry.outside === false || isInside(entry)) break;
+      out.push(entry);
+    }
+    return out;
+  }
+  function closedByEscape(stack) {
+    return stack && stack.length ? stack[0] : null;
+  }
+  function stackOf(entries) {
+    return [...entries || []].sort((a, b) => b.openedAt - a.openedAt);
+  }
+  var SWALLOW_MS = 1e3;
+  function swallows(armed, event) {
+    if (!armed || !event || event.isTrusted !== true) return false;
+    const dt = event.timeStamp - armed.at;
+    return Number.isFinite(dt) && Math.abs(dt) <= SWALLOW_MS;
   }
 
   // core/kit/rules/build.js
@@ -2169,9 +2199,6 @@ var engine = (() => {
   }
 
   // core/app/rules/sheet.js
-  function backdropReturns(startsOnBackdrop, endsOnBackdrop) {
-    return startsOnBackdrop === true && endsOnBackdrop === true;
-  }
   var SHEET_LEAVE_MARGIN_MS = 250;
   function sheetLeaveDeadline(tokenMs) {
     return (Number.isFinite(tokenMs) && tokenMs > 0 ? tokenMs : 0) + SHEET_LEAVE_MARGIN_MS;

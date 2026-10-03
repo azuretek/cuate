@@ -9,8 +9,9 @@ import { keepScroll } from '../../kit/scroll.js';
 //
 // The strip is the WHOLE top of the card rather than a small button at its leading edge: it carries the arrow, the
 // label and the key that does the same thing, and it spans the card's full width, so anywhere on the strip goes
-// back. Escape does the same, and a press on the backdrop outside the card is a third; the sheet itself owns that
-// press (rules/sheet.js), because the backdrop is its own element beside this one.
+// back. Escape does the same, and a press on the backdrop outside the card is a third; the page registers the card
+// with the kit's one dismiss behaviour (core/kit/dismiss.js) for both, because the backdrop is its own element beside
+// this one.
 //
 // It takes its body as a property rather than a <slot>, because components here render into light DOM and a slot
 // only projects in a shadow root.
@@ -30,17 +31,6 @@ class AppSheet extends KitElement {
     this.content = null;
     // The page's body scrolls, and keeps its place on a section across a re-render and a resize (issue 142).
     this.keep = keepScroll(this, { scroller: '.sheet-body', items: '.sheet-section' });
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.onKey = (e) => { if (e.key === 'Escape') this.back(); };
-    document.addEventListener('keydown', this.onKey);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    document.removeEventListener('keydown', this.onKey);
   }
 
   // The way back, raised as an event the page above catches and the app turns into the real move, so the sheet

@@ -2,6 +2,7 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press, runPress, emit, respond } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
+import { dismissable } from '../../kit/dismiss.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, canTarget, TAPBACKS } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
@@ -47,20 +48,13 @@ class AppConversation extends KitElement {
     this.flashId = null;
     this.frequent = [];
     this.pressTimer = null;
-    this.onDocKey = (e) => { if (e.key === 'Escape' && this.pop) this.closePop(); };
-    this.onDocDown = (e) => { if (this.pop && !e.target.closest?.('.message-pop, .message-action')) this.closePop(); };
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    document.addEventListener('keydown', this.onDocKey);
-    document.addEventListener('pointerdown', this.onDocDown, true);
+    // The message menu and its emoji panel close on a press outside them and on Escape, through the kit's one
+    // behaviour (core/kit/dismiss.js); the open message's own React control keeps it, since it toggles the menu.
+    dismissable(this, { name: 'pop', open: () => Boolean(this.pop), close: () => this.closePop() });
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    document.removeEventListener('keydown', this.onDocKey);
-    document.removeEventListener('pointerdown', this.onDocDown, true);
     clearTimeout(this.pressTimer);
     clearTimeout(this.flashTimer);
   }
@@ -166,7 +160,7 @@ class AppConversation extends KitElement {
   menu(m) {
     const mine = myReaction(m);
     const chosen = mine ? reactionGlyph(mine).replace(/\ufe0f/g, '') : null;
-    return html`<div class="message-pop message-menu" role="menu" aria-label="React or reply" data-side=${this.pop.side}>
+    return html`<div class="message-pop message-menu" role="menu" aria-label="React or reply" data-dismiss="pop" data-side=${this.pop.side}>
       <div class="tapback-row">
         ${TAPBACKS.map((t) => html`<button type="button" role="menuitemcheckbox" class="tapback" aria-checked=${chosen === t.glyph.replace(/\ufe0f/g, '') ? 'true' : 'false'} aria-label=${t.type} title=${t.type} @click=${press(() => this.react(m, t.glyph))}>${t.glyph}</button>`)}
         <button type="button" role="menuitem" class="tapback tapback-more" aria-label="More emoji" title="More emoji" @click=${press(() => this.openPicker(m))}>+</button>
@@ -177,7 +171,7 @@ class AppConversation extends KitElement {
   }
 
   picker(m) {
-    return html`<div class="message-pop message-picker" data-side=${this.pop.side}><app-emoji-picker .frequent=${this.frequent} @pick=${(e) => this.pickEmoji(m, e.detail)}></app-emoji-picker></div>`;
+    return html`<div class="message-pop message-picker" data-dismiss="pop" data-side=${this.pop.side}><app-emoji-picker dismiss="pop" .frequent=${this.frequent} @pick=${(e) => this.pickEmoji(m, e.detail)}></app-emoji-picker></div>`;
   }
 
   bubble(it, lastMine, sms) {
@@ -201,7 +195,7 @@ class AppConversation extends KitElement {
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.text ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')}>${m.text}</div>` : nothing}
         ${target ? html`<div class="message-actions">
-          <button type="button" class="message-action" aria-label="React" title="React" aria-haspopup="menu" aria-expanded=${open ? 'true' : 'false'} ?disabled=${!this.sending} @click=${press(() => (open ? this.closePop() : this.openMenu(m)))}>\u{1F642}</button>
+          <button type="button" class="message-action" aria-label="React" title="React" aria-haspopup="menu" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} ?disabled=${!this.sending} @click=${press(() => (open ? this.closePop() : this.openMenu(m)))}>\u{1F642}</button>
           <button type="button" class="message-action" aria-label="Reply" title="Reply" ?disabled=${!this.sending} @click=${press(() => this.startReply(m))}>\u21A9\uFE0E</button>
         </div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
