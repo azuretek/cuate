@@ -2,9 +2,10 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
 import {
-  orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS,
+  orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS, normalizeSort,
+  SEARCH_MODES, SEARCH_MODE_LABELS, addTerm, removeTerm, setTermMode,
   sortChats, filterChats, setAllChecked, allChecked, checkedCount,
-  addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats,
+  groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats,
   requestDelete, requestDeleteGroup, resolveDelete,
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction } from '../rules/messages.js';
@@ -24,6 +25,7 @@ import './app-conversation.js';
 import './app-settings.js';
 import './app-about.js';
 import './app-image-viewer.js';
+import './app-slide-confirm.js';
 
 const API_VERSION = 1;
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
@@ -60,6 +62,8 @@ class AppRoot extends KitElement {
     // The edit mode and its selection also live on the page: the list draws the checkboxes, the header selects all
     // and acts on the count, and the confirm gate names what a delete will remove before it removes anything.
     editing: { state: true }, checked: { state: true }, pendingDelete: { state: true },
+    // Group asks for a name in a small prompt before the group is made; the name is optional.
+    naming: { state: true },
     // The picture open in the viewer ({ src, alt }), raised by a preview in a message or in the composer.
     viewing: { state: true },
     // The message whose reaction is with the server, and a line said under one message when a reaction did not go.
@@ -103,6 +107,7 @@ class AppRoot extends KitElement {
     this.editing = false;
     this.checked = [];
     this.pendingDelete = null;
+    this.naming = false;
     this.viewing = null;
     this.reacting = null;
     this.messageNote = null;
@@ -691,8 +696,9 @@ class AppRoot extends KitElement {
     return Array.isArray(o) ? o : [];
   }
 
-  // The header is a search field, a filter menu and the gear that opens settings, and no label text at all. Filtering
-  // is a way of looking, so its state and its controls live on the page; the list only draws what it is handed.
+  // The header is a search field with its mode, a filter menu, the sort menu and the gear that opens settings, and no
+  // label text at all. Filtering is a way of looking, so its state and its controls live on the page; the list only
+  // draws what it is handed.
   setFilters(patch) {
     this.filters = { ...this.filters, ...patch };
   }
@@ -713,7 +719,6 @@ class AppRoot extends KitElement {
       const g = this.chatGroups().find((x) => x.id === f.group);
       chips.push({ key: 'group', label: g ? g.name : 'Ungrouped' });
     }
-    if (f.text) chips.push({ key: 'text', label: 'Search: ' + f.text });
     if (!chips.length) return nothing;
     return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${() => this.clearFilter(c.key)}>×</button></span>`)}</div>`;
   }
@@ -738,10 +743,41 @@ class AppRoot extends KitElement {
     </div>`;
   }
 
+  // --- Search terms (issue 133). Typing filters live; Enter commits the text as a term in the chosen mode and clears the
+  // field, and each later term refines the list. Every term keeps its own mode and can change it from its chip. ---
+
+  commitSearch(input) {
+    const f = this.filters || emptyFilters();
+    const terms = addTerm(f.terms, input.value, f.mode);
+    input.value = '';
+    this.setFilters({ terms, text: '' });
+  }
+
+  onSearchKey(e) {
+    const f = this.filters || emptyFilters();
+    if (e.key === 'Enter') { e.preventDefault(); this.commitSearch(e.currentTarget); }
+    else if (e.key === 'Backspace' && !e.currentTarget.value && f.terms.length) this.setFilters({ terms: removeTerm(f.terms, f.terms.length - 1) });
+  }
+
+  modeOptions(current) {
+    return SEARCH_MODES.map((m) => html`<option value=${m} ?selected=${m === current}>${SEARCH_MODE_LABELS[m]}</option>`);
+  }
+
+  // The committed terms, one chip each: its mode, its text and its own remove control.
+  searchTerms() {
+    const terms = (this.filters || emptyFilters()).terms || [];
+    if (!terms.length) return nothing;
+    return html`<div class="search-terms" role="list" aria-label="Search terms">${terms.map((t, i) => html`<span class="search-term" role="listitem" data-mode=${t.mode}>
+      <select class="term-mode" aria-label=${'Search ' + t.text + ' as'} @change=${(e) => this.setFilters({ terms: setTermMode(this.filters.terms, i, e.currentTarget.value) })}>${this.modeOptions(t.mode)}</select>
+      <span class="term-text">${t.text}</span>
+      <button type="button" class="chip-clear" aria-label=${'Remove ' + t.text} @click=${() => this.setFilters({ terms: removeTerm(this.filters.terms, i) })}>×</button>
+    </span>`)}</div>`;
+  }
+
   // The sort choices the icon opens, the current one marked. Picking one writes it to the server through the page,
   // the same setting the list has always read.
   sortMenu() {
-    const current = this.settings['chats.sort'] || 'recent';
+    const current = normalizeSort(this.settings['chats.sort']);
     return html`<div class="sort-menu" role="menu" aria-label="Sort conversations">
       ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${() => this.chooseSort(o)}>
         <span class="sort-check" aria-hidden="true">${o === current ? '✓' : ''}</span>${SORT_LABELS[o]}
@@ -771,9 +807,15 @@ class AppRoot extends KitElement {
   // The rows an edit action can act on, computed with the same rules the list draws with, so the count and the rows
   // can never disagree.
   selectableIds() {
-    const sorted = sortChats(this.visibleChats(), { sort: this.settings['chats.sort'] || 'recent', order: this.chatOrder() });
-    const visible = filterChats(sorted, this.filters || emptyFilters(), { placement: this.chatPlacement() });
-    return visible.map((c) => c.id);
+    const visible = filterChats(this.visibleChats(), this.filters || emptyFilters(), { placement: this.chatPlacement(), texts: this.loadedTexts() });
+    return sortChats(visible, { sort: this.settings['chats.sort'], locale: navigator.language }).map((c) => c.id);
+  }
+
+  // The message text the client holds beyond each chat's last message: the history loaded for the open chat. A Full
+  // text term reads it, so a term finds what is on screen as well as the previews.
+  loadedTexts() {
+    if (!this.openChatId) return {};
+    return { [this.openChatId]: (this.messages || []).map((m) => m.text || '').filter(Boolean) };
   }
 
   selectionCount() { return checkedCount(this.checked, this.selectableIds()); }
@@ -783,11 +825,13 @@ class AppRoot extends KitElement {
     this.checked = [];
     this.filterOpen = false;
     this.sortOpen = false;
+    this.naming = false;
   }
 
   exitEdit() {
     this.editing = false;
     this.checked = [];
+    this.naming = false;
   }
 
   setChecked(id, checked) {
@@ -799,20 +843,39 @@ class AppRoot extends KitElement {
     this.checked = setAllChecked(this.checked, ids, !allChecked(this.checked, ids));
   }
 
-  addSelectionToGroup(groupId) {
-    if (!groupId || !this.checked.length) return;
-    this.setSettings({ 'chats.placement': addChatsToGroup(this.chatPlacement(), this.checked, groupId) });
+  // Group asks for a name first. The prompt is the only step: an empty name is allowed, and the group takes the first
+  // free "Group N" (rules/chats.js), so the group exists on the prompt's own press.
+  openGroupPrompt() {
+    if (!this.selectionCount()) return;
+    this.naming = true;
+    this.updateComplete.then(() => { const el = this.querySelector('.group-name-input'); if (el) el.focus(); });
+  }
+
+  groupSelection(name) {
+    this.naming = false;
+    if (!this.checked.length) return;
+    const { groups, placement } = groupFromSelection(this.chatGroups(), this.chatPlacement(), this.checked, { id: newGroupId(), name });
+    this.setSettings({ 'chats.groups': groups, 'chats.placement': placement });
     this.exitEdit();
   }
 
-  newGroupFromSelection() {
-    const input = this.querySelector('.selection-group-name');
-    const name = String((input && input.value) || '').trim();
-    if (!name || !this.checked.length) return;
-    const { groups, placement } = groupFromSelection(this.chatGroups(), this.chatPlacement(), this.checked, { id: newGroupId(), name });
-    if (input) input.value = '';
-    this.setSettings({ 'chats.groups': groups, 'chats.placement': placement });
-    this.exitEdit();
+  onGroupNameKey(e) {
+    if (e.key === 'Enter') { e.preventDefault(); this.groupSelection(e.currentTarget.value); }
+    else if (e.key === 'Escape') { e.preventDefault(); this.naming = false; }
+  }
+
+  groupPrompt() {
+    const n = this.selectionCount();
+    return html`<div class="sheet-scrim confirm-scrim" @click=${(e) => { if (e.target === e.currentTarget) this.naming = false; }}>
+      <section class="confirm-modal group-prompt" role="dialog" aria-modal="true" aria-labelledby="group-prompt-title">
+        <h2 id="group-prompt-title">Group ${n} conversation${n === 1 ? '' : 's'}</h2>
+        <input class="group-name-input" type="text" placeholder="Name (optional)" aria-label="Group name, optional" @keydown=${this.onGroupNameKey}>
+        <div class="confirm-actions">
+          <button type="button" class="chip" @click=${() => { this.naming = false; }}>Cancel</button>
+          <button type="button" class="button primary group-create" @click=${() => this.groupSelection(this.querySelector('.group-name-input').value)}>Create group</button>
+        </div>
+      </section>
+    </div>`;
   }
 
   // The first press opens the gate; only the modal's own press, a second one, resolves it. The modal is drawn only
@@ -830,7 +893,7 @@ class AppRoot extends KitElement {
   holdConfirm() {
     if (!this.pendingDelete || typeof window === 'undefined') return;
     window.addEventListener('keydown', this.confirmKey);
-    this.updateComplete.then(() => { const el = this.querySelector('.confirm-delete'); if (el) el.focus(); });
+    this.updateComplete.then(() => { const el = this.querySelector('.confirm-modal .slide-thumb'); if (el) el.focus(); });
   }
 
   cancelDelete() {
@@ -851,31 +914,29 @@ class AppRoot extends KitElement {
     this.exitEdit();
   }
 
-  // The header while editing: select-all, the count, and the group actions. Delete is held by the gate above.
-  editBar() {
-    if (!this.editing) return nothing;
-    const groups = this.chatGroups();
+  // The row above the list (issue 137): a small Edit text control at the left. Pressed, it stays highlighted, every row
+  // gains a checkbox, and the row offers select-all, the count, Group, Delete and Done for the selection.
+  editRow() {
+    const toggle = html`<button type="button" class="edit-toggle" aria-pressed=${this.editing ? 'true' : 'false'} @click=${() => this.toggleEditing()}>Edit</button>`;
+    if (!this.editing) return html`<div class="list-tools">${toggle}</div>`;
     const ids = this.selectableIds();
     const count = checkedCount(this.checked, ids);
     const all = allChecked(this.checked, ids);
-    return html`<div class="edit-bar" role="group" aria-label="Edit conversations">
-      <label class="edit-all"><input type="checkbox" class="select-all" .checked=${all} .indeterminate=${count > 0 && !all} ?disabled=${ids.length === 0} @change=${() => this.toggleAllChecked()}> <span>Select all</span></label>
+    return html`<div class="list-tools editing" role="group" aria-label="Edit conversations">
+      ${toggle}
+      <label class="edit-all"><input type="checkbox" class="select-all" aria-label="Select all" .checked=${all} .indeterminate=${count > 0 && !all} ?disabled=${ids.length === 0} @change=${() => this.toggleAllChecked()}></label>
       <span class="edit-count" role="status">${count} selected</span>
-      <div class="edit-actions">
-        <select class="selection-group" aria-label="Add to a group" ?disabled=${groups.length === 0}>
-          <option value="">Add to group</option>
-          ${groups.map((g) => html`<option value=${g.id}>${g.name}</option>`)}
-        </select>
-        <button type="button" class="chip" ?disabled=${groups.length === 0 || count === 0} @click=${() => this.addSelectionToGroup(this.querySelector('.selection-group').value)}>Add</button>
-        <input class="selection-group-name" type="text" placeholder="New group" aria-label="New group name">
-        <button type="button" class="chip" ?disabled=${count === 0} @click=${() => this.newGroupFromSelection()}>New group</button>
-        <button type="button" class="danger-button" ?disabled=${count === 0} @click=${() => this.requestDeleteSelection()}>Delete</button>
-      </div>
+      <span class="edit-actions">
+        <button type="button" class="text-button edit-group" ?disabled=${count === 0} @click=${() => this.openGroupPrompt()}>Group</button>
+        <button type="button" class="text-button danger edit-delete" ?disabled=${count === 0} @click=${() => this.requestDeleteSelection()}>Delete</button>
+        <button type="button" class="text-button edit-done" @click=${() => this.exitEdit()}>Done</button>
+      </span>
     </div>`;
   }
 
-  // The confirm gate drawn: it names what it will remove, says what it will not touch, and only its own Delete
-  // resolves it. Escape and Cancel leave everything as it was.
+  // The confirm gate drawn on the app's sheet backdrop: it names what it will remove, says what it will not touch, and
+  // only carrying its slider to the end resolves it, because a delete is destructive. Escape, Cancel and a press on
+  // the backdrop leave everything as it was.
   confirmModal() {
     const pending = this.pendingDelete;
     const isGroup = pending.kind === 'group';
@@ -884,24 +945,28 @@ class AppRoot extends KitElement {
     const body = isGroup
       ? "The group leaves this client's list. Its conversations stay, and no message is deleted on the Mac."
       : "They leave this client's list only. No message is deleted on the Mac.";
-    return html`<div class="confirm-scrim" @click=${() => this.cancelDelete()}></div>
+    return html`<div class="sheet-scrim confirm-scrim" @click=${(e) => { if (e.target === e.currentTarget) this.cancelDelete(); }}>
       <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-        <h2 id="confirm-title">${title}</h2>
+        <h2 id="confirm-title">Are you sure?</h2>
+        <p class="confirm-what">${title}</p>
         <p>${body}</p>
+        <app-slide-confirm class="confirm-slide" .label=${'Slide to delete'} @confirm=${() => this.confirmDeleteSelection()}></app-slide-confirm>
         <div class="confirm-actions">
           <button type="button" class="chip" @click=${() => this.cancelDelete()}>Cancel</button>
-          <button type="button" class="danger-button confirm-delete" @click=${() => this.confirmDeleteSelection()}>Delete</button>
         </div>
-      </section>`;
+      </section>
+    </div>`;
   }
 
   sidebarHead() {
     const f = this.filters || emptyFilters();
     return html`<header class="sidebar-head">
-      <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })}>
+      <span class="search-box">
+        <select class="search-mode" aria-label="Search by" @change=${(e) => this.setFilters({ mode: e.currentTarget.value })}>${this.modeOptions(f.mode)}</select>
+        <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })} @keydown=${this.onSearchKey}>
+      </span>
       <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; }}>≡</button>
       <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; }}>⇅</button>
-      <button type="button" class="edit-button" aria-label=${this.editing ? 'Done editing' : 'Edit conversations'} aria-pressed=${this.editing ? 'true' : 'false'} @click=${() => this.toggleEditing()}>✎</button>
       <button type="button" class="gear-button" aria-label="Settings" @click=${() => this.openSettings()}>⚙</button>
       ${this.sortOpen ? this.sortMenu() : nothing}
       ${this.filterOpen ? this.filterMenu() : nothing}
@@ -982,13 +1047,14 @@ class AppRoot extends KitElement {
     return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => { this.viewing = e.detail && e.detail.src ? e.detail : null; }}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
-        ${this.editBar()}
+        ${this.searchTerms()}
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
         ${this.activeFilters()}
-        <app-chat-list .chats=${this.visibleChats()} .selected=${this.openChatId}
-          .sort=${this.settings['chats.sort'] || 'recent'} .groups=${this.chatGroups()}
-          .placement=${this.chatPlacement()} .order=${this.chatOrder()} .filters=${this.filters}
+        ${this.editRow()}
+        <app-chat-list .chats=${this.visibleChats()} .selected=${this.openChatId} .texts=${this.loadedTexts()}
+          .sort=${normalizeSort(this.settings['chats.sort'])} .groups=${this.chatGroups()}
+          .placement=${this.chatPlacement()} .filters=${this.filters}
           .editing=${this.editing} .checked=${this.checked}
           @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
           @check=${(e) => this.setChecked(e.detail.id, e.detail.checked)}
@@ -999,6 +1065,7 @@ class AppRoot extends KitElement {
       <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${() => this.updateAction(banner.action.command)}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
       ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
+      ${this.naming ? this.groupPrompt() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }
