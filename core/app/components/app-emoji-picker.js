@@ -32,11 +32,14 @@ export async function rememberEmoji(list, char) {
 // told: it takes the frequent list as a property and hands every pick back as an event, so the composer stays the one
 // place that knows how a character reaches the message.
 class AppEmojiPicker extends KitElement {
-  static properties = { frequent: { attribute: false }, query: { state: true }, category: { state: true }, side: { state: true } };
+  // `dismiss` is the name its host registered the panel under with the kit's dismiss behaviour (core/kit/dismiss.js),
+  // drawn on the panel's root so a press inside it is inside that host's panel.
+  static properties = { frequent: { attribute: false }, dismiss: {}, query: { state: true }, category: { state: true }, side: { state: true } };
 
   constructor() {
     super();
     this.frequent = [];
+    this.dismiss = '';
     this.query = '';
     this.category = EMOJI_CATEGORIES[0].id;
     this.side = 'above';
@@ -108,7 +111,7 @@ class AppEmojiPicker extends KitElement {
     const searching = Boolean(this.query.trim());
     const list = this.results();
     const sections = emojiPickerSections({ side: this.side, recents: frequent.length > 0 });
-    return html`<div class="emoji-picker" role="dialog" aria-label="Emoji" data-side=${this.side}>
+    return html`<div class="emoji-picker" role="dialog" aria-label="Emoji" data-dismiss=${this.dismiss} data-side=${this.side}>
       ${sections.map((id) => this.section(id, frequent, list, searching))}
     </div>`;
   }

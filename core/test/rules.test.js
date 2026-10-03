@@ -9,7 +9,7 @@ import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel, ABOUT_ORDER, aboutRows, aboutLinks } from '../app/rules/settings.js';
 import { BUILD_SPEC as ABOUT_SPEC } from '../app/rules/build-spec.js';
-import { backdropReturns } from '../app/rules/sheet.js';
+import { pressOutside } from '../kit/rules/dismiss.js';
 import { slideProgress, slideConfirms, slideRelease, slideKey, SLIDE_CONFIRM_AT } from '../app/rules/slide.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars, themeFonts, contrastRatio } from '../app/rules/theme.js';
@@ -433,12 +433,13 @@ test('the default palette is offered on any element that asks for it, in both sc
   assert.match(css, /:root\[data-scheme="dark"\] \[data-palette="default"\] \{[^}]*--color-accent: /);
 });
 
+// The sheet's backdrop is closed through the kit's one dismiss behaviour (issue 170), whose rule this is.
 test('a press leaves the sheet only when it both starts and ends on the backdrop', () => {
-  assert.equal(backdropReturns(true, true), true, 'a press on the backdrop, down and up, goes back');
-  assert.equal(backdropReturns(true, false), false, 'a press that starts on the backdrop and ends inside the card does not');
-  assert.equal(backdropReturns(false, true), false, 'a drag that starts inside the card and is released over the backdrop does not throw the page away');
-  assert.equal(backdropReturns(false, false), false, 'a press inside the card is the page own');
-  assert.equal(backdropReturns(undefined, undefined), false);
+  assert.equal(pressOutside(true, true), true, 'a press on the backdrop, down and up, goes back');
+  assert.equal(pressOutside(true, false), false, 'a press that starts on the backdrop and ends inside the card does not');
+  assert.equal(pressOutside(false, true), false, 'a drag that starts inside the card and is released over the backdrop does not throw the page away');
+  assert.equal(pressOutside(false, false), false, 'a press inside the card is the page own');
+  assert.equal(pressOutside(undefined, undefined), false);
 });
 
 test('every notice type has its own switch and a notice only fires when it is on', () => {
