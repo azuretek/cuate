@@ -38,6 +38,7 @@ class ShellParityTest {
             "app.info",
             "notify",
             "open.external",
+            "updates.check",
             "updates.configure",
             "updates.download",
             "updates.install",

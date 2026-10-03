@@ -9,6 +9,10 @@ export async function icons(check = false) {
   save('icon.png', png);
   const sizes = await Promise.all([16, 32, 48, 256].map((size) => sharp(png).resize(size, size).png().toBuffer()));
   save('icon.ico', await pngToIco(sizes));
+  // The icon the About page draws at its top on every platform (issue 171). It lives in core/app, which every shell
+  // bundles, so the iPhone, the Android app and the desktop all show this one drawing; 256 pixels covers the token's
+  // size (size.app-icon) at three device pixels per point.
+  save('../../core/app/assets/app-icon.png', await sharp(png).resize(256, 256).png().toBuffer());
   // The tray's icons (src/tray.js trayIcon). macOS draws a template image: a black silhouette with its face cut out,
   // which the menu bar redraws light or dark to suit itself, at 16 points and twice that for Retina. Windows and Linux
   // show the app's own colours: an ICO with every size the notification area asks for at each display scaling, and a

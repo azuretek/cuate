@@ -72,6 +72,7 @@ targets:
           set -eu
           if [ "$CONFIGURATION" = Debug ]; then
             cp "$SRCROOT/../core/test/rotation-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/rotation-fixture.js"
+            cp "$SRCROOT/../core/test/about-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/about-fixture.js"
           fi
         basedOnDependencyAnalysis: false
     settings:

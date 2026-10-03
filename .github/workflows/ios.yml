@@ -179,6 +179,18 @@ jobs:
             -resultBundlePath proof/rotation.xcresult \
             test-without-building
 
+      # The XCTest captures (the rotation proof and the About page, issue 171) as PNG files beside the result bundle, so
+      # the artifact can be read without Xcode. Evidence, not a gate: a failed export never fails the leg.
+      - name: Export the test captures
+        if: always()
+        timeout-minutes: 5
+        run: |
+          if [ -d proof/rotation.xcresult ]; then
+            mkdir -p proof/captures
+            xcrun xcresulttool export attachments --path proof/rotation.xcresult --output-path proof/captures || echo "the captures could not be exported"
+            ls -l proof/captures || true
+          fi
+
       - name: Keep the boot proof
         if: always()
         uses: actions/upload-artifact@v4

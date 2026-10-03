@@ -10,8 +10,9 @@
 //
 // The groups also say where the two sections with no settings of their own sit: This device (the server, sign out)
 // and About, which is always the LAST section (issue 134). A group's kind says how the page draws it: 'settings' draws
-// its keys, 'device' and 'about' draw their own rows. About carries chela's full details inline rather than linking to
-// a separate page, and aboutRows() below is the one owner of what it shows and in which order.
+// its keys, 'device' draws its own rows, and 'about' draws the one row that opens the About page. About is a page of
+// its own on every platform (issue 171), reached from that row and from the tray, and aboutRows() below is the one
+// owner of what it shows and in which order.
 import { TEXT_SCALES } from './theme.js';
 import { reportRows, UNKNOWN } from '../../kit/rules/build.js';
 import { BUILD_SPEC } from './build-spec.js';
@@ -22,7 +23,7 @@ export const SETTINGS_SCHEMA = {
     { id: 'notifications', label: 'Notifications', description: 'Which events raise a notice on this device.' },
     { id: 'updates', label: 'Updates', description: 'How a release this app finds is fetched.' },
     { id: 'device', kind: 'device', label: 'This device', description: 'The server this app talks to, and the way out of it.' },
-    { id: 'about', kind: 'about', label: 'About', description: 'The build this device is running and the server it talks to. Select a value to copy it.' },
+    { id: 'about', kind: 'about', label: 'About', description: 'The build this device is running, the server it talks to, and a check for updates.' },
   ],
   keys: {
     'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'segmented', options: ['system', 'light', 'dark'], labels: { system: 'System', light: 'Light', dark: 'Dark' }, default: 'system' },
