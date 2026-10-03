@@ -3,7 +3,15 @@
 // it held has gone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anchorFrom, scrollFor, END_SLACK } from '../kit/rules/scroll.js';
+import { anchorFrom, scrollFor, END_SLACK, revealDelta } from '../kit/rules/scroll.js';
+
+test('a focused field the view shrank over is brought into sight, and one in sight is left alone (issue 180)', () => {
+  const view = { top: 40, bottom: 380 };
+  assert.equal(revealDelta(view, { top: 100, bottom: 140 }), 0, 'in sight: no scroll');
+  assert.equal(revealDelta(view, { top: 485, bottom: 600 }), 220, 'under the keyboard: scrolled up until its bottom shows');
+  assert.equal(revealDelta(view, { top: 10, bottom: 30 }), -30, 'above the view: scrolled down until its top shows');
+  assert.equal(revealDelta(view, { top: 300, bottom: 800 }), 260, 'taller than the view: its top stays in sight');
+});
 
 // A column of items of the given heights, as the view measures them at a scrollTop.
 function view(heights, scrollTop, clientHeight, keys = heights.map((_, i) => 'm' + i)) {

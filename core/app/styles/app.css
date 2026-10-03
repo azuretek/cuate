@@ -1,12 +1,27 @@
 /* The app's styles. Every colour, size, spacing, radius and duration comes from tokens.css (core/spec/tokens.json);
    core/test/guards.test.js fails on a literal. */
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; }
+/* The page never scrolls or zooms as a whole (issue 180): its views scroll inside it, so the conversation header stays
+   pinned, an on-screen keyboard never slides the page under the status bar, and only the media viewer zooms (it takes
+   every touch itself, touch-action: none). */
+html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+html { touch-action: pan-x pan-y; }
 body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); letter-spacing: var(--font-tracking); color: var(--color-fg); background: var(--color-bg); }
 button, input, textarea { font: inherit; color: inherit; }
 /* The caret, native form controls and selected text take the theme's colours rather than the platform's accent,
    which is a system blue on iOS and macOS (issue 59). */
 :root { caret-color: var(--color-accent); accent-color: var(--color-accent); }
+/* The system bars (issue 175). On a phone the page paints behind the status bar and the home indicator or navigation
+   bar, and the surface at each edge pads its content by these insets, so each bar wears the colour of the surface beside
+   it in every theme and scheme. iOS reports the insets as env(safe-area-inset-*) (index.html asks for viewport-fit=cover);
+   the Android shell hands its window insets over as --shell-inset-*, because its WebView does not report them. Every
+   edge surface reads these four and never env() itself; a desktop window has none, so each is zero there. */
+:root {
+  --inset-top: max(env(safe-area-inset-top, calc(var(--space-1) * 0)), var(--shell-inset-top, calc(var(--space-1) * 0)));
+  --inset-right: max(env(safe-area-inset-right, calc(var(--space-1) * 0)), var(--shell-inset-right, calc(var(--space-1) * 0)));
+  --inset-bottom: max(env(safe-area-inset-bottom, calc(var(--space-1) * 0)), var(--shell-inset-bottom, calc(var(--space-1) * 0)));
+  --inset-left: max(env(safe-area-inset-left, calc(var(--space-1) * 0)), var(--shell-inset-left, calc(var(--space-1) * 0)));
+}
 ::selection { background: var(--color-selection); color: var(--color-selection-fg); }
 code { font-family: var(--font-mono); font-size: var(--font-size-sm); }
 app-root { display: block; height: 100%; }
@@ -43,8 +58,10 @@ app-root { display: block; height: 100%; }
 .icon { display: inline-block; flex: none; width: var(--icon-size); height: var(--icon-size); background-color: currentColor; -webkit-mask: var(--icon-glyph) center / contain no-repeat; mask: var(--icon-glyph) center / contain no-repeat; }
 
 .shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
-.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
-.sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: var(--size-header); padding: 0 var(--space-4); flex: none; }
+/* The two headers run up behind the status bar and the list runs down behind the home indicator, so the bars take the
+   header's and the list's own surface; the content starts below and ends above them (issue 175). */
+.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); padding-block-end: var(--inset-bottom); padding-inline-start: var(--inset-left); }
+.sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; flex: none; }
 /* The header's three icons are one kind of control (issue 136): the filter, the sort and the gear share their size,
    their hover and their open state, so the sort reads as one of the set rather than a pill of its own. */
 .filter-button, .sort-button, .gear-button { flex: none; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
@@ -73,10 +90,10 @@ app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .chat-preview { font-size: var(--font-size-sm); color: var(--color-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .unread-dot { flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--color-unread); }
 
-.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding-inline-end: var(--inset-right); }
 .empty { margin: auto; color: var(--color-fg-muted); }
 app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.conv-head { display: flex; align-items: center; gap: var(--space-3); height: var(--size-header); padding: 0 var(--space-4); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
+.conv-head { display: flex; align-items: center; gap: var(--space-3); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; border-bottom: var(--size-border) solid var(--color-border); flex: none; }
 .conv-title { flex: 1; min-width: 0; }
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; }
 .load-older { align-self: center; margin-bottom: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
@@ -145,7 +162,7 @@ app-attachment { display: block; max-width: var(--size-bubble-max); margin-botto
 .attachment-image.sticker { border-radius: 0; }
 .attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 
-app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--color-border); }
+app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--color-border); padding-block-end: var(--inset-bottom); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
 .composer textarea { flex: 1; resize: none; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
 /* The field grows with its text and scrolls only past its maximum, where the composer marks it (issue 139). */
@@ -191,7 +208,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .staged-problem { color: var(--color-danger); }
 
 
-.onboarding-wrap { height: 100%; display: grid; place-items: center; padding: var(--space-5); }
+.onboarding-wrap { height: 100%; display: grid; place-items: center; padding: calc(var(--space-5) + var(--inset-top)) calc(var(--space-5) + var(--inset-right)) calc(var(--space-5) + var(--inset-bottom)) calc(var(--space-5) + var(--inset-left)); }
 .onboarding { width: 100%; max-width: var(--size-onboarding); display: flex; flex-direction: column; gap: var(--space-4); animation: onboarding-in var(--motion-spring) var(--motion-spring-ease) both; }
 /* The first screen arrives on the sibling app's spring (motion.spring, sampled from SwiftUI's own), rising the
    height of one gap as it fades in, the way Chela's pairing screen arrives. Reduced motion takes the plain fade. */
@@ -372,7 +389,7 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
   .shell[data-drawer="drag"] .scrim { transition: none; }
   .shell[data-drawer="drag"] .scrim { visibility: visible; }
   .conv-back { display: inline-flex; }
-  .main { grid-column: 1; }
+  .main { grid-column: 1; padding-inline-start: var(--inset-left); }
   /* iOS zooms the whole page in when a control whose font is below 16px takes focus, and that zoom is what pushed the
      send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
      field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
@@ -470,7 +487,7 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 
 /* The backdrop darkens and blurs what is behind it: the one treatment every surface over the app uses, the settings
    and about sheet and the image viewer alike (issue 126). */
-.sheet-scrim { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; padding: var(--space-4); background: var(--color-scrim); -webkit-backdrop-filter: blur(var(--size-scrim-blur)); backdrop-filter: blur(var(--size-scrim-blur)); animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+.sheet-scrim { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; padding: calc(var(--space-4) + var(--inset-top)) calc(var(--space-4) + var(--inset-right)) calc(var(--space-4) + var(--inset-bottom)) calc(var(--space-4) + var(--inset-left)); background: var(--color-scrim); -webkit-backdrop-filter: blur(var(--size-scrim-blur)); backdrop-filter: blur(var(--size-scrim-blur)); animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* The card is only as wide as its content needs, up to a sensible maximum, and it is centred in the backdrop rather
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
@@ -480,7 +497,7 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    way back, and a phone has no Escape key to name on it. This block follows the card's own rules, so it wins over them. */
 @media (max-width: 640px) {
   .sheet-scrim { padding: 0; }
-  .sheet { width: 100%; height: 100%; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: env(safe-area-inset-top, calc(var(--space-1) * 0)) env(safe-area-inset-right, calc(var(--space-1) * 0)) env(safe-area-inset-bottom, calc(var(--space-1) * 0)) env(safe-area-inset-left, calc(var(--space-1) * 0)); }
+  .sheet { width: 100%; height: 100%; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; padding: var(--inset-top) var(--inset-right) var(--inset-bottom) var(--inset-left); }
   app-settings { width: auto; }
   .sheet-esc { display: none; }
   /* A page that returns to the chats list says so with the chats icon, as the conversation's own way back does (issue
@@ -568,7 +585,7 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-image { --zoom-x: 0; --zoom-y: 0; --zoom-scale: 1; flex: none; display: block; max-width: 100%; max-height: 100%; min-width: 0; min-height: 0; object-fit: contain; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); transform: translate(calc(var(--zoom-x) * 1px), calc(var(--zoom-y) * 1px)) scale(var(--zoom-scale)); transform-origin: center; transition: transform var(--motion-normal) var(--motion-ease); cursor: zoom-in; -webkit-user-drag: none; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
 .viewer[data-zoomed="true"] .viewer-image { cursor: grab; }
 .viewer[data-gesture="on"] .viewer-image { transition: none; cursor: grabbing; }
-.viewer-close { position: absolute; top: var(--space-4); right: var(--space-4); z-index: 1; display: grid; place-items: center; width: var(--size-viewer-close); height: var(--size-viewer-close); padding: 0; border: var(--size-border) solid var(--color-image-edge); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-md); cursor: pointer; }
+.viewer-close { position: absolute; top: calc(var(--space-4) + var(--inset-top)); right: calc(var(--space-4) + var(--inset-right)); z-index: 1; display: grid; place-items: center; width: var(--size-viewer-close); height: var(--size-viewer-close); padding: 0; border: var(--size-border) solid var(--color-image-edge); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-md); cursor: pointer; }
 .viewer-close:hover { background: var(--color-bg-sunken); }
 .viewer-close:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .viewer-close .icon { width: 50%; height: 50%; }
@@ -580,7 +597,7 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    the card where a 4px inset puts it. */
 /* The stack draws above a sheet's backdrop and card (z-index 3 and 4), so an answer to a press on a sheet, About's
    Check for updates (issue 171), is seen while the sheet stays up; see the band below for where it sits then. */
-app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--size-header) + var(--space-3)); right: max(env(safe-area-inset-right, calc(var(--space-1) * 0)), var(--space-4)); left: max(env(safe-area-inset-left, calc(var(--space-1) * 0)), var(--space-4)); pointer-events: none; z-index: 5; }
+app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 5; }
 .app-window { position: relative; }
 .app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
@@ -616,7 +633,10 @@ app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--
 @media (max-width: 640px) {
   .app-body { position: relative; }
   app-notices, .app-window[data-platform="darwin"] app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-bg); }
-  .app-notice-stack { align-items: stretch; margin: 0; padding: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--space-3)) calc(env(safe-area-inset-right, calc(var(--space-1) * 0)) + var(--space-4)) var(--space-5) calc(env(safe-area-inset-left, calc(var(--space-1) * 0)) + var(--space-4)); }
+  .app-notice-stack { align-items: stretch; margin: 0; padding: calc(var(--inset-top) + var(--space-3)) calc(var(--inset-right) + var(--space-4)) var(--space-5) calc(var(--inset-left) + var(--space-4)); }
+  /* While the band holds a card it holds the status bar's inset too, so the headers below it drop theirs. */
+  .app-window:has(.app-notice) .sidebar-head,
+  .app-window:has(.app-notice) .conv-head { height: var(--size-header); padding-block-start: calc(var(--space-1) * 0); }
   .app-window[data-platform="darwin"] .app-notice-stack { padding-top: calc(var(--size-window-strip) + var(--space-3)); }
   /* On macOS the band then holds the traffic-light strip, so the headers below it drop their own and no gap opens. */
   .app-window[data-platform="darwin"]:has(.app-notice) .sidebar-head,

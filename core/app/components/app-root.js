@@ -2,6 +2,7 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
 import { press, respond } from '../../kit/press.js';
+import { revealField } from '../../kit/scroll.js';
 import {
   orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS, normalizeSort,
   SEARCH_MODES, SEARCH_MODE_LABELS, addTerm, removeTerm, setTermMode,
@@ -25,6 +26,7 @@ import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { iconToApply } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
+import { pageZoomAttempt } from '../rules/zoom.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -179,11 +181,46 @@ class AppRoot extends KitElement {
       this.offWindow = window.bridge.on('window.state', (data) => { this.maximized = Boolean(data && data.maximized); });
       this.offOpen = window.bridge.on('app.open', (data) => this.openScreen(data && data.screen));
     }
+    if (typeof window !== 'undefined') this.holdPage();
     this.boot();
+  }
+
+  // The page itself never scrolls or zooms (issue 180). A zoom asked for anywhere but the media viewer is refused; a
+  // keyboard that shrinks the view leaves the focused field in view inside its own scroller; and anything that scrolls
+  // the page as a whole (iOS reveals a focused field that way) is put back, so the header stays pinned and nothing
+  // slides under the status bar.
+  holdPage() {
+    const refuse = (e) => {
+      if (!pageZoomAttempt(e)) return;
+      if (e.target && typeof e.target.closest === 'function' && e.target.closest('app-image-viewer')) return;
+      e.preventDefault();
+    };
+    const pin = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
+    // A keyboard arrives over a few frames, so the field is brought into sight as it starts and again once it has
+    // settled, each time inside the views around it and never by scrolling the page.
+    const revealNow = () => { revealField(document.activeElement); pin(); };
+    const reveal = () => {
+      requestAnimationFrame(revealNow);
+      for (const ms of [200, 500]) setTimeout(revealNow, ms);
+    };
+    const viewport = window.visualViewport;
+    this.pageHolds = [
+      [window, 'wheel', refuse, { passive: false, capture: true }],
+      [window, 'keydown', refuse, { capture: true }],
+      [window, 'gesturestart', refuse, { passive: false, capture: true }],
+      [window, 'gesturechange', refuse, { passive: false, capture: true }],
+      [window, 'scroll', pin, { passive: true }],
+      [window, 'resize', reveal, { passive: true }],
+      [document, 'focusin', reveal, { passive: true }],
+      ...(viewport ? [[viewport, 'resize', reveal, { passive: true }]] : []),
+    ];
+    for (const [target, type, fn, options] of this.pageHolds) target.addEventListener(type, fn, options);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    for (const [target, type, fn, options] of this.pageHolds || []) target.removeEventListener(type, fn, options);
+    this.pageHolds = null;
     if (this.schemeQuery && this.onSchemeChange) this.schemeQuery.removeEventListener('change', this.onSchemeChange);
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }

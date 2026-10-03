@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.view.WindowManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -45,18 +46,31 @@ class MainActivity : Activity() {
         const val PICK_FILE = 41
     }
 
-    private lateinit var webView: WebView
     private lateinit var root: FrameLayout
+    private lateinit var webView: WebView
     private lateinit var cover: LinearLayout
     private lateinit var coverMessage: TextView
     private var pickCallback: ValueCallback<Array<Uri>>? = null
+
+    /** The scheme the page last said it drew, or null until it has said; the bar icons contrast with it. */
+    private var pageScheme: String? = null
+
+    /** The page's own fill (its --color-bg), shown behind the web view where the keyboard ends it; empty until named. */
+    private var pageFill = ""
+
+    /** The window's insets in CSS pixels (top, right, bottom, left), handed to the page as --shell-inset-*. */
+    private var pageInsets = floatArrayOf(0f, 0f, 0f, 0f)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val product = Naming.product(assets).ifEmpty { "Cuate" }
         val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName()) { dark, background ->
-            runOnUiThread { appearance(dark, background) }
+            runOnUiThread {
+                pageScheme = if (dark) "dark" else "light"
+                pageFill = background
+                applyBarIcons()
+            }
             true
         }
         Diagnostics.remember(this)
@@ -65,6 +79,12 @@ class MainActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
+            // Only the media viewer zooms, in the page (issue 180): the web view itself never zooms, and the page's
+            // text size is the text-size setting's rather than the system font scale applied on top of it.
+            settings.setSupportZoom(false)
+            settings.builtInZoomControls = false
+            settings.displayZoomControls = false
+            settings.textZoom = 100
             addJavascriptInterface(bridge, HostBridge.INTERFACE_NAME)
             webViewClient = ShellClient()
             webChromeClient = PickerClient()
@@ -77,29 +97,131 @@ class MainActivity : Activity() {
         cover = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(getColor(R.color.surface))
             addView(ProgressBar(this@MainActivity))
             addView(coverMessage)
         }
 
         root = FrameLayout(this)
+        root.setBackgroundColor(getColor(R.color.surface))
         root.addView(webView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         root.addView(cover, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        // Android 15 draws every app edge to edge, so the status and navigation bars would sit over the page's header
-        // and composer. The page is kept between them, and the strips behind the bars take the page's own fill.
-        // Before Android 15 the window stops at the bars by itself.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            root.setOnApplyWindowInsetsListener { view, insets ->
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-                insets
-            }
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            applyInsets(insets)
+            insets
         }
         setContentView(root)
-        // Until the page names its scheme, the bars follow the system's.
-        appearance(systemDark(), "")
+        edgeToEdge()
+        applyBarIcons()
 
         webView.loadUrl(START_URL)
+    }
+
+    /**
+     * The page paints behind the status bar, the navigation bar and any display cutout, and pads its edge surfaces by
+     * the insets it is handed, so each bar wears the colour of the surface beside it (issue 175). Android 15 forces
+     * this for the target SDK; the earlier releases are asked for the same thing here, with transparent bars and no
+     * contrast scrim of the system's own.
+     */
+    @Suppress("DEPRECATION")
+    private fun edgeToEdge() {
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        } else {
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+    }
+
+    /**
+     * The bar icons contrast with the page: dark on a light surface, light on a dark one. Until the page has said which
+     * scheme it drew, the system's own night mode decides, which is what the page follows by default. The page names its
+     * scheme and its fill through window.appearance; the page's choice wins over the system's, since it may differ. The
+     * bars themselves stay transparent: the page paints behind them.
+     */
+    @Suppress("DEPRECATION")
+    private fun applyBarIcons() {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val light = (pageScheme ?: if (night) "dark" else "light") == "light"
+        val fill = try {
+            Color.parseColor(pageFill)
+        } catch (e: RuntimeException) {
+            // parseColor throws IllegalArgumentException for an unknown form and StringIndexOutOfBoundsException for an
+            // empty one, which is what the shell holds before the page has named its fill.
+            getColor(R.color.surface)
+        }
+        root.setBackgroundColor(fill)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(if (light) mask else 0, mask)
+        } else {
+            val mask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            val flags = window.decorView.systemUiVisibility
+            window.decorView.systemUiVisibility = if (light) flags or mask else flags and mask.inv()
+        }
+    }
+
+    /**
+     * The system bars and the cutout become the page's insets, in CSS pixels. The keyboard is the one inset the page
+     * does not paint behind: the web view ends at its top edge, as the resizes-content viewport expects, and nothing
+     * under it needs the navigation bar's inset while it is up.
+     */
+    @Suppress("DEPRECATION")
+    private fun applyInsets(insets: WindowInsets) {
+        val bars: IntArray
+        val keyboard: Int
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val b = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            bars = intArrayOf(b.top, b.right, b.bottom, b.left)
+            keyboard = insets.getInsets(WindowInsets.Type.ime()).bottom
+        } else {
+            bars = intArrayOf(insets.stableInsetTop, insets.stableInsetRight, insets.stableInsetBottom, insets.stableInsetLeft)
+            keyboard = if (insets.systemWindowInsetBottom > insets.stableInsetBottom) insets.systemWindowInsetBottom else 0
+        }
+        val typing = keyboard > bars[2]
+        val params = webView.layoutParams as FrameLayout.LayoutParams
+        val margin = if (typing) keyboard else 0
+        if (params.bottomMargin != margin) {
+            params.bottomMargin = margin
+            webView.layoutParams = params
+        }
+        val density = resources.displayMetrics.density
+        pageInsets = floatArrayOf(bars[0] / density, bars[1] / density, if (typing) 0f else bars[2] / density, bars[3] / density)
+        sendInsets()
+    }
+
+    private fun sendInsets() {
+        val (top, right, bottom, left) = pageInsets.map { "%.2fpx".format(java.util.Locale.ROOT, it) }
+        webView.evaluateJavascript(
+            "(function (s) { s.setProperty('--shell-inset-top', '$top'); s.setProperty('--shell-inset-right', '$right'); " +
+                "s.setProperty('--shell-inset-bottom', '$bottom'); s.setProperty('--shell-inset-left', '$left'); })" +
+                "(document.documentElement.style);",
+            null,
+        )
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The activity keeps its page through a night mode change, so the shell's own surface follows here; the page
+        // follows the system through its own media query and reports the scheme it then drew.
+        cover.setBackgroundColor(getColor(R.color.surface))
+        applyBarIcons()
     }
 
     override fun onDestroy() {
@@ -120,42 +242,6 @@ class MainActivity : Activity() {
         }
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
-    }
-
-    private fun systemDark(): Boolean =
-        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-
-    /**
-     * Dark icons on a light page and light icons on a dark one, over the page's own fill, so the clock and the
-     * battery stay readable in either scheme. The page's choice wins over the system's, since it may differ.
-     */
-    private fun appearance(dark: Boolean, background: String) {
-        val fill = try {
-            Color.parseColor(background)
-        } catch (e: RuntimeException) {
-            // parseColor throws IllegalArgumentException for an unknown form and StringIndexOutOfBoundsException for
-            // an empty one, which is what the shell passes before the page has named its fill.
-            if (dark) Color.BLACK else Color.WHITE
-        }
-        root.setBackgroundColor(fill)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            // Before Android 15 the bars draw their own fill rather than the page's.
-            @Suppress("DEPRECATION")
-            window.statusBarColor = fill
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = fill
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            window.insetsController?.setSystemBarsAppearance(if (dark) 0 else light, light)
-        } else {
-            @Suppress("DEPRECATION")
-            val flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-            @Suppress("DEPRECATION")
-            val current = window.decorView.systemUiVisibility
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = if (dark) current and flags.inv() else current or flags
-        }
     }
 
     private fun fail(message: String) {
@@ -197,9 +283,11 @@ class MainActivity : Activity() {
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             view?.evaluateJavascript(HostBridge.injectedScript, null)
+            sendInsets()
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
+            sendInsets()
             cover.visibility = View.GONE
         }
 
