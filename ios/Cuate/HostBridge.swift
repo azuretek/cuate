@@ -175,18 +175,24 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
         case "updates.check":
-            // About's Check for updates (issue 171). A build reaches this phone through TestFlight, so there is no
-            // check to run: the answer says this build does not update itself, and the page gives the reason from
-            // core/app/rules/updates.js, so the words for each platform live in one place.
-            settle(id: id, ok: true, value: ["state": "unsupported", "canInstall": false])
+            // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
+            // its own to answer; the one bridge spec still declares the command for the desktop's tray check.
+            settle(id: id, ok: true, value: NSNull())
+        case "updates.releases":
+            // The repository's public release feed, read here because the page loads nothing from the network; the
+            // page decides from it with the rule both phones share (core/app/rules/updates.js).
+            releases(id: id)
         case "updates.configure":
-            // No self-updater on iOS, so there is nothing to configure, download or install; each answers false and
-            // the page offers no action. The one bridge spec still declares them for the desktop.
+            // iOS cannot download or install an update itself, so there is nothing to configure or download.
             settle(id: id, ok: true, value: false)
         case "updates.download":
             settle(id: id, ok: true, value: false)
         case "updates.install":
-            settle(id: id, ok: true, value: false)
+            // A newer build is installed in TestFlight, so installing it is opening TestFlight.
+            Task { @MainActor [weak self] in
+                let opened = await TestFlight.open()
+                self?.settle(id: id, ok: true, value: opened != nil)
+            }
         // A phone has no window to minimise, maximise or close, so the window commands answer false and the bar is
         // never drawn; the one bridge spec still declares them for the desktop.
         case "window.minimize":
@@ -259,12 +265,42 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         return key.range(of: Self.keyPattern, options: .regularExpression) != nil ? key : nil
     }
 
+    /// The client's half of the About page's build report: the full version, the channel it follows and the build
+    /// number TestFlight lists it under, all from the bundle (issue 192).
     private func appInfo() -> [String: Any] {
+        let version = Naming.buildVersion
+        let build = BuildIdentity.build
         return [
             "product": Naming.product,
-            "version": Naming.buildVersion,
+            "version": version,
+            "channel": BuildIdentity.channel(of: version),
+            "build": build.isEmpty ? NSNull() : build,
+            "updateChannel": BuildIdentity.channel(of: version) == "dev" ? "dev" : "latest",
             "platform": "ios",
         ]
+    }
+
+    private func releases(id: String) {
+        Task { @MainActor [weak self] in
+            do {
+                let feed = try await Self.feed()
+                self?.settle(id: id, ok: true, value: feed)
+            } catch {
+                self?.settle(id: id, ok: false, value: "the release list could not be read: " + error.localizedDescription)
+            }
+        }
+    }
+
+    /// The feed, or, in a Debug build launched with --update-fixture, the synthetic one a UI test reads, copied into
+    /// test builds only (project.yml), so the capture of a newer build never depends on the network.
+    private static func feed() async throws -> String {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--update-fixture"),
+           let url = Bundle.main.url(forResource: "release-feed-fixture", withExtension: "atom") {
+            return try String(contentsOf: url, encoding: .utf8)
+        }
+        #endif
+        return try await Releases.readFeed()
     }
 
     private func notify(_ args: [String: Any]) -> Bool {

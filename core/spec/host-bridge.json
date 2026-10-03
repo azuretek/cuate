@@ -9,8 +9,9 @@
     "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
     "open.external": { "args": { "url": "string" }, "returns": "boolean" },
     "updates.check": { "args": {}, "returns": "UpdateState?" },
+    "updates.releases": { "args": {}, "returns": "string?" },
     "updates.configure": { "args": { "autoDownload": "boolean" }, "returns": "boolean" },
-    "updates.download": { "args": {}, "returns": "boolean" },
+    "updates.download": { "args": { "version": "string?" }, "returns": "boolean" },
     "updates.install": { "args": {}, "returns": "boolean" },
     "window.minimize": { "args": {}, "returns": "boolean" },
     "window.toggleMaximize": { "args": {}, "returns": "boolean" },
@@ -19,7 +20,7 @@
     "icon.redraw": { "args": { "scheme": "string", "colors": "object", "unread": "number" }, "returns": "boolean", "note": "The app icon follows the active theme (issue 189): the page sends the scheme it draws, the colour tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) as it resolved them, and the total unread count. The desktop redraws its tray image, its window icon and the Windows taskbar overlay from them and sets the count the Dock and Linux launchers draw, answering true; a phone cannot recolour its icon at runtime and answers false." }
   },
   "events": {
-    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },
+    "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?", "via": "string?", "transferred": "number?", "total": "number?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },
     "window.state": { "args": { "maximized": "boolean" }, "returns": "void" },
     "app.open": { "args": { "screen": "string" }, "returns": "void", "screens": ["settings", "about", "updates"] }
   }

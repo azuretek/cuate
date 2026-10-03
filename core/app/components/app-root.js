@@ -15,7 +15,7 @@ import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
 import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
-import { checkAnswer } from '../rules/updates.js';
+import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
 import './app-notices.js';
 import { screenFor, pageAfterBack } from '../rules/screens.js';
@@ -391,6 +391,7 @@ class AppRoot extends KitElement {
       this.phase = 'ready';
       client.connect();
       this.releaseHeldUpdate();
+      this.launchCheck();
       this.noticeServerUpdate(info.serverUpdate);
       this.releaseHeldScreen();
       if (this.chats.length) await this.open(this.chats[0].id);
@@ -555,8 +556,13 @@ class AppRoot extends KitElement {
   // The download and stall states draw no native notice (a notice cannot show a moving bar), so they become the
   // in-app banner instead, which is where the progress is visible on a platform whose notices cannot update.
   onUpdate(data) {
-    const { state, version, percent, detail, canInstall } = data || {};
-    this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null, canInstall: Boolean(canInstall) } : null;
+    const { state, version, percent, detail, canInstall, transferred, total } = data || {};
+    // How this build installs (TestFlight, a verified APK, or the desktop's own updater) is the platform's, so a state
+    // the shell sends is drawn with the same action the page's own check would draw. A transfer the shell measured in
+    // bytes is put into words here, so the words are the same on every platform.
+    const via = data?.via || this.updateVia();
+    const words = detail ?? (state === 'downloading' ? transferDetail({ transferred, total }) : null);
+    this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: words ?? null, canInstall: Boolean(canInstall), ...(via ? { via } : {}) } : null;
     this.showUpdateNotice(appUpdateNotice(this.updateStatus));
     if (!this.settingsRead) { this.heldUpdate = data || null; return; }
     this.noticeUpdate(data);
@@ -723,11 +729,52 @@ class AppRoot extends KitElement {
   // until the shell answers, and fails when the shell refused it.
   async checkUpdates() {
     this.appNotices = forgetRead(this.appNotices, 'app-update');
+    if (this.updateVia()) return this.phoneCheck({ asked: true });
     let answer;
     try { answer = await this.bridge('updates.check', {}); } catch { return false; }
     const state = checkAnswer(answer, String(this.host && this.host.platform || '').toLowerCase());
     if (state) this.onUpdate(state);
     return true;
+  }
+
+  // How this platform installs a newer build, or null where the shell runs its own updater (the desktop).
+  updateVia() {
+    return capability({ platform: String(this.host && this.host.platform || '').toLowerCase(), packaged: true }).via || null;
+  }
+
+  // A phone's check (issue 192): the shell reads the repository's public release feed (the page loads nothing from the
+  // network) and the page decides, with the same rule on both phones (rules/updates.js phoneUpdate). A check someone
+  // asked for shows that it is looking and answers every outcome; the one at launch speaks only when a newer build
+  // exists, so a phone without a network is not greeted by a failure nobody asked about.
+  async phoneCheck({ asked }) {
+    const platform = String(this.host && this.host.platform || '').toLowerCase();
+    const via = this.updateVia();
+    if (!via) return false;
+    if (asked) this.onUpdate({ state: 'checking', via });
+    let feed;
+    try {
+      feed = await this.bridge('updates.releases', {});
+    } catch (e) {
+      if (asked) this.onUpdate({ state: 'error', detail: 'the release list could not be read: ' + this.describe(e), canInstall: false, via });
+      return false;
+    }
+    const found = phoneUpdate({ platform, current: this.host && this.host.version, feed });
+    // A failed check offers no download: there is nothing to try again but the check, which is the button on About.
+    const state = found.state === 'error' ? { ...found, canInstall: false } : found;
+    if (asked || state.state === 'available') this.onUpdate(state);
+    return state.state !== 'error';
+  }
+
+  // The check at launch, on a platform whose page runs it (the phones); the desktop's updater checks on its own.
+  launchCheck() {
+    if (this.updateVia()) this.phoneCheck({ asked: false }).catch(() => {});
+  }
+
+  // About's Check for updates button follows the update state (rules/updates.js aboutUpdate): it checks, or it is the
+  // step the notice offers (open TestFlight, download, install), so the page that was pressed shows the progress too.
+  aboutPress(detail) {
+    const command = detail && detail.command;
+    return command ? this.updateAction(command) : this.checkUpdates();
   }
 
   // A link the page asked to open (About's source, licence and issue links) goes to the shell, which opens the
@@ -1223,7 +1270,7 @@ class AppRoot extends KitElement {
   sheetBody() {
     if (this.view === 'about') {
       return html`<app-about data-motion=${this.pageMotion || 'none'} .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : 'Back to app'}
-        @check-updates=${(e) => respond(e, this.checkUpdates())} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
+        .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
     }
     return html`<app-settings data-motion=${this.pageMotion || 'none'} .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
       @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}
@@ -1245,7 +1292,9 @@ class AppRoot extends KitElement {
   // rules drew into the banner, so the button and what it does cannot drift; a refusal leaves the banner as it is.
   async updateAction(command) {
     if (!command) return undefined;
-    try { await this.bridge(command, {}); return true; } catch { return false; /* the shell refused; the banner keeps the state it last drew */ }
+    // A phone fetches the release the notice named, so the download says which one; the desktop's updater knows already.
+    const args = command === 'updates.download' && this.updateStatus && this.updateStatus.version ? { version: this.updateStatus.version } : {};
+    try { await this.bridge(command, args); return true; } catch { return false; /* the shell refused; the banner keeps the state it last drew */ }
   }
 
   // The three controls ask the shell; the shell owns the BrowserWindow and answers the new maximized state. The

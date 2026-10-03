@@ -30,7 +30,14 @@ class HostBridge(
     private val version: String,
     /** Matches the system bars to the scheme the page draws; answers whether it was applied. */
     private val appearance: (dark: Boolean, background: String) -> Boolean = { _, _ -> false },
+    /** The build number this APK carries (its versionCode), shown on About and listed beside the version. */
+    private val build: Long = 0,
+    /** Runs a script in the page, on the UI thread: how a later answer and an event reach it. */
+    private val script: (String) -> Unit = {},
 ) {
+
+    /** Updating in the app (issue 192): download, verify and hand the release's APK to the system installer. */
+    val updater = ApkUpdater(context) { state -> emit("update.state", state) }
 
     companion object {
         const val INTERFACE_NAME = "cuateNative"
@@ -52,57 +59,119 @@ class HostBridge(
          * JavaScript interface. Installed before the page boots, because the
          * page may call window.bridge during its own first render.
          */
+        /** The hook a later answer settles a pending call through, and the one an event reaches its listeners through. */
+        const val RESOLVE_HOOK = "__cuateResolve"
+        const val EMIT_HOOK = "__cuateEmit"
+
+        /** A call whose answer comes later (a read from the network) answers this now and settles through RESOLVE_HOOK. */
+        private val PENDING: JSONObject get() = JSONObject().put("ok", true).put("pending", true)
+
         val injectedScript: String = """
             (function () {
               if (window.bridge) { return; }
+              var pending = {};
+              var seq = 0;
+              var listeners = {};
+              window.$RESOLVE_HOOK = function (payload) {
+                var waiting = pending[payload.id];
+                if (!waiting) { return; }
+                delete pending[payload.id];
+                if (payload.ok) { waiting.resolve(payload.value); } else { waiting.reject(new Error(String(payload.value))); }
+              };
+              window.$EMIT_HOOK = function (name, payload) {
+                (listeners[name] || []).slice().forEach(function (handler) { try { handler(payload); } catch (e) {} });
+              };
               window.bridge = {
                 call: function (name, args) {
                   return new Promise(function (resolve, reject) {
-                    var payload = JSON.parse(window.$INTERFACE_NAME.call(String(name), JSON.stringify(args || {})));
+                    var id = String(++seq);
+                    var payload = JSON.parse(window.$INTERFACE_NAME.call(String(name), JSON.stringify(args || {}), id));
+                    if (payload.pending) { pending[id] = { resolve: resolve, reject: reject }; return; }
                     if (payload.ok) { resolve(payload.value); } else { reject(new Error(String(payload.value))); }
                   });
+                },
+                on: function (name, handler) {
+                  (listeners[name] = listeners[name] || []).push(handler);
+                  return function () { listeners[name] = (listeners[name] || []).filter(function (h) { return h !== handler; }); };
                 }
               };
             })();
         """.trimIndent()
     }
 
+    /** A call with no way to answer later: what a test calls directly. */
+    fun call(name: String, argsJson: String): String = call(name, argsJson, "")
+
     @JavascriptInterface
-    fun call(name: String, argsJson: String): String {
+    fun call(name: String, argsJson: String, id: String): String {
         val args = try {
             JSONObject(argsJson)
         } catch (e: Exception) {
             JSONObject()
         }
         val result = try {
-            dispatch(name, args)
+            dispatch(name, args, id)
         } catch (e: Exception) {
             failure(e.message ?: "bridge failure")
         }
         return result.toString()
     }
 
-    private fun dispatch(name: String, args: JSONObject): JSONObject {
+    /** An event the page listens for with window.bridge.on, sent from any thread. */
+    fun emit(name: String, payload: JSONObject) {
+        script("window.$EMIT_HOOK && window.$EMIT_HOOK(" + JSONObject.quote(name) + ", " + payload.toString() + ");")
+    }
+
+    private fun settle(id: String, ok: Boolean, value: Any) {
+        val payload = JSONObject().put("id", id).put("ok", ok).put("value", value)
+        script("window.$RESOLVE_HOOK && window.$RESOLVE_HOOK(" + payload.toString() + ");")
+    }
+
+    /**
+     * The repository's public release feed (issue 192), read off the bridge's thread so the page never waits on the
+     * network, and answered later. The page decides from it with the rule both phones share.
+     */
+    private fun releases(id: String): JSONObject {
+        if (id.isEmpty()) return failure("updates.releases answers later, so it needs a call id")
+        Thread {
+            try {
+                val override = ReleaseTransport.override
+                val url = Releases.feedUrl(context.assets) ?: throw IllegalStateException("the release feed's address could not be formed")
+                settle(id, true, (override ?: ReleaseTransport.Https).text(url))
+            } catch (e: Exception) {
+                settle(id, false, "the release list could not be read: " + (e.message ?: e.javaClass.simpleName))
+            }
+        }.apply { name = "release-feed" }.start()
+        return PENDING
+    }
+
+    private fun dispatch(name: String, args: JSONObject, id: String): JSONObject {
         if (name !in commands) return failure("undeclared bridge command: " + name)
         return when (name) {
             "storage.get" -> success(store.get(args.optString("key")) ?: JSONObject.NULL)
             "storage.set" -> success(store.set(args.optString("key"), args.optString("value")))
             "storage.delete" -> success(store.delete(args.optString("key")))
+            // The client's half of the About page's build report: the version, the channel it follows and the build
+            // number this APK carries (issue 192), so About shows neither as Unknown.
             "app.info" -> success(
-                JSONObject().put("product", product).put("version", version).put("platform", "android"),
+                JSONObject().put("product", product).put("version", version)
+                    .put("channel", Releases.channelOf(version))
+                    .put("build", if (build > 0) build.toString() else JSONObject.NULL)
+                    .put("updateChannel", if (Releases.channelOf(version) == "dev") "dev" else "latest")
+                    .put("platform", "android"),
             )
             "app.icon" -> success(appIcon(args.optString("icon")))
             "notify" -> success(notify(args))
             "open.external" -> success(openExternal(args))
-            // About's Check for updates (issue 171). A build reaches this phone as a newer APK, so there is no check to
-            // run: the answer says this build does not update itself, and the page gives the reason from
-            // core/app/rules/updates.js, so the words for each platform live in one place.
-            "updates.check" -> success(JSONObject().put("state", "unsupported").put("canInstall", false))
-            // No self-updater on Android, so there is nothing to configure, download or install; each answers false
-            // and the page offers no action. The one bridge spec still declares them for the desktop.
+            // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
+            // its own to answer; the one bridge spec still declares the command for the desktop's tray check.
+            "updates.check" -> success(JSONObject.NULL)
+            "updates.releases" -> releases(id)
+            // A download is always asked for by the person (the notice's or About's Download), so there is nothing
+            // to configure.
             "updates.configure" -> success(false)
-            "updates.download" -> success(false)
-            "updates.install" -> success(false)
+            "updates.download" -> success(updater.download(args.optString("version")))
+            "updates.install" -> success(updater.install())
             // A phone has no window to minimise, maximise or close, so the window commands answer false and the bar is
             // never drawn; the one bridge spec still declares them for the desktop.
             "window.minimize" -> success(false)

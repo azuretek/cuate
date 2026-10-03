@@ -46,6 +46,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # The checks between a downloaded update and the installer (issue 192), on the JVM with no device.
+      - name: Unit tests
+        timeout-minutes: 15
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
       # The emulator needs the KVM device the runner exposes.
       - name: Enable KVM
         run: |
@@ -76,6 +81,8 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/about-dark.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/settings-light.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/settings-dark.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/update-ready-light.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/update-install-prompt-light.png
 
       - name: Keep the boot proof
         if: always()
@@ -162,6 +169,7 @@ jobs:
       # the one the keystore holds, so green means signed by the release identity
       # rather than merely produced.
       - name: Verify the signature
+        id: signature
         run: |
           set -eo pipefail
           sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
@@ -188,6 +196,26 @@ jobs:
             exit 1
           fi
           echo "the APK is signed by the keystore certificate $from_store"
+          {
+            echo "apk=$apk"
+            echo "signer=$from_apk"
+          } >> "$GITHUB_OUTPUT"
+
+      # The release carries the APK and a manifest naming its size, SHA-256 and signer (issue 192), which a phone
+      # checks before it hands a download to Android's installer. release.yml attaches both to the GitHub release.
+      - name: Name the APK and write its manifest
+        run: |
+          set -eo pipefail
+          node ../scripts/release/android-artifact.mjs build "${{ steps.signature.outputs.apk }}" "${{ steps.signature.outputs.signer }}" "${{ steps.version.outputs.version }}" "$GITHUB_SHA" ../android-release
+          node ../scripts/release/android-artifact.mjs verify ../android-release "${{ steps.version.outputs.version }}" "$GITHUB_SHA"
+
+      - name: Keep the release APK and its manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: android-release/*
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Keep the signed APK
         uses: actions/upload-artifact@v4

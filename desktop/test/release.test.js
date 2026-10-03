@@ -11,6 +11,7 @@ import { expectedAssets, verifyAssets, verifyDesktopAssets } from '../../scripts
 import { buildServerArtifact, serverAssetNames, sourceFiles, verifyServerAssets } from '../../scripts/release/server-artifact.mjs';
 import { digestText, manifestOf, readTarball, sha256, writeTarball } from '../../server/src/artifact.js';
 import { collect } from '../../scripts/release/collect.mjs';
+import { androidAssetNames, buildAndroidAssets, verifyAndroidAssets, signerDigest, fetchAndroidAssets } from '../../scripts/release/android-artifact.mjs';
 import { publish, prunePlan } from '../../scripts/release/release.mjs';
 import config from '../electron-builder.mjs';
 const naming = JSON.parse(readFileSync(new URL('../../core/spec/naming.json', import.meta.url)));
@@ -61,12 +62,22 @@ function serverFixture(dir) {
   writeFileSync(path.join(dir, names.manifest), JSON.stringify(manifestOf({ name: naming.slug + '-server', version, commit: sha, node: '>=22.13', files })));
   return names;
 }
+// The Android half for the fixture version: a stand-in APK named and described by the real build step.
+const SIGNER = 'AB:'.repeat(31) + 'AB';
+function androidFixture(dir) {
+  const apk = path.join(dir, 'built.apk');
+  writeFileSync(apk, 'an apk, for the test');
+  buildAndroidAssets({ apk, signer: SIGNER, version, commit: sha, out: dir });
+  rmSync(apk);
+  return androidAssetNames(version);
+}
 function fixture(t) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'release-assets-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const names = expectedAssets(version);
   const server = Object.values(serverFixture(dir));
-  for (const name of names) if (!server.includes(name)) writeFileSync(path.join(dir, name), name);
+  const android = Object.values(androidFixture(dir));
+  for (const name of names) if (!server.includes(name) && !android.includes(name)) writeFileSync(path.join(dir, name), name);
   const asset = names.find((name) => name.endsWith('.exe'));
   for (const name of names.filter((name) => name.endsWith('.yml'))) {
     const files = names.filter((file) => name === 'dev.yml' ? file.endsWith('.exe') : name === 'dev-mac.yml' ? file.endsWith('.zip') : name === 'dev-linux.yml' ? file.endsWith('x86_64.AppImage') : file.endsWith('arm64.AppImage')).map((url) => { const bytes = readFileSync(path.join(dir, url)); return { url, size: bytes.length, sha512: createHash('sha512').update(bytes).digest('base64') }; });
@@ -202,7 +213,7 @@ test('the publisher verifies the server assets with the desktop ones and refuses
   writeFileSync(tarball, good);
   rmSync(path.join(dir, names.manifest));
   assert.throws(() => verifyAssets(dir, version), /Missing or empty asset/);
-  assert.equal(verifyDesktopAssets(dir, version).length, expectedAssets(version).length - 3, 'the desktop half alone does not look at the server');
+  assert.equal(verifyDesktopAssets(dir, version).length, expectedAssets(version).length - 5, 'the desktop half alone does not look at the server or the APK');
 });
 
 test('a real server build lists every file it packs, each with a matching digest', (t) => {
@@ -246,4 +257,37 @@ test('the server artifact is built from the release version, tested, and holds t
   assert.equal(ci.jobs.server.uses, './.github/workflows/server-artifact.yml');
   assert.ok(ci.jobs.gate.needs.includes('server'));
   assert.ok(ci.jobs.gate.steps[0].run.includes('needs.server.result'));
+});
+
+// Issue 192: a release carries the signed APK and its manifest, so a phone can update itself from the release.
+test('the publisher verifies the Android APK against its manifest and refuses a tampered one', (t) => {
+  const { dir } = fixture(t);
+  const names = androidAssetNames(version);
+  assert.deepEqual(names, { apk: naming.slug + '-android-' + version + '.apk', manifest: naming.slug + '-android-' + version + '.manifest.json' });
+  const manifest = JSON.parse(readFileSync(path.join(dir, names.manifest), 'utf8'));
+  assert.equal(manifest.signer, 'ab'.repeat(32), 'the signer is written plain and lower-case');
+  assert.equal(manifest.file, names.apk);
+  assert.equal(manifest.commit, sha);
+  assert.ok(verifyAssets(dir, version, { commit: sha }).includes(names.apk));
+  assert.throws(() => verifyAndroidAssets(dir, version, { commit: 'f'.repeat(40) }), /names commit/);
+  const apk = path.join(dir, names.apk);
+  writeFileSync(apk, 'an apk, for the tesT');
+  assert.throws(() => verifyAssets(dir, version), /APK digest mismatch/);
+  writeFileSync(apk, 'short');
+  assert.throws(() => verifyAssets(dir, version), /APK size mismatch/);
+  rmSync(apk);
+  assert.throws(() => verifyAssets(dir, version), /Missing or empty asset/);
+  assert.throws(() => signerDigest('not a digest'), /certificate/);
+});
+
+test('the release fetches the APK from the successful android run for its commit, and refuses without one', (t) => {
+  const out = mkdtempSync(path.join(os.tmpdir(), 'android-fetch-'));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  const calls = [];
+  const gh = (runs) => (args) => { calls.push(args); return args[1] === 'list' ? JSON.stringify(runs) : ''; };
+  fetchAndroidAssets({ commit: sha, out, gh: gh([{ databaseId: 5, conclusion: 'failure' }, { databaseId: 7, conclusion: 'success' }]) });
+  assert.deepEqual(calls.at(-1).slice(0, 3), ['run', 'download', '7']);
+  assert.ok(calls.at(-1).includes('android-release'));
+  assert.ok(calls[0].includes(sha) && calls[0].includes('android.yml'));
+  assert.throws(() => fetchAndroidAssets({ commit: sha, out, gh: gh([{ databaseId: 5, conclusion: 'failure' }]) }), /No successful android run/);
 });

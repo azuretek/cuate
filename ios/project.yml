@@ -75,6 +75,7 @@ targets:
             cp "$SRCROOT/../core/test/system-bars-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/system-bars-fixture.js"
             cp "$SRCROOT/../core/test/about-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/about-fixture.js"
             cp "$SRCROOT/../core/test/settings-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/settings-fixture.js"
+            cp "$SRCROOT/../core/test/release-feed-fixture.atom" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/release-feed-fixture.atom"
           fi
         basedOnDependencyAnalysis: false
     settings:

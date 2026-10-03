@@ -40,6 +40,7 @@ class ShellParityTest {
             "notify",
             "open.external",
             "updates.check",
+            "updates.releases",
             "updates.configure",
             "updates.download",
             "updates.install",
@@ -50,6 +51,28 @@ class ShellParityTest {
             "icon.redraw",
         )
         assertEquals(declared, HostBridge.commandNames(context.assets))
+    }
+
+    // Issue 192: About shows this build's channel and build number rather than Unknown.
+    @Test
+    fun appInfoReportsTheChannelAndTheBuildNumber() {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        val bridge = HostBridge(context, SecureStore(context), HostBridge.commandNames(context.assets), "App", "0.0.1-dev.98.7699911abc", build = 98)
+        val answer = org.json.JSONObject(bridge.call("app.info", "{}")).getJSONObject("value")
+        assertEquals("dev", answer.getString("channel"))
+        assertEquals("98", answer.getString("build"))
+        assertEquals("dev", answer.getString("updateChannel"))
+        assertNotNull(info.versionName)
+    }
+
+    @Test
+    fun theReleaseFeedAnswersLaterAndADownloadOfANonReleaseIsRefused() {
+        val bridge = HostBridge(context, SecureStore(context), HostBridge.commandNames(context.assets), "App", "0.0.1")
+        val pending = org.json.JSONObject(bridge.call("updates.releases", "{}", "7"))
+        assertEquals(true, pending.optBoolean("pending"))
+        val refused = org.json.JSONObject(bridge.call("updates.download", "{\"version\":\"../../etc\"}"))
+        assertEquals(false, refused.getBoolean("value"))
+        assertEquals("nothing is downloaded yet, so there is nothing to install", false, org.json.JSONObject(bridge.call("updates.install", "{}")).getBoolean("value"))
     }
 
     @Test
