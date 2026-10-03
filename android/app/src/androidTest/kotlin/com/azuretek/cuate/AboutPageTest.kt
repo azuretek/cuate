@@ -56,10 +56,11 @@ class AboutPageTest {
         throw AssertionError("The About page never showed its notice: $result")
     }
 
-    // The page as painted, not a frame the WebView drew before it: the app icon's own tile colour
-    // (desktop/build/icon.svg) is on screen, which it only is once the About page has drawn its icon.
+    // The page as painted, not a frame the WebView drew before it: the top of the app icon's tile, the default theme's
+    // accent lightened (core/app/rules/icon.js iconPalette, held to it by core/test/icon.test.js), is on screen, which
+    // it only is once the About page has drawn its icon.
     private fun iconShown(capture: android.graphics.Bitmap): Boolean {
-        val tile = android.graphics.Color.rgb(0x15, 0x6c, 0x68)
+        val tile = android.graphics.Color.rgb(0xd6, 0x5a, 0x4e)
         var hits = 0
         for (y in 0 until capture.height step 4) {
             for (x in 0 until capture.width step 4) {

@@ -14,6 +14,7 @@ import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
+import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { lockZoom } from './zoom-lock.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
 
@@ -61,6 +62,41 @@ const updateFacts = () => ({ platform: process.platform, packaged: app.isPackage
 // The tray, and the menu it carries. Closing the window hides it there; see tray.js.
 let tray = null;
 let trayMenu = null;
+// The app's icons follow the active theme, the scheme and the unread count (issue 189): the page reports all three
+// through icon.redraw, and the tray image, the window icon and the taskbar overlay are drawn again from the Flor de
+// muerto masters whenever one of them would change. Until the page reports, the generated default-theme files stand.
+const iconMasters = loadMasters(CORE);
+let iconState = { scheme: 'light', colors: {}, unread: 0 };
+let iconKey = null;
+let windowIconKey = null;
+const smokeIcons = [];
+const nativeFrom = (reps) => {
+  const image = nativeImage.createEmpty();
+  for (const r of reps) image.addRepresentation({ scaleFactor: r.scale, width: r.image.width, height: r.image.height, buffer: encodePng(r.image) });
+  return image;
+};
+function applyIcons(next = {}) {
+  iconState = { ...iconState, ...next };
+  const out = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState });
+  if (out.key === iconKey) return true;
+  iconKey = out.key;
+  if (tray) {
+    const image = nativeFrom(out.tray.reps);
+    if (out.tray.template) image.setTemplateImage(true);
+    tray.setImage(image);
+    tray.setToolTip(out.description ? naming.product + ', ' + out.description : naming.product);
+  }
+  if (win && !win.isDestroyed()) {
+    // The window icon depends on the palette alone, so a new count leaves it as it is.
+    const paletteKey = JSON.stringify(out.palette);
+    if (out.window && paletteKey !== windowIconKey) { win.setIcon(nativeFrom([{ scale: 1, image: out.window }])); windowIconKey = paletteKey; }
+    if (process.platform === 'win32') win.setOverlayIcon(out.overlay ? nativeFrom([{ scale: 1, image: out.overlay }]) : null, out.description);
+  }
+  // macOS's Dock and a Linux launcher draw their own badge over the app icon; the shell only gives them the count.
+  if (process.platform !== 'win32') app.setBadgeCount(out.badgeCount);
+  if (SMOKE) smokeIcons.push({ scheme: iconState.scheme, accent: iconState.colors.accent || null, unread: out.badgeCount, mark: out.palette.mark, tray: out.tray.reps.map((r) => r.image.data.reduce((s, v, i) => (s + v * ((i % 251) + 1)) % 1000003, 0)).join(',') });
+  return true;
+}
 const lifecycle = createLifecycle({
   getWindow: () => win,
   createWindow: () => createWindow(),
@@ -109,6 +145,7 @@ const handlers = createHandlers({
   configureUpdates: (autoDownload) => (updateControl ? updateControl.setAutoDownload(autoDownload) : false),
   downloadUpdates: () => (updateControl ? updateControl.download() : false),
   installUpdate: () => (updateControl ? updateControl.install() : false),
+  icons: (state) => applyIcons(state),
   // The window bar's controls: the page asks, and only the shell touches the BrowserWindow. On a platform with no
   // window the phones answer false, so the one bridge spec serves every shell.
   windowControls: {
@@ -1500,6 +1537,15 @@ async function runSmoke(w) {
   await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
   report.themeDark = true;
   report.theme = report.themeLight && report.themeDark;
+  // The app's icons follow the theme and the scheme (issue 189): the page reported each to the shell, which drew the
+  // tray again in that theme's colours. macOS's template is a silhouette the menu bar recolours, so there only the
+  // palette is compared.
+  const iconFor = (scheme, accent) => smokeIcons.find((i) => i.scheme === scheme && i.accent === accent);
+  for (let i = 0; i < 50 && !(iconFor('light', '#2a6f4b') && iconFor('dark', '#7fd6a8')); i += 1) await pause(100);
+  const lightIcon = iconFor('light', '#2a6f4b');
+  const darkIcon = iconFor('dark', '#7fd6a8');
+  report.trayIcon = Boolean(lightIcon && darkIcon) && lightIcon.mark === '#2a6f4b' && lightIcon.mark !== darkIcon.mark && (process.platform === 'darwin' || lightIcon.tray !== darkIcon.tray);
+  console.log('tray icon: ' + JSON.stringify({ lightIcon, darkIcon, redraws: smokeIcons.length }));
 
   // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
   // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default
