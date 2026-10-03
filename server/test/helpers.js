@@ -11,14 +11,14 @@ import { makeAttachmentId } from '../src/ids.js';
 import { startServer } from '../src/app.js';
 
 // A real server over the fake engine, with a strict logger at debug so an undeclared event fails the test.
-export async function boot({ sending = true, perMinute = 20, sendTimeoutMs = 400, mac = null, restarts = null, webhooks = null, webhookOptions = {}, updatePending = () => false } = {}) {
+export async function boot({ sending = true, perMinute = 20, sendTimeoutMs = 400, mac = null, restarts = null, webhooks = null, webhookOptions = {}, updatePending = () => false, features = [] } = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'srv-test-'));
   const lines = [];
   const logger = createLogger({ spec: logSpec, app: 'test', run: 'test', sink: (l) => lines.push(l), now: Date.now, level: 'debug', strict: true });
   const config = normalizeConfig({ port: 0, engine: { kind: 'fake' }, sending: { enabled: sending, perMinute }, webhooks: webhooks || { endpoints: [] } });
   const store = openStore(path.join(dir, 'state.db'));
   const root = path.join(dir, 'attachments');
-  const world = createFakeImsg({ attachmentsRoot: root });
+  const world = createFakeImsg({ attachmentsRoot: root, features });
   const engine = createEngine({ kind: 'fake', makeTransport: () => world.transport(), log: logger.child('engine'), attachmentId: makeAttachmentId({ secret: 'test-secret', store }), sendTimeoutMs });
   await engine.start();
   const srv = await startServer({ config, store, engine, log: logger.child('http'), dataDir: dir, attachmentsRoot: root, mac, restarts, webhookOptions, updatePending });

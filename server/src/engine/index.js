@@ -13,7 +13,7 @@ const omit = (o, keys) => {
 export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000 }) {
   let transport = null;
   let rpc = null;
-  let state = { kind, version: null, ready: false };
+  let state = { kind, version: null, ready: false, features: [] };
   let lastRowid = 0;
   let stopping = false;
   let restartMs = 1000;
@@ -90,7 +90,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       log.emit('engine.error', { method: 'status', code: numCode(e), error: e.message });
     }
     canReadStatus = Array.isArray(st?.methods) && st.methods.includes('message.send_status');
-    setState({ version: st && st.version != null ? String(st.version) : null, ready: Boolean(st && st.database && st.database.ready) });
+    // rpc_features is imsg's own capability list (an older release omits it, so the array is empty). The reaction
+    // sender reads it through supportsEmojiTapback to decide whether an arbitrary emoji can be sent.
+    setState({ version: st && st.version != null ? String(st.version) : null, ready: Boolean(st && st.database && st.database.ready), features: Array.isArray(st?.rpc_features) ? st.rpc_features : [] });
     log.emit('engine.start', { kind, version: state.version, ready: state.ready });
     try {
       await subscribe();
@@ -187,10 +189,19 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // out, so a file on its own is not a text send carrying nothing.
   const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined);
 
-  // imsg's bridge `tapback` adds or removes one of the six standard reactions on a message by its guid. Messages stores
-  // any emoji as a reaction (associated_message_type 2006), and imsg reads those, but its bridge builds only 2000 to 2005
-  // and maps some other emoji onto a standard kind, so the sender refuses any other emoji before it reaches here (issue 188).
-  const react = (chatId, targetId, { type, remove = false }) => sendOut({ chat_id: Number(chatId), message_guid: String(targetId), kind: type, remove: Boolean(remove) }, 'tapback');
+  // The running engine advertises `tapback.emoji` when its bridge can send an arbitrary emoji reaction. A stock
+  // bridge cannot: it builds only associated_message_type 2000 to 2005 and maps some emoji onto a standard kind, so
+  // without the feature the sender refuses any emoji that is not one of the six (issue 188).
+  const supportsEmojiTapback = () => state.features.includes('tapback.emoji');
+
+  // imsg's bridge `tapback` adds or removes a reaction on a message by its guid, as an arbitrary `emoji` when the
+  // engine advertises it, otherwise as one of the six classic `kind`s (issue 188).
+  const react = (chatId, targetId, { type = '', emoji = '', remove = false } = {}) => {
+    const base = { chat_id: Number(chatId), message_guid: String(targetId), remove: Boolean(remove) };
+    if (emoji && supportsEmojiTapback()) return sendOut({ ...base, emoji }, 'tapback');
+    if (!type) return Promise.resolve({ ok: false, uncertain: false, unsupported: true, code: 'emoji_unsupported' });
+    return sendOut({ ...base, kind: type }, 'tapback');
+  };
 
   function stop() {
     stopping = true;
@@ -211,6 +222,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     sendText,
     sendFile,
     react,
+    supportsEmojiTapback,
     info: () => ({ kind: state.kind, version: state.version, ready: state.ready }),
     on: (cb) => listeners.add(cb),
     onState: (cb) => stateListeners.add(cb),
