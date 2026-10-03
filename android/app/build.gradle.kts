@@ -31,6 +31,8 @@ android {
     // build/engine.js and fixtures/ keep the layout they have in the repository.
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/coreAssets"))
 
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../core/test"))
+
     buildFeatures {
         buildConfig = true
     }

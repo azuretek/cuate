@@ -56,6 +56,7 @@
   --size-scrim-blur: 6px;
   --size-staged-preview: 96px;
   --size-viewer-close: 40px;
+  --size-press-spinner: 1em;
   --size-message-action: 28px;
   --motion-fast: 100ms;
   --motion-normal: 180ms;
@@ -68,6 +69,8 @@
   --motion-sheet-in: 500ms;
   --motion-sheet-out: 400ms;
   --motion-sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-press-hold: 900ms;
+  --motion-press-coalesce: 250ms;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4);

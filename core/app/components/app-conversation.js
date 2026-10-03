@@ -1,5 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press, runPress, emit, respond } from '../../kit/press.js';
+import { keepScroll } from '../../kit/scroll.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, canTarget, TAPBACKS } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
@@ -17,7 +19,7 @@ const PRESS_SLOP = 10;
 
 class AppConversation extends KitElement {
   static properties = {
-    chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, loadingOlder: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {},
+    chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {},
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
@@ -30,13 +32,14 @@ class AppConversation extends KitElement {
     super();
     this.messages = [];
     this.hasMore = false;
-    this.loadingOlder = false;
     this.sending = false;
     // What the contact header draws for the platform, and the window's own state for the middle button's glyph, both
     // handed down from the page. A phone passes neither, so the header draws no window controls there.
     this.windowControls = null;
     this.maximized = false;
-    this.stick = true;
+    // The conversation follows its latest message while it is there, and otherwise stays on the message it was on,
+    // through new messages, older ones loading above, a picture loading, a resize and a new text size (issue 142).
+    this.keep = keepScroll(this, { scroller: '.messages', items: '.bubble-row', follow: true });
     this.reacting = null;
     this.note = null;
     this.pop = null;
@@ -62,19 +65,15 @@ class AppConversation extends KitElement {
     clearTimeout(this.flashTimer);
   }
 
+  // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
   fire(name, detail) {
-    this.dispatchEvent(new CustomEvent(name, { detail }));
+    return emit(this, name, detail);
   }
 
-  list() {
-    return this.querySelector('.messages');
-  }
-
+  // Another conversation starts at its latest message.
   willUpdate(changed) {
-    const el = this.list();
-    this.before = el ? { h: el.scrollHeight, top: el.scrollTop } : null;
     if (changed.has('chat') && changed.get('chat')?.id !== this.chat?.id) {
-      this.stick = true;
+      this.keep.reset();
       this.pop = null;
       this.replyingTo = null;
     }
@@ -82,40 +81,19 @@ class AppConversation extends KitElement {
 
   updated(changed) {
     if (changed.has('pop')) this.placePop();
-    if (!changed.has('messages')) return;
-    const el = this.list();
-    if (!el) return;
-    const prev = changed.get('messages') || [];
-    const cur = this.messages || [];
-    const lastChanged = !prev.length || !cur.length || prev[prev.length - 1].id !== cur[cur.length - 1].id;
-    if (lastChanged) {
-      if (this.stick) el.scrollTop = el.scrollHeight;
-    } else if (this.before && cur.length > prev.length) {
-      el.scrollTop = this.before.top + (el.scrollHeight - this.before.h);
-    }
   }
 
   // A menu or panel opens above its message, and below it when the list has no room above (the first messages), so
   // it is never clipped by the top of the scrolling list. Below, the list scrolls to show all of it.
   placePop() {
     const pop = this.querySelector('.message-pop');
-    const el = this.list();
+    const el = this.querySelector('.messages');
     if (!pop || !el || !this.pop) return;
     if (this.pop.side === 'above' && pop.getBoundingClientRect().top < el.getBoundingClientRect().top) {
       this.pop = { ...this.pop, side: 'below' };
       return;
     }
     pop.scrollIntoView({ block: 'nearest' });
-  }
-
-  onScroll(e) {
-    const el = e.currentTarget;
-    this.stick = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  }
-
-  onMedia() {
-    const el = this.list();
-    if (el && this.stick) el.scrollTop = el.scrollHeight;
   }
 
   openMenu(m, e) {
@@ -155,7 +133,8 @@ class AppConversation extends KitElement {
     const mine = myReaction(m);
     const remove = Boolean(mine) && reactionGlyph(mine).replace(/\ufe0f/g, '') === String(emoji).replace(/\ufe0f/g, '');
     this.pop = null;
-    this.fire('react', { messageId: m.id, emoji, remove });
+    const control = [...this.querySelectorAll('.bubble-row')].find((row) => row.dataset.id === m.id)?.querySelector('.message-action[aria-label="React"]');
+    return runPress(control, () => this.fire('react', { messageId: m.id, emoji, remove }));
   }
 
   async pickEmoji(m, char) {
@@ -170,7 +149,7 @@ class AppConversation extends KitElement {
 
   onSend(detail) {
     this.replyingTo = null;
-    this.fire('send', detail);
+    return this.fire('send', detail);
   }
 
   // A quote takes the reader to the message it answers and lights it for a moment.
@@ -187,14 +166,13 @@ class AppConversation extends KitElement {
   menu(m) {
     const mine = myReaction(m);
     const chosen = mine ? reactionGlyph(mine).replace(/\ufe0f/g, '') : null;
-    const busy = this.reacting === m.id;
     return html`<div class="message-pop message-menu" role="menu" aria-label="React or reply" data-side=${this.pop.side}>
       <div class="tapback-row">
-        ${TAPBACKS.map((t) => html`<button type="button" role="menuitemcheckbox" class="tapback" aria-checked=${chosen === t.glyph.replace(/\ufe0f/g, '') ? 'true' : 'false'} aria-label=${t.type} title=${t.type} ?disabled=${busy} @click=${() => this.react(m, t.glyph)}>${t.glyph}</button>`)}
-        <button type="button" role="menuitem" class="tapback tapback-more" aria-label="More emoji" title="More emoji" ?disabled=${busy} @click=${() => this.openPicker(m)}>+</button>
+        ${TAPBACKS.map((t) => html`<button type="button" role="menuitemcheckbox" class="tapback" aria-checked=${chosen === t.glyph.replace(/\ufe0f/g, '') ? 'true' : 'false'} aria-label=${t.type} title=${t.type} @click=${press(() => this.react(m, t.glyph))}>${t.glyph}</button>`)}
+        <button type="button" role="menuitem" class="tapback tapback-more" aria-label="More emoji" title="More emoji" @click=${press(() => this.openPicker(m))}>+</button>
       </div>
-      <button type="button" role="menuitem" class="menu-item" @click=${() => this.startReply(m)}>Reply</button>
-      ${mine ? html`<button type="button" role="menuitem" class="menu-item" ?disabled=${busy} @click=${() => this.react(m, reactionGlyph(mine))}>Remove reaction</button>` : nothing}
+      <button type="button" role="menuitem" class="menu-item" @click=${press(() => this.startReply(m))}>Reply</button>
+      ${mine ? html`<button type="button" role="menuitem" class="menu-item" @click=${press(() => this.react(m, reactionGlyph(mine)))}>Remove reaction</button>` : nothing}
     </div>`;
   }
 
@@ -218,13 +196,13 @@ class AppConversation extends KitElement {
     const note = this.note && this.note.id === m.id ? this.note.text : '';
     return html`<div class=${row} data-id=${m.id} aria-busy=${busy ? 'true' : 'false'} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
-      ${quote ? html`<button type="button" class="reply-quote" aria-label=${quote.found ? 'Go to the message replied to' : 'Replied to an earlier message'} ?disabled=${!quote.found} @click=${() => this.goTo(quote.id)}>${quote.who ? html`<span class="reply-who">${quote.who}</span>` : nothing}<span class="reply-text">${quote.text}</span></button>` : nothing}
+      ${quote ? html`<button type="button" class="reply-quote" aria-label=${quote.found ? 'Go to the message replied to' : 'Replied to an earlier message'} ?disabled=${!quote.found} @click=${press(() => this.goTo(quote.id))}>${quote.who ? html`<span class="reply-who">${quote.who}</span>` : nothing}<span class="reply-text">${quote.text}</span></button>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.text ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')}>${m.text}</div>` : nothing}
         ${target ? html`<div class="message-actions">
-          <button type="button" class="message-action" aria-label="React" title="React" aria-haspopup="menu" aria-expanded=${open ? 'true' : 'false'} ?disabled=${!this.sending || busy} @click=${() => (open ? this.closePop() : this.openMenu(m))}>\u{1F642}</button>
-          <button type="button" class="message-action" aria-label="Reply" title="Reply" ?disabled=${!this.sending} @click=${() => this.startReply(m)}>\u21A9\uFE0E</button>
+          <button type="button" class="message-action" aria-label="React" title="React" aria-haspopup="menu" aria-expanded=${open ? 'true' : 'false'} ?disabled=${!this.sending} @click=${press(() => (open ? this.closePop() : this.openMenu(m)))}>\u{1F642}</button>
+          <button type="button" class="message-action" aria-label="Reply" title="Reply" ?disabled=${!this.sending} @click=${press(() => this.startReply(m))}>\u21A9\uFE0E</button>
         </div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
         ${open === 'picker' ? this.picker(m) : nothing}
@@ -243,12 +221,12 @@ class AppConversation extends KitElement {
     const sms = this.chat.service === 'SMS' || this.chat.service === 'RCS';
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${() => this.fire('back')}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
-      <div class="messages" role="log" aria-live="polite" @scroll=${this.onScroll} @media-loaded=${this.onMedia}>
-        ${this.hasMore ? html`<button class="load-older" ?disabled=${this.loadingOlder} @click=${() => this.fire('older')}>${this.loadingOlder ? 'Loading\u2026' : 'Load earlier messages'}</button>` : nothing}
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+      <div class="messages" role="log" aria-live="polite">
+        ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
         ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms)))}
       </div>
-      <app-composer .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} .replyTo=${this.replyingTo} @send=${(e) => this.onSend(e.detail)} @reply-cancel=${() => { this.replyingTo = null; }}></app-composer>`;
+      <app-composer .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} .replyTo=${this.replyingTo} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => { this.replyingTo = null; }}></app-composer>`;
   }
 }
 

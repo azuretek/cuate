@@ -1,5 +1,6 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press } from '../../kit/press.js';
 
 const isImage = (a) => /^image\//i.test(a.mime);
 const needsJpeg = (a) => /heic|heif/i.test(a.mime);
@@ -45,10 +46,6 @@ class AppAttachment extends KitElement {
     }
   }
 
-  loaded() {
-    this.dispatchEvent(new CustomEvent('media-loaded', { bubbles: true }));
-  }
-
   // Pressing a preview opens it in the viewer, which the page draws over everything (app-image-viewer).
   open() {
     if (!this.src) return;
@@ -61,9 +58,9 @@ class AppAttachment extends KitElement {
     if (isImage(a) && !a.local && !a.missing && !this.failed) {
       // A sticker is drawn as it is, on the bubble's background; a picture is a preview at its own aspect ratio, sized
       // to fit, dressed with a shadow, a rounded edge and a hairline border, and pressing it opens the viewer.
-      if (this.src && a.sticker) return html`<img class="attachment-image sticker" src=${this.src} alt=${a.name} @load=${this.loaded}>`;
+      if (this.src && a.sticker) return html`<img class="attachment-image sticker" src=${this.src} alt=${a.name}>`;
       return this.src
-        ? html`<button type="button" class="attachment-preview" aria-label=${'Open ' + a.name} @click=${() => this.open()}><img class="attachment-image" src=${this.src} alt=${a.name} @load=${this.loaded}></button>`
+        ? html`<button type="button" class="attachment-preview" aria-label=${'Open ' + a.name} @click=${press(() => this.open())}><img class="attachment-image" src=${this.src} alt=${a.name}></button>`
         : html`<div class="attachment-image placeholder" role="img" aria-label="Loading image"></div>`;
     }
     return html`<div class="attachment-file"><span class="attachment-name">${a.name}</span>${a.missing ? html`<span class="muted small"> Not on the Mac</span>` : nothing}</div>`;

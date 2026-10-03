@@ -1,5 +1,6 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press, emit } from '../../kit/press.js';
 import { settingsFields, settingsGroups, settingValue, coerceSetting, optionLabel } from '../rules/settings.js';
 import { importTheme, importSummary, addTheme, themeChoices, swatchVars, SWATCH_TOKENS } from '../rules/theme.js';
 import './app-sheet.js';
@@ -19,7 +20,7 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 // build reports; `reveal` names a section to bring into view, which is how the tray's About opens this page there.
 class AppSettings extends KitElement {
   static properties = {
-    values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {}, urlBusy: {},
+    values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
     info: { attribute: false }, host: { attribute: false }, reveal: { attribute: false },
     importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
   };
@@ -36,9 +37,10 @@ class AppSettings extends KitElement {
     this.importUrl = '';
     // The scheme the app resolved, so each theme card shows the colours that scheme would draw.
     this.scheme = 'light';
-    // What the last URL import said, and whether one is in flight; app-root owns the call and sets both.
+    // What the last URL import said; app-root owns the call and sets it. The Import button shows the call in flight,
+    // and the URL field's Enter is the same press, so a second one while it runs is dropped (core/kit/press.js).
     this.urlNote = '';
-    this.urlBusy = false;
+    this.importUrlPress = press(() => this.onImportUrl(), { on: () => this.querySelector('.theme-url-action') });
     // The server's info and the shell's own report, which the About section draws.
     this.info = null;
     this.host = null;
@@ -52,8 +54,9 @@ class AppSettings extends KitElement {
     this.importUrl = '';
   }
 
+  // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
   fire(name, detail) {
-    this.dispatchEvent(new CustomEvent(name, { detail }));
+    return emit(this, name, detail);
   }
 
   field(key) {
@@ -119,29 +122,29 @@ class AppSettings extends KitElement {
     const result = importTheme(this.importText, { name: this.importName.trim() || 'Imported theme' });
     const summary = importSummary(result);
     this.importNote = summary.text;
-    if (!summary.ok) return;
+    if (!summary.ok) return false;
     const added = addTheme(this.values && this.values['appearance.themes'], result.theme);
-    if (!added.ok) { this.importNote = added.reason; return; }
+    if (!added.ok) { this.importNote = added.reason; return false; }
     this.importText = '';
-    this.fire('settings', { 'appearance.themes': added.themes, 'appearance.theme': added.theme });
+    return this.fire('settings', { 'appearance.themes': added.themes, 'appearance.theme': added.theme });
   }
 
   // A theme URL is fetched and converted by the server (POST /api/v1/themes), which adds it to the picker and
   // answers with what it carried and refused. The page only asks; app-root makes the call and reports back.
   onImportUrl() {
     const url = this.importUrl.trim();
-    if (!url) return;
-    this.fire('theme-import', { url });
+    if (!url) return undefined;
+    return this.fire('theme-import', { url });
   }
 
   pick(card) {
     this.importNote = '';
-    this.fire('setting', { key: 'appearance.theme', value: card.theme });
+    return this.fire('setting', { key: 'appearance.theme', value: card.theme });
   }
 
   onThemeDefault() {
     this.importNote = '';
-    this.fire('setting', { key: 'appearance.theme', value: null });
+    return this.fire('setting', { key: 'appearance.theme', value: null });
   }
 
   // Each card carries the colours of the theme it offers, set on the card itself as the same custom properties the
@@ -163,7 +166,7 @@ class AppSettings extends KitElement {
     const cards = themeChoices(this.values || {});
     return html`<div class="theme-grid" role="radiogroup" aria-label="Theme">
       ${cards.map((card) => html`<button type="button" class="theme-card" role="radio" aria-checked=${card.selected ? 'true' : 'false'} data-palette="default" data-theme-id=${card.id}
-          data-action=${card.theme ? 'theme-pick' : 'theme-default'} ?disabled=${this.busy} @click=${() => (card.theme ? this.pick(card) : this.onThemeDefault())}>
+          data-action=${card.theme ? 'theme-pick' : 'theme-default'} @click=${press(() => (card.theme ? this.pick(card) : this.onThemeDefault()))}>
         <span class="theme-swatches" aria-hidden="true">${SWATCH_TOKENS.map((t) => html`<span class="theme-swatch" data-token=${t}></span>`)}</span>
         <span class="theme-card-name">${card.name}</span>
       </button>`)}
@@ -176,16 +179,16 @@ class AppSettings extends KitElement {
     return html`<div class="setting-row setting-row-stack"><span class="setting-label">Theme</span>${this.picker()}</div>
       <div class="setting-row theme-import theme-url">
         <span class="setting-label">Import a theme from a URL</span>
-        <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/editor/theme?theme=..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy || this.urlBusy}
-          @input=${(e) => { this.importUrl = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') this.onImportUrl(); }}>
-        <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${this.busy || this.urlBusy || !this.importUrl.trim()} @click=${() => this.onImportUrl()}>${this.urlBusy ? 'Importing' : 'Import'}</button>
+        <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/editor/theme?theme=..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy}
+          @input=${(e) => { this.importUrl = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') this.importUrlPress(e); }}>
+        <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${!this.importUrl.trim()} @click=${this.importUrlPress}>Import</button>
         ${this.urlNote ? html`<p class="theme-import-note theme-url-note" role="status">${this.urlNote}</p>` : nothing}
       </div>
       <div class="setting-row theme-import">
         <span class="setting-label">Or paste a tweakcn theme</span>
         <input type="text" class="setting-control theme-import-name" placeholder="Theme name" aria-label="Theme name" .value=${this.importName} ?disabled=${this.busy} @input=${(e) => { this.importName = e.currentTarget.value; }}>
         <textarea class="setting-control theme-import-text" rows="6" placeholder="Paste the theme's CSS" aria-label="Theme CSS" .value=${this.importText} ?disabled=${this.busy} @input=${(e) => { this.importText = e.currentTarget.value; }}></textarea>
-        <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${this.busy || !this.importText.trim()} @click=${() => this.onImport()}>Import</button>
+        <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${!this.importText.trim()} @click=${press(() => this.onImport())}>Import</button>
         ${this.importNote ? html`<p class="theme-import-note" role="status">${this.importNote}</p>` : nothing}
       </div>`;
   }
@@ -204,7 +207,7 @@ class AppSettings extends KitElement {
     if (group.kind === 'device') {
       return html`<div class="sheet-rows">
         <div class="setting-row"><span class="setting-label">Server</span><span class="setting-value">${this.serverUrl || 'Not connected'}</span></div>
-        <div class="setting-row"><span class="setting-label">Connection</span><button class="text-button" data-action="signout" @click=${() => this.fire('signout')}>Sign out</button></div>
+        <div class="setting-row"><span class="setting-label">Connection</span><button class="text-button" data-action="signout" @click=${press(() => this.fire('signout'))}>Sign out</button></div>
       </div>`;
     }
     return html`<div class="sheet-rows">
@@ -231,5 +234,4 @@ class AppSettings extends KitElement {
     return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .content=${this.body()} .reveal=${this.reveal}></app-sheet>`;
   }
 }
-
 customElements.define('app-settings', AppSettings);

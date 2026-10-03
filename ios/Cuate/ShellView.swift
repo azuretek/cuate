@@ -37,6 +37,13 @@ struct ShellWebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--rotation-fixture"),
+           let url = Bundle.main.url(forResource: "rotation-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        #endif
         configuration.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
