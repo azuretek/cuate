@@ -27,7 +27,17 @@ export const SCRIPT = [
   [1, 5, false, '+15555550100', 'See you soon'],
 ];
 
-const REACTIONS = { 12: [{ reaction_type: 'love', sender: '+15555550100', is_from_me: false }] };
+// A reaction as imsg names it: a standard tapback by its kind with its glyph, and any other emoji (Messages' type 2006)
+// as "custom" with the emoji itself, which is the shape both its inline reactions and its live rows carry (issue 188).
+const TAPBACK_GLYPHS = { love: '\u2764\ufe0f', like: '\u{1F44D}', dislike: '\u{1F44E}', laugh: '\u{1F602}', emphasis: '\u203c\ufe0f', question: '\u2753' };
+export function imsgReaction(kindOrEmoji) {
+  return TAPBACK_GLYPHS[kindOrEmoji] ? { type: kindOrEmoji, emoji: TAPBACK_GLYPHS[kindOrEmoji] } : { type: 'custom', emoji: kindOrEmoji };
+}
+
+const REACTIONS = {
+  9: [{ ...imsgReaction('\u{1F64C}'), sender: '+15555550100', is_from_me: false }],
+  12: [{ ...imsgReaction('love'), sender: '+15555550100', is_from_me: false }],
+};
 
 export function buildFixtures({ base, imagePath, imageBytes }) {
   const chats = CHATS.map((c) => ({ ...c, participants: [...c.participants] }));

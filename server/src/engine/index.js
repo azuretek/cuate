@@ -187,8 +187,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // out, so a file on its own is not a text send carrying nothing.
   const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined);
 
-  // imsg's bridge `tapback` adds or removes one of the six standard reactions on a message by its guid. Messages has
-  // no published way to send any other emoji as a reaction, so the sender refuses those before they reach here.
+  // imsg's bridge `tapback` adds or removes one of the six standard reactions on a message by its guid. Messages stores
+  // any emoji as a reaction (associated_message_type 2006), and imsg reads those, but its bridge builds only 2000 to 2005
+  // and maps some other emoji onto a standard kind, so the sender refuses any other emoji before it reaches here (issue 188).
   const react = (chatId, targetId, { type, remove = false }) => sendOut({ chat_id: Number(chatId), message_guid: String(targetId), kind: type, remove: Boolean(remove) }, 'tapback');
 
   function stop() {
