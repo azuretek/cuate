@@ -2237,6 +2237,39 @@ async function runSmoke(w) {
   report.dismiss = Object.keys(dismissChecks).length === dismissPanels.length * 2 && Object.values(dismissChecks).every((c) => c.opened && c.closed && c.hits === 0 && c.held && c.escape);
   console.log('dismiss: ' + JSON.stringify(dismissChecks));
 
+  // Placeholder text is dimmed from its token (issue 185): every visible field's hint resolves to the placeholder token
+  // in the scheme in force, and never to the colour the field draws your own text in, in light and dark, at desktop
+  // width and at phone width with the list and with the conversation in front.
+  const readPlaceholders = () => js("(() => { const probe = document.createElement('i'); probe.style.color = 'var(--color-placeholder)'; document.body.append(probe); const want = getComputedStyle(probe).color; probe.remove(); return [...document.querySelectorAll('input[placeholder], textarea[placeholder]')].filter((f) => f.placeholder && f.getClientRects().length > 0).map((f) => ({ field: f.getAttribute('aria-label') || f.tagName, hint: getComputedStyle(f, '::placeholder').color, text: getComputedStyle(f).color, want })); })()");
+  const placeholderChecks = {};
+  const placeholderPass = async (width, phone) => {
+    for (const scheme of ['light', 'dark']) {
+      nativeTheme.themeSource = scheme;
+      await waitFor('document.documentElement.dataset.scheme === ' + JSON.stringify(scheme), 5000);
+      const fields = [];
+      for (const list of phone ? [true, false] : [null]) {
+        if (list !== null) await js('(() => { document.querySelector("app-root").listOpen = ' + list + '; return true; })()');
+        await pause(phone ? 450 : 150);
+        fields.push(...await readPlaceholders());
+        await shot('21-placeholder-' + width + (list === null ? '' : list ? '-list' : '-conversation') + '-' + scheme + '.png');
+      }
+      const names = new Set(fields.map((f) => f.field));
+      const ok = names.has('Search conversations') && names.has('Message') && fields.every((f) => f.hint === f.want && f.hint !== f.text);
+      placeholderChecks[width + ':' + scheme] = { ok, fields };
+      if (!ok) console.error('placeholder failed: ' + width + ' ' + scheme + ' ' + JSON.stringify(fields));
+    }
+  };
+  await placeholderPass('desktop', false);
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 375', 5000);
+  await placeholderPass('phone', true);
+  await js("(() => { document.querySelector('app-root').listOpen = false; return true; })()");
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  report.placeholder = Object.keys(placeholderChecks).length === 4 && Object.values(placeholderChecks).every((c) => c.ok);
+  console.log('placeholder: ' + JSON.stringify(placeholderChecks));
+
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   await waitFor("Boolean(document.querySelector('app-settings [data-action=\"signout\"]'))");
