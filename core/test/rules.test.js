@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, matchesSearch, SORT_ORDERS, SORT_LABELS, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, DELETE_STEPS } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
-import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
+import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions, TAPBACKS, tapbackType, myReaction, replyQuote, canTarget } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel } from '../app/rules/settings.js';
@@ -678,4 +678,36 @@ test('a refused write rolls back only the keys it named', () => {
   const before = { 'appearance.skin': 'system' };
   const current = { 'appearance.skin': 'dark', 'appearance.textScale': 150, 'chats.order': ['a'] };
   assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.textScale': 150 }, 'the named keys return to what they held, and one that did not exist is removed');
+});
+
+test('a reaction is one of the six standard tapbacks or none, whichever presentation the emoji arrives in (issue 138)', () => {
+  assert.deepEqual(TAPBACKS.map((t) => t.type), ['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
+  for (const t of TAPBACKS) assert.equal(tapbackType(t.glyph), t.type);
+  assert.equal(tapbackType('\u2764'), 'love', 'the text heart is the love tapback');
+  assert.equal(tapbackType('\u203c'), 'emphasis');
+  for (const other of ['\u{1F389}', '\u{1F44D}\u{1F3FD}', '', null, 'love']) assert.equal(tapbackType(other), null, String(other));
+});
+
+test('my reaction, and which messages can be reacted to or replied to', () => {
+  assert.equal(myReaction(msg({ reactions: [{ type: 'like', emoji: null, fromMe: false, sender: 'a@example.com' }] })), null);
+  assert.deepEqual(myReaction(msg({ reactions: [{ type: 'like', emoji: null, fromMe: false, sender: 'a@example.com' }, { type: 'love', emoji: null, fromMe: true, sender: null }] })), { type: 'love', emoji: null, fromMe: true, sender: null });
+  assert.equal(canTarget(msg({ id: 'FAKE-0013' })), true);
+  assert.equal(canTarget(msg({ id: '8DF0A1B2-3C4D-4E5F-8A9B-0C1D2E3F4A5B' })), true);
+  assert.equal(canTarget(msg({ id: 'local:abc', state: 'sending' })), false, 'not sent yet');
+  assert.equal(canTarget(msg({ id: 'row:12' })), false, 'no guid to target');
+});
+
+test('a reply quotes its parent by who wrote it and a line of it, and says so when the parent is not loaded', () => {
+  const parent = msg({ id: 'p1', senderName: 'Avery Quinn', text: 'Are we   still on\nfor coffee?' });
+  const mine = msg({ id: 'p2', fromMe: true, sender: null, text: '' , attachments: [{ id: 'a', name: 'sunset.png', mime: 'image/png', bytes: 1, sticker: false, missing: false }] });
+  const long = msg({ id: 'p3', sender: 'jordan@example.com', text: 'x'.repeat(100) });
+  const all = [parent, mine, long];
+  assert.equal(replyQuote(all, msg({ replyTo: null })), null);
+  assert.deepEqual(replyQuote(all, msg({ replyTo: 'p1' })), { id: 'p1', found: true, who: 'Avery Quinn', text: 'Are we still on for coffee?' });
+  assert.deepEqual(replyQuote(all, msg({ replyTo: 'p2' })), { id: 'p2', found: true, who: 'You', text: 'sunset.png' });
+  const q = replyQuote(all, msg({ replyTo: 'p3' }));
+  assert.equal(q.who, 'jordan@example.com');
+  assert.equal(Array.from(q.text).length, 80);
+  assert.ok(q.text.endsWith('\u2026'));
+  assert.deepEqual(replyQuote(all, msg({ replyTo: 'gone' })), { id: 'gone', found: false, who: '', text: 'An earlier message' });
 });
