@@ -12,7 +12,11 @@ components after empty-storage onboarding; it uses no server, token or account.
 - Android: instrumentation injects the script from the test APK into the real
   activity's WebView. No intent, bridge command or fixture is added to the shipped
   application. The existing connectedDebugAndroidTest task runs the test and its
-  report is retained with the boot proof.
+  report is retained with the boot proof. Light and dark screenshots use the
+  runner-provided `additionalTestOutputDir`: AGP copies it to the host before
+  uninstalling the app. App external files are deleted by that uninstall, so
+  pulling them after the task completes loses the proof. CI requires both
+  retained screenshots to be nonempty and uploads the managed output directory.
 
 Each orientation must settle with the same message id and vertical offset within
 two CSS pixels, unchanged draft and collapsed caret selection, and the original

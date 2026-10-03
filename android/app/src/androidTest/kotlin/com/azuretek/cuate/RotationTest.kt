@@ -74,8 +74,16 @@ class RotationTest {
             evaluate(scenario, fixture)
             awaitProof(scenario, false)
             val capture = instrumentation.uiAutomation.takeScreenshot()
-            val output = java.io.File(instrumentation.targetContext.getExternalFilesDir(null), "chat-$scheme.png")
-            output.outputStream().use { capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            // AGP copies this directory before uninstalling the app and its data.
+            val outputDir = java.io.File(requireNotNull(
+                InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+            ) { "The test runner must provide a retained output directory" })
+            assertTrue("Cannot create capture directory", outputDir.isDirectory || outputDir.mkdirs())
+            val output = java.io.File(outputDir, "chat-$scheme.png")
+            output.outputStream().use {
+                assertTrue("Screenshot encoding failed", capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+            }
+            assertTrue("Screenshot is empty", output.length() > 0)
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             awaitProof(scenario, true)
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }

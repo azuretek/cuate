@@ -66,8 +66,8 @@ jobs:
           script: |
             bash scripts/boot-proof.sh
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/com.azuretek.cuate/files/chat-light.png proof/chat-light.png
-            adb pull /sdcard/Android/data/com.azuretek.cuate/files/chat-dark.png proof/chat-dark.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/chat-light.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/chat-dark.png
 
       - name: Keep the boot proof
         if: always()
@@ -78,6 +78,7 @@ jobs:
             android/proof
             android/app/build/reports/androidTests
             android/app/build/outputs/androidTest-results
+            android/app/build/outputs/connected_android_test_additional_output
           if-no-files-found: warn
 
   # The publish half: the APK, signed with the Android release keystore.
