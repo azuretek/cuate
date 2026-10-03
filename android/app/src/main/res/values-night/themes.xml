@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The window theme at night: the dark parent, so the web view reports a dark
+  system scheme to the page, on the tokens' dark page colour.
+-->
+<resources>
+    <style name="Theme.Cuate" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/surface</item>
+    </style>
+</resources>

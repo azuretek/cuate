@@ -14,6 +14,7 @@ import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
+import { lockZoom } from './zoom-lock.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -1328,6 +1329,61 @@ async function runSmoke(w) {
   w.setSize(1100, 720);
   await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
 
+  // The conversation header stays pinned and nothing but media zooms (issue 180). A long conversation is scrolled to
+  // each end, the page itself is told to scroll and a field takes focus, then a pinch (ctrl and the wheel) and the zoom
+  // keys are tried over the messages; at a desktop width and at a phone's, in light and dark, the header must still sit
+  // at the top with the name and the way back, the page must not have moved, and the scale must still be 1.
+  const pinSrv = process.env.SMOKE_SERVER_URL;
+  const pinAuth = { authorization: 'Bearer ' + process.env.SMOKE_TOKEN };
+  const skinBefore = ((await (await fetch(pinSrv + '/api/v1/settings', { headers: pinAuth })).json()).values || {})['appearance.skin'] || 'system';
+  const putSkin = (skin) => fetch(pinSrv + '/api/v1/settings', { method: 'PUT', headers: { ...pinAuth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.skin': skin } }) });
+  const pinMinimum = w.getMinimumSize();
+  const pinListWasOpen = await js("document.querySelector('app-root').listOpen");
+  const pinned = [];
+  for (const [label, width, height] of [['desktop', 1100, 720], ['phone', 390, 760]]) {
+    if (label === 'phone') w.setMinimumSize(320, 400);
+    w.setSize(width, height);
+    await pause(500);
+    // On a phone the conversation is the pane under test, so the list's drawer is put away first.
+    if (label === 'phone') { await js("(() => { document.querySelector('app-root').closeDrawer(); return true; })()"); await pause(600); }
+    const box = await js(String.raw`(() => {
+      const m = document.querySelector('.messages');
+      const before = m.scrollHeight - m.clientHeight;
+      m.scrollTop = 0; m.dispatchEvent(new Event('scroll'));
+      m.scrollTop = m.scrollHeight; m.dispatchEvent(new Event('scroll'));
+      window.scrollTo(0, 100000);
+      document.scrollingElement.scrollTop = 100000;
+      document.querySelector('app-composer textarea').focus();
+      const r = m.getBoundingClientRect();
+      return { room: before, x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`);
+    for (const deltaY of [-240, 240]) wc.sendInputEvent({ type: 'mouseWheel', x: box.x, y: box.y, deltaX: 0, deltaY, modifiers: ['control'] });
+    for (const keyCode of ['=', 'Plus', '-']) {
+      for (const mod of ['control', 'meta']) {
+        wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers: [mod] });
+        wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers: [mod] });
+      }
+    }
+    await pause(400);
+    for (const skin of ['light', 'dark']) {
+      await putSkin(skin);
+      await pause(500);
+      const state = await js("(() => { const h = document.querySelector('.conv-head'); const r = h.getBoundingClientRect(); const back = document.querySelector('.conv-back'); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { visible: Boolean(hit) && h.contains(hit), top: r.top, bottom: r.bottom, scrollY: window.scrollY, doc: document.scrollingElement.scrollTop, scale: window.visualViewport ? window.visualViewport.scale : 1, name: Boolean(h.querySelector('.conv-title') && h.querySelector('.conv-title').textContent.trim()), back: Boolean(back) && getComputedStyle(back).display !== 'none', scheme: document.documentElement.dataset.scheme }; })()");
+      pinned.push({ label, skin, room: box.room, factor: wc.getZoomFactor(), ...state });
+      await shot('15-pinned-header-' + label + '-' + skin + '.png');
+    }
+  }
+  await putSkin(skinBefore);
+  w.setSize(1100, 720);
+  w.setMinimumSize(...pinMinimum);
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(pinListWasOpen)));
+  await pause(300);
+  report.headerPinned = pinned.length === 4 && pinned.every((p) => p.room > 0 && p.visible && Math.abs(p.top) <= 0.5 && p.bottom > 0 && p.scrollY === 0 && p.doc === 0 && p.name && p.scheme === p.skin)
+    && pinned.filter((p) => p.label === 'phone').every((p) => p.back);
+  report.noPageZoom = pinned.length === 4 && pinned.every((p) => p.factor === 1 && p.scale === 1);
+  console.log('header pinned: ' + JSON.stringify(pinned));
+  await js("(() => { document.activeElement && document.activeElement.blur && document.activeElement.blur(); return true; })()");
+
   // Nothing refreshes or shows a loading page (issue 142): while the stream reconnects, a resync runs, the theme
   // changes and a setting changes, every DOM change is watched, and no view may drop to empty, no splash may appear and
   // nothing but a pressed button may say it is busy.
@@ -2201,6 +2257,7 @@ function createWindow() {
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   win.on('page-title-updated', (e) => e.preventDefault());
+  lockZoom(win.webContents);
   // The bar's restore glyph follows the window wherever the change came from, a control or the platform's double-click.
   win.on('maximize', () => { if (!win.isDestroyed()) win.webContents.send('bridge:event:window.state', { maximized: true }); });
   win.on('unmaximize', () => { if (!win.isDestroyed()) win.webContents.send('bridge:event:window.state', { maximized: false }); });
