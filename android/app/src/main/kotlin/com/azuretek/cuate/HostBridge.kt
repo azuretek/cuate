@@ -110,6 +110,10 @@ class HostBridge(
             "window.close" -> success(false)
             // The status and navigation bars draw over the page's colours, so their icons follow the page's scheme.
             "window.appearance" -> success(appearance(args.optString("scheme") == "dark", args.optString("background")))
+            // The app icon follows the theme on the desktop (issue 189). Android cannot recolour its launcher icon at
+            // runtime: the adaptive icon is the default theme's, its monochrome layer takes the launcher's own themed
+            // colours, and the launcher draws the unread badge. This answers false.
+            "icon.redraw" -> success(false)
             else -> failure("undeclared bridge command: " + name)
         }
     }

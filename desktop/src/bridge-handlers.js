@@ -65,7 +65,13 @@ const noAppearance = () => false;
 // The app icon chosen in Settings (issue 167). A shell with no icon of its own to change answers that it applied none.
 const noAppIcon = (icon) => ({ applied: false, icon });
 
-export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon }) {
+// The app's own icons, redrawn from the theme and the unread count (issue 189). A shell with none to redraw answers false.
+const noIcons = () => false;
+
+// The colour tokens the page sends for the icon: strings only, a bounded handful, never anything else it might carry.
+const iconColors = (colors) => (colors && typeof colors === 'object' && !Array.isArray(colors) ? Object.fromEntries(Object.entries(colors).filter(([k, v]) => /^[a-z][a-z-]{0,31}$/.test(k) && typeof v === 'string' && v.length <= 120).slice(0, 16)) : {});
+
+export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -87,6 +93,7 @@ export function createHandlers({ secure, notify, info, openExternal, checkUpdate
     'window.toggleMaximize': async () => windowControls.toggleMaximize(),
     'window.close': async () => windowControls.close(),
     'window.appearance': async ({ scheme, background }) => appearance(scheme === 'dark' ? 'dark' : 'light', String(background ?? '')),
+    'icon.redraw': async ({ scheme, colors, unread }) => icons({ scheme: scheme === 'dark' ? 'dark' : 'light', colors: iconColors(colors), unread: Number.isFinite(unread) ? Math.max(0, Math.floor(unread)) : 0 }),
   };
 }
 
