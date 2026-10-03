@@ -53,9 +53,11 @@ If automatic recovery cannot restore the previous version, keep the service stop
 
 ## Keep it running
 
-`service install` checks with `doctor` first and installs nothing if a check fails. It then writes a LaunchAgent to `~/Library/LaunchAgents`, named for the server id in `core/spec/naming.json`, loads it, and waits until the new server says it is ready and answers. The LaunchAgent runs the `node` it finds on `PATH`, without resolving links, so a Node upgrade keeps working; pass `--node PATH` to choose another.
+`service install` checks with `doctor` first and installs nothing if a check fails. It then writes a LaunchAgent to `~/Library/LaunchAgents`, named for the server id in `core/spec/naming.json`, loads it, and waits until the new server says it is ready and answers. The LaunchAgent runs the `node` it finds on `PATH`, without resolving links, so a Node upgrade keeps working; pass `--node PATH` to choose another. A Node inside a versioned Homebrew folder (`<prefix>/Cellar/node/<version>/bin/node`, which `brew cleanup` deletes after an upgrade) is never written: install names the link Homebrew keeps pointing at the current version, `<prefix>/bin/node` or else `<prefix>/opt/<formula>/bin/node`, when it resolves to the same file, and refuses when none does. `--node` naming a versioned folder is kept, with a warning.
 
-- `service status`: the LaunchAgent, whether the server answers, the sending switch it started with, its log file, and the tailnet entry.
+An existing LaunchAgent that names a versioned folder, or a Node that is gone, is moved by running the same `service install` again (with `--release --data DIR` for the installed path): it rewrites the LaunchAgent with the stable path and reloads it. Until then `service status` warns about a versioned folder and fails a Node that no longer exists, and the installed server's updater refuses to switch versions while the LaunchAgent's Node is gone, because launchd could start neither the new version nor the old one.
+
+- `service status`: the LaunchAgent and the Node it runs, whether the server answers, the sending switch it started with, its log file, and the tailnet entry.
 - `service restart`: restart it and wait until the new run answers.
 - `service update`: fast-forward this checkout to its upstream branch, install the dependency, and restart. A checkout with uncommitted changes, or with commits its upstream lacks, is left as it is.
 - `service remove`: unload it, delete the LaunchAgent and withdraw the tailnet entry it published. The data folder and the code are kept.

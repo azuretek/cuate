@@ -95,11 +95,12 @@ export default {
     let updater = null;
     if (L) {
       const { createUpdater, finisherHandoff } = await import('../updater.js');
-      const { runsInstalled } = await import('../service.js');
+      const { runsInstalled, serviceNodeProblem } = await import('../service.js');
       updater = createUpdater({
         L, dataDir, log: logger.child('update'), running: serverVersion, runningCommit: serverCommit, publish: srv.publish, quiesce: srv.quiesce,
         settings: () => s.getAllSettings(),
         handoff: runsInstalled(L) ? finisherHandoff({ L, dataDir }) : null,
+        serviceNode: () => { const p = serviceNodeProblem(L); return p && p.level === 'fail' ? p.detail : null; },
       });
       updater.start();
       // service update --release asks for a check now.
