@@ -15,7 +15,7 @@ import { updateBanner, DISMISS } from '../rules/updates.js';
 import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
-import { resolveScheme, themeVars, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
+import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { backdropReturns } from '../rules/sheet.js';
 import './app-onboarding.js';
@@ -171,6 +171,25 @@ class AppRoot extends KitElement {
     const scaled = textScaleVars(this.settings['appearance.textScale'], base);
     for (const [name, value] of scaled) root.style.setProperty(name, value);
     this.themeApplied = [...themed, ...scaled];
+    this.loadThemeFonts(this.settings['appearance.theme']);
+  }
+
+  // A theme's type is fetched by the server when the theme is imported; the page reads each file once, with its token,
+  // and adds it with the FontFace API, so the family the theme names draws as itself rather than as a fallback. A file
+  // that cannot be read is tried again the next time the theme is applied.
+  async loadThemeFonts(theme) {
+    if (!this.client || typeof FontFace === 'undefined' || typeof document === 'undefined' || !document.fonts) return;
+    this.fontsLoaded ??= new Set();
+    for (const f of themeFonts(theme)) {
+      if (this.fontsLoaded.has(f.id)) continue;
+      this.fontsLoaded.add(f.id);
+      try {
+        const face = new FontFace(f.family, await this.client.themeFont(f.id), { weight: f.weight, style: f.style });
+        document.fonts.add(await face.load());
+      } catch {
+        this.fontsLoaded.delete(f.id);
+      }
+    }
   }
   bridge(name, args) {
     return window.bridge.call(name, args);

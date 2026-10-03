@@ -76,15 +76,19 @@ class AppSettings extends KitElement {
     if (field.type === 'segmented') {
       // A three-position switch: one radio per choice under one name, drawn as a track with a thumb that slides to
       // the choice in force. data-at says which position the thumb sits at, so the CSS needs no width of its own.
+      // The label on the thumb is marked from the same value the thumb is placed by (data-selected), never from the
+      // radio's own checked state, which flips the moment it is pressed and before the write lands: keyed to the
+      // radio, the pressed label turned on-accent while the thumb still sat elsewhere, and read as nothing on the
+      // bare track (issue 135).
       const at = Math.max(0, field.options.indexOf(value));
       return html`<div class="segmented setting-control-wide" role="radiogroup" aria-label=${field.label} data-key=${field.key} data-at=${at} style=${'--segments: ' + field.options.length + '; --at: ' + at}>
         <span class="segment-thumb" aria-hidden="true"></span>
-        ${field.options.map((o) => html`<label class="segment"><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${o === value} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
+        ${field.options.map((o) => html`<label class="segment" ?data-selected=${o === value}><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${o === value} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
       </div>`;
     }
     if (field.type === 'scale') {
       return html`<div class="scale-choices" role="radiogroup" aria-label=${field.label} data-key=${field.key}>
-        ${field.options.map((o) => html`<label class="scale-choice"><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${Number(o) === Number(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
+        ${field.options.map((o) => html`<label class="scale-choice" ?data-selected=${Number(o) === Number(value)}><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${Number(o) === Number(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
       </div>`;
     }
     if (field.type === 'toggle') {
@@ -160,7 +164,7 @@ class AppSettings extends KitElement {
     return html`<div class="setting-row setting-row-stack"><span class="setting-label">Theme</span>${this.picker()}</div>
       <div class="setting-row theme-import theme-url">
         <span class="setting-label">Import a theme from a URL</span>
-        <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/r/themes/..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy || this.urlBusy}
+        <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/editor/theme?theme=..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy || this.urlBusy}
           @input=${(e) => { this.importUrl = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') this.onImportUrl(); }}>
         <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${this.busy || this.urlBusy || !this.importUrl.trim()} @click=${() => this.onImportUrl()}>${this.urlBusy ? 'Importing' : 'Import'}</button>
         ${this.urlNote ? html`<p class="theme-import-note theme-url-note" role="status">${this.urlNote}</p>` : nothing}

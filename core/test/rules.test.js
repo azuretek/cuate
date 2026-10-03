@@ -10,7 +10,7 @@ import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel } from '../app/rules/settings.js';
 import { backdropReturns } from '../app/rules/sheet.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
-import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars } from '../app/rules/theme.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars, themeFonts, contrastRatio } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -334,6 +334,54 @@ test('a theme URL answer in tweakcn registry form converts through the same conv
   assert.equal(importSummary(importTheme('{"name":"x","cssVars":{}}')).ok, false, 'a registry item that carries nothing is not a theme');
   assert.equal(importSummary(importTheme('<html><body>Not found</body></html>')).ok, false, 'a page that is not a theme is not a theme');
   assert.equal(importSummary(importTheme('{"not": "a theme"}')).ok, false);
+});
+
+test('a theme carries its whole design language: radius and spacing scales, shadows, letter spacing, and dark-only values', () => {
+  const css = [
+    ':root { --radius: 0rem; --spacing: 0.3rem; --letter-spacing: 0.01em; --shadow-sm: 0 1px 2px #0002; --shadow-md: 0 2px 4px #0002; --shadow-xl: 0 9px 9px #0002; --destructive-foreground: #ffffff; }',
+    '.dark { --radius: 0rem; --shadow-md: 0 2px 4px #0008; --destructive-foreground: #111111; }',
+  ].join('\n');
+  const { theme, accepted, refused } = importTweakcn(css, { name: 'square' });
+  assert.deepEqual(theme.radius, { md: '0rem', sm: 'calc(0rem * 0.6)', lg: 'calc(0rem * 1.4)' }, 'a radius of 0 is square at every size');
+  assert.deepEqual(theme.space, { 1: '0.3rem', 2: 'calc(0.3rem * 2)', 3: 'calc(0.3rem * 3)', 4: 'calc(0.3rem * 4)', 5: 'calc(0.3rem * 6)', 6: 'calc(0.3rem * 8)' });
+  assert.equal(theme.font.tracking, '0.01em');
+  assert.deepEqual(theme.shadow, { sm: '0 1px 2px #0002', md: '0 2px 4px #0002' });
+  assert.deepEqual(theme.schemes, { dark: { shadow: { md: '0 2px 4px #0008' } } }, 'only what dark says differently is held for dark');
+  assert.equal(theme.color.dark['danger-fg'], '#111111');
+  assert.ok(refused.includes('shadow-xl'));
+  assert.ok(!accepted.includes('shadow-xl'));
+  assert.equal(importSummary({ accepted, refused }).text, 'Imported 6 values. Refused: shadow-xl.', 'a derived scale step is not a value of its own');
+  const light = Object.fromEntries(themeVars(theme, 'light'));
+  const dark = Object.fromEntries(themeVars(theme, 'dark'));
+  assert.equal(light['--shadow-md'], '0 2px 4px #0002');
+  assert.equal(dark['--shadow-md'], '0 2px 4px #0008', 'dark draws its own shadow over the shared one');
+  assert.equal(dark['--space-5'], 'calc(0.3rem * 6)');
+  assert.equal(light['--font-tracking'], '0.01em');
+  // A .dark block written first is read after the light one all the same.
+  assert.deepEqual(importTweakcn('.dark { --shadow-md: b; } :root { --shadow-md: a; }').theme.schemes, { dark: { shadow: { md: 'b' } } });
+  assert.equal(importTheme(JSON.stringify({ name: 'elegant-luxury', cssVars: { light: { primary: '#000' } } })).theme.name, 'Elegant Luxury', 'a registry slug with no title reads as the theme page names it');
+});
+
+test('a theme\'s fonts reach the FontFace API only as a family, a digest, a weight and a style', () => {
+  const id = 'a'.repeat(64);
+  assert.deepEqual(themeFonts({ fonts: [{ family: 'Poppins', id, weight: '400', style: 'normal', extra: 1 }] }), [{ family: 'Poppins', id, weight: '400', style: 'normal' }]);
+  assert.deepEqual(themeFonts({ fonts: [{ family: 'Poppins", x', id, weight: '400' }, { family: 'Poppins', id: '../x', weight: '400' }, { family: 'Poppins', id, weight: 'bold' }, null] }), []);
+  assert.deepEqual(themeFonts(null), []);
+});
+
+test('the System, Light, Dark switch and the text size chips read at 4.5:1 in both schemes of the default palette', () => {
+  // The pairs app.css draws them with (issue 135): on-accent words on the accent thumb or chip, muted words on the page
+  // surface that is the track and an unselected chip.
+  const spec = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url), 'utf8'));
+  for (const scheme of ['light', 'dark']) {
+    const c = spec.color[scheme];
+    assert.ok(contrastRatio(c['accent-fg'], c.accent) >= 4.5, scheme + ' selected ' + contrastRatio(c['accent-fg'], c.accent));
+    assert.ok(contrastRatio(c['fg-muted'], c.bg) >= 4.5, scheme + ' unselected ' + contrastRatio(c['fg-muted'], c.bg));
+  }
+  assert.equal(Math.round(contrastRatio('#ffffff', '#000000')), 21);
+  assert.equal(contrastRatio('#777', '#777'), 1);
+  assert.ok(Math.abs(contrastRatio('oklch(1 0 0)', 'rgb(0, 0, 0)') - 21) < 0.01, 'oklch and rgb are read');
+  assert.equal(contrastRatio('hsl(0 0% 0%)', '#fff'), null, 'a form it cannot read gives no ratio rather than a wrong one');
 });
 
 test('a theme value that could end the declaration or reach the network is refused', () => {

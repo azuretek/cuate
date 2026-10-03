@@ -76,6 +76,12 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     settings: () => call('GET', '/api/v1/settings'),
     settingsWrite: (values) => call('PUT', '/api/v1/settings', { values }),
     themeImport: ({ url, name }) => call('POST', '/api/v1/themes', name ? { url, name } : { url }),
+    // One font file a held theme names, as bytes for the FontFace API.
+    async themeFont(id) {
+      const res = await fetchImpl(base + `/api/v1/themes/fonts/${encodeURIComponent(id)}`, { headers: auth });
+      if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
+      return res.arrayBuffer();
+    },
     async attachment(id, o = {}) {
       const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
       if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
