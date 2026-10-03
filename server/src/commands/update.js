@@ -20,7 +20,9 @@ export default {
     const { finishSwitch } = await import('../updater.js');
     const { launchdControl } = await import('../service.js');
     const config = loadConfig(dataDir);
-    const outcome = await finishSwitch({ L: installLayout(root), dataDir, port: config.port, service: launchdControl(), log, recover: sub === 'recover' });
+    // The label follows the install root, so a second install on this Mac restarts its own LaunchAgent, never another.
+    const L = installLayout(root);
+    const outcome = await finishSwitch({ L, dataDir, port: config.port, service: launchdControl({ L }), log, recover: sub === 'recover' });
     return !outcome || outcome.state === 'healthy' ? 0 : 1;
   },
 };

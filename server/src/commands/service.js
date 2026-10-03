@@ -8,11 +8,14 @@ export default {
     if (!acts.includes(sub)) die('usage: service ' + acts.join('|'));
     const service = await import('../service.js');
     const installRoot = typeof flags['install-root'] === 'string' ? flags['install-root'] : null;
-    // A pause is a line in the install's state file, so it works wherever the install is, with or without launchd.
-    if (sub === 'update' && (flags.pause === true || flags.resume === true)) {
-      if (flags.pause === true && flags.resume === true) die('pass --pause or --resume, not both');
+    // A pause, and a rollback drill, are files in the install root, so they work wherever the install is, with or
+    // without launchd. --drill-rollback arms the drill for the next switch; --drill-rollback off disarms it.
+    const drillFlag = flags['drill-rollback'];
+    if (drillFlag !== undefined && drillFlag !== true && drillFlag !== 'off') die('pass --drill-rollback, or --drill-rollback off');
+    if (sub === 'update' && (flags.pause === true || flags.resume === true || drillFlag !== undefined)) {
+      if ([flags.pause === true, flags.resume === true, drillFlag !== undefined].filter(Boolean).length > 1) die('pass one of --pause, --resume or --drill-rollback');
       try {
-        await service.update({ pause: flags.pause === true, resume: flags.resume === true, installRoot });
+        await service.update({ pause: flags.pause === true, resume: flags.resume === true, drill: drillFlag === undefined ? null : drillFlag === true, installRoot });
         return 0;
       } catch (e) {
         die('fail  ' + e.message);
