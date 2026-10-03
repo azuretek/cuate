@@ -115,11 +115,11 @@ jobs:
       - name: Package unsigned macOS verification build
         if: runner.os == 'macOS' && !inputs.signed
         run: pnpm --filter desktop package --mac --${{ matrix.arch }} --config.mac.identity=null --config.mac.notarize=false --config.dmg.sign=false
-      # TEMPORARY (#66), removed before merge: measures the DMG detach refusal.
+      # TEMPORARY (#66), removed before merge: reproduces the DMG detach refusal and proves the patch.
       - name: DMG detach probe
         if: runner.os == 'macOS' && !inputs.signed
         timeout-minutes: 25
-        run: bash scripts/ci/dmg-probe.sh 8
+        run: bash scripts/ci/dmg-probe.sh 45
       - name: DMG detach probe logs
         if: runner.os == 'macOS' && !inputs.signed && always()
         uses: actions/upload-artifact@v4
