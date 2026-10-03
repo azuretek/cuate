@@ -660,6 +660,9 @@ async function runSmoke(w) {
   await js("document.documentElement.style.setProperty('--motion-press-hold', '60s'); true");
   await js("import('../kit/press.js').then((m) => { window.__press = m; return true; })");
   const pressAll = (outcome) => js('(() => { const settle = ' + JSON.stringify(outcome) + '; window.__settle = []; for (const sel of ["app-composer button.send", ".add-group .add-group-button"]) { const b = document.querySelector(sel); window.__press.runPress(b, () => new Promise((ok, no) => window.__settle.push(() => (settle === "failure" ? no(new Error("synthetic")) : ok(true))))); } return true; })()');
+  // Motion is asked for explicitly: a runner whose platform has animations switched off (the Windows one) otherwise
+  // reports reduced motion, and every state would rightly draw still.
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   const readPress = () => js("[...document.querySelectorAll('app-composer button.send, .add-group .add-group-button')].map((b) => { const a = getComputedStyle(b, '::after'); return { state: b.dataset.press || 'idle', busy: b.getAttribute('aria-busy'), content: a.content, animation: a.animationName }; })");
   for (const scheme of ['light', 'dark']) {
     nativeTheme.themeSource = scheme;
