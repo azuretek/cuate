@@ -746,12 +746,37 @@ async function runSmoke(w) {
   const customPicked = await pick('\u{1F389}');
   await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
   const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
+  // Any emoji someone else reacted with arrives as a reaction on the message it names (issue 188): the fixture's raised
+  // hands on your own message, drawn at the bubble's corner like a tapback and not marked as yours, on a desktop window
+  // and at a phone's width, light and dark.
+  const EMOJI_TARGET = '.bubble-row[data-id="FAKE-0009"]';
+  const emojiOn = () => js(`(() => { const row = document.querySelector(${q(EMOJI_TARGET)}); if (!row) return null; row.querySelector('.bubble').scrollIntoView({ block: 'center' }); return [...row.querySelectorAll('.reaction')].map((r) => ({ text: r.textContent.trim(), mine: r.classList.contains('mine') })); })()`);
+  const emojiDesktop = await emojiOn();
+  await pause(1200); // the refused pick's failure mark on the emoji control settles back to idle before the capture
+  await both('14e-emoji-reaction');
+  // A phone's width is emulated, as the phone checks below do, since the window has a minimum width. The conversation is
+  // the pane there, and the drawer is left as it was found, since a later check opens it.
+  const emojiListOpen = await js("document.querySelector('app-root').listOpen");
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await js("(() => { const root = document.querySelector('app-root'); if (root.listOpen) root.closeDrawer(); return true; })()");
+  await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'", 5000);
+  await pause(400);
+  const emojiPhone = await emojiOn();
+  await both('14f-emoji-reaction-phone');
+  await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
+  await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(emojiListOpen)}; return true; })()`);
+  await pause(300);
+  const shows = (list) => Array.isArray(list) && list.some((r) => r.text.includes('\u{1F64C}') && !r.mine);
+  const receivedEmoji = shows(emojiDesktop) && shows(emojiPhone);
+  console.log('emoji reaction: ' + JSON.stringify({ desktop: emojiDesktop, phone: emojiPhone }));
   const reactChecks = {
     menu: Boolean(theirMenu) && Boolean(theirMenu.time) && theirMenu.datetime.length > 0 && theirMenu.labels.join('|') === 'Reply in thread|React' && theirMenu.icons.join('|') === 'reply|smile-plus' && theirMenu.drawn && theirMenu.tapbacks === 0,
     inside: Boolean(theirMenu) && theirMenu.inside,
     ownNoReply: Boolean(ownMenu) && Boolean(ownMenu.time) && ownMenu.labels.join('|') === 'React',
     composerPanel: panel.composer && !panel.inList && !panel.menu && panel.targeted && panel.clear,
-    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom,
+    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom, receivedEmoji,
   };
   report.react = Object.values(reactChecks).every(Boolean);
   console.log('react: ' + JSON.stringify({ checks: reactChecks, theirMenu, ownMenu, panel, customPicked }));
