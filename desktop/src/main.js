@@ -261,6 +261,60 @@ async function runSmoke(w) {
   await pause(300);
   await shot('03-after-send.png');
 
+  // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
+  // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a
+  // bar, which is the width the bar takes from the field's box. Shift+Enter is pressed as a real key and adds a line,
+  // Enter sends, and the send brings the field back to one line.
+  const fieldReading = (value) => js(`(() => {
+    const t = document.querySelector('app-composer textarea');
+    t.value = ${JSON.stringify(value)};
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    const s = getComputedStyle(t);
+    const edge = parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth);
+    return { h: t.offsetHeight, max: parseFloat(s.maxHeight), bar: t.offsetWidth - t.clientWidth - edge, overflow: s.overflowY, hidden: t.scrollHeight - t.clientHeight, color: s.scrollbarColor };
+  })()`);
+  const empty = await fieldReading('');
+  const one = await fieldReading('one line');
+  const three = await fieldReading('first line\nsecond line\nthird line');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03e-composer-three-lines-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('03f-composer-three-lines-dark.png');
+  const many = await fieldReading(Array.from({ length: 30 }, (_, i) => 'line ' + (i + 1)).join('\n'));
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.scrollTop = t.scrollHeight; return true; })()");
+  await pause(300);
+  await shot('03g-composer-many-lines-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03h-composer-many-lines-light.png');
+  const cleared = await fieldReading('');
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.focus(); return document.activeElement === t; })()");
+  for (const ch of 'Typed in') wc.sendInputEvent({ type: 'char', keyCode: ch });
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter', modifiers: ['shift'] });
+  wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers: ['shift'] });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter', modifiers: ['shift'] });
+  for (const ch of 'the smoke') wc.sendInputEvent({ type: 'char', keyCode: ch });
+  await pause(200);
+  const typed = await js("(() => { const t = document.querySelector('app-composer textarea'); return { value: t.value, h: t.offsetHeight }; })()");
+  // Enter sends on its key press, so no character follows it into the emptied field.
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+  await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes('Typed in') && r.textContent.includes('the smoke') && !r.dataset.id.startsWith('local:'))`, 20000);
+  const sentBack = await js("(() => { const t = document.querySelector('app-composer textarea'); return { value: t.value, h: t.offsetHeight }; })()");
+  const composerChecks = {
+    oneLine: one.h === empty.h && one.bar === 0 && one.hidden <= 0,
+    threeLines: three.h > one.h * 2 && three.h < three.max && three.bar === 0 && three.hidden <= 0 && three.overflow === 'hidden',
+    atMaximum: Math.abs(many.h - many.max) < 1 && many.hidden > 0 && many.overflow === 'auto',
+    themedBar: many.color !== 'auto' && many.color !== '',
+    shrinks: cleared.h === empty.h && cleared.overflow === 'hidden',
+    shiftEnter: typed.value === 'Typed in\nthe smoke' && typed.h > empty.h,
+    enterSends: sentBack.value === '' && sentBack.h === empty.h,
+  };
+  report.composerGrows = Object.values(composerChecks).every(Boolean);
+  console.log('composer grows: ' + JSON.stringify({ checks: composerChecks, empty, one, three, many, cleared, typed, sentBack }));
+
   // Close goes to the tray (issue 115). A send is started and the window closed before it lands, through the control the
   // platform's user would press: the close in the contact header on Windows and Linux, the native close on macOS. The
   // window must hide rather than close, the app keep running, the server answer a request from outside while it is
