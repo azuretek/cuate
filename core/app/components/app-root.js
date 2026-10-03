@@ -13,7 +13,9 @@ import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
-import { updateBanner, DISMISS } from '../rules/updates.js';
+import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
+import { durationMs } from '../../kit/rules/press.js';
+import './app-notices.js';
 import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
@@ -56,7 +58,7 @@ class AppRoot extends KitElement {
     // The update the shell last reported, drawn as a banner while a download runs. The name must NOT be "update":
     // Lit writes this.update for any reactive property of that name, which shadows LitElement's own update() method
     // and the element throws "this.update is not a function" on its next render.
-    updateStatus: { state: true },
+    updateStatus: { state: true }, appNotices: { state: true },
     // host is what the shell says it is (product, version, platform), so core can draw a window bar where the
     // platform had a frame; maximized is the window's own state, which the shell reports.
     host: { state: true }, maximized: { state: true },
@@ -100,6 +102,9 @@ class AppRoot extends KitElement {
     // that name shadows it, so the element throws "this.update is not a function" on its next
     // render and the app never becomes ready.
     this.updateStatus = null;
+    this.appNotices = [];
+    this.noticeShownAt = null;
+    this.noticeHold = null;
     this.pending = new Map();
     this.client = null;
     this.drag = null;
@@ -163,6 +168,8 @@ class AppRoot extends KitElement {
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }
     if (this.offOpen) { this.offOpen(); this.offOpen = null; }
+    clearTimeout(this.noticeHold);
+    this.noticeHold = null;
   }
 
   // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
@@ -414,8 +421,24 @@ class AppRoot extends KitElement {
   onUpdate(data) {
     const { state, version, percent, detail, canInstall } = data || {};
     this.updateStatus = state ? { state, version: version ?? null, percent: percent ?? null, detail: detail ?? null, canInstall: Boolean(canInstall) } : null;
+    this.showUpdateNotice(appUpdateNotice(this.updateStatus));
     if (!this.settingsRead) { this.heldUpdate = data || null; return; }
     this.noticeUpdate(data);
+  }
+
+  // The update card follows the latest state, except that a transient card (a check in progress) stays up for the
+  // floor the tokens hold (motion.min-visible) before a different state replaces it. Only the newest state is kept:
+  // a later event cancels a pending one, so the card never replays a state that was already superseded.
+  showUpdateNotice(notice) {
+    clearTimeout(this.noticeHold);
+    this.noticeHold = null;
+    const floor = durationMs(getComputedStyle(this).getPropertyValue('--motion-min-visible'), 900);
+    const wait = noticeHoldMs(this.appNotices, 'app-update', notice, this.noticeShownAt, Date.now(), floor);
+    if (wait > 0) { this.noticeHold = setTimeout(() => this.showUpdateNotice(notice), wait); return; }
+    const prior = this.appNotices.find((n) => n.id === 'app-update');
+    this.appNotices = notice ? putNotice(this.appNotices, notice) : this.appNotices.filter((n) => n.id !== 'app-update');
+    if (!notice) this.noticeShownAt = null;
+    else if (prior?.revision !== notice.revision) this.noticeShownAt = Date.now();
   }
 
   // The latest state that arrived before the settings did, decided now that they have.
@@ -618,7 +641,7 @@ class AppRoot extends KitElement {
   onPointerDown = (e) => {
     if (this.phase !== 'ready' || this.view !== 'messages') return;
     const sidebar = this.querySelector('.sidebar');
-    if (!sidebar || getComputedStyle(sidebar).position !== 'fixed') return;   // the drawer exists only on the phone
+    if (!sidebar || getComputedStyle(sidebar).position === 'static') return;   // the drawer exists only on the phone
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const open = this.listOpen;
     if (!open && !isEdgeStart(e.clientX)) return;   // only an edge drag opens the list
@@ -1050,7 +1073,6 @@ class AppRoot extends KitElement {
   // rules drew into the banner, so the button and what it does cannot drift; a refusal leaves the banner as it is.
   async updateAction(command) {
     if (!command) return undefined;
-    if (command === DISMISS) { this.updateStatus = null; return true; }
     try { await this.bridge(command, {}); return true; } catch { return false; /* the shell refused; the banner keeps the state it last drew */ }
   }
 
@@ -1085,6 +1107,7 @@ class AppRoot extends KitElement {
     // controls in the contact header instead (see mainView).
     return html`<div class="app-window" data-platform=${platform}>
       <div class="app-body">${this.body()}</div>
+      <app-notices .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-dismiss=${(e) => { this.appNotices = dismissNotice(this.appNotices, e.detail.id); }}></app-notices>
     </div>`;
   }
 
@@ -1093,7 +1116,6 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} @connect=${(e) => respond(e, this.onConnect(e.detail))}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
-    const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail, canInstall: this.updateStatus.canInstall }) : null;
     return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => { this.viewing = e.detail && e.detail.src ? e.detail : null; }}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
@@ -1112,7 +1134,7 @@ class AppRoot extends KitElement {
           @chatsettings=${(e) => respond(e, this.setSettings(e.detail.patch))}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
-      <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${press(() => this.updateAction(banner.action.command))}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
+      <main class="main">${this.mainView(chat)}</main>
       ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}

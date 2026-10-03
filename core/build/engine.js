@@ -79,6 +79,7 @@ var engine = (() => {
     admitPress: () => admitPress,
     allChecked: () => allChecked,
     anchorFrom: () => anchorFrom,
+    appUpdateNotice: () => appUpdateNotice,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     autoDownloadEnabled: () => autoDownloadEnabled,
@@ -113,6 +114,7 @@ var engine = (() => {
     defaultGroupName: () => defaultGroupName,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
+    dismissNotice: () => dismissNotice,
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
     durationMs: () => durationMs,
@@ -160,6 +162,7 @@ var engine = (() => {
     newTraceparent: () => newTraceparent,
     normalizeSort: () => normalizeSort,
     noticeEnabled: () => noticeEnabled,
+    noticeHoldMs: () => noticeHoldMs,
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
     orderChats: () => orderChats,
@@ -174,6 +177,7 @@ var engine = (() => {
     placeChat: () => placeChat,
     policy: () => policy,
     progressFor: () => progressFor,
+    putNotice: () => putNotice,
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     removeGroup: () => removeGroup,
@@ -893,6 +897,154 @@ var engine = (() => {
     return { id: "local", name: String(file.name || "file"), mime: String(file.type || "application/octet-stream"), bytes: Number(file.size) || 0, sticker: false, missing: false, local: true };
   }
 
+  // core/app/rules/updates.js
+  var INSTALL = "install";
+  var MANUAL = "manual";
+  var NOTIFY = "notify";
+  var NONE = "none";
+  var STALL_MS = 45e3;
+  var KB = 1024;
+  var MB = KB * KB;
+  function size(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return null;
+    const mb = bytes / MB;
+    if (mb < 10) return mb.toFixed(1) + " MB";
+    if (mb < 1e3) return Math.round(mb) + " MB";
+    return (mb / KB).toFixed(2) + " GB";
+  }
+  function capability({ platform, packaged, appImage = false }) {
+    if (!packaged) return { action: NONE, check: false, autoDownload: false, canInstall: false, reason: "running from source" };
+    if (platform === "win32") return { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "the installer is verified against its published checksum" };
+    if (platform === "darwin") return { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "the build is signed and notarized, so an update can be installed" };
+    if (platform === "linux") {
+      return appImage ? { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "an AppImage replaces itself in place" } : { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "not running as an AppImage, so there is no file an update could replace" };
+    }
+    return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, reason: "no install path on this platform" };
+  }
+  function policy({ autoDownload = false, ...opts }) {
+    const base = capability(opts);
+    if (!base.canInstall) return base;
+    if (autoDownload) return { ...base, autoDownload: true };
+    return { action: MANUAL, check: true, autoDownload: false, canInstall: true, reason: "automatic downloads are turned off in Settings" };
+  }
+  function downloadProgress(info) {
+    const percent = info ? info.percent : null;
+    if (!Number.isFinite(percent)) return null;
+    return Math.min(1, Math.max(0, percent / 100));
+  }
+  function transferDetail(info) {
+    const { transferred = 0, total = 0, bytesPerSecond = 0 } = info || {};
+    const arrived = size(transferred);
+    const whole = size(total);
+    const rate = size(bytesPerSecond);
+    const parts = [];
+    if (arrived && whole) parts.push(arrived + " of " + whole);
+    else if (arrived) parts.push(arrived);
+    if (rate) parts.push(rate + "/s");
+    return parts.length ? parts.join(", ") : null;
+  }
+  function downloadingNotice({ version = null, transfer = null } = {}) {
+    const what = version ? "version " + version : "the update";
+    return { message: "Downloading " + what + ".", detail: transfer || "Starting the download." };
+  }
+  function stalledNotice({ version = null, stallMs = STALL_MS } = {}) {
+    const what = version ? "version " + version : "the update";
+    const seconds = Math.max(1, Math.round(stallMs / 1e3));
+    return { message: "Downloading " + what + " has stopped making progress.", detail: "Nothing has arrived for " + seconds + " seconds. It has not been cancelled, so it may still finish on its own." };
+  }
+  function verificationCheck({ platform }) {
+    if (platform === "win32") return { name: "publisher signature", detail: "the installer is checked against the publisher name in the release metadata" };
+    if (platform === "darwin") return { name: "code signature and checksum", detail: "the archive is checked against the checksum in the release metadata, and the installed build is signed" };
+    return { name: "sha512 checksum", detail: "the artifact is checked against the checksum in the release metadata" };
+  }
+  function checksumMatches(expected, actual) {
+    if (typeof expected !== "string" || typeof actual !== "string") return false;
+    const a = expected.trim().toLowerCase();
+    const b = actual.trim().toLowerCase();
+    return a.length > 0 && a === b;
+  }
+  function installPolicy() {
+    return { on: "quit", why: "the download is applied when the app next quits, so an update never interrupts what a person is doing" };
+  }
+  function availableBanner({ version = null } = {}) {
+    const what = version ? "Version " + version : "An update";
+    return { message: what + " is available.", detail: "Download it now, or turn on automatic downloads and it is fetched on its own." };
+  }
+  function readyBanner({ version = null } = {}) {
+    const what = version ? "Version " + version : "The update";
+    return { message: what + " is ready to install.", detail: "Restart the app to install it, or it installs the next time the app quits." };
+  }
+  function failedBanner({ detail = null } = {}) {
+    return { message: "The update could not be downloaded.", detail: detail || "Nothing was installed. You can try again." };
+  }
+  var DISMISS = "dismiss";
+  function currentBanner({ version = null } = {}) {
+    return { message: "You are on the latest version.", detail: version ? "Version " + version + " is the newest release." : "There is no newer release." };
+  }
+  function unsupportedBanner({ detail = null } = {}) {
+    const why = detail ? String(detail) : "this build has no update path";
+    return { message: "This build does not update itself.", detail: why.charAt(0).toUpperCase() + why.slice(1) + "." };
+  }
+  function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
+    if (state === "checking") return { message: "Checking for updates.", detail: "", percent: null, action: null };
+    if (state === "current") {
+      return { ...currentBanner({ version }), percent: null, action: { command: DISMISS, label: "OK" } };
+    }
+    if (state === "unsupported") {
+      return { ...unsupportedBanner({ detail }), percent: null, action: { command: DISMISS, label: "OK" } };
+    }
+    if (state === "available") {
+      if (!canInstall) return null;
+      return { ...availableBanner({ version }), percent: null, action: { command: "updates.download", label: "Download" } };
+    }
+    if (state === "downloading") {
+      const n = downloadingNotice({ version, transfer: detail });
+      return { message: n.message, detail: n.detail, percent, action: null };
+    }
+    if (state === "stalled") {
+      const n = stalledNotice({ version });
+      return { message: n.message, detail: n.detail, percent: null, action: null };
+    }
+    if (state === "ready") {
+      return { ...readyBanner({ version }), percent: null, action: { command: "updates.install", label: "Restart and install" } };
+    }
+    if (state === "error") {
+      return { ...failedBanner({ detail }), percent: null, action: canInstall ? { command: "updates.download", label: "Try again" } : null };
+    }
+    return null;
+  }
+
+  // core/app/rules/app-notices.js
+  function putNotice(notices, notice) {
+    if (!notice?.id || !notice.message) return notices;
+    const prior = notices.find((n) => n.id === notice.id);
+    const next = { ...notice, read: prior?.revision === notice.revision && prior.read === true };
+    if (prior && JSON.stringify(prior) === JSON.stringify(next)) return notices;
+    return prior ? notices.map((n) => n.id === notice.id ? next : n) : [...notices, next];
+  }
+  function noticeHoldMs(notices, id, notice, shownAt, now, floorMs) {
+    const prior = notices.find((n) => n.id === id && !n.read);
+    if (!prior?.transient || !Number.isFinite(shownAt) || prior.revision === notice?.revision) return 0;
+    return Math.max(0, floorMs - (now - shownAt));
+  }
+  function dismissNotice(notices, id) {
+    return notices.map((n) => n.id === id ? { ...n, read: true } : n);
+  }
+  function appUpdateNotice(status) {
+    if (!status) return null;
+    const banner = updateBanner(status.state, status);
+    if (!banner) return null;
+    return {
+      id: "app-update",
+      revision: [status.state, status.version || "", status.state === "error" ? status.detail || "" : ""].join(":"),
+      ...banner,
+      action: banner.action?.command === DISMISS ? null : banner.action,
+      tone: status.state === "error" ? "error" : status.state === "stalled" ? "warn" : status.state === "ready" || status.state === "current" ? "ok" : "info",
+      transient: status.state === "checking",
+      percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null
+    };
+  }
+
   // core/app/rules/engine-imsg.js
   var TAPBACKS = /* @__PURE__ */ new Set(["love", "like", "dislike", "laugh", "emphasis", "question"]);
   var NO_CHAT_ID = "0";
@@ -1559,7 +1711,9 @@ var engine = (() => {
     for (const group of THEME_GROUPS) put(group, theme[group]);
     const own = theme.schemes && typeof theme.schemes === "object" ? theme.schemes[scheme] : null;
     if (own && typeof own === "object") for (const group of THEME_GROUPS) put(group, own[group]);
-    put("color", theme.color && theme.color[scheme]);
+    const colors = theme.color && theme.color[scheme];
+    if (colors?.fg) put("color", { "bg-raised-fg": colors.fg, "selection-fg": colors.fg });
+    put("color", colors);
     return [...out];
   }
   function themeFonts(theme) {
@@ -1573,6 +1727,8 @@ var engine = (() => {
     background: ["color", "bg"],
     foreground: ["color", "fg"],
     card: ["color", "bg-raised"],
+    "card-foreground": ["color", "bg-raised-fg"],
+    "accent-foreground": ["color", "selection-fg"],
     muted: ["color", "bg-sunken"],
     "muted-foreground": ["color", "fg-muted"],
     border: ["color", "border"],
@@ -1601,8 +1757,6 @@ var engine = (() => {
   var REFUSE = {
     popover: "the app draws no popover surface",
     "popover-foreground": "the app draws no popover surface",
-    "card-foreground": "the app takes its words from fg, not a per-surface foreground",
-    "accent-foreground": "the app has no colour on the selection highlight",
     ring: "the app derives its focus ring from accent",
     "font-serif": "the app sets no serif type",
     "tracking-tighter": "the app has one letter spacing, tracking-normal",
@@ -2140,123 +2294,6 @@ var engine = (() => {
     if (d === 1) return "Yesterday " + clock(t, locale, timeZone);
     if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t) + " " + clock(t, locale, timeZone);
     return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(t);
-  }
-
-  // core/app/rules/updates.js
-  var INSTALL = "install";
-  var MANUAL = "manual";
-  var NOTIFY = "notify";
-  var NONE = "none";
-  var STALL_MS = 45e3;
-  var KB = 1024;
-  var MB = KB * KB;
-  function size(bytes) {
-    if (!Number.isFinite(bytes) || bytes <= 0) return null;
-    const mb = bytes / MB;
-    if (mb < 10) return mb.toFixed(1) + " MB";
-    if (mb < 1e3) return Math.round(mb) + " MB";
-    return (mb / KB).toFixed(2) + " GB";
-  }
-  function capability({ platform, packaged, appImage = false }) {
-    if (!packaged) return { action: NONE, check: false, autoDownload: false, canInstall: false, reason: "running from source" };
-    if (platform === "win32") return { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "the installer is verified against its published checksum" };
-    if (platform === "darwin") return { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "the build is signed and notarized, so an update can be installed" };
-    if (platform === "linux") {
-      return appImage ? { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "an AppImage replaces itself in place" } : { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "not running as an AppImage, so there is no file an update could replace" };
-    }
-    return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, reason: "no install path on this platform" };
-  }
-  function policy({ autoDownload = false, ...opts }) {
-    const base = capability(opts);
-    if (!base.canInstall) return base;
-    if (autoDownload) return { ...base, autoDownload: true };
-    return { action: MANUAL, check: true, autoDownload: false, canInstall: true, reason: "automatic downloads are turned off in Settings" };
-  }
-  function downloadProgress(info) {
-    const percent = info ? info.percent : null;
-    if (!Number.isFinite(percent)) return null;
-    return Math.min(1, Math.max(0, percent / 100));
-  }
-  function transferDetail(info) {
-    const { transferred = 0, total = 0, bytesPerSecond = 0 } = info || {};
-    const arrived = size(transferred);
-    const whole = size(total);
-    const rate = size(bytesPerSecond);
-    const parts = [];
-    if (arrived && whole) parts.push(arrived + " of " + whole);
-    else if (arrived) parts.push(arrived);
-    if (rate) parts.push(rate + "/s");
-    return parts.length ? parts.join(", ") : null;
-  }
-  function downloadingNotice({ version = null, transfer = null } = {}) {
-    const what = version ? "version " + version : "the update";
-    return { message: "Downloading " + what + ".", detail: transfer || "Starting the download." };
-  }
-  function stalledNotice({ version = null, stallMs = STALL_MS } = {}) {
-    const what = version ? "version " + version : "the update";
-    const seconds = Math.max(1, Math.round(stallMs / 1e3));
-    return { message: "Downloading " + what + " has stopped making progress.", detail: "Nothing has arrived for " + seconds + " seconds. It has not been cancelled, so it may still finish on its own." };
-  }
-  function verificationCheck({ platform }) {
-    if (platform === "win32") return { name: "publisher signature", detail: "the installer is checked against the publisher name in the release metadata" };
-    if (platform === "darwin") return { name: "code signature and checksum", detail: "the archive is checked against the checksum in the release metadata, and the installed build is signed" };
-    return { name: "sha512 checksum", detail: "the artifact is checked against the checksum in the release metadata" };
-  }
-  function checksumMatches(expected, actual) {
-    if (typeof expected !== "string" || typeof actual !== "string") return false;
-    const a = expected.trim().toLowerCase();
-    const b = actual.trim().toLowerCase();
-    return a.length > 0 && a === b;
-  }
-  function installPolicy() {
-    return { on: "quit", why: "the download is applied when the app next quits, so an update never interrupts what a person is doing" };
-  }
-  function availableBanner({ version = null } = {}) {
-    const what = version ? "Version " + version : "An update";
-    return { message: what + " is available.", detail: "Download it now, or turn on automatic downloads and it is fetched on its own." };
-  }
-  function readyBanner({ version = null } = {}) {
-    const what = version ? "Version " + version : "The update";
-    return { message: what + " is ready to install.", detail: "Restart the app to install it, or it installs the next time the app quits." };
-  }
-  function failedBanner({ detail = null } = {}) {
-    return { message: "The update could not be downloaded.", detail: detail || "Nothing was installed. You can try again." };
-  }
-  var DISMISS = "dismiss";
-  function currentBanner({ version = null } = {}) {
-    return { message: "You are on the latest version.", detail: version ? "Version " + version + " is the newest release." : "There is no newer release." };
-  }
-  function unsupportedBanner({ detail = null } = {}) {
-    const why = detail ? String(detail) : "this build has no update path";
-    return { message: "This build does not update itself.", detail: why.charAt(0).toUpperCase() + why.slice(1) + "." };
-  }
-  function updateBanner(state, { version = null, percent = null, detail = null, canInstall = false } = {}) {
-    if (state === "checking") return { message: "Checking for updates.", detail: "", percent: null, action: null };
-    if (state === "current") {
-      return { ...currentBanner({ version }), percent: null, action: { command: DISMISS, label: "OK" } };
-    }
-    if (state === "unsupported") {
-      return { ...unsupportedBanner({ detail }), percent: null, action: { command: DISMISS, label: "OK" } };
-    }
-    if (state === "available") {
-      if (!canInstall) return null;
-      return { ...availableBanner({ version }), percent: null, action: { command: "updates.download", label: "Download" } };
-    }
-    if (state === "downloading") {
-      const n = downloadingNotice({ version, transfer: detail });
-      return { message: n.message, detail: n.detail, percent, action: null };
-    }
-    if (state === "stalled") {
-      const n = stalledNotice({ version });
-      return { message: n.message, detail: n.detail, percent: null, action: null };
-    }
-    if (state === "ready") {
-      return { ...readyBanner({ version }), percent: null, action: { command: "updates.install", label: "Restart and install" } };
-    }
-    if (state === "error") {
-      return { ...failedBanner({ detail }), percent: null, action: canInstall ? { command: "updates.download", label: "Try again" } : null };
-    }
-    return null;
   }
 
   // core/app/rules/bar-layout.js
