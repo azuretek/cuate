@@ -49,12 +49,21 @@ class AppAttachment extends KitElement {
     this.dispatchEvent(new CustomEvent('media-loaded', { bubbles: true }));
   }
 
+  // Pressing a preview opens it in the viewer, which the page draws over everything (app-image-viewer).
+  open() {
+    if (!this.src) return;
+    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || '' } }));
+  }
+
   render() {
     const a = this.attachment;
     if (!a) return nothing;
     if (isImage(a) && !a.local && !a.missing && !this.failed) {
+      // A sticker is drawn as it is, on the bubble's background; a picture is a preview at its own aspect ratio, sized
+      // to fit, dressed with a shadow, a rounded edge and a hairline border, and pressing it opens the viewer.
+      if (this.src && a.sticker) return html`<img class="attachment-image sticker" src=${this.src} alt=${a.name} @load=${this.loaded}>`;
       return this.src
-        ? html`<img class=${'attachment-image' + (a.sticker ? ' sticker' : '')} src=${this.src} alt=${a.name} @load=${this.loaded}>`
+        ? html`<button type="button" class="attachment-preview" aria-label=${'Open ' + a.name} @click=${() => this.open()}><img class="attachment-image" src=${this.src} alt=${a.name} @load=${this.loaded}></button>`
         : html`<div class="attachment-image placeholder" role="img" aria-label="Loading image"></div>`;
     }
     return html`<div class="attachment-file"><span class="attachment-name">${a.name}</span>${a.missing ? html`<span class="muted small"> Not on the Mac</span>` : nothing}</div>`;

@@ -69,7 +69,7 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
 app-attachment { display: block; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); }
 .attachment-image { display: block; max-width: 100%; max-height: var(--size-image-max); border-radius: var(--radius-lg); }
-.attachment-image.placeholder { width: var(--size-image-placeholder); height: var(--size-image-placeholder); background: var(--color-bg-sunken); }
+.attachment-image.placeholder { width: var(--size-image-placeholder); aspect-ratio: 4 / 3; height: auto; background: var(--color-bg-sunken); border: var(--size-border) solid var(--color-image-edge); box-shadow: var(--shadow-image); }
 .attachment-image.sticker { border-radius: 0; }
 .attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 
@@ -306,7 +306,9 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid {
 @keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 
-.sheet-scrim { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; padding: var(--space-4); background: var(--color-scrim); animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+/* The backdrop darkens and blurs what is behind it: the one treatment every surface over the app uses, the settings
+   and about sheet and the image viewer alike (issue 126). */
+.sheet-scrim { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; padding: var(--space-4); background: var(--color-scrim); -webkit-backdrop-filter: blur(var(--size-scrim-blur)); backdrop-filter: blur(var(--size-scrim-blur)); animation: surface-scrim-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* The card is only as wide as its content needs, up to a sensible maximum, and it is centred in the backdrop rather
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
@@ -354,3 +356,31 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
 .confirm-modal h2 { margin: 0; font-size: var(--font-size-lg); }
 .confirm-modal p { margin: 0; color: var(--color-fg-muted); }
 .confirm-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+
+/* Pictures (issue 126). A preview is the picture at its own aspect ratio, sized to fit, and dressed: a soft shadow, a
+   rounded edge and a hairline border that reads on both the light and the dark background. Pressing it opens the
+   viewer. Every value is a token. */
+.attachment-preview { display: block; max-width: 100%; padding: 0; border: var(--size-border) solid var(--color-image-edge); border-radius: var(--radius-lg); background: var(--color-bg-sunken); box-shadow: var(--shadow-image); overflow: hidden; cursor: zoom-in; transition: box-shadow var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
+.attachment-preview:hover { box-shadow: var(--shadow-md); }
+.attachment-preview:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
+.attachment-preview .attachment-image { border-radius: 0; }
+app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
+/* The staged picture sits above the field: the preview, its name and size, and the way to take it back off. */
+.staged-image { display: inline-flex; align-items: flex-end; gap: var(--space-3); min-width: 0; }
+.staged-preview { flex: none; border-radius: var(--radius-md); }
+.staged-preview-image { display: block; max-width: var(--size-staged-preview); max-height: var(--size-staged-preview); }
+.staged-meta { display: flex; flex-direction: column; min-width: 0; }
+
+/* The viewer draws on the sheet's own backdrop (.sheet-scrim, above), so the blur and the dim are that one treatment.
+   The picture fits the stage, and the zoom is a transform the component sets as plain numbers. While a finger or a
+   drag moves it there is no transition, so it stays under the pointer; a click, a key or a double tap animates. */
+.viewer { z-index: 7; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.viewer-image { --zoom-x: 0; --zoom-y: 0; --zoom-scale: 1; flex: none; display: block; max-width: 100%; max-height: 100%; min-width: 0; min-height: 0; object-fit: contain; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); transform: translate(calc(var(--zoom-x) * 1px), calc(var(--zoom-y) * 1px)) scale(var(--zoom-scale)); transform-origin: center; transition: transform var(--motion-normal) var(--motion-ease); cursor: zoom-in; -webkit-user-drag: none; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
+.viewer[data-zoomed="true"] .viewer-image { cursor: grab; }
+.viewer[data-gesture="on"] .viewer-image { transition: none; cursor: grabbing; }
+.viewer-close { position: absolute; top: var(--space-4); right: var(--space-4); z-index: 1; display: grid; place-items: center; width: var(--size-viewer-close); height: var(--size-viewer-close); padding: 0; border: var(--size-border) solid var(--color-image-edge); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-md); cursor: pointer; }
+.viewer-close:hover { background: var(--color-bg-sunken); }
+.viewer-close:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
+.viewer-close svg { width: 50%; height: 50%; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+.viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }

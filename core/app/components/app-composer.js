@@ -10,6 +10,8 @@ class AppComposer extends KitElement {
   static properties = {
     disabled: {}, placeholder: {}, maxBytes: {},
     emojiOpen: { state: true }, attachOpen: { state: true }, frequent: { state: true }, staged: { state: true }, stageProblem: { state: true },
+    // A staged picture's preview, as an object URL the composer owns and revokes when the file leaves.
+    preview: { state: true },
   };
 
   constructor() {
@@ -22,11 +24,29 @@ class AppComposer extends KitElement {
     this.frequent = [];
     this.staged = null;
     this.stageProblem = '';
+    this.preview = '';
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.loadFrequent();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.setPreview(null);
+  }
+
+  // A staged picture shows the picture itself, not only its name; anything else, or a picture this engine cannot
+  // draw (a HEIC on the desktop), keeps the name chip.
+  setPreview(file) {
+    if (this.preview) URL.revokeObjectURL(this.preview);
+    this.preview = file && /^image\//i.test(file.type || '') ? URL.createObjectURL(file) : '';
+  }
+
+  openPreview() {
+    if (!this.preview || !this.staged) return;
+    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.preview, alt: this.staged.name } }));
   }
 
   field() {
@@ -63,6 +83,7 @@ class AppComposer extends KitElement {
     this.dispatchEvent(new CustomEvent('send', { detail: { text, file } }));
     this.staged = null;
     this.stageProblem = '';
+    this.setPreview(null);
     t.value = '';
     t.style.height = '';
     t.focus();
@@ -134,12 +155,14 @@ class AppComposer extends KitElement {
     const check = stageCheck(file, this.maxBytes);
     this.staged = check.ok ? file : null;
     this.stageProblem = check.ok ? '' : check.reason;
+    this.setPreview(this.staged);
     this.field()?.focus();
   }
 
   unstage() {
     this.staged = null;
     this.stageProblem = '';
+    this.setPreview(null);
     this.field()?.focus();
   }
 
@@ -169,7 +192,8 @@ class AppComposer extends KitElement {
     const s = this.staged;
     return html`${s || this.stageProblem
       ? html`<div class="composer-staged" role="status">
-          ${s ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
+          ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${() => this.openPreview()}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
+          ${s && !this.preview ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
           ${this.stageProblem ? html`<span class="staged-problem small">${this.stageProblem}</span>` : nothing}
         </div>`
       : nothing}<form class="composer" @submit=${this.submit}>

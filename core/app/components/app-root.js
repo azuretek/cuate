@@ -23,6 +23,7 @@ import './app-chat-list.js';
 import './app-conversation.js';
 import './app-settings.js';
 import './app-about.js';
+import './app-image-viewer.js';
 
 const API_VERSION = 1;
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
@@ -59,6 +60,8 @@ class AppRoot extends KitElement {
     // The edit mode and its selection also live on the page: the list draws the checkboxes, the header selects all
     // and acts on the count, and the confirm gate names what a delete will remove before it removes anything.
     editing: { state: true }, checked: { state: true }, pendingDelete: { state: true },
+    // The picture open in the viewer ({ src, alt }), raised by a preview in a message or in the composer.
+    viewing: { state: true },
   };
 
   constructor() {
@@ -98,6 +101,7 @@ class AppRoot extends KitElement {
     this.editing = false;
     this.checked = [];
     this.pendingDelete = null;
+    this.viewing = null;
     // Escape dismisses the confirm modal, bound once so the same function is added and removed.
     this.confirmKey = (event) => { if (event.key === 'Escape') { event.preventDefault(); this.cancelDelete(); } };
     // The custom properties last written from a theme, so a change removes the ones it no longer sets.
@@ -951,7 +955,7 @@ class AppRoot extends KitElement {
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
     const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail, canInstall: this.updateStatus.canInstall }) : null;
-    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown}>
+    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => { this.viewing = e.detail && e.detail.src ? e.detail : null; }}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
         ${this.editBar()}
@@ -971,6 +975,7 @@ class AppRoot extends KitElement {
       <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${() => this.updateAction(banner.action.command)}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
       ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
+      ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }
 }
