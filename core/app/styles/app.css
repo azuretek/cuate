@@ -108,51 +108,53 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble.sms { background: var(--color-bubble-sms); color: var(--color-bubble-sms-fg); }
 .bubble.state-sending { opacity: 0.7; }
 .bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }
-.reactions { display: flex; flex-wrap: wrap; gap: var(--space-1); position: relative; margin: calc(var(--space-1) * -1) var(--space-2) 0; font-size: var(--font-size-sm); }
-.reaction { background: var(--color-bg-raised); color: var(--color-bg-raised-fg); box-shadow: var(--shadow-sm); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: 0 var(--space-2); }
+/* Reactions float at the bubble's top outer corner, the top right of a received message and the top left of a sent
+   one, with no background, so adding one never moves a message (issue 182). */
+.reactions { position: absolute; top: 0; right: 0; z-index: 1; display: flex; gap: var(--space-1); transform: translate(50%, -50%); font-size: var(--font-size-sm); line-height: 1; white-space: nowrap; pointer-events: none; }
+.bubble-row.mine .reactions { right: auto; left: 0; transform: translate(-50%, -50%); }
+.reaction { background: none; border: 0; padding: 0; color: var(--color-fg-muted); }
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
-/* A message's own controls (issue 138). React and Reply sit beside the bubble and show on hover or keyboard focus,
-   where there is a pointer that hovers; a touch screen opens the same menu with a long press, and a right click does
-   anywhere. The menu and the emoji panel open above the message, and below it when the list has no room above. */
+/* A message's actions (issues 138 and 169). A long press with a finger, a long click with the mouse or a right click
+   opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
+   opens above the message, and below it when the list has no room above. */
+.bubble-row:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); border-radius: var(--radius-lg); }
+@media (hover: none) { .bubble-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; } }
 .bubble-body { position: relative; display: flex; flex-direction: column; align-items: flex-start; max-width: var(--size-bubble-max); }
 .bubble-row.mine .bubble-body { align-items: flex-end; }
 .bubble-body > .bubble, .bubble-body > app-attachment { max-width: 100%; }
-.message-actions { position: absolute; top: 50%; left: 100%; transform: translateY(-50%); display: flex; gap: var(--space-1); padding: 0 var(--space-1); opacity: 0; transition: opacity var(--motion-fast) var(--motion-ease); }
-.bubble-row.mine .message-actions { left: auto; right: 100%; flex-direction: row-reverse; }
-.bubble-row:hover .message-actions, .bubble-row:focus-within .message-actions { opacity: 1; }
-@media (hover: none) { .message-actions { display: none; } }
-.message-action { flex: none; width: var(--size-message-action); height: var(--size-message-action); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-md); line-height: 1; cursor: pointer; }
-.message-action:hover, .message-action:focus-visible { background: var(--color-bg-sunken); color: var(--color-fg); outline: none; }
-.message-action:disabled { opacity: 0.4; cursor: default; }
 .message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: var(--space-1); z-index: 3; }
 .message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; }
 .bubble-row.mine .message-pop { left: auto; right: 0; }
-.message-picker .emoji-picker { position: static; }
-.message-menu { display: flex; flex-direction: column; min-width: max-content; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
-.tapback-row { display: flex; gap: var(--space-1); padding-bottom: var(--space-1); margin-bottom: var(--space-1); border-bottom: var(--size-border) solid var(--color-border); }
-.tapback { flex: none; width: var(--size-emoji); height: var(--size-emoji); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font-size: var(--font-size-lg); line-height: 1; cursor: pointer; }
-.tapback:hover, .tapback:focus-visible { background: var(--color-bg-sunken); outline: none; }
-.tapback[aria-checked="true"] { background: var(--color-selection); box-shadow: inset 0 0 0 var(--size-border) var(--color-accent); }
-.tapback:disabled { opacity: 0.4; cursor: default; }
-.menu-item { border: 0; background: none; color: var(--color-fg); text-align: left; white-space: nowrap; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; }
-.menu-item:hover, .menu-item:focus-visible { background: var(--color-bg-sunken); outline: none; }
-.menu-item:disabled { opacity: 0.4; cursor: default; }
-.reaction.mine { background: var(--color-selection); color: var(--color-selection-fg); border-color: var(--color-accent); }
+.message-menu { display: flex; align-items: center; gap: var(--space-2); min-width: max-content; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); box-shadow: var(--shadow-md); }
+.message-time { font-size: var(--font-size-xs); color: var(--color-fg-muted); white-space: nowrap; }
+.message-menu .message-time:only-child { padding-inline-end: var(--space-2); }
+.message-action { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); cursor: pointer; }
+.message-action:hover, .message-action:focus-visible { background: var(--color-bg-sunken); color: var(--color-fg); outline: none; }
+/* The message a reaction is being chosen for, while the composer's emoji panel is open for it. The surface in front
+   keeps the panel's height clear at its foot, so the message can always be brought into view above the panel. */
+.conv-body[data-reacting] > .messages, .conv-body[data-reacting] > .thread-view { padding-bottom: calc(var(--size-picker-h) + var(--space-4)); scroll-padding-bottom: calc(var(--size-picker-h) + var(--space-4)); }
+.bubble-row.targeted .bubble, .bubble-row.targeted .attachment-image { box-shadow: 0 0 0 calc(var(--size-border) * 2) var(--color-accent); }
 .message-note { font-size: var(--font-size-xs); color: var(--color-danger); margin: var(--space-1) var(--space-2) 0; }
-/* A compact relationship points to the original without repeating its body. */
-.reply-link { display: inline-flex; align-items: center; gap: var(--space-1); max-width: var(--size-bubble-max); margin-bottom: var(--space-1); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); font-size: var(--font-size-xs); text-align: left; cursor: pointer; }
-.reply-link span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reply-link:hover:not(:disabled), .reply-link:focus-visible { color: var(--color-fg); text-decoration: underline; outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.reply-link:disabled { cursor: default; }
-.reply-who { font-weight: var(--font-weight-medium); color: var(--color-fg); }
-.reply-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bubble-row.flash .bubble, .bubble-row.flash .attachment-image { animation: flash var(--motion-sheet-out) var(--motion-ease) 3; }
-@keyframes flash { 50% { box-shadow: 0 0 0 calc(var(--size-border) * 3) var(--color-accent); } }
-.composer-reply { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) var(--space-4) 0; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-inline-start: calc(var(--size-border) * 3) solid var(--color-accent); border-radius: var(--radius-sm); background: var(--color-bg-sunken); }
-.reply-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+/* A reply in the conversation keeps its place in time and carries a quiet mark back to its thread: a dashed stroke on
+   the inner side and the reply icon, never a label repeating who it answers. The mark opens the thread (issue 183). */
+.reply-mark { display: inline-flex; align-items: center; margin: 0 var(--space-2) var(--space-1); padding: 0 var(--space-1); border: 0; border-inline-start: var(--size-border) dashed var(--color-fg-muted); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; }
+.bubble-row.mine .reply-mark { border-inline-start: 0; border-inline-end: var(--size-border) dashed var(--color-fg-muted); }
+.reply-mark .icon { width: var(--font-size-sm); height: var(--font-size-sm); }
+.reply-mark:hover, .reply-mark:focus-visible { color: var(--color-fg); outline: none; }
+/* An open thread is its own conversation: its first message and replies in order, in a card above the rest of the
+   conversation, which blurs behind it. The composer says it is replying, with a way to cancel, and repeats nothing. */
+.conv-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.messages { transition: filter var(--motion-normal) var(--motion-ease), opacity var(--motion-normal) var(--motion-ease); }
+.messages.behind { filter: blur(var(--size-scrim-blur)); opacity: 0.5; }
+.thread-view { position: absolute; inset: 0; z-index: 2; overflow-y: auto; padding: var(--space-4); animation: thread-in var(--motion-normal) var(--motion-ease) both; }
+.thread-list { display: flex; flex-direction: column; padding: 0 var(--space-4) var(--space-4); background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+@keyframes thread-in { from { opacity: 0; transform: translateY(calc(var(--space-2) * -1)); } to { opacity: 1; transform: none; } }
+.composer-thread { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) var(--space-4) 0; color: var(--color-fg-muted); font-size: var(--font-size-xs); }
+.composer-thread-label { flex: 1; min-width: 0; }
+.composer-thread .staged-remove { display: inline-flex; align-items: center; padding: var(--space-1); }
 @media (prefers-reduced-motion: reduce) {
-  .message-actions { transition: none; }
-  .bubble-row.flash .bubble, .bubble-row.flash .attachment-image { animation: none; box-shadow: 0 0 0 calc(var(--size-border) * 3) var(--color-accent); }
+  .messages { transition: none; }
+  .thread-view { animation: none; }
 }
 app-attachment { display: block; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); }
 .attachment-image { display: block; max-width: 100%; max-height: var(--size-image-max); border-radius: var(--radius-lg); }
@@ -607,4 +609,3 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 @media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }
 /* Raised surfaces keep the foreground supplied by their theme. */
 .sidebar, .filter-menu, .message-menu, .attachment-file, .emoji-picker, .attach-menu, .sheet-rows, .staged-file, .load-older { color: var(--color-bg-raised-fg); }
-.message-menu .menu-item, .attach-menu .menu-item { color: inherit; }
