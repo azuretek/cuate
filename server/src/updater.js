@@ -187,7 +187,7 @@ export async function drain(quiesce, { ms = DRAIN_MS, poll = 50, now = Date.now 
 export function createUpdater({
   L, dataDir, log, running, runningCommit = null, repo = naming.repo, slug = naming.slug, publish = () => {}, quiesce = null,
   settings = () => ({}), handoff = null, fetchImpl = globalThis.fetch, nodeVersion = process.versions.node, now = Date.now,
-  drainMs = DRAIN_MS, timers = globalThis,
+  drainMs = DRAIN_MS, timers = globalThis, serviceNode = () => null,
 }) {
   assertSeparateData(L, dataDir);
   const announce = (outcome) => {
@@ -217,6 +217,13 @@ export function createUpdater({
     const why = !pick ? 'current' : pausedNow(readState(L)) ? 'paused' : !handoff ? 'no_service' : null;
     log.emit('update.check', { ...base, latest: pick ? pick.version : null, installs: !why, reason: why });
     if (why) return { state: why, version: pick ? pick.version : null };
+    // A LaunchAgent whose Node is gone cannot restart into the new version, or back into this one.
+    const gone = serviceNode();
+    if (gone) {
+      log.emit('update.refused', { version: pick.version, reason: 'service_node', error: gone });
+      announce({ state: 'refused', version: pick.version, from: running, detail: 'Version ' + pick.version + ' was not installed: ' + gone + '. The server stays on ' + running + '.', at: iso(now()) });
+      return { state: 'refused', version: pick.version, reason: 'service_node' };
+    }
 
     let staged;
     try {
