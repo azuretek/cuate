@@ -46,6 +46,23 @@
   const anchor = rows().find(row => row.getBoundingClientRect().bottom > top());
   const key = anchor.dataset.id;
   const offset = anchor.getBoundingClientRect().top - top();
+  // What the place keeper saw (issue 211): each scroll it was handed and each size the view took, with its anchor and
+  // scrollTop, so a run that loses its place says which step moved it. The wrapper only watches: record still runs.
+  const keep = conversation.keep;
+  const steps = [];
+  const anchorText = (a) => (!a ? 'none' : a.end ? 'end' : a.key != null ? String(a.key).replace('rotation-', 'm') + '@' + Math.round(a.offset) : 'top' + Math.round(a.top));
+  let lastStep = '';
+  const step = (kind) => {
+    const text = kind + ' ' + anchorText(keep && keep.anchor) + ' st' + Math.round(scroller.scrollTop) + ' ' + scroller.clientWidth + 'x' + scroller.clientHeight + ':' + scroller.scrollHeight;
+    if (text.slice(text.indexOf(' ')) === lastStep.slice(lastStep.indexOf(' '))) return;
+    lastStep = text;
+    steps.push(Math.round(performance.now()) + ' ' + text);
+    if (steps.length > 14) steps.shift();
+  };
+  if (keep && typeof keep.record === 'function') {
+    const record = keep.record.bind(keep);
+    keep.record = () => { record(); step('scroll'); };
+  }
   let blank = false;
   const observe = () => { if (!rows().length || !scroller.isConnected || document.querySelector('app-onboarding')) blank = true; };
   new MutationObserver(records => {
@@ -82,6 +99,7 @@
     observe();
     frames = previousWidth === innerWidth ? frames + 1 : 0;
     previousWidth = innerWidth;
+    step('frame');
     const current = rows().find(row => row.dataset.id === key);
     const relationships = [...scroller.querySelectorAll('.thread-line')];
     const chatDesign = document.documentElement.dataset.scheme === scheme && relationships.length === 25 && relationships.every(link => !link.textContent.includes('Synthetic rotation message') && !/Reply to/.test(link.textContent))
@@ -111,7 +129,7 @@
     const box = marker.getBoundingClientRect();
     diagnosis.textContent = 'rotation-diagnosis ' + JSON.stringify({ label, state, seq, lastFail, failing, frames, settled, blank,
       width: innerWidth, height: innerHeight, delta: current ? current.getBoundingClientRect().top - top() - offset : null,
-      history: history.slice(-8) });
+      history: history.slice(-8), steps });
     window.rotationProof = { ok, blank, width: innerWidth, height: innerHeight, key,
       delta: current ? current.getBoundingClientRect().top - top() - offset : null,
       draft: field.value, start: field.selectionStart, end: field.selectionEnd,
