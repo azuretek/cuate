@@ -159,8 +159,10 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .conv-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .messages { transition: filter var(--motion-normal) var(--motion-ease), opacity var(--motion-normal) var(--motion-ease); }
 .messages.behind { filter: blur(var(--size-scrim-blur)); opacity: 0.25; }
-.thread-view { position: absolute; inset: 0; z-index: 2; overflow-y: auto; padding: var(--space-4); animation: thread-in var(--motion-normal) var(--motion-ease) both; }
-.thread-list { display: flex; flex-direction: column; min-height: 100%; justify-content: flex-end; padding: 0 0 var(--space-2); }
+.thread-view { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; overflow-y: auto; padding: var(--space-4); animation: thread-in var(--motion-normal) var(--motion-ease) both; }
+/* The thread sits at the foot of the view, nearest the composer, and the blurred space above it closes it like any
+   press outside a panel. */
+.thread-list { display: flex; flex-direction: column; margin-top: auto; padding: 0 0 var(--space-2); }
 @keyframes thread-in { from { opacity: 0; transform: translateY(calc(var(--space-2) * -1)); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .messages { transition: none; }
