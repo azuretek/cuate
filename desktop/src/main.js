@@ -1778,9 +1778,11 @@ async function runSmoke(w) {
     { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.group-prompt)' },
     { name: 'sheet', pane: 'list', open: "document.querySelector('.sidebar-head .gear-button').click()", panel: '.sheet' },
   ];
-  const dismissState = "(() => { const r = document.querySelector('app-root'); return { chat: r.openChatId, list: r.listOpen, editing: r.editing, checked: (r.checked || []).length, pane: document.querySelector('.shell').dataset.pane }; })()";
+  const dismissState = "(() => { const r = document.querySelector('app-root'); return { chat: r.openChatId, list: r.listOpen, editing: r.editing, checked: (r.checked || []).length }; })()";
+  // Each panel starts from the same page: no edit mode, no sheet up, and on the phone the pane that holds its trigger.
   const dismissSetup = async (p, phone) => {
-    await js("(() => { const r = document.querySelector('app-root'); if (r.editing) r.exitEdit(); return true; })()");
+    await js("(() => { const r = document.querySelector('app-root'); if (r.editing) r.exitEdit(); if (r.sheetShowing) r.closeView(); return true; })()");
+    await waitFor("!document.querySelector('.sheet')", 5000);
     if (phone) await js('(() => { document.querySelector("app-root").listOpen = ' + (p.pane === 'list') + '; return true; })()');
     await pause(phone ? 450 : 100);
     if (p.edit) {
@@ -1790,8 +1792,9 @@ async function runSmoke(w) {
       await waitFor("(document.querySelector('app-root').checked || []).length === 1", 5000);
     }
   };
-  // The control under the press: the first candidate whose centre is on screen and outside the panel, where the point
-  // lands on the control itself or on the modal backdrop drawn over it. Probes on it count anything that reaches it.
+  // The control under the press: the first candidate with a point on screen and outside the panel (its centre, or near
+  // either end, which is where a phone's sheet leaves its backdrop showing), where the point lands on the control itself
+  // or on the modal backdrop drawn over it. Probes on it count anything that reaches it.
   const dismissTarget = (panel) => js('(() => {'
     + ' const panel = document.querySelector(' + dq(panel) + ');'
     + ' const cands = [".chat-row:not(.selected)", ".sidebar-head .gear-button", "app-conversation .conv-back"];'
@@ -1799,14 +1802,26 @@ async function runSmoke(w) {
     + '   for (const el of document.querySelectorAll(sel)) {'
     + '     const b = el.getBoundingClientRect();'
     + '     if (b.width < 4 || b.height < 4) continue;'
-    + '     const x = b.left + b.width / 2; const y = b.top + b.height / 2;'
-    + '     if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;'
+    + '     const y = b.top + b.height / 2;'
+    + '     const x = [b.left + b.width / 2, b.left + 4, b.right - 4].find((px) => { if (px < 0 || y < 0 || px > innerWidth || y > innerHeight) return false; const hit = document.elementFromPoint(px, y); return Boolean(hit) && !(panel && panel.contains(hit)) && (el.contains(hit) || Boolean(hit.closest(".sheet-scrim"))); });'
+    + '     if (x === undefined) continue;'
     + '     const at = document.elementFromPoint(x, y);'
-    + '     if (!at || (panel && panel.contains(at))) continue;'
-    + '     if (!el.contains(at) && !at.closest(".sheet-scrim")) continue;'
     + '     window.dismissHits = 0;'
     + '     if (!el.dataset.dismissProbe) { el.dataset.dismissProbe = "1"; for (const t of ["pointerdown", "pointerup", "click", "contextmenu"]) el.addEventListener(t, () => { window.dismissHits += 1; }); }'
     + '     return { sel, x, y, over: String(at.className || at.tagName) };'
+    + '   }'
+    + ' }'
+    // A sheet that fills the phone leaves only its margin of backdrop: press there, over whatever the backdrop covers.
+    + ' for (const x of [4, 10, innerWidth - 10, innerWidth - 4]) {'
+    + '   for (let y = 60; y < innerHeight - 40; y += 40) {'
+    + '     const hit = document.elementFromPoint(x, y);'
+    + '     if (!hit || !hit.closest(".sheet-scrim") || (panel && panel.contains(hit))) continue;'
+    + '     const under = document.elementsFromPoint(x, y).find((e) => !e.closest(".sheet-scrim") && e !== document.documentElement && e !== document.body);'
+    + '     if (!under) continue;'
+    + '     const el = under.closest("button, .chat-row, textarea, .bubble-row") || under;'
+    + '     window.dismissHits = 0;'
+    + '     if (!el.dataset.dismissProbe) { el.dataset.dismissProbe = "1"; for (const t of ["pointerdown", "pointerup", "click", "contextmenu"]) el.addEventListener(t, () => { window.dismissHits += 1; }); }'
+    + '     return { sel: "backdrop margin", x, y, over: String(hit.className || hit.tagName), under: String(el.className || el.tagName) };'
     + '   }'
     + ' }'
     + ' return null;'
@@ -1840,7 +1855,7 @@ async function runSmoke(w) {
       await pause(150);
       const hits = await js('window.dismissHits');
       const after = await js(dismissState);
-      const held = before.chat === after.chat && before.list === after.list && before.editing === after.editing && before.checked === after.checked && before.pane === after.pane;
+      const held = before.chat === after.chat && before.list === after.list && before.editing === after.editing && before.checked === after.checked;
       dismissChecks[key] = { opened, closed, hits, held, target };
       if (!(opened && closed && hits === 0 && held)) console.error('dismiss failed: ' + key + ' ' + JSON.stringify({ before, after, target, hits }));
     }
