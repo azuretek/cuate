@@ -47,8 +47,7 @@ class AppConversation extends KitElement {
     this.reactFor = null;
     this.flashId = null;
     this.pressTimer = null;
-    // A long press that opened the menu swallows the click its release makes, so it does not also press the bubble.
-    this.swallowClick = { handleEvent: (e) => { if (this.held) { this.held = false; e.preventDefault(); e.stopPropagation(); } }, capture: true };
+    this.swallowClick = { handleEvent: (e) => this.swallow(e), capture: true };
     this.onDocKey = (e) => { if (e.key === 'Escape' && this.pop) this.closePop(); };
     this.onDocDown = (e) => { if (this.pop && !e.target.closest?.('.message-pop, .message-action')) this.closePop(); };
   }
@@ -139,9 +138,19 @@ class AppConversation extends KitElement {
     if (this.pressAt && Math.hypot(e.clientX - this.pressAt.x, e.clientY - this.pressAt.y) > PRESS_SLOP) this.pressEnd();
   }
 
+  // Releasing a long press may click what it was held on (a mouse always does, a finger usually does not); that one
+  // click is swallowed, and only that one, so the next press, in the menu or anywhere, is a press.
   pressEnd() {
     clearTimeout(this.pressTimer);
     this.pressAt = null;
+    if (this.held) setTimeout(() => { this.held = false; }, 0);
+  }
+
+  swallow(e) {
+    if (!this.held || e.target?.closest?.('.message-pop')) return;
+    this.held = false;
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   // Choosing the reaction already yours takes it off; any other replaces it, one reaction per person. The work shows on

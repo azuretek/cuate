@@ -104,6 +104,29 @@ test('a long press with a finger or a long click with the mouse opens the menu, 
   } finally { mock.timers.reset(); }
 });
 
+test('a long press swallows only the click its own release makes, never a later press in the menu', () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const h = host();
+    h.openMenu = conversation.openMenu;
+    const m = msg({});
+    const outside = { closest: () => null };
+    const inMenu = { closest: (sel) => (sel === '.message-pop' ? {} : null) };
+    const click = (target) => { const e = { target, stopped: false, preventDefault() {}, stopPropagation() { e.stopped = true; } }; conversation.swallow.call(h, e); return e.stopped; };
+    conversation.pressStart.call(h, m, { pointerType: 'mouse', button: 0, clientX: 0, clientY: 0, target: outside });
+    mock.timers.tick(500);
+    conversation.pressEnd.call(h);
+    assert.equal(click(outside), true, 'the release\'s own click presses nothing');
+    assert.equal(click(outside), false, 'and the next click is a click');
+    conversation.pressStart.call(h, m, { pointerType: 'touch', button: 0, clientX: 0, clientY: 0, target: outside });
+    mock.timers.tick(500);
+    conversation.pressEnd.call(h);
+    mock.timers.tick(1);
+    assert.equal(click(inMenu), false, 'a finger\'s release made no click, so Reply in the menu still presses');
+    assert.equal(click(outside), false);
+  } finally { mock.timers.reset(); }
+});
+
 test('React opens the composer\'s own emoji panel, and the emoji picked there is the reaction', () => {
   const m = msg({});
   const h = host({ messages: [m], pop: { id: m.id, kind: 'menu', side: 'above' } });
