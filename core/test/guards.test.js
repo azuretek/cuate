@@ -357,3 +357,46 @@ test('every popover and modal panel dismisses through the kit', () => {
     assert.equal(/backdropReturns|onBackdrop(?:Down|Up)/.exec(src), null, f + ' keeps a backdrop rule beside the kit');
   }
 });
+
+// Placeholder and hint text is dimmed so it never reads as your own input (issue 185): one rule on every field's
+// placeholder, its colour the placeholder token, opaque so no engine's default opacity dims it twice. A component
+// that styled a placeholder of its own would be a second rule a theme could miss.
+test('placeholder text is dimmed from its token, on every field', () => {
+  const tokens = json('core/spec/tokens.json');
+  for (const scheme of ['light', 'dark']) assert.equal(typeof tokens.color[scheme].placeholder, 'string', scheme + ' has a placeholder token');
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [...css.matchAll(/([^{}]*::placeholder[^{}]*)\{([^}]*)\}/g)];
+  assert.equal(rules.length, 1, 'one placeholder rule for the whole app');
+  assert.equal(rules[0][1].trim(), '::placeholder', 'the rule reaches every field rather than some');
+  assert.match(rules[0][2], /(?:^|;)\s*color:\s*var\(--color-placeholder\)/, 'the colour is the placeholder token');
+  assert.match(rules[0][2], /(?:^|;)\s*opacity:\s*1\b/, 'the token is drawn as it is, not faded again');
+  for (const f of walk('core/app/components')) assert.equal(/::placeholder|placeholder-shown/.test(read(f)), false, f + ' styles a placeholder of its own');
+  const fields = walk('core/app/components').flatMap((f) => [...read(f).matchAll(/<(\w[\w-]*)\b[^>]*\s\.?placeholder=/g)].map((m) => f + ' <' + m[1]));
+  assert.ok(fields.length >= 5, 'the guard sees the fields that carry a placeholder: ' + fields.join(', '));
+  // A component handed a placeholder (the composer) draws it on a field of its own, which the rule reaches.
+  const forwards = (tag) => { try { return /<(?:input|textarea)\b[^>]*\s\.placeholder=\$\{this\.placeholder\}/.test(read('core/app/components/' + tag + '.js')); } catch { return false; } };
+  for (const f of fields) assert.ok(/<(?:input|textarea)$/.test(f) || forwards(f.split('<')[1]), f + ' carries a placeholder the rule does not reach');
+});
+
+// The conventions catalogue (issue 185) stays true: every rule names the issue it came from, every test it says
+// holds it exists under that name, and every smoke check it cites is one the smoke requires. A test renamed or a
+// smoke key dropped fails here, so the document cannot quietly claim enforcement that is gone.
+test('docs/conventions.md names a source for every rule, and every test and smoke check it cites exists', () => {
+  const doc = read('docs/conventions.md');
+  const rules = doc.split('\n').filter((l) => l.startsWith('- **'));
+  assert.ok(rules.length >= 60, 'the catalogue holds the rules: ' + rules.length);
+  for (const r of rules) assert.match(r, /#\d+/, 'a rule with no issue or pull request: ' + r.slice(0, 100));
+  const cited = [...doc.matchAll(/`([\w./-]+\.test\.js)` "([^"]+)"/g)];
+  assert.ok(cited.length >= 30, 'the catalogue links the tests that hold its rules: ' + cited.length);
+  for (const [, file, title] of cited) {
+    const body = read(file);
+    assert.ok(body.includes("test('" + title.replace(/'/g, "\\'") + "'") || body.includes('test("' + title + '"'), file + ' has no test named "' + title + '"');
+  }
+  const smoke = read('desktop/scripts/smoke.mjs');
+  const required = new Set([...smoke.matchAll(/report\.(\w+)/g)].map((m) => m[1]));
+  const keys = [...doc.matchAll(/`smoke:(\w+)`/g)].map((m) => m[1]);
+  assert.ok(keys.length >= 15, 'the catalogue names the smoke checks that hold its rules');
+  for (const k of keys) assert.ok(required.has(k), 'the smoke does not require report.' + k);
+  for (const f of ['docs/design.md', 'docs/contributing.md', 'CONVENTIONS.md', '.github/pull_request_template.md']) assert.ok(read(f).includes('conventions.md'), f + ' does not point at the conventions');
+  assert.match(read('.github/pull_request_template.md'), /[Cc]onventions/, 'the PR template asks which conventions a UI change follows or changes');
+});

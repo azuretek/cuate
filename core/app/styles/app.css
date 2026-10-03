@@ -23,6 +23,8 @@ button, input, textarea { font: inherit; color: inherit; }
   --inset-left: max(env(safe-area-inset-left, calc(var(--space-1) * 0)), var(--shell-inset-left, calc(var(--space-1) * 0)));
 }
 ::selection { background: var(--color-selection); color: var(--color-selection-fg); }
+/* Hint text in every field is dimmed from its token, so it never reads as your own input (issue 185). */
+::placeholder { color: var(--color-placeholder); opacity: 1; }
 code { font-family: var(--font-mono); font-size: var(--font-size-sm); }
 app-root { display: block; height: 100%; }
 .muted { color: var(--color-fg-muted); }

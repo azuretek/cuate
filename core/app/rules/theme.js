@@ -34,6 +34,9 @@ export function themeVars(theme, scheme = 'light') {
   if (own && typeof own === 'object') for (const group of THEME_GROUPS) put(group, own[group]);
   const colors = theme.color && theme.color[scheme];
   if (colors?.fg) put('color', { 'bg-raised-fg': colors.fg, 'selection-fg': colors.fg });
+  // A placeholder is dimmed as the theme's muted text is (issue 185): a theme names a muted foreground, not a
+  // placeholder, so its hints follow that one unless it names a placeholder of its own.
+  if (colors?.['fg-muted']) put('color', { placeholder: colors['fg-muted'] });
   put('color', colors);
   return [...out];
 }
