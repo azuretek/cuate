@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  accessSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync,
+  accessSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync,
   statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
@@ -370,8 +370,8 @@ export async function status({ config, installRoot = null, print = console.log, 
 }
 
 /** Restart the service and wait until a new run answers; returns that run's id. */
-export async function restart({ config, installRoot = null, print = console.log, home = os.homedir() }) {
-  const label = installRoot ? serviceLabel(installLayout(installRoot), home) : LABEL;
+export async function restart({ config, installRoot = null, label: given = null, print = console.log, home = os.homedir() }) {
+  const label = given || (installRoot ? serviceLabel(installLayout(installRoot), home) : LABEL);
   const P = servicePaths(home, label);
   if (!launchdState(label).loaded) throw new Error(label + ' is not loaded; run service install');
   const prev = lastEvent(tailText(P.log), 'server.ready');
@@ -484,16 +484,33 @@ export async function remove({ config, installRoot = null, print = console.log, 
 }
 
 /**
+ * The label of our loaded LaunchAgent that runs this data folder, or null: the usual one, else one of a second install
+ * root (serviceLabel), found by its plist naming the folder. A data folder is run by one service at a time, so a config
+ * change reaches the service that reads it and no other.
+ */
+export function agentFor({ dataDir, home = os.homedir(), loaded = (label) => launchdState(label).loaded }) {
+  const dir = path.join(home, 'Library', 'LaunchAgents');
+  let names;
+  try { names = readdirSync(dir); } catch { return null; }
+  const ours = new RegExp('^' + LABEL.replace(/\./g, '\\.') + '(\\.[a-f0-9]{10})?\\.plist$');
+  const labels = names.filter((n) => ours.test(n)).map((n) => n.slice(0, -'.plist'.length)).sort((a, b) => a.length - b.length || a.localeCompare(b));
+  for (const label of labels) {
+    const text = readFileSync(path.join(dir, label + '.plist'), 'utf8');
+    if (text.includes('<string>' + xml(dataDir) + '</string>') && loaded(label)) return label;
+  }
+  return null;
+}
+
+/**
  * After a config change: restart a service that runs from this data folder and return the new run's start line.
  * Null when no service runs from it here, so the change waits for the next start.
  */
 export async function applyIfInstalled({ dataDir, config, print = console.log, home = os.homedir() }) {
   if (process.platform !== 'darwin') return null;
-  const P = servicePaths(home);
-  if (!existsSync(P.plist) || !readFileSync(P.plist, 'utf8').includes('<string>' + xml(dataDir) + '</string>')) return null;
-  if (!launchdState().loaded) return null;
-  const run = await restart({ config, print, home });
-  return lastEvent(tailText(P.log), 'server.start', run) || {};
+  const label = agentFor({ dataDir, home });
+  if (!label) return null;
+  const run = await restart({ config, label, print, home });
+  return lastEvent(tailText(servicePaths(home, label).log), 'server.start', run) || {};
 }
 
 /**
@@ -502,11 +519,11 @@ export async function applyIfInstalled({ dataDir, config, print = console.log, h
  */
 export async function reloadIfInstalled({ dataDir, home = os.homedir(), seconds = 10 }) {
   if (process.platform !== 'darwin') return null;
-  const P = servicePaths(home);
-  if (!existsSync(P.plist) || !readFileSync(P.plist, 'utf8').includes('<string>' + xml(dataDir) + '</string>')) return null;
-  if (!launchdState().loaded) return null;
+  const label = agentFor({ dataDir, home });
+  if (!label) return null;
+  const P = servicePaths(home, label);
   const prev = lastEvent(tailText(P.log), 'webhook.reloaded');
-  const r = sh('/bin/launchctl', ['kill', 'SIGHUP', target()], { timeout: 15000 });
+  const r = sh('/bin/launchctl', ['kill', 'SIGHUP', target(label)], { timeout: 15000 });
   if (r.code !== 0) throw new Error('launchctl kill SIGHUP failed: ' + (r.err || r.out));
   for (const t0 = Date.now(); Date.now() - t0 < seconds * 1000; await sleep(250)) {
     const seen = lastEvent(tailText(P.log), 'webhook.reloaded');
