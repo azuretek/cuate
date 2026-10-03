@@ -17,9 +17,12 @@ app-root { display: block; height: 100%; }
 .shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 .sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: var(--size-header); padding: 0 var(--space-4); flex: none; }
-.filter-button, .gear-button { flex: none; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
-.filter-button:hover, .gear-button:hover { background: var(--color-bg-sunken); }
-.filter-button[aria-expanded="true"] { background: var(--color-selection); color: var(--color-fg); }
+/* The header's three icons are one kind of control (issue 136): the filter, the sort and the gear share their size,
+   their hover and their open state, so the sort reads as one of the set rather than a pill of its own. */
+.filter-button, .sort-button, .gear-button { flex: none; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.filter-button:hover, .sort-button:hover, .gear-button:hover { background: var(--color-bg-sunken); }
+.filter-button[aria-expanded="true"], .sort-button[aria-expanded="true"] { background: var(--color-selection); color: var(--color-fg); }
+.filter-button:focus-visible, .sort-button:focus-visible, .gear-button:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
 .filter-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 4; }
 .filter-menu-row { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .text-button { background: none; border: 0; color: var(--color-accent); cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
@@ -238,31 +241,35 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
   .shell[data-pane] .sidebar,
   .shell[data-pane] .scrim { transition: none; }
 }
-/* The chat list draws its own tools: the sort control and the groups. The search field, the filter menu and the
-   settings gear draw in the page header, where the filters live. Every colour and length comes from the tokens. */
-.list-tools { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
-.list-tools-row { display: flex; align-items: center; gap: var(--space-2); }
-.sort-select, .row-group, .chat-search, .new-group-name, .group-rename { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
-.chat-search { flex: 1; }
+/* The row above the list holds the Edit text control at its left (issue 137); in edit mode the selection's actions
+   join it. The search field, the filter menu, the sort and the gear draw in the page header, where the filters live.
+   Every colour and length comes from the tokens. */
+.list-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
+.row-group, .group-rename, .group-name-input { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
+/* The search field and its mode are one box (issue 133): the mode is a small dropdown at the field's left edge, the
+   field takes the rest, and the box takes the accent while either has focus. */
+.search-box { flex: 1; display: flex; align-items: stretch; min-width: 0; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
+.search-box:focus-within { border-color: var(--color-accent); }
+.search-mode { flex: none; max-width: 40%; border: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-sunken); color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-xs); padding: 0 var(--space-1); cursor: pointer; }
+.chat-search { flex: 1; min-width: 0; border: 0; background: none; color: var(--color-fg); padding: var(--space-1) var(--space-2); }
+.chat-search:focus, .search-mode:focus { outline: none; }
+/* Each committed term is a chip: its own mode, its text and its own remove control, padded from the tokens and
+   wrapping onto as many lines as the terms need. */
+.search-terms { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-3); flex: none; }
+.search-term { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; min-width: 0; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2); background: var(--color-selection); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); font-size: var(--font-size-sm); }
+.term-mode { flex: none; border: 0; background: none; color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-xs); padding: 0; cursor: pointer; }
+.term-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: var(--font-weight-medium); }
 .chip { background: var(--color-bg-raised); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); }
 .active-filters { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .active-chip { display: inline-flex; align-items: center; gap: var(--space-1); background: var(--color-selection); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-2); font-size: var(--font-size-sm); }
 .chip-clear { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-sm); line-height: 1; padding: 0 var(--space-1); }
-/* Add group stays on one line at every width and text size (issue 122). The name field gives way first: its basis is
-   nothing, so the label takes the width it needs and the field takes the rest. Where the label alone would need more
-   than half the row (a large text size in the fixed-width sidebar), it shortens with an ellipsis, as the chat names in
-   the same column do, and its title still carries the whole label. */
-.add-group { display: flex; align-items: center; gap: var(--space-2); }
-.add-group .new-group-name { flex: 1 1 0; }
-.add-group-button { flex: 0 1 auto; max-width: 50%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-sections { display: flex; flex-direction: column; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
 .section-name { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
 .section-actions { display: flex; align-items: center; gap: var(--space-1); }
 .icon-button { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; padding: 0 var(--space-1); border-radius: var(--radius-sm); }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
-.row-move { display: inline-flex; flex: none; }
 .list-empty, .section-empty { margin: 0; padding: var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 
 /* Scrollbars: one set for the whole app, on the containers that scroll rather than one per component, so every
@@ -283,6 +290,7 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid {
    them out of the drag region so a click still acts. */
 .sidebar-head, .conv-head { -webkit-app-region: drag; }
 .chat-search, .filter-button, .gear-button, .conv-back, .window-controls, .window-control { -webkit-app-region: no-drag; }
+.search-box, .search-mode, .sort-button { -webkit-app-region: no-drag; }
 /* macOS pushes the header content below the traffic lights, keeping the surface to the top edge. */
 .app-window[data-platform="darwin"] .sidebar-head,
 .app-window[data-platform="darwin"] .conv-head { height: calc(var(--size-header) + var(--size-window-strip)); padding-block-start: var(--size-window-strip); }
@@ -323,39 +331,52 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
   body.surface--leaving .sheet, body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-fast) ease-out both; }
 }
 
-/* The chat list's sort control sits beside the filter in the page header, its edit button beside it. Both are a
-   designed surface rather than a bare glyph: a tinted pill with a subtle border, a shadow for depth, a hover state
-   that takes the accent and a pressed state that fills with it, so the pair reads as deliberate controls against the
-   header's raised surface in both appearances. The list's own tools row keeps only the group row; the sort choices
-   open under the icon. Every value is a token. */
-.sort-button, .edit-button { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: var(--space-6); background: var(--color-bg-sunken); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); box-shadow: var(--shadow-sm); transition: background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease); }
-.sort-button:hover, .edit-button:hover { background: var(--color-selection); border-color: var(--color-accent); color: var(--color-accent); }
-.sort-button:active, .edit-button:active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-fg); }
-.sort-button:focus-visible, .edit-button:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
-.sort-button[aria-expanded="true"], .edit-button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); box-shadow: var(--shadow-md); }
+/* The sort choices open under the sort icon, drawn as the filter menu is. */
 .sort-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 4; }
 .sort-choice { display: flex; align-items: center; gap: var(--space-2); background: none; border: 0; color: var(--color-fg); text-align: left; cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 .sort-choice:hover { background: var(--color-bg-sunken); }
 .sort-choice[aria-checked="true"] { color: var(--color-accent); font-weight: var(--font-weight-bold); }
 .sort-check { display: inline-block; width: var(--space-3); }
 
-/* The edit mode: a bar under the header with select-all, the count and the actions; each row carries a checkbox. */
-.edit-bar { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
-.edit-all { display: flex; align-items: center; gap: var(--space-2); color: var(--color-fg-muted); }
-.edit-count { color: var(--color-fg-muted); }
-.edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
-.selection-group, .selection-group-name { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
+/* Edit is a small text control, not an icon (issue 137): a rounded highlight on hover and, while edit mode is on, a
+   steady one, so it reads as pressed. In edit mode each row carries a checkbox and the row holds the actions. */
+.edit-toggle { flex: none; background: none; border: 0; color: var(--color-accent); cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease); }
+.edit-toggle:hover { background: var(--color-bg-sunken); }
+.edit-toggle[aria-pressed="true"] { background: var(--color-selection); color: var(--color-fg); }
+.edit-toggle:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
+.edit-all { display: inline-flex; align-items: center; }
+.edit-count { color: var(--color-fg-muted); font-size: var(--font-size-sm); white-space: nowrap; }
+.edit-actions { display: inline-flex; align-items: center; gap: var(--space-1); margin-left: auto; }
+.edit-actions .text-button { font-size: var(--font-size-sm); }
+.text-button.danger { color: var(--color-danger); }
+.text-button:disabled { opacity: 0.4; cursor: default; background: none; }
 .chat-check { flex: none; margin: 0; }
 .chat-row.checked { background: var(--color-selection); }
-.danger-button { background: var(--color-danger); color: var(--color-danger-fg); border: var(--size-border) solid var(--color-danger); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-3); cursor: pointer; }
-.danger-button:disabled, .chip:disabled { opacity: 0.4; cursor: default; }
+.chip:disabled { opacity: 0.4; cursor: default; }
 
-/* The confirm gate: a small dialog over a dim, naming what it removes and requiring its own press. */
-.confirm-scrim { position: fixed; inset: 0; z-index: 5; background: var(--color-scrim); }
-.confirm-modal { position: fixed; left: 0; right: 0; top: 50%; transform: translateY(-50%); z-index: 6; max-width: var(--size-onboarding); margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+/* The confirm gate and the group prompt sit on the app's sheet backdrop, above the sheet itself: a small card naming
+   what it acts on. A delete takes the slider below rather than a button, because it is destructive. */
+.confirm-scrim { z-index: 5; }
+.confirm-modal { position: relative; width: min(var(--size-onboarding), 100%); display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); animation: surface-sheet-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 .confirm-modal h2 { margin: 0; font-size: var(--font-size-lg); }
 .confirm-modal p { margin: 0; color: var(--color-fg-muted); }
+.confirm-modal .confirm-what { color: var(--color-fg); font-weight: var(--font-weight-medium); }
 .confirm-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+
+/* Slide to confirm: the thumb has to be carried to the end of the track, and the fill follows it. Let go short of the
+   end and both glide back; while dragging they follow the pointer exactly. */
+app-slide-confirm { display: block; }
+.slide-track { position: relative; height: var(--size-back); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-bg-sunken); overflow: hidden; user-select: none; touch-action: none; }
+.slide-fill { position: absolute; top: 0; bottom: 0; left: 0; width: calc(var(--size-back) + var(--slide-progress, 0) * (100% - var(--size-back))); background: var(--color-danger); opacity: 0.24; border-radius: var(--radius-pill); }
+.slide-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-left: var(--size-back); color: var(--color-fg-muted); font-size: var(--font-size-sm); pointer-events: none; }
+.slide-thumb { position: absolute; top: 0; left: calc(var(--slide-progress, 0) * (100% - var(--size-back))); width: var(--size-back); height: var(--size-back); display: flex; align-items: center; justify-content: center; background: var(--color-danger); color: var(--color-danger-fg); border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); font-size: var(--font-size-lg); cursor: grab; touch-action: none; }
+.slide-track.dragging .slide-thumb { cursor: grabbing; }
+.slide-thumb:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.slide-track:not(.dragging) .slide-thumb { transition: left var(--motion-normal) var(--motion-ease); }
+.slide-track:not(.dragging) .slide-fill { transition: width var(--motion-normal) var(--motion-ease); }
+@media (prefers-reduced-motion: reduce) {
+  .slide-track .slide-thumb, .slide-track .slide-fill, .confirm-modal { transition: none; animation: none; }
+}
 
 /* Pictures (issue 126). A preview is the picture at its own aspect ratio, sized to fit, and dressed: a soft shadow, a
    rounded edge and a hairline border that reads on both the light and the dark background. Pressing it opens the
