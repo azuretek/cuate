@@ -142,7 +142,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (!p.text && !p.file) return fail(req.id, -32602, 'send needs text or a file.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
             if (p.reply_to && behavior.bridge !== 'ready') return noBridge(req.id);
             const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
-            const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(p.reply_to ? { reply_to_guid: p.reply_to } : {}) });
+            // As Messages records it: reply_to_guid names the chat's previous message on every row, and only a reply
+            // carries thread_originator_guid, the message it was sent to (issue 195).
+            const prev = [...messages].reverse().find((x) => x.chat_id === p.chat_id && !x.is_reaction);
+            const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(prev ? { reply_to_guid: prev.guid } : {}), ...(p.reply_to ? { thread_originator_guid: p.reply_to, thread_originator_part: '0:0:0' } : {}) });
             sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null, replyTo: p.reply_to || null });
             if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: m.guid }), behavior.sendDelayMs).unref();
             else reply(req.id, { ok: true, id: m.id, guid: m.guid });

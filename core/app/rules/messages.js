@@ -55,6 +55,39 @@ export function threadIds(messages, id) {
   return ids;
 }
 
+// What the conversation draws for threads, as the phone draws them (issue 195): a Map from each reply's id to { root, ghost,
+// connector }, and nothing for any other message. A reply is only a message with replyTo, which the adapter sets from
+// the engine's thread originator alone. Above the run of replies that holds a thread's newest reply, a ghost of the
+// original carries the reply count (ghost is { root, count } on the first reply of that run, null elsewhere); a reply
+// from someone else carries a connector, and one on your own side needs none. The list is in time order.
+export function threadMarks(messages) {
+  const list = messages || [];
+  const byId = new Map(list.map((m) => [m.id, m]));
+  const rootOf = (id) => rootIn(byId, id);
+  const threads = new Map();
+  for (const m of list) {
+    if (!m.replyTo) continue;
+    const root = rootOf(m.id);
+    if (root === m.id) continue;
+    if (!threads.has(root)) threads.set(root, []);
+    threads.get(root).push(m.id);
+  }
+  const marks = new Map();
+  const at = new Map(list.map((m, i) => [m.id, i]));
+  for (const [root, replies] of threads) {
+    let i = at.get(replies[replies.length - 1]);
+    while (i > 0 && list[i - 1].replyTo && rootOf(list[i - 1].id) === root) i -= 1;
+    const first = list[i].id;
+    for (const id of replies) marks.set(id, { root, ghost: id === first ? { root, count: replies.length } : null, connector: !byId.get(id).fromMe });
+  }
+  return marks;
+}
+
+// The link under a thread's ghost original: how many replies it has.
+export function replyCountLabel(count) {
+  return count + (count === 1 ? ' Reply' : ' Replies');
+}
+
 // The reaction this device's owner has on a message, or null.
 export function myReaction(m) {
   return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;
