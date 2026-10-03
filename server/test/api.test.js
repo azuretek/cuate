@@ -619,6 +619,31 @@ test('a theme given as a URL lands on the server, is offered to every client, an
   }
 });
 
+// Issue 186: more than three imported themes are all held, read back by the settings API, and kept with their own
+// colours. Three CSS exports imported with no name (each would be "Imported theme") and two registry items that share
+// a registry name are five different themes, so none may replace another.
+test('every theme imported by URL is held and read back, however many there are and whatever they are named', async () => {
+  const css = (accent) => ({ type: 'text/css', body: ':root { --primary: ' + accent + '; --background: #fafafa; } .dark { --primary: ' + accent + '; --background: #101010; }' });
+  const item = (accent) => ({ body: JSON.stringify({ name: 'shared-theme', cssVars: { light: { primary: accent }, dark: { primary: accent } } }) });
+  const host = await themeHost({ '/a.css': css('#111111'), '/b.css': css('#222222'), '/c.css': css('#333333'), '/r/one.json': item('#a00000'), '/r/two.json': item('#00a000') });
+  const a = s.store.createToken('device', 'many themes device a').token;
+  const b = s.store.createToken('device', 'many themes device b').token;
+  try {
+    await s.put('/api/v1/settings', a, { values: { 'appearance.themes': null, 'appearance.theme': null } });
+    const urls = ['/a.css', '/b.css', '/c.css', '/r/one.json', '/r/two.json'].map((p) => host.base + p);
+    for (const url of urls) assert.equal((await s.post('/api/v1/themes', a, { url })).status, 200, url);
+    const held = (await (await s.get('/api/v1/settings', b)).json()).values['appearance.themes'];
+    assert.equal(held.length, 5, 'five imports are five held themes');
+    assert.equal(new Set(held.map((t) => t.id)).size, 5, 'each under its own id');
+    assert.deepEqual(held.map((t) => t.url), urls, 'in the order they were imported');
+    assert.deepEqual(held.map((t) => t.color.light.accent), ['#111111', '#222222', '#333333', '#a00000', '#00a000'], 'each with its own colours');
+    assert.equal((await s.post('/api/v1/themes', a, { url: urls[3] })).status, 200);
+    assert.equal((await (await s.get('/api/v1/settings', b)).json()).values['appearance.themes'].length, 5, 'the same URL again replaces its own entry');
+  } finally {
+    await host.close();
+  }
+});
+
 test('a bad theme URL, or a URL that is not a theme, is refused with the reason and saves nothing', async () => {
   const host = await themeHost({ '/page.html': { type: 'text/html', body: '<html><body>A blog post about colours</body></html>' }, '/empty.json': { body: JSON.stringify({ name: 'x', cssVars: { light: { 'chart-1': '#000' } } }) }, '/huge.css': { type: 'text/css', body: ':root { --primary: #000; }' + ' '.repeat(300 * 1024) } });
   const a = s.store.createToken('device', 'theme url refusals').token;
