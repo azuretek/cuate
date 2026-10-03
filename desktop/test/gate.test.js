@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { parse } from 'yaml';
-import { judge, isSupersession, check, findRun, splitList } from '../../scripts/release/gate.mjs';
+import { judge, isSupersession, check, findRun, splitList, ghJson } from '../../scripts/release/gate.mjs';
 
 const WORKFLOWS = new URL('../../.github/workflows/', import.meta.url);
 const readWorkflow = (file) => parse(readFileSync(new URL(file, WORKFLOWS), 'utf8'));
@@ -132,6 +132,13 @@ test('check waits past a partial job list and refuses when the window runs out',
   const result = check({ repo: 'o/r', sha: 'abc', refName: 'main', pipelines: ['ios'], windowMinutes: 1, graceSeconds: 1 }, gh.io);
   assert.equal(result.ok, false);
   assert.match(result.refusals[0].reason, /has not passed after/);
+});
+
+test('a GitHub answer larger than the 1 MiB default output buffer is read whole', () => {
+  // A page of 100 runs on main measured 1.37 MB and failed the gate with ENOBUFS; three times the default stands in for it.
+  const size = 3 * 1024 * 1024;
+  const answer = ghJson(process.execPath, ['-e', 'process.stdout.write(JSON.stringify({ pad: "x".repeat(' + size + ') }))']);
+  assert.equal(answer.pad.length, size);
 });
 
 test('splitList reads a comma separated pipeline list', () => {

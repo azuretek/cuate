@@ -115,8 +115,15 @@ export function isSupersession({ red = [], newerRuns = 0 } = {}) {
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-const ghApi = (endpoint, env = process.env) =>
-  JSON.parse(execFileSync('gh', ['api', endpoint], { encoding: 'utf8', env }));
+// One page of 100 workflow runs carries every run's whole head commit message, and on this repository that page is
+// already larger than execFileSync's 1 MiB default output buffer, which killed gh with ENOBUFS and failed the gate
+// for a commit whose platforms were fine. The buffer is a ceiling, not an allocation.
+export const GH_MAX_BUFFER = 64 * 1024 * 1024;
+
+export const ghJson = (bin, args, env = process.env) =>
+  JSON.parse(execFileSync(bin, args, { encoding: 'utf8', env, maxBuffer: GH_MAX_BUFFER }));
+
+const ghApi = (endpoint, env = process.env) => ghJson('gh', ['api', endpoint], env);
 
 export function findRun(runs, pipeline, refName) {
   const mine = (runs || [])
