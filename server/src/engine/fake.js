@@ -6,7 +6,7 @@ import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
 
-export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000 } = {}) {
+export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
   const imagePath = path.join(attachmentsRoot, 'fake', 'sunset.png');
   const png = gradientPng(480, 320);
@@ -19,7 +19,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // send: how a send answers. sendDelayMs: how long a send takes to answer, so a test can hold one in flight.
   // afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
   // bridge: 'ready', or 'down' to answer the bridge-only calls (a tapback, a reply) the way imsg does with no bridge.
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready' };
+  // features: the rpc_features the fake's status advertises, so a test can model an engine that sends an arbitrary
+  // emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', features };
   const tapbacks = [];
   const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
@@ -85,7 +87,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
         switch (req.method) {
           case 'initialize':
           case 'status':
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true } });
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, rpc_features: behavior.features });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -147,22 +149,26 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }
-          // The bridge's tapback: one of the six standard kinds, added or removed on a message by its guid. The
-          // target's own reactions change as they would in chat.db, and the reaction row streams like any other.
+          // The bridge's tapback: one of the six standard kinds, or an arbitrary emoji when the fake advertises
+          // tapback.emoji, added or removed on a message by its guid. The target's own reactions change as they would
+          // in chat.db, and the reaction row streams like any other.
           case 'tapback': {
             attempts += 1;
             if (behavior.bridge !== 'ready') return noBridge(req.id);
             if (behavior.send === 'hang') return undefined;
             if (behavior.send === 'uncertain') return fail(req.id, -32001, 'The tapback may have completed.', { retry_safe: false, disposition: 'may_have_completed', transport: 'bridge', operation: 'tapback', detail: '' });
             if (behavior.send === 'fail') return fail(req.id, -32603, 'Messages refused the tapback.', { retry_safe: true, disposition: 'not_started', transport: 'bridge', operation: 'tapback', detail: '' });
-            if (!KINDS.has(p.kind)) return fail(req.id, -32602, 'kind must be a standard tapback.');
+            const emoji = typeof p.emoji === 'string' ? p.emoji : '';
+            if (emoji && !behavior.features.includes('tapback.emoji')) return fail(req.id, -32602, 'unsupported tapback reaction ' + emoji);
+            if (!emoji && !KINDS.has(p.kind)) return fail(req.id, -32602, 'kind must be a standard tapback.');
             const target = messages.find((m) => m.guid === p.message_guid && m.chat_id === p.chat_id && !m.is_reaction);
             if (!target) return fail(req.id, -32602, 'unknown message_guid');
             const adding = p.remove !== true;
+            const shape = imsgReaction(emoji || p.kind);
             const others = (target.reactions || []).filter((r) => !r.is_from_me);
-            target.reactions = adding ? [...others, { ...imsgReaction(p.kind), is_from_me: true }] : others;
-            const m = add({ chat_id: p.chat_id, is_from_me: true, is_reaction: true, reaction_type: p.kind, reaction_emoji: imsgReaction(p.kind).emoji, is_reaction_add: adding, reacted_to_guid: target.guid });
-            tapbacks.push({ chatId: p.chat_id, targetId: target.guid, kind: p.kind, remove: !adding });
+            target.reactions = adding ? [...others, { ...shape, is_from_me: true }] : others;
+            const m = add({ chat_id: p.chat_id, is_from_me: true, is_reaction: true, reaction_type: shape.type, reaction_emoji: shape.emoji, is_reaction_add: adding, reacted_to_guid: target.guid });
+            tapbacks.push({ chatId: p.chat_id, targetId: target.guid, kind: emoji ? shape.type : p.kind, ...(emoji ? { emoji } : {}), remove: !adding });
             reply(req.id, { ok: true });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
