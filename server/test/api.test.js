@@ -143,7 +143,7 @@ test('history pages from newest to oldest', async () => {
   assert.deepEqual(times, [...times].sort());
   const older = await (await s.get(route(1) + '?limit=50&before=' + encodeURIComponent(first.messages[0].sentAt), s.tokens.device)).json();
   conforms(older, 'MessageList');
-  assert.equal(older.messages.length, 3);
+  assert.equal(older.messages.length, 5, 'the first chat holds eight messages, its thread of two included');
   assert.ok(older.messages.every((m) => m.sentAt < first.messages[0].sentAt));
   assert.equal(older.hasMore, false);
   assert.equal((await s.get(route('abc'), s.tokens.device)).status, 400);
