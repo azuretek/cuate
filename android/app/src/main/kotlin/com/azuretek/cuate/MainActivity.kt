@@ -3,13 +3,17 @@ package com.azuretek.cuate
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -42,6 +46,7 @@ class MainActivity : Activity() {
     }
 
     private lateinit var webView: WebView
+    private lateinit var root: FrameLayout
     private lateinit var cover: LinearLayout
     private lateinit var coverMessage: TextView
     private var pickCallback: ValueCallback<Array<Uri>>? = null
@@ -50,7 +55,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val product = Naming.product(assets).ifEmpty { "Cuate" }
-        val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName())
+        val bridge = HostBridge(this, SecureStore(this), HostBridge.commandNames(assets), product, versionName()) { dark, background ->
+            runOnUiThread { appearance(dark, background) }
+            true
+        }
         Diagnostics.remember(this)
 
         webView = WebView(this).apply {
@@ -74,10 +82,22 @@ class MainActivity : Activity() {
             addView(coverMessage)
         }
 
-        val root = FrameLayout(this)
+        root = FrameLayout(this)
         root.addView(webView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         root.addView(cover, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        // Android 15 draws every app edge to edge, so the status and navigation bars would sit over the page's header
+        // and composer. The page is kept between them, and the strips behind the bars take the page's own fill.
+        // Before Android 15 the window stops at the bars by itself.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            root.setOnApplyWindowInsetsListener { view, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                insets
+            }
+        }
         setContentView(root)
+        // Until the page names its scheme, the bars follow the system's.
+        appearance(systemDark(), "")
 
         webView.loadUrl(START_URL)
     }
@@ -100,6 +120,40 @@ class MainActivity : Activity() {
         }
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun systemDark(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+    /**
+     * Dark icons on a light page and light icons on a dark one, over the page's own fill, so the clock and the
+     * battery stay readable in either scheme. The page's choice wins over the system's, since it may differ.
+     */
+    private fun appearance(dark: Boolean, background: String) {
+        val fill = try {
+            Color.parseColor(background)
+        } catch (e: IllegalArgumentException) {
+            if (dark) Color.BLACK else Color.WHITE
+        }
+        root.setBackgroundColor(fill)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            // Before Android 15 the bars draw their own fill rather than the page's.
+            @Suppress("DEPRECATION")
+            window.statusBarColor = fill
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = fill
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(if (dark) 0 else light, light)
+        } else {
+            @Suppress("DEPRECATION")
+            val flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            @Suppress("DEPRECATION")
+            val current = window.decorView.systemUiVisibility
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (dark) current and flags.inv() else current or flags
+        }
     }
 
     private fun fail(message: String) {
