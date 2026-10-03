@@ -122,6 +122,21 @@ class AboutPageTest {
         throw AssertionError("The screen never showed the About page with its icon")
     }
 
+    // Two captures in a row that draw the same picture, for a view scrolled away from the icon settledCapture looks for.
+    private fun steadyCapture(): android.graphics.Bitmap {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        var previous: android.graphics.Bitmap? = null
+        do {
+            instrumentation.waitForIdleSync()
+            val capture = instrumentation.uiAutomation.takeScreenshot() ?: continue
+            val last = previous
+            if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
+            last?.recycle()
+            previous = capture
+        } while (System.nanoTime() < deadline)
+        throw AssertionError("The screen never settled")
+    }
+
     private fun keep(capture: android.graphics.Bitmap, name: String) {
         // AGP copies this directory before uninstalling the app and its data.
         val outputDir = java.io.File(requireNotNull(
@@ -161,14 +176,16 @@ class AboutPageTest {
             val label = evaluate(scenario, "document.querySelector('app-about [data-action=check-updates]').textContent.trim()")
             assertTrue("About's button is the notice's Install: $label", label == "\"Install\"")
             // The press that started the download holds its own success mark for a moment, so the capture is kept only
-            // when the button reads Install both before and after it was taken.
+            // when the button reads Install both before and after it was taken. The page is scrolled to the button,
+            // so the capture shows it and the line under it that names the verified download.
+            evaluate(scenario, "document.querySelector('app-about [data-action=check-updates]').scrollIntoView({ block: 'center' })")
             val idleInstall = "(function (b) { return Boolean(b) && !b.dataset.press && b.textContent.trim() === 'Install'; })(document.querySelector('app-about [data-action=check-updates]'))"
             val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
             var ready: android.graphics.Bitmap? = null
             while (ready == null) {
                 assertTrue("About never settled on Install", System.nanoTime() < until)
                 waitFor(scenario, idleInstall, "About's Install to settle")
-                val capture = settledCapture()
+                val capture = steadyCapture()
                 if (evaluate(scenario, idleInstall) == "true") ready = capture else capture.recycle()
             }
             keep(requireNotNull(ready), "update-ready-light.png")
