@@ -196,7 +196,7 @@ class AppConversation extends KitElement {
     const note = this.note && this.note.id === m.id ? this.note.text : '';
     return html`<div class=${row} data-id=${m.id} aria-busy=${busy ? 'true' : 'false'} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
-      ${quote ? html`<button type="button" class="reply-quote" aria-label=${quote.found ? 'Go to the message replied to' : 'Replied to an earlier message'} ?disabled=${!quote.found} @click=${press(() => this.goTo(quote.id))}>${quote.who ? html`<span class="reply-who">${quote.who}</span>` : nothing}<span class="reply-text">${quote.text}</span></button>` : nothing}
+      ${quote ? html`<button type="button" class="reply-link" aria-label=${quote.found ? 'Go to the message replied to' : 'Replied to an earlier message'} ?disabled=${!quote.found} @click=${press(() => this.goTo(quote.id))}><span aria-hidden="true">↩</span><span>${quote.who ? 'Reply to ' + quote.who : 'Reply to earlier message'}</span></button>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.text ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')}>${m.text}</div>` : nothing}

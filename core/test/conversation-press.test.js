@@ -10,6 +10,26 @@ globalThis.document = { createTreeWalker() { return {}; }, createComment() { ret
 await import('../app/components/app-conversation.js');
 const proto = defined['app-conversation'].prototype;
 
+// Inspect the actual Lit template values, including nested templates, without a browser.
+function words(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(words).join('');
+  if (value?.strings) return value.strings.map((s, i) => s + words(value.values[i])).join('');
+  return '';
+}
+
+test('a reply renders one compact relationship, never the original body', () => {
+  const parent = { id: 'parent', text: 'Unique original body', senderName: 'Avery', fromMe: false };
+  const host = { messages: [parent], chat: {}, sending: true };
+  const message = { id: 'reply', replyTo: 'parent', text: 'Answer', attachments: [], reactions: [], fromMe: true };
+  const markup = words(proto.bubble.call(host, { message }, message, false));
+  assert.ok(!markup.includes(parent.text));
+  assert.ok(markup.includes('Reply to Avery'));
+  assert.equal((markup.match(/class="reply-link"/g) || []).length, 1);
+  const missing = words(proto.bubble.call(host, { message: { ...message, replyTo: 'missing' } }, message, false));
+  assert.ok(missing.includes('Reply to earlier message'));
+});
+
 test('reply send returns the same work and preserves the parent id', async () => {
   const work = Promise.resolve(true);
   const detail = { text: 'reply', replyTo: 'parent' };
