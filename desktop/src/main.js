@@ -385,6 +385,9 @@ async function runSmoke(w) {
   // check, and its outcome is drawn where the scheduled check reports, the update banner; a run from source cannot
   // update itself, so it says that in the app.
   const trayItem = (id) => trayMenu.getMenuItemById(id);
+  // The About section is on screen with its heading at the top of the scrolling body, or as near it as the body can
+  // scroll, which is the end of the page.
+  const aboutRevealed = "(() => { const body = document.querySelector('app-settings .sheet-body'); const s = body && body.querySelector('[data-section=about]'); if (!s || !s.querySelector('.about-row')) return false; const off = s.getBoundingClientRect().top - body.getBoundingClientRect().top; const end = body.scrollTop + body.clientHeight >= body.scrollHeight - 2; return Math.abs(off) <= 2 || (end && off > 0 && off < body.clientHeight); })()";
   const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
   trayItem('settings').click();
   const settingsRaised = await visibleWithin(true);
@@ -392,8 +395,9 @@ async function runSmoke(w) {
   w.minimize();
   for (const t0 = Date.now(); !w.isMinimized() && Date.now() - t0 < 3000;) await pause(100);
   const minimised = w.isMinimized();
+  // About is the last section of Settings (issue 134): the tray's About opens Settings and brings that section up.
   trayItem('about').click();
-  await waitFor("Boolean(document.querySelector('app-about .sheet-back'))", 10000);
+  await waitFor(aboutRevealed, 10000);
   const aboutRaised = w.isVisible() && !w.isMinimized();
   w.close();
   const hidAgain = await visibleWithin(false);
@@ -1124,15 +1128,20 @@ async function runSmoke(w) {
   const narrowSettings = await sideways();
   report.sheetWidthSettings = narrowSettings.doc <= narrowSettings.inner && narrowSettings.body <= narrowSettings.inner;
 
-  // About: every value comes from the server's info route, and it shares the sheet's chrome.
-  await js("document.querySelector('app-settings [data-action=about]').click()");
-  await waitFor("Boolean(document.querySelector('app-about .sheet-back'))");
+  // About: the last section of Settings (issue 134), every value from the half that owns it, brought into view the
+  // way the tray's About brings it, and checked at the same narrow width.
+  await js("document.querySelector('app-settings').reveal = { id: 'about' }");
+  await waitFor(aboutRevealed);
   await pause(1000);
-  report.sheetHitAreaAbout = await sheetHit('app-about');
+  report.sheetHitAreaAbout = await sheetHit('app-settings');
+  report.aboutLast = await js("(() => { const s = [...document.querySelectorAll('app-settings .sheet-section')]; return s.length > 1 && s.at(-1).dataset.section === 'about' && !document.querySelector('app-settings [data-action=about]'); })()");
   const narrowAbout = await sideways();
   report.sheetWidthAbout = narrowAbout.doc <= narrowAbout.inner && narrowAbout.body <= narrowAbout.inner;
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(300);
+  // Back at full width the section is asked for again, so the captures show it where the tray's About puts it.
+  await js("document.querySelector('app-settings').reveal = { id: 'about' }");
+  await waitFor(aboutRevealed);
   nativeTheme.themeSource = 'light';
   await pause(200);
   await shot('06-about.png');
@@ -1141,12 +1150,14 @@ async function runSmoke(w) {
   await shot('06b-about-dark.png');
   nativeTheme.themeSource = 'light';
   await pause(200);
-  // The client's own build and the server's, each from its own half, plus the one action that copies the lot.
-  report.about = await js("(() => { const rows = [...document.querySelectorAll('app-about .setting-row')].map((r) => r.textContent); return rows.some((t) => t.includes('Client version')) && rows.some((t) => t.includes('Server version')) && rows.some((t) => t.includes('Electron')) && Boolean(document.querySelector('app-about .about-copy')); })()");
+  // The client's own build and the server's, in chela's order, each value copyable, the links, and the one action that
+  // copies the lot.
+  const aboutOrder = ['product', 'version', 'channel', 'build', 'commit', 'builtAt', 'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt', 'platform', 'arch', 'electron', 'chromium', 'node', 'installSource', 'packaged', 'updateChannel', 'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion'];
+  const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')) }))()");
+  report.about = report.aboutLast && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
+  if (!report.about) console.error('about: ' + JSON.stringify({ last: report.aboutLast, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
   if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
-  await js("document.querySelector('app-about .sheet-back').click()");
-  await waitFor("Boolean(document.querySelector('app-settings'))");
   await js("document.querySelector('app-settings .sheet-back').click()");
   await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
 

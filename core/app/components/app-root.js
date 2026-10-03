@@ -23,7 +23,6 @@ import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
 import './app-settings.js';
-import './app-about.js';
 import './app-image-viewer.js';
 import './app-slide-confirm.js';
 
@@ -41,8 +40,9 @@ class AppRoot extends KitElement {
     conn: { state: true }, problem: { state: true }, busy: { state: true }, hasMore: { state: true },
     loadingOlder: { state: true }, sending: { state: true },
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
-    // showing. view says which page the main pane draws (the conversation, settings or about).
-    view: { state: true }, listOpen: { state: true },
+    // showing. view says which page the main pane draws (the conversation or settings). settingsSection asks the
+    // settings page to bring one of its sections into view (About, from the tray).
+    view: { state: true }, listOpen: { state: true }, settingsSection: { state: true },
     // The sheet's leaving state has to be reactive: the departure is driven from body.surface--leaving, which updated()
     // writes after a render, so a plain field would never repaint and the leave would never begin.
     sheetLeaving: { state: true }, pendingSheet: { state: true },
@@ -130,6 +130,7 @@ class AppRoot extends KitElement {
     // The shell's tray asks for a screen over app.open; one asked for before the app is ready is answered once it is.
     this.offOpen = null;
     this.heldScreen = null;
+    this.settingsSection = null;
   }
 
   connectedCallback() {
@@ -490,13 +491,22 @@ class AppRoot extends KitElement {
     this.settingsProblem = '';
   }
 
+  // About is the last section of Settings (issue 134), so asking for About opens Settings and brings that section into
+  // view, the sheet already up included.
   openAbout() {
-    this.openSheet('about');
+    this.openSettings();
+    this.settingsSection = { id: 'about' };
   }
 
-  // Settings and About are ONE sheet surface, so the two pages can never be on screen together: asking for About
-  // while Settings is up runs Settings' page down and only then brings About's up. The motion and the dim are
-  // Chela's own conventions, so a reader who uses both apps sees one design rather than two; this only sequences.
+  // A link the page asked to open (About's source, licence and issue links) goes to the shell, which opens the
+  // platform's browser rather than navigating the app.
+  openExternal(url) {
+    this.bridge('open.external', { url }).catch(() => {});
+  }
+
+  // The sheet runs one page at a time: asking for another while one is up runs the first down and only then brings
+  // the next up. The motion and the dim are Chela's own conventions, so a reader who uses both apps sees one design
+  // rather than two; this only sequences.
   openSheet(next) {
     if (!this.sheetShowing) this.view = next;
     else if (this.view !== next) { this.pendingSheet = next; this.leaveSheet(); }
@@ -554,10 +564,11 @@ class AppRoot extends KitElement {
     const next = this.pendingSheet;
     this.pendingSheet = null;
     this.view = next || 'messages';
+    if (this.view !== 'settings') this.settingsSection = null;
   };
 
   get sheetShowing() {
-    return this.view === 'settings' || this.view === 'about';
+    return this.view === 'settings';
   }
 
   // The drawer's scrim closes it, the same thing the conversation's back control does: show the pane behind it.
@@ -978,11 +989,10 @@ class AppRoot extends KitElement {
     return this.listOpen || !this.openChatId ? 'list' : 'conversation';
   }
 
-  // The settings page and the about page are sheets, so they are drawn by sheetBody and never in the main pane.
+  // The settings page is a sheet, so it is drawn by sheetBody and never in the main pane. About is its last section.
   sheetBody() {
-    if (this.view === 'about') return html`<app-about .info=${this.info} .host=${this.host} @back=${() => this.openSheet('settings')}></app-about>`;
-    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme}
-      @setting=${(e) => this.setSetting(e.detail)} @settings=${(e) => this.setSettings(e.detail)} @theme-import=${(e) => this.importThemeUrl(e.detail)} @signout=${() => this.signOut('')} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
+    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host} .reveal=${this.settingsSection}
+      @setting=${(e) => this.setSetting(e.detail)} @settings=${(e) => this.setSettings(e.detail)} @theme-import=${(e) => this.importThemeUrl(e.detail)} @signout=${() => this.signOut('')} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.closeView()}></app-settings>`;
   }
 
   mainView(chat) {
@@ -1063,7 +1073,7 @@ class AppRoot extends KitElement {
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
       <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${() => this.updateAction(banner.action.command)}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
-      ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
+      ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}

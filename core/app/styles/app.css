@@ -169,10 +169,10 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .button.primary { background: var(--color-accent); color: var(--color-accent-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
-/* Settings and About draw in the app's one sheet surface, on the same chrome: a top strip that is itself the back
-   control, the page's title and its one-line description, then its sections. The chrome is drawn by app-sheet, which
-   both pages use, so the two cannot drift into two different ways back. */
-app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+/* Settings draws in the app's one sheet surface: a top strip that is itself the back control, the page's title and its
+   one-line description, then its sections, the last of which is About (issue 134). The chrome is drawn by app-sheet. */
+app-settings { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+app-about { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
 .sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
@@ -194,6 +194,17 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .setting-value { overflow-wrap: anywhere; text-align: right; }
 .setting-control { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); max-width: 100%; min-width: 0; }
 .setting-control:focus { outline: none; border-color: var(--color-accent); }
+/* About's values: each one is a button that copies it, drawn as the value itself (mono, as chela draws its facts), with
+   the word Copied beside the one last copied. */
+.about-value { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-2); margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1); border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg); font-family: var(--font-mono); font-size: var(--font-size-sm); text-align: right; cursor: copy; user-select: text; -webkit-user-select: text; }
+.about-value:hover { background: var(--color-bg-sunken); }
+.about-value:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.about-value-text { overflow-wrap: anywhere; }
+.about-copied { flex: none; font-family: var(--font-family); font-size: var(--font-size-xs); color: var(--color-accent); }
+.about-link-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); min-width: 0; }
+.about-link { text-decoration: none; font-size: var(--font-size-sm); }
+.about-link:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.about-copy { align-self: flex-start; }
 .about-compare { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .about-compare.mismatch { color: var(--color-danger); }
 /* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */

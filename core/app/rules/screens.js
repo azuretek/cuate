@@ -3,7 +3,7 @@
 // is tested with no Electron and no DOM.
 //
 //   settings   the settings sheet
-//   about      the about page, on the same sheet
+//   about      the settings sheet with its last section, About, brought into view (issue 134)
 //   updates    the main surface with no sheet over it, which is where the update banner reports a check's outcome
 //
 // The sheets exist only once the app is connected. Before then (the boot splash, or the first read), a request is held
@@ -12,7 +12,7 @@
 
 export const OPEN_SCREENS = ['settings', 'about', 'updates'];
 
-// What the page does with a requested screen in its current phase: a view to show ('settings', 'about' or 'main'),
+// What the page does with a requested screen in its current phase: what to show ('settings', 'about' or 'main'),
 // 'hold' to answer it once the app is ready, or null to do nothing.
 export function screenFor(screen, { phase }) {
   if (!OPEN_SCREENS.includes(screen)) return null;
