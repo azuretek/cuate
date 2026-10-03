@@ -19,6 +19,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   let restartMs = 1000;
   let timer = null;
   let dropExtras = false;
+  let canReadStatus = false;
   const listeners = new Set();
   const stateListeners = new Set();
   const emit = (name, data) => { for (const cb of listeners) cb(name, data); };
@@ -88,6 +89,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     } catch (e) {
       log.emit('engine.error', { method: 'status', code: numCode(e), error: e.message });
     }
+    canReadStatus = Array.isArray(st?.methods) && st.methods.includes('message.send_status');
     setState({ version: st && st.version != null ? String(st.version) : null, ready: Boolean(st && st.database && st.database.ready) });
     log.emit('engine.start', { kind, version: state.version, ready: state.ready });
     try {
@@ -109,7 +111,24 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     let list = (r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction).map((m) => mapMessage(m, { attachmentId }));
     if (before) list = list.filter((m) => m.sentAt < before);
     list.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
-    return { messages: list.slice(0, limit).reverse(), hasMore: list.length > limit };
+    const page = list.slice(0, limit).reverse();
+    // One bounded, read-only snapshot for the latest outgoing message on this page. Never turn
+    // inbound is_read into a remote receipt, or poll the entire history on every page load.
+    const outgoing = [...page].reverse().find((m) => m.fromMe && !m.id.startsWith('row:'));
+    if (canReadStatus && outgoing) {
+      try {
+        const status = await request('message.send_status', { guid: outgoing.id }, Math.min(timeoutMs, 2000));
+        const value = status?.status_fields?.date_read;
+        const time = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) ? Date.parse(value) : NaN;
+        if (status?.ok === true && status.guid === outgoing.id && Number.isFinite(time) && time >= Date.parse(outgoing.sentAt)) {
+          outgoing.readAt = new Date(time).toISOString();
+        }
+      } catch (e) {
+        if (e.code === -32601) canReadStatus = false;
+        log.emit('engine.error', { method: 'message.send_status', code: numCode(e), error: e.message });
+      }
+    }
+    return { messages: page, hasMore: list.length > limit };
   }
 
   // The engine's own resumable sweep: one cursor over message ROWID order, across every chat, in pages the

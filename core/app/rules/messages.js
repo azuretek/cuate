@@ -64,6 +64,7 @@ export function deliveryLabel(m) {
   if (m.state === 'sending') return 'Sending\u2026';
   if (m.state === 'uncertain') return 'May not have sent';
   if (m.state === 'failed') return 'Not sent';
+  if (typeof m.readAt === 'string' && Number.isFinite(Date.parse(m.readAt))) return 'Read ' + m.readAt;
   return 'Sent';
 }
 
