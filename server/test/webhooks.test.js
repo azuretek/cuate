@@ -2,14 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createDecipheriv, createHmac, timingSafeEqual } from 'node:crypto';
-import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { spawn, execFile, execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createLogger } from '../../core/kit/log.js';
+import { validate } from '../../core/kit/rules/schema.js';
 import { apiSpec, logSpec } from '../src/paths.js';
-import { createWebhooks, DISABLE_AFTER_GIVEUPS, DISABLE_AFTER_MS, isLoopback } from '../src/webhooks.js';
+import { createWebhooks, DISABLE_AFTER_GIVEUPS, DISABLE_AFTER_MS, eventNames, isLoopback, sampleData, TEST_EVENT } from '../src/webhooks.js';
 import { loadConfig, normalizeConfig, saveConfig } from '../src/config.js';
 import { runDoctor } from '../src/doctor.js';
 import { boot, waitFor } from './helpers.js';
@@ -372,4 +373,107 @@ test('a running server reads a hooks change on SIGHUP, without a restart', { ski
   assert.equal(reloaded.pid, pid, 'the same run took the change');
   assert.equal(child.exitCode, null, 'the server is still running');
   await sleep(0);
+});
+
+test('a test delivery goes to the one hook it names, never through a publish, and is signed and encrypted like a live one', async (t) => {
+  const r = await receiver();
+  t.after(() => r.close());
+  const lines = [];
+  const named = endpoint(r.url + '/named', { id: 'named', events: ['message.new'] });
+  const other = endpoint(r.url + '/other', { id: 'other', events: ['*'] });
+  const hooks = createWebhooks({ endpoints: [named, other], log: strictLog(lines), retryDelaysMs: [], sleep });
+  hooks.enqueue(TEST_EVENT, { hook: 'other' });
+  await hooks.drain();
+  assert.equal(r.requests.length, 0, 'a publish never sends the test event, not even to *');
+  const out = await hooks.test('named');
+  assert.deepEqual(out, { ok: true, attempts: 1, status: 204, error: null });
+  assert.equal(r.requests.length, 1);
+  const rec = r.requests[0];
+  assert.ok(verify(rec.headers['x-webhook-signature'], rec.body, SECRET));
+  assert.equal(rec.headers['x-webhook-event'], TEST_EVENT);
+  const payload = JSON.parse(rec.body);
+  assert.deepEqual(Object.keys(payload).sort(), ['event', 'id', 'jwe', 'sentAt']);
+  assert.deepEqual(decrypt(payload.jwe, KEY), { hook: 'named', test: true });
+  assert.ok(lines.some((l) => l.event === 'webhook.delivered' && l.endpoint === 'named' && l.trigger === TEST_EVENT));
+  await assert.rejects(hooks.test('nope'), /no hook nope/);
+  hooks.endpoints[0].active = false;
+  await assert.rejects(hooks.test('named'), /switched off/);
+});
+
+test('every event has a placeholder shape that validates against its declared model', () => {
+  for (const name of eventNames()) {
+    const data = sampleData(name);
+    assert.deepEqual(validate(data, apiSpec.events[name], apiSpec.models), [], name);
+  }
+  assert.throws(() => sampleData('message.nwe'), /not an event/);
+});
+
+// The receiver docs/server.md shows, taken from the page itself, so the test proves the code a reader copies.
+async function docsReceiver(dir) {
+  const md = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../docs/server.md'), 'utf8');
+  const block = /`{3}js\n(import \{ createDecipheriv[\s\S]*?export function open[\s\S]*?)`{3}/.exec(md);
+  assert.ok(block, 'docs/server.md shows a receiver');
+  const file = path.join(dir, 'receiver.mjs');
+  writeFileSync(file, block[1]);
+  return (await import(pathToFileURL(file).href)).open;
+}
+
+const runAsync = (dir, ...args) => new Promise((resolve) => {
+  execFile(process.execPath, [cli, ...args, '--data', dir], { encoding: 'utf8' }, (err, stdout, stderr) => resolve({ code: err ? err.code : 0, stdout, stderr }));
+});
+
+test('hooks test sends one delivery a receiver built from the documented code verifies and decrypts, and a refusal exits non-zero', async (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'srv-hooktest-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const open = await docsReceiver(dir);
+  let creds = null;
+  const opened = [];
+  const r = await receiver((rec, res) => {
+    try {
+      opened.push({ ...open(rec.headers, rec.body, creds), shape: JSON.parse(rec.body).shape });
+      res.writeHead(204);
+    } catch {
+      res.writeHead(401);
+    }
+    res.end();
+  });
+  t.after(() => r.close());
+  run(dir, 'init', '--engine', 'fake', '--port', '0');
+  const added = run(dir, 'hooks', 'add', 'tool', r.url);
+  const secret = /^secret (\S+)$/m.exec(added)[1];
+  const [, kid, key] = /^key {4}(\S+) (\S+)$/m.exec(added);
+  creds = { secret, keys: { [kid]: key } };
+
+  const ok = await runAsync(dir, 'hooks', 'test', 'tool');
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.match(ok.stdout, /^hook tool accepted the test delivery: status 204 after 1 attempt$/m);
+  assert.equal(r.requests.length, 1, 'one delivery');
+  assert.equal(opened.length, 1, 'the documented receiver verified the signature and decrypted the payload');
+  assert.equal(opened[0].event, TEST_EVENT);
+  assert.deepEqual(opened[0].data, { hook: 'tool', test: true });
+
+  const shaped = await runAsync(dir, 'hooks', 'test', 'tool', '--event', 'message.new');
+  assert.equal(shaped.code, 0, shaped.stderr);
+  assert.equal(opened[1].event, TEST_EVENT, 'a shaped test is still a test event');
+  assert.equal(opened[1].shape, 'message.new');
+  assert.deepEqual(validate(opened[1].data, apiSpec.events['message.new'], apiSpec.models), []);
+
+  creds = { secret: 'not-the-secret', keys: { [kid]: key } };
+  const refused = await runAsync(dir, 'hooks', 'test', 'tool');
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /^hook tool did not accept the test delivery: status 401 after 1 attempt$/m);
+  assert.equal(opened.length, 2, 'the wrong secret does not verify');
+
+  const unknown = await runAsync(dir, 'hooks', 'test', 'tool', '--event', 'message.nwe');
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.stderr, /--event takes one of message\.new/);
+  const missing = await runAsync(dir, 'hooks', 'test', 'nope');
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /no hook nope/);
+  run(dir, 'hooks', 'disable', 'tool');
+  const off = await runAsync(dir, 'hooks', 'test', 'tool');
+  assert.equal(off.code, 1);
+  assert.match(off.stderr, /hook tool is switched off \(by hand\): run hooks enable tool first/);
+  assert.equal(r.requests.length, 3, 'nothing is sent for an unknown event, a missing hook or a switched-off one');
+  for (const out of [ok, shaped, refused]) assert.ok(!(out.stdout + out.stderr).includes(secret) && !(out.stdout + out.stderr).includes(key), 'hooks test never prints a secret or key');
 });

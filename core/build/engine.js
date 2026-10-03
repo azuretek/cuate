@@ -98,6 +98,7 @@ var engine = (() => {
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
     emojiInCategory: () => emojiInCategory,
+    emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
     failedBanner: () => failedBanner,
     filterChats: () => filterChats,
@@ -143,6 +144,7 @@ var engine = (() => {
     panBy: () => panBy,
     parseTraceparent: () => parseTraceparent,
     pick: () => pick,
+    pickerSide: () => pickerSide,
     pinch: () => pinch,
     placeChat: () => placeChat,
     policy: () => policy,
@@ -1248,6 +1250,18 @@ var engine = (() => {
       seen.set(char, i);
     });
     return [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || seen.get(b) - seen.get(a)).slice(0, limit);
+  }
+  function pickerSide(panel, anchor) {
+    const middle2 = (r) => (Number(r?.top) + Number(r?.bottom)) / 2;
+    const p = middle2(panel);
+    const a = middle2(anchor);
+    if (!Number.isFinite(p) || !Number.isFinite(a)) return "above";
+    return p > a ? "below" : "above";
+  }
+  function emojiPickerSections({ side = "above", recents = false } = {}) {
+    const body = ["grid", "search", "tabs"];
+    if (!recents) return body;
+    return side === "below" ? ["recents", ...body] : [...body, "recents"];
   }
   function isEmoji(char) {
     return EMOJI.some((e) => e.char === char);

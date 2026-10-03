@@ -306,9 +306,10 @@ async function runSmoke(w) {
   report.tray = Object.values(trayChecks).every(Boolean);
   console.log('tray: ' + JSON.stringify({ checks: trayChecks, minimised }));
 
-  // The emoji panel: the grid draws first, the search field and the categories sit below it, and the panel keeps one
-  // height, so typing a query narrows the grid without moving the composer or the grid's top edge. The order the eye
-  // reads is the order the keyboard walks: the grid, then the field, then the tabs.
+  // The emoji panel: the grid draws first, the search field and the categories sit below it, the recently used row
+  // (once there is one) sits last, nearest the emoji button, and the panel keeps one height, so typing a query
+  // narrows the grid without moving the composer or the grid's top edge. The order the eye reads is the order the
+  // keyboard walks: the grid, then the field, then the tabs, then the recents.
   await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
   await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-grid'))");
   await pause(250);
@@ -316,8 +317,25 @@ async function runSmoke(w) {
   await js("(() => { const f = document.querySelector('app-emoji-picker .emoji-search'); f.value = 'heart'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
   await pause(250);
   const emojiAfter = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid ? grid.getBoundingClientRect().top : null, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length }; })()");
+  // With recents present (issue 123), the recently used row is the edge of the panel facing the emoji button: the
+  // panel opens upward from the composer, so the row is its last child and sits at its bottom, just above the composer.
+  await js("(() => { const f = document.querySelector('app-emoji-picker .emoji-search'); f.value = ''; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await pause(150);
+  await js("(() => { const cells = [...document.querySelectorAll('app-emoji-picker .emoji-grid .emoji-cell')].slice(0, 3); cells.forEach((c) => c.click()); cells[0].click(); return cells.length; })()");
+  await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-row'))", 5000);
+  await pause(250);
+  const emojiRecents = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const panel = picker.querySelector('.emoji-picker'); const row = picker.querySelector('.emoji-row'); const grid = picker.querySelector('.emoji-grid'); const button = document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').getBoundingClientRect(); const r = row.getBoundingClientRect(); const p = panel.getBoundingClientRect(); return { side: panel.dataset.side, last: panel.lastElementChild === row, cells: row.querySelectorAll('.emoji-cell').length, rowBottom: r.bottom, panelBottom: p.bottom, gridBottom: grid.getBoundingClientRect().bottom, rowTop: r.top, buttonTop: button.top, order: [...panel.children].map((n) => n.className) }; })()");
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03c-emoji-recents-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('03d-emoji-recents-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
   const emojiOrder = emojiBefore.order.join('|');
   const emojiPanelChecks = {
+    recentsNearButton: emojiRecents.side === 'above' && emojiRecents.last && emojiRecents.cells === 3 && emojiRecents.rowTop > emojiRecents.gridBottom && emojiRecents.panelBottom - emojiRecents.rowBottom < 40 && emojiRecents.rowBottom <= emojiRecents.buttonTop,
     order: emojiOrder.indexOf('emoji-grid') >= 0 && emojiOrder.indexOf('emoji-grid') < emojiOrder.indexOf('emoji-search') && emojiOrder.indexOf('emoji-search') < emojiOrder.indexOf('emoji-tabs'),
     active: emojiBefore.active === 1,
     tabs: emojiBefore.tabs > 4 && emojiAfter.tabs === emojiBefore.tabs,
@@ -326,7 +344,7 @@ async function runSmoke(w) {
     composerHeld: Math.abs(emojiBefore.composerTop - emojiAfter.composerTop) < 1,
   };
   report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
-  console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, order: emojiOrder }));
+  console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, recents: emojiRecents, order: emojiOrder }));
   await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
 
   // The attach menu (issue 72): the attach button sits beside the emoji button, opens a short menu upward from the
