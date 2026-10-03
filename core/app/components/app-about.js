@@ -1,5 +1,6 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press } from '../../kit/press.js';
 import { aboutModel, bugReportBlock } from '../../kit/rules/build.js';
 import { copyToClipboard } from '../clipboard.js';
 import { BUILD_SPEC } from '../rules/build-spec.js';
@@ -31,6 +32,7 @@ class AppAbout extends KitElement {
     const text = bugReportBlock(BUILD_SPEC, this.host || {}, this.info || {}, product);
     const ok = await copyToClipboard(text);
     this.copied = ok ? 'copied' : 'failed';
+    return ok;
   }
 
   body() {
@@ -47,7 +49,7 @@ class AppAbout extends KitElement {
         <div class="sheet-rows">${serverRows.map(row)}</div>
       </section>
       <p class="about-compare ${commit.state}">${commit.text}</p>
-      <button class="button primary about-copy" @click=${() => this.copy()}>${this.copied === 'copied' ? 'Copied' : 'Copy for a bug report'}</button>
+      <button class="button primary about-copy" @click=${press(() => this.copy())}>${this.copied === 'copied' ? 'Copied' : 'Copy for a bug report'}</button>
       ${this.copied === 'failed' ? html`<p class="problem">The clipboard is not available.</p>` : nothing}`;
   }
 

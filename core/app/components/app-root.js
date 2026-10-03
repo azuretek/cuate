@@ -1,6 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { createApiClient } from '../../kit/api.js';
+import { press, respond } from '../../kit/press.js';
 import {
   orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS,
   sortChats, filterChats, setAllChecked, allChecked, checkedCount,
@@ -36,8 +37,10 @@ const normalizeUrl = (u) => {
 class AppRoot extends KitElement {
   static properties = {
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
-    conn: { state: true }, problem: { state: true }, busy: { state: true }, hasMore: { state: true },
-    loadingOlder: { state: true }, sending: { state: true },
+    conn: { state: true }, problem: { state: true }, hasMore: { state: true }, sending: { state: true },
+    // The chat a press asked for while its page is on the way: the list marks it at once, and the pane keeps the
+    // conversation it is drawing until the new one is ready, then swaps in one step (issue 142).
+    selecting: { state: true },
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
     // showing. view says which page the main pane draws (the conversation, settings or about).
     view: { state: true }, listOpen: { state: true },
@@ -72,9 +75,8 @@ class AppRoot extends KitElement {
     this.messages = [];
     this.conn = 'connecting';
     this.problem = '';
-    this.busy = false;
     this.hasMore = false;
-    this.loadingOlder = false;
+    this.selecting = null;
     this.sending = false;
     this.view = 'messages';
     this.listOpen = true;
@@ -244,8 +246,8 @@ class AppRoot extends KitElement {
     if (s === 'open' && this.client) this.client.info().then((info) => { this.info = info; this.sending = Boolean(info.sending); this.noticeServerUpdate(info.serverUpdate); }, () => {});
   }
 
+  // The press that called this shows it working (core/kit/press.js); a probe the server refuses answers false.
   async onConnect({ url, token }) {
-    this.busy = true;
     this.problem = '';
     const base = normalizeUrl(url);
     const probe = createApiClient({ baseUrl: base, token });
@@ -253,14 +255,13 @@ class AppRoot extends KitElement {
       await probe.info();
       await probe.chats({ limit: 1 });
     } catch (e) {
-      this.busy = false;
       this.problem = this.describe(e);
-      return;
+      return false;
     }
     await this.bridge('storage.set', { key: 'server.url', value: base });
     await this.bridge('storage.set', { key: 'server.token', value: token });
-    this.busy = false;
     await this.start(base, token);
+    return this.phase === 'ready';
   }
 
   async signOut(reason) {
@@ -270,6 +271,7 @@ class AppRoot extends KitElement {
     this.chats = [];
     this.messages = [];
     this.openChatId = null;
+    this.selecting = null;
     this.settings = {};
     this.settingsRead = false;
     this.view = 'messages';
@@ -279,45 +281,48 @@ class AppRoot extends KitElement {
     this.problem = reason || '';
   }
 
-  // keep: refetch the conversation already open in place. What is on screen stays until the fresh page replaces it in
-  // one step, so a resync (every first connection that missed an event, and every reconnect) never blanks it.
-  async open(chatId, { show = false, keep = false } = {}) {
-    const refresh = keep && this.openChatId === chatId;
-    this.openChatId = chatId;
-    if (show) this.listOpen = false;
-    if (!refresh) {
-      this.messages = [];
-      this.hasMore = false;
-    }
+  // Nothing is ever emptied to be refilled (issue 142). The conversation already open is refetched in place, and what
+  // is on screen stays until the fresh page replaces it in one step, so a resync (every first connection that missed
+  // an event, and every reconnect) never blanks it. Another conversation is marked in the list at once, while the pane
+  // keeps drawing the one it has until the new page arrives, and then the header, the messages and the phone's pane
+  // change together.
+  async open(chatId, { show = false } = {}) {
+    const refresh = this.openChatId === chatId;
+    this.selecting = refresh ? null : chatId;
+    if (refresh && show) this.listOpen = false;
     const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
     // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
     if (wasUnread && this.client) this.client.markRead(chatId).catch(() => {});
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50 });
-      if (this.openChatId !== chatId) return;
+      if (refresh ? this.openChatId !== chatId : this.selecting !== chatId) return;
+      this.openChatId = chatId;
+      this.selecting = null;
       this.messages = mergeMessages([], messages);
       this.hasMore = hasMore;
       this.problem = '';
+      if (show) this.listOpen = false;
     } catch (e) {
+      if (this.selecting === chatId) this.selecting = null;
       this.problem = this.describe(e);
     }
   }
 
+  // The Load earlier press shows itself working and drops a second press (core/kit/press.js), so no flag is kept here.
   async loadOlder() {
-    if (!this.hasMore || this.loadingOlder || !this.messages.length) return;
+    if (!this.hasMore || !this.messages.length) return undefined;
     const chatId = this.openChatId;
-    this.loadingOlder = true;
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50, before: this.messages[0].sentAt });
       if (this.openChatId === chatId) {
         this.messages = mergeMessages(this.messages, messages);
         this.hasMore = hasMore;
       }
+      return true;
     } catch (e) {
       this.problem = this.describe(e);
-    } finally {
-      this.loadingOlder = false;
+      return false;
     }
   }
 
@@ -326,7 +331,7 @@ class AppRoot extends KitElement {
     try {
       const { chats } = await this.client.chats();
       this.chats = orderChats(chats);
-      if (this.openChatId) await this.open(this.openChatId, { keep: true });
+      if (this.openChatId) await this.open(this.openChatId);
     } catch (e) {
       this.problem = this.describe(e);
     }
@@ -424,10 +429,11 @@ class AppRoot extends KitElement {
   }
 
   // A staged file is uploaded first and then sent by the id the server gives it, with the text as its caption, so the
-  // send itself keeps one client key and the server's once only rule whatever it carries.
+  // send itself keeps one client key and the server's once only rule whatever it carries. The answer is the Send
+  // press's outcome: false when the send failed, which the bubble says in words.
   async send({ text = '', file = null } = {}) {
     const chatId = this.openChatId;
-    if (!chatId || !this.client) return;
+    if (!chatId || !this.client) return false;
     const clientKey = newKey();
     const localId = 'local:' + clientKey;
     this.pending.set(clientKey, { localId, chatId, text, messageId: null });
@@ -437,22 +443,24 @@ class AppRoot extends KitElement {
       const upload = file ? await this.client.upload({ name: file.name || 'file', mime: file.type || undefined, data: toBase64(new Uint8Array(await file.arrayBuffer())) }) : null;
       const r = await this.client.send(chatId, { text, file: upload ? upload.id : undefined, clientKey });
       const p = this.pending.get(clientKey);
-      if (!p) return;
+      if (!p) return true;
       if (r.status === 'uncertain') {
         this.pending.delete(clientKey);
         this.mark(localId, 'uncertain');
-        return;
+        return true;
       }
       p.messageId = r.messageId || null;
       if (p.messageId && this.messages.some((x) => x.id === p.messageId)) {
         this.pending.delete(clientKey);
         this.messages = this.messages.filter((x) => x.id !== localId);
-        return;
+        return true;
       }
       this.mark(localId, 'sent');
+      return true;
     } catch (e) {
       this.pending.delete(clientKey);
       this.mark(localId, 'failed', e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e));
+      return false;
     }
   }
 
@@ -614,27 +622,27 @@ class AppRoot extends KitElement {
 
   // A theme URL is handed to the server, which fetches it, converts it and adds it to the held list. The answer's list
   // is taken for that one key (the event stream brings it too), and the page says what was carried or why it was not.
+  // The Import press shows the call working (core/kit/press.js), and a refusal answers false.
   async importThemeUrl({ url }) {
     const page = this.querySelector('app-settings');
-    if (!this.client || !page) return;
-    page.urlBusy = true;
+    if (!this.client || !page) return false;
     page.urlNote = '';
     try {
       const out = await this.client.themeImport({ url });
       this.settings = settingsAfterWrite(this.settings, { 'appearance.themes': true }, out.values);
       page.urlNote = (out.theme && out.theme.name ? out.theme.name + ': ' : '') + out.summary;
       page.urlImported();
+      return true;
     } catch (e) {
       page.urlNote = this.describe(e);
-    } finally {
-      page.urlBusy = false;
+      return false;
     }
   }
 
   // Several keys are written in one patch, so they land together: a chat group and what it holds, or an imported theme
-  // and the choice of it.
+  // and the choice of it. The answer is the outcome of the press that asked: false when the server refused it.
   async setSettings(patch) {
-    if (!this.client || !patch) return;
+    if (!this.client || !patch) return false;
     const before = this.settings;
     this.settings = { ...this.settings, ...patch };
     this.settingsBusy = true;
@@ -644,9 +652,11 @@ class AppRoot extends KitElement {
       this.settings = settingsAfterWrite(this.settings, patch, values);
       this.applyTheme();
       this.applyUpdateSetting();
+      return true;
     } catch (e) {
       this.settings = settingsAfterRefusal(this.settings, before, patch);
       this.settingsProblem = this.describe(e);
+      return false;
     } finally {
       this.settingsBusy = false;
     }
@@ -691,7 +701,7 @@ class AppRoot extends KitElement {
     }
     if (f.text) chips.push({ key: 'text', label: 'Search: ' + f.text });
     if (!chips.length) return nothing;
-    return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${() => this.clearFilter(c.key)}>×</button></span>`)}</div>`;
+    return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${press(() => this.clearFilter(c.key))}>×</button></span>`)}</div>`;
   }
 
   // The dropdown the filter icon opens: everything filterChats supports, which is unread, direct, group chats and the
@@ -702,14 +712,14 @@ class AppRoot extends KitElement {
     const toggle = (key, value) => this.setFilters({ [key]: f[key] === value ? null : value });
     return html`<div class="filter-menu" role="group" aria-label="Filter conversations">
       <div class="filter-menu-row">
-        <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${() => this.setFilters({ unread: !f.unread })}>Unread</button>
-        <button type="button" class="chip" aria-pressed=${f.kind === 'direct' ? 'true' : 'false'} @click=${() => toggle('kind', 'direct')}>Direct</button>
-        <button type="button" class="chip" aria-pressed=${f.kind === 'group' ? 'true' : 'false'} @click=${() => toggle('kind', 'group')}>Group chats</button>
+        <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${press(() => this.setFilters({ unread: !f.unread }))}>Unread</button>
+        <button type="button" class="chip" aria-pressed=${f.kind === 'direct' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'direct'))}>Direct</button>
+        <button type="button" class="chip" aria-pressed=${f.kind === 'group' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'group'))}>Group chats</button>
       </div>
       <div class="filter-menu-row">
-        <button type="button" class="chip" aria-pressed=${!f.group ? 'true' : 'false'} @click=${() => this.setFilters({ group: null })}>All groups</button>
-        ${groups.map((g) => html`<button type="button" class="chip" aria-pressed=${f.group === g.id ? 'true' : 'false'} @click=${() => toggle('group', g.id)}>${g.name}</button>`)}
-        <button type="button" class="chip" aria-pressed=${f.group === UNGROUPED ? 'true' : 'false'} @click=${() => toggle('group', UNGROUPED)}>Ungrouped</button>
+        <button type="button" class="chip" aria-pressed=${!f.group ? 'true' : 'false'} @click=${press(() => this.setFilters({ group: null }))}>All groups</button>
+        ${groups.map((g) => html`<button type="button" class="chip" aria-pressed=${f.group === g.id ? 'true' : 'false'} @click=${press(() => toggle('group', g.id))}>${g.name}</button>`)}
+        <button type="button" class="chip" aria-pressed=${f.group === UNGROUPED ? 'true' : 'false'} @click=${press(() => toggle('group', UNGROUPED))}>Ungrouped</button>
       </div>
     </div>`;
   }
@@ -719,7 +729,7 @@ class AppRoot extends KitElement {
   sortMenu() {
     const current = this.settings['chats.sort'] || 'recent';
     return html`<div class="sort-menu" role="menu" aria-label="Sort conversations">
-      ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${() => this.chooseSort(o)}>
+      ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${press(() => this.chooseSort(o))}>
         <span class="sort-check" aria-hidden="true">${o === current ? '✓' : ''}</span>${SORT_LABELS[o]}
       </button>`)}
     </div>`;
@@ -727,7 +737,7 @@ class AppRoot extends KitElement {
 
   chooseSort(sort) {
     this.sortOpen = false;
-    this.setSetting({ key: 'chats.sort', value: sort });
+    return this.setSetting({ key: 'chats.sort', value: sort });
   }
 
   // --- Edit mode. The page owns the selection, so the header can select all and act on the count, and a delete is
@@ -776,19 +786,21 @@ class AppRoot extends KitElement {
   }
 
   addSelectionToGroup(groupId) {
-    if (!groupId || !this.checked.length) return;
-    this.setSettings({ 'chats.placement': addChatsToGroup(this.chatPlacement(), this.checked, groupId) });
+    if (!groupId || !this.checked.length) return undefined;
+    const work = this.setSettings({ 'chats.placement': addChatsToGroup(this.chatPlacement(), this.checked, groupId) });
     this.exitEdit();
+    return work;
   }
 
   newGroupFromSelection() {
     const input = this.querySelector('.selection-group-name');
     const name = String((input && input.value) || '').trim();
-    if (!name || !this.checked.length) return;
+    if (!name || !this.checked.length) return undefined;
     const { groups, placement } = groupFromSelection(this.chatGroups(), this.chatPlacement(), this.checked, { id: newGroupId(), name });
     if (input) input.value = '';
-    this.setSettings({ 'chats.groups': groups, 'chats.placement': placement });
+    const work = this.setSettings({ 'chats.groups': groups, 'chats.placement': placement });
     this.exitEdit();
+    return work;
   }
 
   // The first press opens the gate; only the modal's own press, a second one, resolves it. The modal is drawn only
@@ -817,14 +829,14 @@ class AppRoot extends KitElement {
   confirmDeleteSelection() {
     const pending = resolveDelete(this.pendingDelete, true);
     this.cancelDelete();
-    if (!pending) return;
+    if (!pending) return undefined;
     if (pending.kind === 'group') {
-      this.setSettings({ 'chats.groups': removeGroup(this.chatGroups(), pending.id), 'chats.placement': clearGroupPlacement(this.chatPlacement(), pending.id) });
-      return;
+      return this.setSettings({ 'chats.groups': removeGroup(this.chatGroups(), pending.id), 'chats.placement': clearGroupPlacement(this.chatPlacement(), pending.id) });
     }
     const forget = forgetChats(this.chatOrder(), this.chatPlacement(), pending.ids);
-    this.setSettings({ 'chats.hidden': hideChats(this.chatHidden(), pending.ids), 'chats.order': forget.order, 'chats.placement': forget.placement });
+    const work = this.setSettings({ 'chats.hidden': hideChats(this.chatHidden(), pending.ids), 'chats.order': forget.order, 'chats.placement': forget.placement });
     this.exitEdit();
+    return work;
   }
 
   // The header while editing: select-all, the count, and the group actions. Delete is held by the gate above.
@@ -842,10 +854,10 @@ class AppRoot extends KitElement {
           <option value="">Add to group</option>
           ${groups.map((g) => html`<option value=${g.id}>${g.name}</option>`)}
         </select>
-        <button type="button" class="chip" ?disabled=${groups.length === 0 || count === 0} @click=${() => this.addSelectionToGroup(this.querySelector('.selection-group').value)}>Add</button>
+        <button type="button" class="chip" ?disabled=${groups.length === 0 || count === 0} @click=${press(() => this.addSelectionToGroup(this.querySelector('.selection-group').value))}>Add</button>
         <input class="selection-group-name" type="text" placeholder="New group" aria-label="New group name">
-        <button type="button" class="chip" ?disabled=${count === 0} @click=${() => this.newGroupFromSelection()}>New group</button>
-        <button type="button" class="danger-button" ?disabled=${count === 0} @click=${() => this.requestDeleteSelection()}>Delete</button>
+        <button type="button" class="chip" ?disabled=${count === 0} @click=${press(() => this.newGroupFromSelection())}>New group</button>
+        <button type="button" class="danger-button" ?disabled=${count === 0} @click=${press(() => this.requestDeleteSelection())}>Delete</button>
       </div>
     </div>`;
   }
@@ -865,8 +877,8 @@ class AppRoot extends KitElement {
         <h2 id="confirm-title">${title}</h2>
         <p>${body}</p>
         <div class="confirm-actions">
-          <button type="button" class="chip" @click=${() => this.cancelDelete()}>Cancel</button>
-          <button type="button" class="danger-button confirm-delete" @click=${() => this.confirmDeleteSelection()}>Delete</button>
+          <button type="button" class="chip" @click=${press(() => this.cancelDelete())}>Cancel</button>
+          <button type="button" class="danger-button confirm-delete" @click=${press(() => this.confirmDeleteSelection())}>Delete</button>
         </div>
       </section>`;
   }
@@ -875,10 +887,10 @@ class AppRoot extends KitElement {
     const f = this.filters || emptyFilters();
     return html`<header class="sidebar-head">
       <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })}>
-      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; }}>≡</button>
-      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; }}>⇅</button>
-      <button type="button" class="edit-button" aria-label=${this.editing ? 'Done editing' : 'Edit conversations'} aria-pressed=${this.editing ? 'true' : 'false'} @click=${() => this.toggleEditing()}>✎</button>
-      <button type="button" class="gear-button" aria-label="Settings" @click=${() => this.openSettings()}>⚙</button>
+      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${press(() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; })}>≡</button>
+      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${press(() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; })}>⇅</button>
+      <button type="button" class="edit-button" aria-label=${this.editing ? 'Done editing' : 'Edit conversations'} aria-pressed=${this.editing ? 'true' : 'false'} @click=${press(() => this.toggleEditing())}>✎</button>
+      <button type="button" class="gear-button" aria-label="Settings" @click=${press(() => this.openSettings())}>⚙</button>
       ${this.sortOpen ? this.sortMenu() : nothing}
       ${this.filterOpen ? this.filterMenu() : nothing}
     </header>`;
@@ -893,12 +905,12 @@ class AppRoot extends KitElement {
   sheetBody() {
     if (this.view === 'about') return html`<app-about .info=${this.info} .host=${this.host} @back=${() => this.openSheet('settings')}></app-about>`;
     return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme}
-      @setting=${(e) => this.setSetting(e.detail)} @settings=${(e) => this.setSettings(e.detail)} @theme-import=${(e) => this.importThemeUrl(e.detail)} @signout=${() => this.signOut('')} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
+      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.closeView()}></app-settings>`;
   }
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .loadingOlder=${this.loadingOlder} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} @send=${(e) => this.send(e.detail)} @older=${() => this.loadOlder()} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} @send=${(e) => respond(e, this.send(e.detail))} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 
@@ -910,9 +922,9 @@ class AppRoot extends KitElement {
   // The banner's action asks the shell to start a download or apply a downloaded update. The command is the one the
   // rules drew into the banner, so the button and what it does cannot drift; a refusal leaves the banner as it is.
   async updateAction(command) {
-    if (!command) return;
-    if (command === DISMISS) { this.updateStatus = null; return; }
-    try { await this.bridge(command, {}); } catch { /* the shell refused; the banner keeps the state it last drew */ }
+    if (!command) return undefined;
+    if (command === DISMISS) { this.updateStatus = null; return true; }
+    try { await this.bridge(command, {}); return true; } catch { return false; /* the shell refused; the banner keeps the state it last drew */ }
   }
 
   // The three controls ask the shell; the shell owns the BrowserWindow and answers the new maximized state. The
@@ -951,7 +963,7 @@ class AppRoot extends KitElement {
 
   body() {
     if (this.phase === 'boot' || this.phase === 'loading') return html`<div class="splash" aria-busy="true"><div class="spinner" role="img" aria-label="Loading"></div></div>`;
-    if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} .busy=${this.busy} @connect=${(e) => this.onConnect(e.detail)}></app-onboarding>`;
+    if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} @connect=${(e) => respond(e, this.onConnect(e.detail))}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
     const banner = this.updateStatus ? updateBanner(this.updateStatus.state, { version: this.updateStatus.version, percent: this.updateStatus.percent, detail: this.updateStatus.detail, canInstall: this.updateStatus.canInstall }) : null;
@@ -962,17 +974,17 @@ class AppRoot extends KitElement {
         ${sentence ? html`<div class="banner" role="status">${sentence}</div>` : nothing}
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
         ${this.activeFilters()}
-        <app-chat-list .chats=${this.visibleChats()} .selected=${this.openChatId}
+        <app-chat-list .chats=${this.visibleChats()} .selected=${this.selecting || this.openChatId}
           .sort=${this.settings['chats.sort'] || 'recent'} .groups=${this.chatGroups()}
           .placement=${this.chatPlacement()} .order=${this.chatOrder()} .filters=${this.filters}
           .editing=${this.editing} .checked=${this.checked}
           @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
           @check=${(e) => this.setChecked(e.detail.id, e.detail.checked)}
           @groupdelete=${(e) => this.requestGroupDelete(e.detail.id, e.detail.name)}
-          @chatsettings=${(e) => this.setSettings(e.detail.patch)}></app-chat-list>
+          @chatsettings=${(e) => respond(e, this.setSettings(e.detail.patch))}></app-chat-list>
       </aside>
-      ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${() => this.closeDrawer()}></button>` : nothing}
-      <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${() => this.updateAction(banner.action.command)}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
+      ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
+      <main class="main">${banner ? html`<div class="banner update" role="status"><span>${banner.message} ${banner.detail}</span>${banner.percent === null ? nothing : html`<progress class="update-progress" max="1" value=${banner.percent}></progress>`}${banner.action ? html`<button type="button" class="banner-action" data-command=${banner.action.command} @click=${press(() => this.updateAction(banner.action.command))}>${banner.action.label}</button>` : nothing}</div>` : nothing}${this.mainView(chat)}</main>
       ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}

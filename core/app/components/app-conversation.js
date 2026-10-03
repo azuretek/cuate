@@ -1,5 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press, emit, respond } from '../../kit/press.js';
+import { keepScroll } from '../../kit/scroll.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
@@ -8,57 +10,30 @@ import './app-composer.js';
 import './app-attachment.js';
 
 class AppConversation extends KitElement {
-  static properties = { chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, loadingOlder: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {} };
+  static properties = { chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {} };
 
   constructor() {
     super();
     this.messages = [];
     this.hasMore = false;
-    this.loadingOlder = false;
     this.sending = false;
     // What the contact header draws for the platform, and the window's own state for the middle button's glyph, both
     // handed down from the page. A phone passes neither, so the header draws no window controls there.
     this.windowControls = null;
     this.maximized = false;
-    this.stick = true;
+    // The conversation follows its latest message while it is there, and otherwise stays on the message it was on,
+    // through new messages, older ones loading above, a picture loading, a resize and a new text size (issue 142).
+    this.keep = keepScroll(this, { scroller: '.messages', items: '.bubble-row', follow: true });
   }
 
+  // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
   fire(name, detail) {
-    this.dispatchEvent(new CustomEvent(name, { detail }));
+    return emit(this, name, detail);
   }
 
-  list() {
-    return this.querySelector('.messages');
-  }
-
+  // Another conversation starts at its latest message.
   willUpdate(changed) {
-    const el = this.list();
-    this.before = el ? { h: el.scrollHeight, top: el.scrollTop } : null;
-    if (changed.has('chat') && changed.get('chat')?.id !== this.chat?.id) this.stick = true;
-  }
-
-  updated(changed) {
-    if (!changed.has('messages')) return;
-    const el = this.list();
-    if (!el) return;
-    const prev = changed.get('messages') || [];
-    const cur = this.messages || [];
-    const lastChanged = !prev.length || !cur.length || prev[prev.length - 1].id !== cur[cur.length - 1].id;
-    if (lastChanged) {
-      if (this.stick) el.scrollTop = el.scrollHeight;
-    } else if (this.before && cur.length > prev.length) {
-      el.scrollTop = this.before.top + (el.scrollHeight - this.before.h);
-    }
-  }
-
-  onScroll(e) {
-    const el = e.currentTarget;
-    this.stick = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  }
-
-  onMedia() {
-    const el = this.list();
-    if (el && this.stick) el.scrollTop = el.scrollHeight;
+    if (changed.has('chat') && changed.get('chat')?.id !== this.chat?.id) this.keep.reset();
   }
 
   bubble(it, lastMine, sms) {
@@ -84,12 +59,12 @@ class AppConversation extends KitElement {
     const sms = this.chat.service === 'SMS' || this.chat.service === 'RCS';
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${() => this.fire('back')}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
-      <div class="messages" role="log" aria-live="polite" @scroll=${this.onScroll} @media-loaded=${this.onMedia}>
-        ${this.hasMore ? html`<button class="load-older" ?disabled=${this.loadingOlder} @click=${() => this.fire('older')}>${this.loadingOlder ? 'Loading\u2026' : 'Load earlier messages'}</button>` : nothing}
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+      <div class="messages" role="log" aria-live="polite">
+        ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
         ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms)))}
       </div>
-      <app-composer .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} @send=${(e) => this.fire('send', e.detail)}></app-composer>`;
+      <app-composer .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} @send=${(e) => respond(e, this.fire('send', e.detail))}></app-composer>`;
   }
 }
 

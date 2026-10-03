@@ -82,6 +82,11 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
       return res.blob();
     },
     connect,
+    // Drops the event stream the way a lost connection does, so it reconnects and resumes where it left off. The
+    // desktop smoke uses it to prove a reconnect never blanks a view (issue 142).
+    reconnect() {
+      if (ws && !closed) ws.close(4000);
+    },
     close() {
       closed = true;
       if (timer) timers.clearTimeout(timer);

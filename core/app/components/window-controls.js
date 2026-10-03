@@ -1,4 +1,5 @@
 import { html } from '../../kit/lit.js';
+import { press } from '../../kit/press.js';
 
 // The window controls the contact header draws on Windows and Linux: the min, max and close glyphs in currentColor so a
 // control follows the theme like every other mark, with the middle button showing the restore glyph when the window is
@@ -12,5 +13,5 @@ const ICON_CLOSE = html`<svg width="10" height="10" viewBox="0 0 10 10" aria-hid
 export function windowControlsHtml({ order, maximized, onAction }) {
   const labelOf = (name) => (name === 'maximize' ? (maximized ? 'Restore' : 'Maximize') : name === 'minimize' ? 'Minimize' : 'Close');
   const glyphOf = (name) => (name === 'minimize' ? ICON_MINIMIZE : name === 'maximize' ? (maximized ? ICON_RESTORE : ICON_MAXIMIZE) : ICON_CLOSE);
-  return html`<div class="window-controls" role="group" aria-label="Window controls">${order.map((name) => html`<button type="button" class="window-control ${name}" aria-label=${labelOf(name)} title=${labelOf(name)} @click=${() => onAction(name)}>${glyphOf(name)}</button>`)}</div>`;
+  return html`<div class="window-controls" role="group" aria-label="Window controls">${order.map((name) => html`<button type="button" class="window-control ${name}" aria-label=${labelOf(name)} title=${labelOf(name)} @click=${press(() => onAction(name))}>${glyphOf(name)}</button>`)}</div>`;
 }

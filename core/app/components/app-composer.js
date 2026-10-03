@@ -1,5 +1,6 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press, emit } from '../../kit/press.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck } from '../rules/attach.js';
 import './app-emoji-picker.js';
@@ -25,6 +26,9 @@ class AppComposer extends KitElement {
     this.staged = null;
     this.stageProblem = '';
     this.preview = '';
+    // Send is one press however it is made, the button or Enter: both run through this, so the send button shows the
+    // send working and a second press while it runs is dropped rather than sending twice (core/kit/press.js).
+    this.onSubmit = press((e) => this.submit(e), { on: () => this.querySelector('button.send') });
   }
 
   connectedCallback() {
@@ -79,14 +83,15 @@ class AppComposer extends KitElement {
     const t = this.field();
     const text = t.value.trim();
     const file = this.staged;
-    if ((!text && !file) || this.disabled) return;
-    this.dispatchEvent(new CustomEvent('send', { detail: { text, file } }));
+    if ((!text && !file) || this.disabled) return undefined;
+    const work = emit(this, 'send', { text, file });
     this.staged = null;
     this.stageProblem = '';
     this.setPreview(null);
     t.value = '';
     t.style.height = '';
     t.focus();
+    return work;
   }
 
   key(e) {
@@ -99,7 +104,7 @@ class AppComposer extends KitElement {
       this.trim(e);
       return;
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) this.submit(e);
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) this.onSubmit(e);
   }
 
   // Backspace and Delete remove one whole character, so a flag or a skin tone
@@ -192,20 +197,20 @@ class AppComposer extends KitElement {
     const s = this.staged;
     return html`${s || this.stageProblem
       ? html`<div class="composer-staged" role="status">
-          ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${() => this.openPreview()}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
-          ${s && !this.preview ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${() => this.unstage()}>\u00D7</button></span>` : nothing}
+          ${s && this.preview ? html`<span class="staged-image"><button type="button" class="attachment-preview staged-preview" aria-label=${'Open ' + s.name} @click=${press(() => this.openPreview())}><img class="staged-preview-image" src=${this.preview} alt=${s.name} @error=${() => this.setPreview(null)}></button><span class="staged-meta"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span></span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${press(() => this.unstage())}>\u00D7</button></span>` : nothing}
+          ${s && !this.preview ? html`<span class="staged-file"><span class="staged-name">${s.name}</span><span class="muted small">${sizeLabel(s.size)}</span><button type="button" class="staged-remove" aria-label=${'Remove ' + s.name} @click=${press(() => this.unstage())}>\u00D7</button></span>` : nothing}
           ${this.stageProblem ? html`<span class="staged-problem small">${this.stageProblem}</span>` : nothing}
         </div>`
-      : nothing}<form class="composer" @submit=${this.submit}>
+      : nothing}<form class="composer" @submit=${this.onSubmit}>
       <div class="composer-tools">
-        <button type="button" class="tool" aria-label="Attach" aria-haspopup="menu" aria-expanded=${this.attachOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${() => this.toggleAttach()}>+</button>
+        <button type="button" class="tool" aria-label="Attach" aria-haspopup="menu" aria-expanded=${this.attachOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleAttach())}>+</button>
         <input type="file" hidden @change=${this.picked}>
-        <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${() => this.toggleEmoji()}>\u{1F642}</button>
+        <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}>\u{1F642}</button>
       </div>
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.grow} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}>\u2191</button>
       ${this.attachOpen
-        ? html`<div class="attach-menu" role="menu" aria-label="Attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${() => this.choose(a)}>${a.label}</button>`)}</div>`
+        ? html`<div class="attach-menu" role="menu" aria-label="Attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
         : nothing}
       ${this.emojiOpen ? html`<app-emoji-picker .frequent=${this.frequent} @pick=${(e) => this.insert(e.detail)}></app-emoji-picker>` : nothing}
     </form>`;

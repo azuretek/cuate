@@ -1,5 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
+import { press, emit } from '../../kit/press.js';
+import { keepScroll } from '../../kit/scroll.js';
 import {
   chatTitle, chatPreview, initials, sortChats, filterChats, groupSections, emptyFilters,
   UNGROUPED, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat,
@@ -31,6 +33,8 @@ class AppChatList extends KitElement {
     this.editing = false;
     this.checked = [];
     this.renaming = null;
+    // The list is its own scroll container, and keeps its place on a row across a re-render and a resize (issue 142).
+    this.keep = keepScroll(this, { scroller: 'app-chat-list', items: '.chat-row' });
   }
 
   get f() {
@@ -41,8 +45,9 @@ class AppChatList extends KitElement {
     return Array.isArray(this.checked) ? this.checked : [];
   }
 
+  // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
   fire(name, detail) {
-    this.dispatchEvent(new CustomEvent(name, { detail }));
+    return emit(this, name, detail);
   }
 
   pick(id) {
@@ -68,14 +73,14 @@ class AppChatList extends KitElement {
     this.fire('check', { id, checked });
   }
 
-  patch(settings) { this.fire('chatsettings', { patch: settings }); }
+  patch(settings) { return this.fire('chatsettings', { patch: settings }); }
 
   createGroup() {
     const input = this.querySelector('.new-group-name');
     const name = String((input && input.value) || '').trim();
-    if (!name) return;
+    if (!name) return undefined;
     if (input) input.value = '';
-    this.patch({ 'chats.groups': addGroup(this.groups, { id: newGroupId(), name }) });
+    return this.patch({ 'chats.groups': addGroup(this.groups, { id: newGroupId(), name }) });
   }
 
   startRename(id) {
@@ -100,9 +105,9 @@ class AppChatList extends KitElement {
     else if (e.key === 'Escape') { e.preventDefault(); this.renaming = null; }
   }
 
-  moveGroupBy(section, delta) { this.patch({ 'chats.groups': moveGroup(this.groups, section.id, delta) }); }
-  setPlacement(chatId, groupId) { this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
-  moveChatBy(chatId, delta) { this.patch({ 'chats.order': moveChat(manualOrder(this.chats, this.order), chatId, delta) }); }
+  moveGroupBy(section, delta) { return this.patch({ 'chats.groups': moveGroup(this.groups, section.id, delta) }); }
+  setPlacement(chatId, groupId) { return this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
+  moveChatBy(chatId, delta) { return this.patch({ 'chats.order': moveChat(manualOrder(this.chats, this.order), chatId, delta) }); }
 
   // The list's own tools: the groups row. The sort control, the search field, the filter menu and the settings gear
   // live in the page header above the list, where the filters themselves live. In edit mode the page's edit bar holds
@@ -112,7 +117,7 @@ class AppChatList extends KitElement {
     return html`<div class="list-tools">
       <div class="add-group">
         <input class="new-group-name" type="text" placeholder="New group" aria-label="New group name" @keydown=${(e) => { if (e.key === 'Enter') this.createGroup(); }}>
-        <button type="button" class="text-button add-group-button" title="Add group" @click=${() => this.createGroup()}>Add group</button>
+        <button type="button" class="text-button add-group-button" title="Add group" @click=${press(() => this.createGroup())}>Add group</button>
       </div>
     </div>`;
   }
@@ -125,10 +130,10 @@ class AppChatList extends KitElement {
         ? html`<input class="group-rename" data-id=${section.id} .value=${section.name} aria-label="Group name" @keydown=${this.onRenameKey} @blur=${this.commitRename}>`
         : html`<span class="section-name">${section.name}</span>`}
       <span class="section-actions">
-        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' up'} ?disabled=${i <= 0} @click=${() => this.moveGroupBy(section, -1)}>↑</button>
-        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' down'} ?disabled=${i >= (this.groups.length - 1)} @click=${() => this.moveGroupBy(section, 1)}>↓</button>
-        <button type="button" class="icon-button" aria-label=${'Rename ' + section.name} @click=${() => this.startRename(section.id)}>✎</button>
-        ${this.editing ? html`<button type="button" class="icon-button" aria-label=${'Delete ' + section.name} @click=${() => this.fire('groupdelete', { id: section.id, name: section.name })}>✕</button>` : nothing}
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' up'} ?disabled=${i <= 0} @click=${press(() => this.moveGroupBy(section, -1))}>↑</button>
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' down'} ?disabled=${i >= (this.groups.length - 1)} @click=${press(() => this.moveGroupBy(section, 1))}>↓</button>
+        <button type="button" class="icon-button" aria-label=${'Rename ' + section.name} @click=${press(() => this.startRename(section.id))}>✎</button>
+        ${this.editing ? html`<button type="button" class="icon-button" aria-label=${'Delete ' + section.name} @click=${press(() => this.fire('groupdelete', { id: section.id, name: section.name }))}>✕</button>` : nothing}
       </span>
     </header>`;
   }
@@ -153,8 +158,8 @@ class AppChatList extends KitElement {
         ${groups.map((g) => html`<option value=${g.id} ?selected=${placed === g.id}>${g.name}</option>`)}
       </select>` : nothing}
       ${!editing && this.sort === 'manual' ? html`<span class="row-move">
-        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' up'} @click=${(e) => { e.stopPropagation(); this.moveChatBy(c.id, -1); }}>↑</button>
-        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' down'} @click=${(e) => { e.stopPropagation(); this.moveChatBy(c.id, 1); }}>↓</button>
+        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' up'} @click=${press((e) => { e.stopPropagation(); return this.moveChatBy(c.id, -1); })}>↑</button>
+        <button type="button" class="icon-button" aria-label=${'Move ' + title + ' down'} @click=${press((e) => { e.stopPropagation(); return this.moveChatBy(c.id, 1); })}>↓</button>
       </span>` : nothing}
     </li>`;
   }
