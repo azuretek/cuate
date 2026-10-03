@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, manualOrder, moveChat, addGroup, renameGroup, moveGroup, placeChat, chatSearchText, matchesSearch, SORT_ORDERS, SORT_LABELS, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, DELETE_STEPS } from '../app/rules/chats.js';
-import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji } from '../app/rules/emoji.js';
+import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
@@ -536,6 +536,32 @@ test('the emoji picker searches by name, keeps categories, and inserts whole cha
   assert.deepEqual(frequentEmoji([]), []);
   assert.equal(isEmoji('\u2728'), true);
   assert.equal(isEmoji('x'), false);
+});
+
+test('the recently used row sits on the picker edge nearest the emoji button (issue 123)', () => {
+  // The panel opens upward from the composer, so the button is below it: the recents row is the last, bottom, row,
+  // and the grid, the field and the categories keep their order above it. Top to bottom is also the keyboard order.
+  const above = emojiPickerSections({ side: 'above', recents: true });
+  assert.deepEqual(above, ['grid', 'search', 'tabs', 'recents']);
+  assert.equal(above.at(-1), 'recents', 'the row nearest the button is the recents row');
+  assert.deepEqual(emojiPickerSections({ recents: true }), above, 'above is the default');
+  // Opened below the button, the row follows it to the top edge.
+  const below = emojiPickerSections({ side: 'below', recents: true });
+  assert.deepEqual(below, ['recents', 'grid', 'search', 'tabs']);
+  // Nothing used yet: no row, and the rest is unchanged either way.
+  assert.deepEqual(emojiPickerSections({ side: 'above', recents: false }), ['grid', 'search', 'tabs']);
+  assert.deepEqual(emojiPickerSections({ side: 'below' }), ['grid', 'search', 'tabs']);
+
+  // The side is read from where the panel and the button were drawn.
+  const button = { top: 600, bottom: 640 };
+  assert.equal(pickerSide({ top: 220, bottom: 590 }, button), 'above');
+  assert.equal(pickerSide({ top: 650, bottom: 1020 }, button), 'below');
+  assert.equal(pickerSide(null, button), 'above', 'an unreadable rect keeps the default');
+
+  // The picker draws its sections from this rule rather than an order of its own.
+  const picker = readFileSync(new URL('../app/components/app-emoji-picker.js', import.meta.url), 'utf8');
+  assert.match(picker, /emojiPickerSections\(/);
+  assert.match(picker, /pickerSide\(/);
 });
 
 test('the attach menu offers a photo or video and any file, in that order', () => {
