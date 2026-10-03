@@ -12,6 +12,7 @@
 ## The rules, and the test that holds each
 
 - A value several places must agree on lives in one spec under `core/spec/`, and the rest read it (`core/test/guards.test.js`).
+- The server keeps no copy of code `core/` owns: a server function with the same name and body as a core one, or a longer one with a core function's body under another name, fails `core/test/shared-code.test.js`. Export the core function and import it.
 - Code never carries the product's name; it reads `core/spec/naming.json` ("the product name lives only where naming.json says").
 - Framework code in `core/kit/` imports only from the kit ("framework code in core/kit imports only from core/kit").
 - Modules under `rules/` do no I/O and read no clock ("rule modules do no I/O").
