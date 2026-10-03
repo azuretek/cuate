@@ -32,6 +32,7 @@ export * from './rules/sheet.js';
 export * from './rules/slide.js';
 export * from './rules/zoom.js';
 export * from './rules/theme.js';
+export * from './rules/icon.js';
 export * from './rules/time.js';
 export * from './rules/updates.js';
 export * from './rules/bar-layout.js';

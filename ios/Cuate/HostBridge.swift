@@ -123,6 +123,11 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         // The status bar draws over the page's colours, so its icons follow the page's scheme rather than the system's.
         case "window.appearance":
             settle(id: id, ok: true, value: appearance(args))
+        // The app icon follows the theme on the desktop (issue 189). iOS cannot recolour its icon at runtime, so its
+        // icon is the default theme's light, dark and tinted set, and the system draws the unread badge; this answers
+        // false.
+        case "icon.redraw":
+            settle(id: id, ok: true, value: false)
         default:
             settle(id: id, ok: false, value: "undeclared bridge command: " + name)
         }
