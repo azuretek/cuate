@@ -538,7 +538,9 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* Floating notice geometry: clear header controls and reserve the composer below. The stack scrolls, which clips
    whatever paints outside its padding box, so its padding holds the card's shadow and a negative margin keeps
    the card where a 4px inset puts it. */
-app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--size-header) + var(--space-3)); right: max(env(safe-area-inset-right, calc(var(--space-1) * 0)), var(--space-4)); left: max(env(safe-area-inset-left, calc(var(--space-1) * 0)), var(--space-4)); pointer-events: none; z-index: 2; }
+/* The stack draws above a sheet's backdrop and card (z-index 3 and 4), so an answer to a press on a sheet, About's
+   Check for updates (issue 171), is seen while the sheet stays up. */
+app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--size-header) + var(--space-3)); right: max(env(safe-area-inset-right, calc(var(--space-1) * 0)), var(--space-4)); left: max(env(safe-area-inset-left, calc(var(--space-1) * 0)), var(--space-4)); pointer-events: none; z-index: 5; }
 .app-window { position: relative; }
 .app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
@@ -563,6 +565,9 @@ app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--
    control with the drawer open or closed. The band holds the card's shadow, and takes no room while it holds no card. */
 @media (max-width: 640px) {
   .app-body { position: relative; }
+  /* A sheet's backdrop (Settings, About, a confirm, the image viewer) is placed in the body too, so it starts below the
+     band: a notice raised while a sheet is up sits above the sheet and never covers it (issue 171). */
+  .sheet-scrim { position: absolute; }
   app-notices, .app-window[data-platform="darwin"] app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-bg); }
   .app-notice-stack { align-items: stretch; margin: 0; padding: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--space-3)) calc(env(safe-area-inset-right, calc(var(--space-1) * 0)) + var(--space-4)) var(--space-5) calc(env(safe-area-inset-left, calc(var(--space-1) * 0)) + var(--space-4)); }
   .app-window[data-platform="darwin"] .app-notice-stack { padding-top: calc(var(--size-window-strip) + var(--space-3)); }

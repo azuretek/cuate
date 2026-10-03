@@ -1672,6 +1672,21 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06d-about-phone-dark.png');
   nativeTheme.themeSource = 'light';
+  // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
+  // centre, so the sheet does not cover it; and on a phone the sheet starts below the notice's band, so it covers no
+  // part of the sheet.
+  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.app-notice-dismiss'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.app-notice-dismiss') && sheet && document.querySelector('app-about') && (window.innerWidth > 640 || sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom)); })()";
+  await js("document.querySelector('app-about [data-action=check-updates]').click()");
+  report.aboutPhoneNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
+  await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
+  await pause(300);
+  await shot('06g-about-phone-notice.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('06h-about-phone-notice-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await waitFor("!document.querySelector('.app-notice')", 5000);
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(300);
   const desktopAbout = await js(aboutStructure);
@@ -1687,7 +1702,8 @@ async function runSmoke(w) {
   await pause(200);
   // Check for updates runs the tray's own check, and its answer is the app notice; a run with no updater says why.
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
-  report.aboutCheckNotice = await waitFor("(document.querySelector('.app-notice')?.textContent || '').includes('does not update itself') && Boolean(document.querySelector('app-about'))", 10000).then(() => true, () => false);
+  report.aboutCheckNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
+  await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
   await pause(300);
   await shot('06e-about-check-notice.png');
   nativeTheme.themeSource = 'dark';
@@ -1708,8 +1724,8 @@ async function runSmoke(w) {
   // Back from About returns to Settings, the page it was pushed over.
   await js("document.querySelector('app-about .sheet-back').click()");
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
-  report.about = report.aboutPage && report.aboutSameEverywhere && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
-  if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
+  report.about = report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
+  if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
   if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
   await js("document.querySelector('app-settings .sheet-back').click()");

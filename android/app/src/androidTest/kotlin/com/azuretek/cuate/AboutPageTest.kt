@@ -56,21 +56,40 @@ class AboutPageTest {
         throw AssertionError("The About page never showed its notice: $result")
     }
 
-    // Two captures in a row that draw the same picture, so a frame still arriving is never kept.
+    // The page as painted, not a frame the WebView drew before it: the app icon's own tile colour
+    // (desktop/build/icon.svg) is on screen, which it only is once the About page has drawn its icon.
+    private fun iconShown(capture: android.graphics.Bitmap): Boolean {
+        val tile = android.graphics.Color.rgb(0x15, 0x6c, 0x68)
+        var hits = 0
+        for (y in 0 until capture.height step 4) {
+            for (x in 0 until capture.width step 4) {
+                val p = capture.getPixel(x, y)
+                if (Math.abs(android.graphics.Color.red(p) - android.graphics.Color.red(tile)) <= 8
+                    && Math.abs(android.graphics.Color.green(p) - android.graphics.Color.green(tile)) <= 8
+                    && Math.abs(android.graphics.Color.blue(p) - android.graphics.Color.blue(tile)) <= 8) hits++
+            }
+        }
+        return hits >= 50
+    }
+
+    // Two captures in a row that draw the same picture with the icon on it, so a frame still arriving, or one
+    // the WebView drew before the page, is never kept.
     private fun settledCapture(): android.graphics.Bitmap {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         var previous: android.graphics.Bitmap? = null
         do {
             instrumentation.waitForIdleSync()
             val capture = instrumentation.uiAutomation.takeScreenshot()
-            if (capture != null) {
+            if (capture != null && !iconShown(capture)) {
+                capture.recycle()
+            } else if (capture != null) {
                 val last = previous
                 if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
                 last?.recycle()
                 previous = capture
             }
         } while (System.nanoTime() < deadline)
-        return previous ?: throw AssertionError("No capture of the About page")
+        throw AssertionError("The screen never showed the About page with its icon")
     }
 
     @Test
