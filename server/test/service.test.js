@@ -1,13 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { naming } from '../src/paths.js';
 import { installLayout } from '../src/install.js';
-import { LABEL, agentFor, describeInfo, fillHandoff, lastEvent, parseLaunchd, renderPlist, serveDecision, serviceLabel, servicePaths, which } from '../src/service.js';
+import {
+  LABEL, agentFor, agentPlist, describeInfo, fillHandoff, kegNode, lastEvent, nodeProblem, parseLaunchd, plistNode, renderPlist, serveDecision, serviceLabel,
+  servicePaths, stableNode, status, which,
+} from '../src/service.js';
 import { boot } from './helpers.js';
 
 const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
@@ -98,6 +101,96 @@ test('the LaunchAgent runs this server with its data folder, at login and after 
   assert.equal(x.split('<string>/l/s.log</string>').length - 1, 2, 'stdout and stderr both go to the log');
   assert.ok(x.includes('<key>PATH</key><string>/opt/n:/usr/bin</string>'));
   assert.ok(x.includes('<key>WorkingDirectory</key><string>/r</string>'));
+});
+
+// A Homebrew prefix in a scratch folder: the versioned keg, and the links brew keeps pointing at whichever version is current.
+function brewPrefix(dir, { formula = 'node', version = '26.7.0', binLink = true, optLink = true } = {}) {
+  const keg = path.join(dir, 'Cellar', formula, version);
+  mkdirSync(path.join(keg, 'bin'), { recursive: true });
+  writeFileSync(path.join(keg, 'bin', 'node'), '#!/bin/sh\n');
+  chmodSync(path.join(keg, 'bin', 'node'), 0o755);
+  mkdirSync(path.join(dir, 'bin'), { recursive: true });
+  mkdirSync(path.join(dir, 'opt'), { recursive: true });
+  if (binLink) symlinkSync(path.join('..', 'Cellar', formula, version, 'bin', 'node'), path.join(dir, 'bin', 'node'));
+  if (optLink) symlinkSync(path.join('..', 'Cellar', formula, version), path.join(dir, 'opt', formula));
+  return path.join(keg, 'bin', 'node');
+}
+
+test('a Node path inside a versioned Homebrew keg is recognised, and a stable one is not', () => {
+  assert.deepEqual(kegNode('/opt/homebrew/Cellar/node/26.7.0/bin/node'), { prefix: '/opt/homebrew', formula: 'node', version: '26.7.0' });
+  assert.deepEqual(kegNode('/usr/local/Cellar/node@22/22.13.1_1/bin/node'), { prefix: '/usr/local', formula: 'node@22', version: '22.13.1_1' });
+  for (const p of ['/opt/homebrew/bin/node', '/opt/homebrew/opt/node/bin/node', '/opt/homebrew/opt/node@22/bin/node', '/usr/bin/node', '', null]) assert.equal(kegNode(p), null, String(p));
+});
+
+test('a keg Node first on PATH gives a LaunchAgent that names the stable link, with no keg folder on its PATH', { skip: process.platform === 'win32' }, () => {
+  const dir = scratch();
+  try {
+    const keg = brewPrefix(dir);
+    const plan = agentPlist({ env: { PATH: [path.dirname(keg), path.join(dir, 'bin'), '/usr/bin'].join(path.delimiter) }, config: { engine: { kind: 'fake' } }, main: '/r/server/src/main.js', root: '/r', dataDir: '/d', log: '/l/s.log' });
+    assert.equal(plan.bin, path.join(dir, 'bin', 'node'));
+    assert.equal(plistNode(plan.text), path.join(dir, 'bin', 'node'));
+    assert.ok(!plan.text.includes('Cellar'), 'no keg folder anywhere in the LaunchAgent: ' + plan.text);
+    assert.ok(plan.text.includes('<key>PATH</key><string>' + path.join(dir, 'bin') + ':'));
+    assert.ok(plan.notes.some((n) => n.includes(keg)), 'install says which path it replaced');
+    // The fallback when no node is on PATH is this process's own binary, which is a resolved, versioned path.
+    const fallback = agentPlist({ env: { PATH: '' }, execPath: keg, config: { engine: { kind: 'fake' } }, main: '/m', root: '/r', dataDir: '/d', log: '/l' });
+    assert.equal(fallback.bin, path.join(dir, 'bin', 'node'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a keg Node is replaced by the link that resolves to it, refused when there is none, and kept with a warning when --node names it', { skip: process.platform === 'win32' }, () => {
+  const dir = scratch();
+  try {
+    // A versioned formula, which brew links only under opt.
+    const versioned = brewPrefix(dir, { formula: 'node@22', version: '22.13.1', binLink: false });
+    assert.deepEqual(stableNode(versioned), { node: path.join(dir, 'opt', 'node@22', 'bin', 'node'), from: versioned });
+    // A keg that bin/node does not resolve to (another version is the linked one) and no opt link either.
+    const other = path.join(dir, 'Cellar', 'node', '25.0.0', 'bin', 'node');
+    mkdirSync(path.dirname(other), { recursive: true });
+    writeFileSync(other, '#!/bin/sh\n');
+    chmodSync(other, 0o755);
+    assert.throws(() => stableNode(other), /versioned Homebrew folder.*--node PATH/);
+    const kept = stableNode(other, { explicit: true });
+    assert.equal(kept.node, other);
+    assert.match(kept.warn, /versioned Homebrew folder/);
+    assert.deepEqual(stableNode('/usr/bin/node'), { node: '/usr/bin/node' }, 'anything else is written as found');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the Node a LaunchAgent names is read back, and a gone or versioned one is a problem', () => {
+  const text = (node) => renderPlist({ node, main: '/m', dataDir: '/d', root: '/r', log: '/l', pathDirs: ['/usr/bin'] });
+  assert.equal(plistNode(text('/a b&c/node')), '/a b&c/node');
+  assert.equal(plistNode('<plist/>'), null);
+  const gone = nodeProblem(text('/opt/homebrew/bin/node'), { exists: () => false });
+  assert.equal(gone.level, 'fail');
+  assert.match(gone.detail, /no longer exists.*service install/);
+  const keg = nodeProblem(text('/opt/homebrew/Cellar/node/26.7.0/bin/node'), { exists: () => true });
+  assert.equal(keg.level, 'warn');
+  assert.match(keg.detail, /versioned Homebrew folder.*service install/);
+  assert.equal(nodeProblem(text('/opt/homebrew/bin/node'), { exists: () => true }), null);
+});
+
+test('service status warns on a LaunchAgent that runs a keg Node, and fails one whose Node is gone', { skip: process.platform === 'win32' }, async () => {
+  const home = scratch();
+  try {
+    const dir = path.join(home, 'brew');
+    const keg = brewPrefix(dir);
+    const P = servicePaths(home);
+    mkdirSync(path.dirname(P.plist), { recursive: true });
+    const write = (node) => writeFileSync(P.plist, renderPlist({ node, main: '/m', dataDir: '/d', root: '/r', log: P.log, pathDirs: ['/usr/bin'] }));
+    const config = { port: 1, sending: { enabled: false } };
+    const run = async () => {
+      const lines = [];
+      const ok = await status({ config, installRoot: null, print: (l) => lines.push(l), env: { PATH: '' }, home });
+      return { ok, lines };
+    };
+    write(keg);
+    assert.ok((await run()).lines.some((l) => /^warn {2}.*versioned Homebrew folder/.test(l)));
+    write(path.join(dir, 'Cellar', 'node', '25.0.0', 'bin', 'node'));
+    assert.ok((await run()).lines.some((l) => /^fail {2}.*no longer exists/.test(l)));
+    write(path.join(dir, 'bin', 'node'));
+    assert.ok(!(await run()).lines.some((l) => /Homebrew|no longer exists/.test(l)));
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test('launchctl print is read for the state, pid and last exit', () => {
