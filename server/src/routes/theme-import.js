@@ -5,12 +5,12 @@ import { importThemeFromUrl } from '../themes.js';
 
 export default {
   id: 'theme-import',
-  async handle({ req, res, json, badRequest, readJson, settings, publish, themeFetch }) {
+  async handle({ req, res, json, badRequest, readJson, settings, publish, themeFetch, themeFonts }) {
     const body = await readJson(req, 4096);
     for (const k of Object.keys(body)) if (k !== 'url' && k !== 'name') throw badRequest('bad_body', 'Unknown field ' + k + '.');
     if (body.name !== undefined && typeof body.name !== 'string') throw badRequest('bad_name', 'name must be a string');
     const held = settings.all()['appearance.themes'];
-    const out = await importThemeFromUrl({ url: body.url, name: body.name, held, fetchImpl: themeFetch });
+    const out = await importThemeFromUrl({ url: body.url, name: body.name, held, fetchImpl: themeFetch, fonts: themeFonts });
     const changed = settings.set({ 'appearance.themes': out.themes });
     if (changed) publish('settings.changed', { values: changed });
     json(res, 200, { theme: out.theme, accepted: out.accepted, refused: out.refused, summary: out.summary, values: settings.all() });

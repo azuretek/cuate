@@ -99,6 +99,7 @@ var engine = (() => {
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
     contactSearchText: () => contactSearchText,
+    contrastRatio: () => contrastRatio,
     controlLayout: () => controlLayout,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
@@ -158,6 +159,7 @@ var engine = (() => {
     orderChats: () => orderChats,
     panBounds: () => panBounds,
     panBy: () => panBy,
+    parseColour: () => parseColour,
     parseTraceparent: () => parseTraceparent,
     pick: () => pick,
     pickerSide: () => pickerSide,
@@ -208,6 +210,7 @@ var engine = (() => {
     textScale: () => textScale,
     textScaleVars: () => textScaleVars,
     themeChoices: () => themeChoices,
+    themeFonts: () => themeFonts,
     themeId: () => themeId,
     themeName: () => themeName,
     themeVars: () => themeVars,
@@ -316,6 +319,12 @@ var engine = (() => {
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
       themeImport: ({ url, name }) => call("POST", "/api/v1/themes", name ? { url, name } : { url }),
+      // One font file a held theme names, as bytes for the FontFace API.
+      async themeFont(id) {
+        const res = await fetchImpl(base + `/api/v1/themes/fonts/${encodeURIComponent(id)}`, { headers: auth });
+        if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
+        return res.arrayBuffer();
+      },
       async attachment(id, o = {}) {
         const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
@@ -1447,18 +1456,21 @@ var engine = (() => {
     return group === "color" ? `--color-${key}` : `--${group}-${key}`;
   }
   function themeVars(theme, scheme = "light") {
-    const out = [];
-    if (!theme || typeof theme !== "object") return out;
-    for (const group of THEME_GROUPS) {
-      const values = theme[group];
-      if (!values || typeof values !== "object") continue;
-      for (const [key, value] of Object.entries(values)) if (value !== null && value !== void 0 && safeValue(value)) out.push([cssVarName(group, key), String(value)]);
-    }
-    const colours = theme.color && theme.color[scheme];
-    if (colours && typeof colours === "object") {
-      for (const [key, value] of Object.entries(colours)) if (value !== null && value !== void 0 && safeValue(value)) out.push([cssVarName("color", key), String(value)]);
-    }
-    return out;
+    const out = /* @__PURE__ */ new Map();
+    if (!theme || typeof theme !== "object") return [];
+    const put = (group, values) => {
+      if (!values || typeof values !== "object") return;
+      for (const [key, value] of Object.entries(values)) if (value !== null && value !== void 0 && safeValue(value)) out.set(cssVarName(group, key), String(value));
+    };
+    for (const group of THEME_GROUPS) put(group, theme[group]);
+    const own = theme.schemes && typeof theme.schemes === "object" ? theme.schemes[scheme] : null;
+    if (own && typeof own === "object") for (const group of THEME_GROUPS) put(group, own[group]);
+    put("color", theme.color && theme.color[scheme]);
+    return [...out];
+  }
+  function themeFonts(theme) {
+    const list = theme && typeof theme === "object" && Array.isArray(theme.fonts) ? theme.fonts : [];
+    return list.filter((f) => f && typeof f === "object" && /^[A-Za-z0-9][A-Za-z0-9 ]{0,59}$/.test(String(f.family)) && /^[a-f0-9]{64}$/.test(String(f.id)) && /^[1-9]00$/.test(String(f.weight))).map((f) => ({ family: f.family, id: f.id, weight: String(f.weight), style: f.style === "italic" ? "italic" : "normal" }));
   }
   function themeName(theme) {
     return theme && typeof theme === "object" && typeof theme.name === "string" ? theme.name : "";
@@ -1476,10 +1488,21 @@ var engine = (() => {
     secondary: ["color", "bubble-them"],
     "secondary-foreground": ["color", "bubble-them-fg"],
     destructive: ["color", "danger"],
+    "destructive-foreground": ["color", "danger-fg"],
     accent: ["color", "selection"],
     radius: ["radius", "md"],
     "font-sans": ["font", "family"],
-    "font-mono": ["font", "mono"]
+    "font-mono": ["font", "mono"],
+    "letter-spacing": ["font", "tracking"],
+    "tracking-normal": ["font", "tracking"],
+    spacing: ["space", "1"],
+    "shadow-sm": ["shadow", "sm"],
+    "shadow-md": ["shadow", "md"],
+    "shadow-lg": ["shadow", "lg"]
+  };
+  var SCALE = {
+    radius: (v) => [["sm", "calc(" + v + " * 0.6)"], ["lg", "calc(" + v + " * 1.4)"]],
+    spacing: (v) => [["2", "calc(" + v + " * 2)"], ["3", "calc(" + v + " * 3)"], ["4", "calc(" + v + " * 4)"], ["5", "calc(" + v + " * 6)"], ["6", "calc(" + v + " * 8)"]]
   };
   var REFUSE = {
     popover: "the app draws no popover surface",
@@ -1487,6 +1510,24 @@ var engine = (() => {
     "card-foreground": "the app takes its words from fg, not a per-surface foreground",
     "accent-foreground": "the app has no colour on the selection highlight",
     ring: "the app derives its focus ring from accent",
+    "font-serif": "the app sets no serif type",
+    "tracking-tighter": "the app has one letter spacing, tracking-normal",
+    "tracking-tight": "the app has one letter spacing, tracking-normal",
+    "tracking-wide": "the app has one letter spacing, tracking-normal",
+    "tracking-wider": "the app has one letter spacing, tracking-normal",
+    "tracking-widest": "the app has one letter spacing, tracking-normal",
+    "shadow-2xs": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-xs": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    shadow: "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-xl": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-2xl": "the app has three elevations, shadow-sm, shadow-md and shadow-lg",
+    "shadow-color": "already composed into the shadow-* values the app takes",
+    "shadow-opacity": "already composed into the shadow-* values the app takes",
+    "shadow-blur": "already composed into the shadow-* values the app takes",
+    "shadow-spread": "already composed into the shadow-* values the app takes",
+    "shadow-offset-x": "already composed into the shadow-* values the app takes",
+    "shadow-offset-y": "already composed into the shadow-* values the app takes",
+    sidebar: "the app draws no sidebar block",
     "chart-1": "the app draws no charts",
     "chart-2": "the app draws no charts",
     "chart-3": "the app draws no charts",
@@ -1531,8 +1572,19 @@ var engine = (() => {
     const accepted = [];
     const refused = [];
     const theme = { name, source: "tweakcn", color: { light: {}, dark: {} } };
-    for (const block of parseBlocks(text)) {
-      const scheme = schemeOf(block.selector);
+    const blocks = parseBlocks(text).map((b) => ({ ...b, scheme: schemeOf(b.selector) }));
+    const ordered = [...blocks.filter((b) => b.scheme !== "dark"), ...blocks.filter((b) => b.scheme === "dark")];
+    const neutral = (scheme, group, key, value) => {
+      var _a, _b;
+      const held = theme[group] && theme[group][key];
+      if (scheme === "dark" && held !== void 0) {
+        if (held !== value) ((_b = (_a = theme.schemes ?? (theme.schemes = {})).dark ?? (_a.dark = {}))[group] ?? (_b[group] = {}))[key] = value;
+        return;
+      }
+      (theme[group] ?? (theme[group] = {}))[key] = value;
+    };
+    for (const block of ordered) {
+      const { scheme } = block;
       for (const [raw, value] of Object.entries(block.vars)) {
         if (Object.hasOwn(REFUSE, raw)) {
           refused.push(raw);
@@ -1553,8 +1605,12 @@ var engine = (() => {
           continue;
         }
         if (group === "color") theme.color[scheme][key] = value;
-        else (theme[group] ?? (theme[group] = {}))[key] = value;
+        else neutral(scheme, group, key, value);
         accepted.push(raw);
+        for (const [extra, derived] of SCALE[raw] ? SCALE[raw](value) : []) {
+          neutral(scheme, group, extra, derived);
+          accepted.push(raw + " -> " + extra);
+        }
         for (const [extra] of DERIVE[raw] ?? []) {
           if (group !== "color") break;
           theme.color[scheme][extra] = value;
@@ -1584,6 +1640,10 @@ var engine = (() => {
     };
     return block(":root", vars.theme, vars.light) + "\n" + block(".dark", vars.dark);
   }
+  function slugTitle(name) {
+    if (typeof name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(name)) return "";
+    return name.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+  }
   function importTheme(text, { name } = {}) {
     const raw = String(text ?? "");
     let item = null;
@@ -1596,7 +1656,7 @@ var engine = (() => {
     }
     const css = registryCss(item);
     const given = typeof name === "string" && name.trim() ? name.trim() : "";
-    const fromItem = item && typeof item === "object" ? [item.title, item.name].find((v) => typeof v === "string" && v.trim()) : "";
+    const fromItem = item && typeof item === "object" ? [item.title, slugTitle(item.name), item.name].find((v) => typeof v === "string" && v.trim()) : "";
     return importTweakcn(css ?? raw, { name: (given || fromItem || "Imported theme").slice(0, 60) });
   }
   var MAX_THEMES = 24;
@@ -1649,6 +1709,43 @@ var engine = (() => {
       if (value) out.push([name, "calc(" + value + " * " + p / 100 + ")"]);
     }
     return out;
+  }
+  function parseColour(value) {
+    const v = String(value ?? "").trim().toLowerCase();
+    let m = v.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
+    if (m) {
+      const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join("") : m[1];
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+    }
+    m = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
+    if (m) return [m[1], m[2], m[3]].map((n) => Math.min(1, Number(n) / 255));
+    m = v.match(/^oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)/);
+    if (m) {
+      const L = Number(m[1]) / (m[2] ? 100 : 1);
+      const h = Number(m[4]) * Math.PI / 180;
+      const a = Number(m[3]) * Math.cos(h);
+      const b = Number(m[3]) * Math.sin(h);
+      const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+      const mm = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+      const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+      const lin = [4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s];
+      return lin.map((c) => {
+        const x = Math.min(1, Math.max(0, c));
+        return x <= 31308e-7 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
+      });
+    }
+    return null;
+  }
+  function luminance(rgb) {
+    const [r, g, b] = rgb.map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function contrastRatio(a, b) {
+    const x = Array.isArray(a) ? a : parseColour(a);
+    const y = Array.isArray(b) ? b : parseColour(b);
+    if (!x || !y) return null;
+    const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p);
+    return (hi + 0.05) / (lo + 0.05);
   }
 
   // core/app/rules/settings.js
