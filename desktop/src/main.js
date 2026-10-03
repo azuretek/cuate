@@ -1691,6 +1691,11 @@ async function runSmoke(w) {
   const arrival = await js(readArrival);
   await pause(800);
   await shot('09-onboarding.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('09b-onboarding-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
   // Under reduced motion the same form takes the plain fade for motion.normal, never the spring.
   await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await pause(150);
