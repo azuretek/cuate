@@ -53,9 +53,10 @@ test('notice glyphs come from the shared icon set, not inline SVG', () => {
 test('notice geometry clears safe areas, controls and composer with directional reduced motion', () => {
   const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8');
   const tokens = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url)));
-  assert.match(css, /app-notices[^}]+safe-area-inset-top[^}]+size-header/);
-  assert.match(css, /app-notices[^}]+safe-area-inset-right[^}]+safe-area-inset-left/);
-  assert.match(tokens.size['notice-stack'], /safe-area-inset-bottom/);
+  // The safe areas are the stylesheet's one set of insets (issue 175): env(safe-area-inset-*) on iOS, the shell's on Android.
+  assert.match(css, /app-notices[^}]+var\(--inset-top\)[^}]+size-header/);
+  assert.match(css, /app-notices[^}]+var\(--inset-right\)[^}]+var\(--inset-left\)/);
+  assert.match(tokens.size['notice-stack'], /var\(--inset-top\)[^)]*var\(--inset-bottom\)/);
   assert.match(tokens.size['notice-stack'], /size-composer-max/);
   assert.ok(css.includes('transform: translateX(100%)'));
   assert.ok(css.includes('@media (max-width: 640px) { .app-notice { animation-name: notice-down; } }'));

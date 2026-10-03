@@ -44,6 +44,12 @@ struct ShellWebView: UIViewRepresentable {
             let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
             controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        if ProcessInfo.processInfo.arguments.contains("--system-bars-fixture"),
+           let url = Bundle.main.url(forResource: "system-bars-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
+            controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         #endif
         configuration.userContentController = controller
 
