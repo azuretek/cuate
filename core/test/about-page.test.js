@@ -160,13 +160,14 @@ test('Settings ends with an About row that opens the page, and About is drawn by
   assert.match(root, /<app-about [^>]*@check-updates=\$\{\(e\) => respond\(e, this\.checkUpdates\(\)\)\}/, 'the press shows the check until the shell answers');
 });
 
-test('the app icon on About is generated from desktop/build/icon.svg by the shared icon pipeline', () => {
+test('the app icon on About is generated from the Flor de muerto masters by the shared icon pipeline', () => {
   const about = read('core/app/components/app-about.js');
   const src = /APP_ICON = '([^']+)'/.exec(about);
   assert.ok(src, 'About names its icon once');
   assert.ok(existsSync(new URL('../app/' + src[1], import.meta.url)), 'the icon is in core/app, so every shell bundles it');
   const pipeline = read('desktop/scripts/icons.mjs');
-  assert.match(pipeline, /core\/app\/assets\/app-icon\.png/, 'the pipeline writes it from the one drawing source');
+  assert.match(pipeline, /core\/app\/assets\/app-icon\.png/, 'the pipeline writes it');
+  assert.match(pipeline, /core\/spec\/icon\/flor-de-muerto\.svg/, 'from the one drawing source, the master glyph');
   assert.ok(tokens.size['app-icon'], 'its size is a token');
   assert.match(read('core/app/styles/app.css'), /\.about-icon \{[^}]*var\(--size-app-icon\)/);
 });
