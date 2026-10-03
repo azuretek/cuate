@@ -1,5 +1,8 @@
 // Injected only by native test builds. Real components and keepScroll remain unchanged.
 (async () => {
+  // The verdict's fills. The native tests read them back from a capture, so they are fixed here rather than themed.
+  const PASS = '#1b7f3b';
+  const FAIL = '#b3261e';
   await customElements.whenDefined('app-root');
   const root = document.querySelector('app-root');
   // Wait for credential-free onboarding before replacing its synthetic record.
@@ -46,10 +49,20 @@
     observe();
     if (records.some(record => [...record.removedNodes].some(node => node === scroller || node === conversation || node.contains?.(scroller)))) blank = true;
   }).observe(document.body, { childList: true, subtree: true });
+  // The verdict is drawn inside the safe area, so no system bar draws over it, and on a fill of its own state, so a
+  // capture shows which verdict it caught whatever the scheme and the native test can read it from the pixels.
   const marker = document.createElement('output');
   marker.setAttribute('aria-label', 'rotation-proof');
-  Object.assign(marker.style, { position: 'fixed', top: '0', left: '0', zIndex: '9999' });
+  Object.assign(marker.style, {
+    position: 'fixed', top: 'env(safe-area-inset-top, 0px)', left: 'env(safe-area-inset-left, 0px)', zIndex: '9999',
+    padding: '4px 8px', font: '12px/16px sans-serif', color: '#ffffff', background: FAIL,
+  });
   document.body.append(marker);
+  // Every sample is numbered and the last failing one remembered, so a test can prove the verdict held for the whole
+  // of a capture rather than at the one instant it asked; each change of verdict is kept with the checks that failed.
+  let seq = 0;
+  let lastFail = 0;
+  const history = [];
   let frames = 0;
   let previousWidth = innerWidth;
   const sample = () => {
@@ -60,14 +73,30 @@
     const relationships = [...scroller.querySelectorAll('.reply-mark')];
     const chatDesign = document.documentElement.dataset.scheme === scheme && relationships.length === 25 && relationships.every(link => !link.textContent.includes('Synthetic rotation message') && !/Reply to/.test(link.textContent))
       && !scroller.querySelector('.reply-quote') && scroller.querySelector('.reaction');
-    const ok = Boolean(chatDesign) && !blank && current && Math.abs(current.getBoundingClientRect().top - top() - offset) <= 2
-      && field.value === 'Rotation draft with caret' && field.selectionStart === 9 && field.selectionEnd === 9
-      && document.activeElement === field && frames >= 10;
+    const checks = {
+      design: Boolean(chatDesign), present: !blank,
+      anchored: Boolean(current) && Math.abs(current.getBoundingClientRect().top - top() - offset) <= 2,
+      draft: field.value === 'Rotation draft with caret', caret: field.selectionStart === 9 && field.selectionEnd === 9,
+      focused: document.activeElement === field, settled: frames >= 10,
+    };
+    const failing = Object.keys(checks).filter(name => !checks[name]);
+    const ok = failing.length === 0;
+    seq += 1;
+    if (!ok) lastFail = seq;
     const label = (innerWidth > innerHeight ? 'landscape' : 'portrait') + ':' + (ok ? 'pass' : 'fail');
-    if (marker.textContent !== label) { marker.textContent = label; marker.setAttribute('aria-label', label); }
-    window.rotationProof = { ok: Boolean(ok), blank, width: innerWidth, height: innerHeight, key,
+    if (marker.textContent !== label) {
+      marker.textContent = label;
+      marker.setAttribute('aria-label', label);
+      marker.style.background = ok ? PASS : FAIL;
+      history.push({ at: Math.round(performance.now()), label, failing });
+      if (history.length > 40) history.shift();
+    }
+    const box = marker.getBoundingClientRect();
+    window.rotationProof = { ok, blank, width: innerWidth, height: innerHeight, key,
       delta: current ? current.getBoundingClientRect().top - top() - offset : null,
-      draft: field.value, start: field.selectionStart, end: field.selectionEnd };
+      draft: field.value, start: field.selectionStart, end: field.selectionEnd,
+      label: marker.textContent, seq, lastFail, failing, history,
+      marker: { left: box.left, top: box.top, width: box.width, height: box.height } };
     requestAnimationFrame(sample);
   };
   requestAnimationFrame(sample);
