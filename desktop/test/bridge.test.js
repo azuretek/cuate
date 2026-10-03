@@ -46,6 +46,21 @@ test('with no check wired, updates.check answers null rather than throwing', asy
   assert.equal(await h['updates.check']({}), null);
 });
 
+// Issue 167: the app icon chosen in Settings is applied by the shell: the desktop sets the window's and the Dock's
+// icon to the chosen picture and answers what it applied.
+test('app.icon calls through with the chosen icon and answers what the shell applied', async () => {
+  const asked = [];
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true, appIcon: (icon) => { asked.push(icon); return { applied: true, icon }; } });
+  assert.deepEqual(await h['app.icon']({ icon: 'night' }), { applied: true, icon: 'night' });
+  assert.deepEqual(asked, ['night']);
+  assert.deepEqual(await h['app.icon']({}), { applied: true, icon: '' }, 'a missing id is passed on as empty, for the shell to refuse');
+});
+
+test('with no icon wired, app.icon answers that nothing was applied', async () => {
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true });
+  assert.deepEqual(await h['app.icon']({ icon: 'night' }), { applied: false, icon: 'night' });
+});
+
 test('secure storage encrypts at rest and refuses bad keys and values', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'bridge-'));
   const file = path.join(dir, 'store.json');
