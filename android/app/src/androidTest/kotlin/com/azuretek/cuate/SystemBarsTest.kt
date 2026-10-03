@@ -243,6 +243,7 @@ class SystemBarsTest {
         }
         assertTrue("no $kind field to tap", spot != "null")
         val at = JSONObject(JSONObject("{\"v\":$spot}").getString("v"))
+        evaluate(scenario, "window.systemBarsEdge()")
         tap(scenario, at.getDouble("x"), at.getDouble("y"), dpr)
         val top = statusBar / dpr
         var last = listOf("no proof")
@@ -271,17 +272,23 @@ class SystemBarsTest {
             last = check()
             if (last.isEmpty()) break
         } while (System.nanoTime() < deadline)
-        // The screen lags the page by a frame or more on the emulator, so the kept capture is the first one that two
-        // captures in a row agree on, taken once the page has passed.
-        val settleBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        // The screen lags the page on the emulator, and two identical captures can both be the frame from before the
+        // keyboard shrank the view. The kept capture is one that shows the fixture's edge strip just above the keyboard,
+        // which only the shrunk view draws there, and that the next capture agrees with.
+        val settleBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        var drawn = false
         do {
             instrumentation.waitForIdleSync()
             val next = instrumentation.uiAutomation.takeScreenshot() ?: continue
-            val settled = shot?.sameAs(next) == true
+            val edgeRow = (keyboardTop(scenario) ?: next.height) - (2 * dpr).toInt()
+            val edge = next.getPixel(next.width / 2, edgeRow.coerceIn(0, next.height - 1))
+            val shows = abs(Color.red(edge) - 0x1b) <= 40 && abs(Color.green(edge) - 0x7f) <= 40 && abs(Color.blue(edge) - 0x3b) <= 40
+            val settled = shows && shot?.sameAs(next) == true
             shot?.recycle()
             shot = next
-            if (settled) break
+            if (settled) { drawn = true; break }
         } while (System.nanoTime() < settleBy)
+        if (!drawn) last = last + "the screen never drew the view the keyboard shrank (no edge strip above the keyboard)"
         shot?.let { save(it, "keys-$kind-$scheme") }
         // And it still holds on the frame that was kept: a view that slid back after passing once fails here.
         if (last.isEmpty()) last = check()
