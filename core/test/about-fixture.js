@@ -59,7 +59,17 @@
   marker.textContent = 'about:pass';
   Object.assign(marker.style, { position: 'fixed', bottom: '0', left: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(marker);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim(), button: button.textContent.trim(), command: button.dataset.command };
+  // The build the shell reported (issue 192): the channel and the build number About draws, which a phone's test holds
+  // to a value rather than Unknown.
+  const value = (key) => ((about().querySelector('.about-row[data-key=' + key + '] .about-value-text') || {}).textContent || '').trim();
+  const channel = value('channel');
+  const build = value('build');
+  const reported = document.createElement('output');
+  reported.setAttribute('aria-label', 'about:build channel=' + channel + ' build=' + build);
+  reported.textContent = reported.getAttribute('aria-label');
+  Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
+  document.body.append(reported);
+  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim(), button: button.textContent.trim(), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;

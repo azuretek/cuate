@@ -124,12 +124,23 @@ class AboutPageTest {
         throw AssertionError("The screen never showed the About page with its icon")
     }
 
-    // Two captures in a row that draw the same picture, for a view scrolled away from the icon settledCapture looks for.
+    // The page has drawn what its DOM now says: two animation frames have run since the call, so a frame carrying the
+    // state was produced. A state read from the DOM alone is not on screen yet on the CI emulator, whose frames take
+    // about a second each (HWUI "Davey! duration=1063ms" in its logcat).
+    private fun painted(scenario: ActivityScenario<MainActivity>) {
+        evaluate(scenario, "window.paintedFence = false; requestAnimationFrame(() => requestAnimationFrame(() => { window.paintedFence = true; }));")
+        waitFor(scenario, "window.paintedFence === true", "the page to draw its state")
+    }
+
+    // Two captures that draw the same picture across more than one emulator frame, for a view scrolled away from the
+    // icon settledCapture looks for. Two taken back to back are the same picture while the next frame is still being
+    // drawn, which kept About's press success mark and the unscrolled page after the DOM had moved on (issue 192).
     private fun steadyCapture(): android.graphics.Bitmap {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
         var previous: android.graphics.Bitmap? = null
         do {
             instrumentation.waitForIdleSync()
+            if (previous != null) android.os.SystemClock.sleep(STEADY_SPACING_MS)
             val capture = instrumentation.uiAutomation.takeScreenshot() ?: continue
             val last = previous
             if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
@@ -187,6 +198,7 @@ class AboutPageTest {
             while (ready == null) {
                 assertTrue("About never settled on Install", System.nanoTime() < until)
                 waitFor(scenario, idleInstall, "About's Install to settle")
+                painted(scenario)
                 val capture = steadyCapture()
                 if (evaluate(scenario, idleInstall) == "true") ready = capture else capture.recycle()
             }
@@ -227,7 +239,19 @@ class AboutPageTest {
             assertTrue("About draws its icon, Check for updates and the build: " + proof, proof.getString("parts") == "identity|updates|build")
             assertTrue("The notice offers the newer build: " + proof, proof.getString("notice").contains("Version $offered is available"))
             assertTrue("About's button is the notice's Download: " + proof, proof.getString("button") == "Download" && proof.getString("command") == "updates.download")
+            // The shell reports its channel and build (issue 192), so About shows neither as Unknown.
+            assertTrue("About shows this build's channel: " + proof, proof.getString("channel").let { it.isNotEmpty() && it != "Unknown" })
+            assertTrue("About shows this build's number: " + proof, proof.getString("build").let { it.isNotEmpty() && it != "Unknown" })
             keep(settledCapture(), "about-$scheme.png")
+            // The build report, scrolled into view, so the capture shows the channel and the build the shell reported.
+            evaluate(scenario, "document.querySelector('app-about .about-row[data-key=channel]').scrollIntoView({ block: 'center' })")
+            painted(scenario)
+            keep(steadyCapture(), "about-build-$scheme.png")
         }
+    }
+
+    private companion object {
+        /** Longer than one frame of the CI emulator (about a second), so two equal captures mean the screen is steady. */
+        const val STEADY_SPACING_MS = 1500L
     }
 }

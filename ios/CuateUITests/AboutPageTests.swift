@@ -19,8 +19,27 @@ final class AboutPageTests: XCTestCase {
         defer { app.terminate() }
         let proof = app.webViews.staticTexts["about:pass"].firstMatch
         XCTAssertTrue(proof.waitForExistence(timeout: 30), app.debugDescription)
-        let attachment = XCTAttachment(image: settled())
-        attachment.name = "about-" + scheme
+        // The shell reports its channel and build (issue 192), so About shows neither as Unknown.
+        let reported = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'about:build '")).firstMatch
+        XCTAssertTrue(reported.waitForExistence(timeout: 5), app.debugDescription)
+        let values = Dictionary(uniqueKeysWithValues: reported.label.dropFirst("about:build ".count).split(separator: " ").compactMap { pair -> (String, String)? in
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            return parts.count == 2 ? (parts[0], parts[1]) : nil
+        })
+        for key in ["channel", "build"] {
+            let value = values[key] ?? ""
+            XCTAssertFalse(value.isEmpty || value == "Unknown", "About shows this build's \(key): " + reported.label)
+        }
+        keep(settled(), name: "about-" + scheme)
+        // The build report, scrolled into view inside the sheet, so a capture shows the channel and the build.
+        let page = app.webViews.firstMatch
+        page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.05, thenDragTo: page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        keep(settled(), name: "about-build-" + scheme)
+    }
+
+    private func keep(_ image: UIImage, name: String) {
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
     }
