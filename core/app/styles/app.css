@@ -53,10 +53,6 @@ app-root { display: block; height: 100%; }
 .text-button:hover { background: var(--color-bg-sunken); }
 .banner { margin: 0 var(--space-3) var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-banner); font-size: var(--font-size-sm); }
 .banner.problem { color: var(--color-danger); }
-/* The update banner runs the width of the pane it sits in, with the progress bar under the words. */
-.banner.update { margin: 0; border-radius: 0; border-bottom: var(--size-border) solid var(--color-border); display: flex; flex-direction: column; gap: var(--space-2); }
-.update-progress { width: 100%; height: var(--space-1); }
-.banner-action { align-self: flex-start; border: 0; border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); background: var(--color-accent); color: var(--color-accent-fg); font: inherit; cursor: pointer; }
 
 app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); }
@@ -308,7 +304,7 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
   .shell { grid-template-columns: minmax(0, 1fr); touch-action: pan-y; --drawer-progress: 0; }
   .shell[data-pane="list"] { --drawer-progress: 1; }
   .sidebar {
-    position: fixed; top: 0; bottom: 0; left: 0; width: var(--size-drawer); z-index: 2;
+    position: absolute; top: 0; bottom: 0; left: 0; width: var(--size-drawer); z-index: 2;
     border-right: 0; border-radius: 0 var(--radius-lg) var(--radius-lg) 0; box-shadow: var(--size-drawer-shadow);
     transform: translateX(calc((var(--drawer-progress) - 1) * 100%)); opacity: var(--drawer-progress);
     pointer-events: none;
@@ -514,6 +510,44 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }
 
+/* Floating notice geometry: clear header controls and reserve the composer below. The stack scrolls, which clips
+   whatever paints outside its padding box, so its padding holds the card's shadow and a negative margin keeps
+   the card where a 4px inset puts it. */
+app-notices { position: absolute; top: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--size-header) + var(--space-3)); right: max(env(safe-area-inset-right, calc(var(--space-1) * 0)), var(--space-4)); left: max(env(safe-area-inset-left, calc(var(--space-1) * 0)), var(--space-4)); pointer-events: none; z-index: 2; }
+.app-window { position: relative; }
+.app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
+.app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
+.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-notice); background: var(--color-bg-raised); color: var(--color-bg-raised-fg); box-shadow: var(--shadow-md); font-size: var(--font-size-sm); animation: notice-in var(--motion-normal) var(--motion-ease); }
+.app-notice-body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.app-notice-icon { color: var(--color-accent); flex: none; }
+.app-notice[data-tone="error"] .app-notice-icon { color: var(--color-danger); }
+.app-notice[data-tone="warn"] .app-notice-icon { color: var(--color-warning); }
+.app-notice[data-tone="ok"] .app-notice-icon { color: var(--color-bubble-sms); }
+.app-notice .icon { display: block; }
+.app-notice-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
+.app-notice-action, .app-notice-dismiss { pointer-events: auto; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-accent); cursor: pointer; padding: var(--space-1); }
+.app-notice-action { align-self: flex-start; }
+.app-notice-dismiss { flex: none; color: var(--color-fg-muted); }
+.app-notice-action:hover, .app-notice-dismiss:hover { background: var(--color-bg-sunken); }
+@keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+@keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
+/* On a phone there is no free corner: a floating card lands on the open drawer's Edit control and its first rows, or on
+   the conversation's header and messages. There the notices take a band of their own at the top of the window and the
+   surfaces start below it, the drawer included (it is placed in the body, not the viewport), so a notice never covers a
+   control with the drawer open or closed. The band holds the card's shadow, and takes no room while it holds no card. */
+@media (max-width: 640px) {
+  .app-body { position: relative; }
+  app-notices, .app-window[data-platform="darwin"] app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-bg); }
+  .app-notice-stack { align-items: stretch; margin: 0; padding: calc(env(safe-area-inset-top, calc(var(--space-1) * 0)) + var(--space-3)) calc(env(safe-area-inset-right, calc(var(--space-1) * 0)) + var(--space-4)) var(--space-5) calc(env(safe-area-inset-left, calc(var(--space-1) * 0)) + var(--space-4)); }
+  .app-window[data-platform="darwin"] .app-notice-stack { padding-top: calc(var(--size-window-strip) + var(--space-3)); }
+  /* On macOS the band then holds the traffic-light strip, so the headers below it drop their own and no gap opens. */
+  .app-window[data-platform="darwin"]:has(.app-notice) .sidebar-head,
+  .app-window[data-platform="darwin"]:has(.app-notice) .conv-head { height: var(--size-header); padding-block-start: calc(var(--space-1) * 0); }
+  .app-notice-stack:not(:has(.app-notice)) { display: none; }
+  .app-notice { width: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }
 /* Raised surfaces keep the foreground supplied by their theme. */
 .sidebar, .filter-menu, .message-menu, .attachment-file, .emoji-picker, .attach-menu, .sheet-rows, .staged-file, .load-older { color: var(--color-bg-raised-fg); }
 .message-menu .menu-item, .attach-menu .menu-item { color: inherit; }

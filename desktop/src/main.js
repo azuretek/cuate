@@ -335,10 +335,14 @@ async function runSmoke(w) {
       return { sel, icon: i.dataset.icon, mask: (s.maskImage || s.webkitMaskImage || '').slice(0, 30), paint: s.backgroundColor, color: getComputedStyle(b).color, width: r.width, size: parseFloat(root.getPropertyValue('--icon-size')), text: b.textContent.trim() };
     });
   })()`);
+  // Each read waits for the page to report the scheme it was switched to: a fixed 300ms pause read the dark icons
+  // still painted light on a busy macOS runner, which failed the follows check with nothing wrong in the icons.
   nativeTheme.themeSource = 'light';
+  await waitFor("!matchMedia('(prefers-color-scheme: dark)').matches", 5000);
   await pause(300);
   const iconsLight = await iconRead();
   nativeTheme.themeSource = 'dark';
+  await waitFor("matchMedia('(prefers-color-scheme: dark)').matches", 5000);
   await pause(300);
   const iconsDark = await iconRead();
   nativeTheme.themeSource = 'light';
@@ -531,11 +535,11 @@ async function runSmoke(w) {
   const hidAgain = await visibleWithin(false);
   trayItem('checkUpdates').click();
   const updatesRaised = await visibleWithin(true);
-  await waitFor("!document.querySelector('.sheet') && (document.querySelector('.banner.update')?.textContent || '').includes('does not update itself')", 10000);
+  await waitFor("!document.querySelector('.sheet') && (document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000);
   await pause(300);
   await shot('04-tray-check-updates.png');
-  await js("document.querySelector('.banner.update .banner-action').click()");
-  await waitFor("!document.querySelector('.banner.update')", 5000);
+  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await waitFor("!document.querySelector('.app-notice')", 5000);
   w.close();
   await visibleWithin(false);
   trayItem('show').click();
@@ -1478,35 +1482,49 @@ async function runSmoke(w) {
   // The update banner runs the whole flow in the app: an available state offers the download, the button's action
   // calls the bridge command it says it does, the download shows its progress, ready offers the restart, and a failure
   // says so. The shell records every bridge command the page calls, so the assertion reads the command actually sent.
-  const bannerCommand = () => js("(() => { const b = document.querySelector('.banner.update .banner-action'); if (!b) return null; const c = b.dataset.command; b.click(); return c; })()");
+  const bannerCommand = () => js("(() => { const b = document.querySelector('.app-notice .app-notice-action'); if (!b) return null; const c = b.dataset.command; b.click(); return c; })()");
   const called = async (name) => { for (let i = 0; i < 50 && !smokeCalls.includes(name); i += 1) await pause(100); return smokeCalls.includes(name); };
   smokeCalls.length = 0;
   wc.send('bridge:event:update.state', { state: 'available', version: '9.9.9', canInstall: true });
-  await waitFor("Boolean(document.querySelector('.banner.update .banner-action'))", 10000);
+  await waitFor("Boolean(document.querySelector('.app-notice .app-notice-action'))", 10000);
   const downloadCommand = await bannerCommand();
   report.updateDownloadAction = downloadCommand === 'updates.download' && (await called('updates.download'));
   wc.send('bridge:event:update.state', { state: 'downloading', version: '9.9.9', percent: 0.5, detail: '5.0 MB of 12 MB', canInstall: true });
-  await waitFor("Boolean(document.querySelector('.banner.update .update-progress'))", 10000);
-  report.updateBanner = await js("(() => { const p = document.querySelector('.update-progress'); return Boolean(p) && Number(p.value) > 0 && Number(p.value) < 1; })()");
+  await waitFor("Boolean(document.querySelector('.app-notice .app-notice-progress'))", 10000);
+  report.updateBanner = await js("(() => { const p = document.querySelector('.app-notice-progress'); return Boolean(p) && Number(p.value) > 0 && Number(p.value) < 1; })()");
   smokeCalls.length = 0;
   wc.send('bridge:event:update.state', { state: 'ready', version: '9.9.9', canInstall: true });
-  await waitFor("Boolean(document.querySelector('.banner.update .banner-action'))", 10000);
+  await waitFor("Boolean(document.querySelector('.app-notice .app-notice-action'))", 10000);
   const installCommand = await bannerCommand();
   report.updateInstallAction = installCommand === 'updates.install' && (await called('updates.install'));
   wc.send('bridge:event:update.state', { state: 'error', version: '9.9.9', detail: 'The download was interrupted.', canInstall: true });
-  await waitFor("Boolean(document.querySelector('.banner.update'))", 10000);
-  report.updateFailure = await js("(() => { const b = document.querySelector('.banner.update'); return Boolean(b) && b.textContent.includes('interrupted') && Boolean(b.querySelector('.banner-action')); })()");
+  await waitFor("Boolean(document.querySelector('.app-notice'))", 10000);
+  report.updateFailure = await js("(() => { const b = document.querySelector('.app-notice'); return Boolean(b) && b.textContent.includes('interrupted') && Boolean(b.querySelector('.app-notice-action')); })()");
   // A new check replaces the failure with the check in progress, which offers nothing to press, and a check that finds
   // nothing newer says so and is dismissed in the page, which clears the banner.
   wc.send('bridge:event:update.state', { state: 'checking' });
-  await waitFor("(document.querySelector('.banner.update')?.textContent || '').includes('Checking for updates') && !document.querySelector('.banner.update .banner-action')", 10000);
+  await waitFor("(document.querySelector('.app-notice')?.textContent || '').includes('Checking for updates') && !document.querySelector('.app-notice .app-notice-action')", 10000);
+  // The check in progress is a transient state, so its answer waits out the min-visible floor rather than flashing it.
+  const checkSeen = Date.now();
   wc.send('bridge:event:update.state', { state: 'current', version: '0.0.0', canInstall: true });
-  await waitFor("(document.querySelector('.banner.update')?.textContent || '').includes('latest version')", 10000);
+  await waitFor("(document.querySelector('.app-notice')?.textContent || '').includes('latest version')", 10000);
+  const floorMs = Number.parseFloat(await js("getComputedStyle(document.documentElement).getPropertyValue('--motion-min-visible')"));
+  report.noticeFloor = Number.isFinite(floorMs) && floorMs > 0 && Date.now() - checkSeen >= floorMs / 2;
   smokeCalls.length = 0;
-  await js("document.querySelector('.banner.update .banner-action').click()");
+  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
   await pause(300);
-  report.updateBannerCleared = await js("!document.querySelector('.banner.update')") && smokeCalls.length === 0;
-  report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared;
+  report.updateBannerCleared = await js("!document.querySelector('.app-notice')") && smokeCalls.length === 0;
+  // The same update event updates one card and its progress node, without replaying arrival.
+  await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.2,canInstall:true})");
+  await waitFor("Boolean(document.querySelector('.app-notice-progress'))");
+  await js("window.noticeProofNode = document.querySelector('.app-notice-progress'); document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.8,canInstall:true})");
+  await waitFor("document.querySelector('.app-notice-progress')?.value === 0.8");
+  report.noticeInPlace = await js("window.noticeProofNode === document.querySelector('.app-notice-progress') && document.querySelectorAll('.app-notice').length === 1");
+  await js("document.querySelector('.app-notice-dismiss').click()");
+  await waitFor("!document.querySelector('.app-notice')");
+  await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.9,canInstall:true})");
+  report.noticeDismissed = await js("!document.querySelector('.app-notice')");
+  report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared && report.noticeInPlace && report.noticeDismissed && report.noticeFloor;
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
   nativeTheme.themeSource = 'light';
@@ -1535,6 +1553,56 @@ async function runSmoke(w) {
     ' (down === "backdrop" ? scrim : card).dispatchEvent(ev("pointerdown", a, 1));' +
     ' (up === "backdrop" ? scrim : card).dispatchEvent(ev("pointerup", b, 0));' +
     ' return true; })()');
+  const proveAppNotices = async () => {
+    const originalSize = w.getSize();
+    const originalMinimum = w.getMinimumSize();
+    w.setMinimumSize(320, 400);
+    const originalTheme = nativeTheme.themeSource;
+    const geometry = "(() => { const card = document.querySelector('.app-notice'); if (!card) return false; const r = card.getBoundingClientRect(); const controls = [...document.querySelectorAll('.conv-head button, .sidebar-head button, app-composer button, app-composer textarea')]; return r.width > 200 && r.left >= 0 && r.right <= innerWidth && controls.every((b) => { const q = b.getBoundingClientRect(); return !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; }); })()";
+    // On a phone the notice must clear EVERY control the visible surface offers, the open drawer's included: its Edit
+    // control, its rows and the conversation's own header and composer. Each state is read once it has settled, and
+    // what the card lands on is named in the report, so a failure says which control was covered rather than only that
+    // one was. The scrim is the drawer's backdrop, not a control on the surface, and the card's own buttons are its own.
+    // A control counts where it can be seen: its box is cut to every scrolling or clipping ancestor and to the window,
+    // so a message's actions scrolled out of the list above are not read as sitting under the card.
+    const covered = () => js("(() => { const card = document.querySelector('.app-notice'); if (!card) return ['no notice']; const r = card.getBoundingClientRect(); const shown = (el) => { const q = el.getBoundingClientRect(); let l = Math.max(q.left, 0), t = Math.max(q.top, 0), rt = Math.min(q.right, innerWidth), b = Math.min(q.bottom, innerHeight); for (let a = el.parentElement; a; a = a.parentElement) { const s = getComputedStyle(a); if (s.overflowX === 'visible' && s.overflowY === 'visible') continue; const c = a.getBoundingClientRect(); l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom); } return rt > l && b > t ? { left: l, top: t, right: rt, bottom: b } : null; }; return [...document.querySelectorAll('button, input, select, textarea, a[href], [role=button], [role=option], .chat-row')].filter((el) => !card.contains(el) && !el.classList.contains('scrim') && getComputedStyle(el).visibility !== 'hidden').filter((el) => { const q = shown(el); return q && !(r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom); }).map((el) => (el.className || el.tagName.toLowerCase()) + ':' + (el.getAttribute('aria-label') || el.textContent.trim().slice(0, 24))); })()");
+    const pane = (want) => js("(() => { const root = document.querySelector('app-root'); if (" + JSON.stringify(want) + " === 'list') root.listOpen = true; else root.closeDrawer(); return true; })()");
+    const clear = {};
+    const listWasOpen = await js("document.querySelector('app-root').listOpen");
+    for (const [label, width, height, theme, drawer] of [['light', 1100, 800, 'light'], ['dark', 1100, 800, 'dark'], ['mobile', 390, 844, 'light', 'list'], ['mobile-conversation', 390, 844, 'light', 'conversation']]) {
+      w.setSize(width, height);
+      nativeTheme.themeSource = theme;
+      if (drawer) {
+        await pane(drawer);
+        await waitFor("document.querySelector('.shell')?.dataset.pane === " + JSON.stringify(drawer), 5000);
+        await pause(400); // the drawer slides on a 160ms transition; read the settled surface, not a frame of it.
+      }
+      await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.11',percent:0.6,detail:'6 MB of 10 MB',canInstall:true})");
+      await waitFor("Boolean(document.querySelector('.app-notice-progress'))");
+      if (drawer) {
+        let hits = await covered();
+        for (const t0 = Date.now(); hits.length && Date.now() - t0 < 3000; hits = await covered()) await pause(100);
+        clear[label] = hits;
+      } else {
+        await waitFor(geometry);
+      }
+      await shot('05-notices-' + label + '.png');
+    }
+    await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(listWasOpen)));
+    report.noticeClearMobile = Object.values(clear).every((hits) => hits.length === 0);
+    report.noticeCovers = clear;
+    report.updates = report.updates && report.noticeClearMobile;
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
+    await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+    report.updates = report.updates && report.noticeReducedMotion;
+    await js("document.querySelector('.app-notice-dismiss').click()");
+    await waitFor("!document.querySelector('.app-notice')");
+    w.setMinimumSize(...originalMinimum);
+    w.setSize(...originalSize);
+    nativeTheme.themeSource = originalTheme;
+  };
   const sheetVisible = () => js("Boolean(document.querySelector('.sheet'))");
   const sideways = async () => js("(() => { const d = document.documentElement; return { inner: window.innerWidth, doc: d.scrollWidth, body: document.body.scrollWidth }; })()");
 
@@ -1548,6 +1616,7 @@ async function runSmoke(w) {
   report.sheetDragKeeps = await sheetVisible();
   await pressSheet('backdrop', 'backdrop');
   await waitFor("!document.querySelector('.sheet')", 10000);
+  await proveAppNotices();
   report.sheetBackdropReturns = !(await sheetVisible());
 
   // Escape is the keyboard's own way back, and the strip names the key that does it.
