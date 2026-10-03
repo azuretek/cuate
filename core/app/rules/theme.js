@@ -267,19 +267,43 @@ export function importTheme(text, { name } = {}) {
 // draws it. The list is bounded so it cannot crowd out the rest of the settings store.
 export const MAX_THEMES = 24;
 
-// A stable id from the name, so importing the same theme again replaces it rather than adding a twin.
+// A readable id from the name. It is where an id starts, not what makes a theme the same as another: two themes can
+// share a name (every paste left unnamed is "Imported theme"), so addTheme gives the second its own id (issue 186).
 export function themeId(name) {
   const slug = String(name ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
   return slug || 'theme';
 }
 
-// The held list with one theme added (or replaced by id). Refuses, with the reason, a list that would grow past the bound.
+// Whether an import is a held theme again: the same URL (a theme page imported again brings its newer version), or,
+// for a theme with no URL, exactly the same theme. A name alone never decides it, since names repeat; keyed by name,
+// every unnamed paste and every pair of themes whose registry names agreed replaced each other, and the picker kept
+// only the last of them (issue 186).
+function sameImport(held, theme) {
+  if (held.url || theme.url) return Boolean(held.url) && held.url === theme.url;
+  const content = (t) => JSON.stringify({ ...t, id: undefined });
+  return content(held) === content(theme);
+}
+
+// An id no held theme has: the name's own, or the name's with the first free number after it.
+function freeId(held, base) {
+  const taken = new Set(held.map((t) => t.id));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(base + '-' + n)) n += 1;
+  return base + '-' + n;
+}
+
+// The held list with one theme added, or replacing the entry it is again (by id when it carries one, else sameImport),
+// in place and under that entry's id. Refuses, with the reason, a list that would grow past the bound.
 export function addTheme(list, theme) {
   const held = Array.isArray(list) ? list.filter((t) => t && typeof t === 'object') : [];
-  const entry = { ...theme, id: theme.id || themeId(theme.name) };
-  const at = held.findIndex((t) => t.id === entry.id);
-  if (at >= 0) return { ok: true, themes: held.map((t, i) => (i === at ? entry : t)), theme: entry, replaced: true };
+  const at = theme.id ? held.findIndex((t) => t.id === theme.id) : held.findIndex((t) => sameImport(t, theme));
+  if (at >= 0) {
+    const entry = { ...theme, id: held[at].id };
+    return { ok: true, themes: held.map((t, i) => (i === at ? entry : t)), theme: entry, replaced: true };
+  }
   if (held.length >= MAX_THEMES) return { ok: false, reason: 'The server already holds ' + MAX_THEMES + ' themes; remove one first.' };
+  const entry = { ...theme, id: theme.id || freeId(held, themeId(theme.name)) };
   return { ok: true, themes: [...held, entry], theme: entry, replaced: false };
 }
 

@@ -1986,12 +1986,27 @@ var engine = (() => {
     const slug = String(name ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
     return slug || "theme";
   }
+  function sameImport(held, theme) {
+    if (held.url || theme.url) return Boolean(held.url) && held.url === theme.url;
+    const content = (t) => JSON.stringify({ ...t, id: void 0 });
+    return content(held) === content(theme);
+  }
+  function freeId(held, base) {
+    const taken = new Set(held.map((t) => t.id));
+    if (!taken.has(base)) return base;
+    let n = 2;
+    while (taken.has(base + "-" + n)) n += 1;
+    return base + "-" + n;
+  }
   function addTheme(list, theme) {
     const held = Array.isArray(list) ? list.filter((t) => t && typeof t === "object") : [];
-    const entry = { ...theme, id: theme.id || themeId(theme.name) };
-    const at = held.findIndex((t) => t.id === entry.id);
-    if (at >= 0) return { ok: true, themes: held.map((t, i) => i === at ? entry : t), theme: entry, replaced: true };
+    const at = theme.id ? held.findIndex((t) => t.id === theme.id) : held.findIndex((t) => sameImport(t, theme));
+    if (at >= 0) {
+      const entry2 = { ...theme, id: held[at].id };
+      return { ok: true, themes: held.map((t, i) => i === at ? entry2 : t), theme: entry2, replaced: true };
+    }
     if (held.length >= MAX_THEMES) return { ok: false, reason: "The server already holds " + MAX_THEMES + " themes; remove one first." };
+    const entry = { ...theme, id: theme.id || freeId(held, themeId(theme.name)) };
     return { ok: true, themes: [...held, entry], theme: entry, replaced: false };
   }
   function removeTheme(list, id) {
