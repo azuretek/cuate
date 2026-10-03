@@ -57,6 +57,8 @@ const CHAT_LIMIT = 1000000000;
 
 /** Thrown when an export is asked for while another is sweeping the engine. */
 export const EXPORT_RUNNING = 'export_running';
+/** Thrown when an export is asked for while the updater holds the server for a switch. */
+export const EXPORT_HELD = 'updating';
 /** Thrown when the caller's signal aborted the sweep before it finished. */
 export const EXPORT_ABANDONED = 'export_abandoned';
 
@@ -81,7 +83,9 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
   // The one sweep allowed on the engine. It is taken before the first engine call and released only once the sweep's
   // last call has settled, an abandoned one included, so a new export never overlaps the page an old one left in flight.
   let running = false;
+  let held = false;
   async function exclusive(fn) {
+    if (held) throw Object.assign(new Error('The server is updating. Try the export again in a moment.'), { code: EXPORT_HELD });
     if (running) throw Object.assign(new Error('An export is already running. Try again when it has finished.'), { code: EXPORT_RUNNING });
     running = true;
     try { return await fn(); } finally { running = false; }
@@ -186,5 +190,6 @@ export function createExporter({ engine, dataDir, log = null, now = () => new Da
     return { file, bytes, doc };
   }
 
-  return { collect, write, lastExport, running: () => running };
+  // The updater's gate: a held exporter starts no new sweep, and running() says whether one is still going.
+  return { collect, write, lastExport, running: () => running, hold: () => { held = true; }, release: () => { held = false; } };
 }

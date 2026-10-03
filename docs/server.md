@@ -23,6 +23,22 @@ Switch sending on only once reading works from a device: `node server/src/main.j
 
 The data folder defaults to `~/Library/Application Support/<name>-server`; pass `--data DIR` to any command to use another. It holds `config.json`, the token and send records (`state.db`), a secret for attachment ids, an `uploads` folder holding a file a device sends until it has gone out (swept after a day), and a `diagnostics` folder for crash records.
 
+## Installed releases and safe updates
+
+From a checkout, run `node server/src/main.js service install --release --data DIR` (optionally `--version V --install-root ROOT`). This is an explicit service change, not something a client release performs. It keeps the existing data folder and runs `ROOT/current/server/src/main.js`. Code lives in `ROOT/versions/V`; code and data must not contain one another, including through symlinks. Node and the Messages engine remain host dependencies. The installed path is macOS only, like the service: `current` is a link replaced by an atomic rename, which Windows refuses, so a server started from an install layout anywhere else stops with an error and is run from a checkout under that host's own service manager instead.
+
+Auto-update follows dev prereleases only. It checks two minutes after startup and every four hours, backs off failed checks, and installs at most one release per check. Downloads have byte and time bounds. The tarball must match GitHub's recorded SHA-256 and its digest file; the shared artifact verifier checks every file and the Node range before unpacking.
+
+The server drains sends and exports, holds new work, backs up its state, records a pending switch and atomically repoints `current`. A separate process restarts it and requires the expected version and commit plus an authenticated chat list within 90 seconds. During probation only health and chat-list requests run. Success keeps two previous versions and three backups. Failure stops the candidate, returns to the previous version and restores the pre-switch backup only if the data format changed. Messages themselves stay in Messages history, outside this state backup.
+
+Pause with `node server/src/main.js service update --pause --install-root ROOT`, resume with `--resume`, or turn off **Update the server automatically** in Settings. A paused server still checks. A pause arriving during download or drain is checked again before switching; a switch already committed finishes its health check or rollback. `service update --release` requests a check now. Without `--release`, a development checkout keeps its git fast-forward update path.
+
+### Recovery
+
+Read `ROOT/update-state.json`, `ROOT/update.log` and `service status`. An interrupted pending switch is recovered before startup opens the data, returning `current` to the recorded previous version. A live finisher holds a cross-process lock; process death releases it. A running candidate whose finisher disappeared requests recovery at its next check. Failed recovery keeps probation and the backup rather than accepting writes.
+
+If automatic recovery cannot restore the previous version, keep the service stopped and preserve the data and install folders. Run `node ROOT/versions/FROM/server/src/main.js update recover --install-root ROOT --data DIR`, using the pending transaction's `from` version. Do not delete the pending record or restore a snapshot over newer accepted sends. Inspect the named error before retrying; missing backups or changed send records require manual reconciliation. Verify `service status` and an authenticated `check` before returning to service. No other messaging service is changed by these commands.
+
 ## Tokens
 
 - `token create --scope device` for each phone or computer: it reads and sends.

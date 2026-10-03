@@ -40,6 +40,7 @@ var engine = (() => {
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
     SCHEMES: () => SCHEMES,
+    SERVER_UPDATE_ERRORS: () => SERVER_UPDATE_ERRORS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
     SILENT_UPDATE_STATES: () => SILENT_UPDATE_STATES,
@@ -88,6 +89,7 @@ var engine = (() => {
     clientReport: () => clientReport,
     coerceSetting: () => coerceSetting,
     commitState: () => commitState,
+    compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
     controlLayout: () => controlLayout,
     countGraphemes: () => countGraphemes,
@@ -167,6 +169,7 @@ var engine = (() => {
     screenFor: () => screenFor,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
+    serverUpdateNotice: () => serverUpdateNotice,
     setAllChecked: () => setAllChecked,
     settingValue: () => settingValue,
     settingsAfterRefusal: () => settingsAfterRefusal,
@@ -531,6 +534,17 @@ var engine = (() => {
   function buildNumberOf(version) {
     const m = /(?:^|-)dev\.(\d+)(?:\.|$)/.exec(String(version || ""));
     return m ? m[1] : null;
+  }
+  function compareVersions(a, b) {
+    const parse = (v) => {
+      const m = /^(\d+)\.(\d+)\.(\d+)(?:-dev\.(\d+)\.[a-f0-9]{10})?$/.exec(String(v));
+      if (!m) throw new Error("not a release version: " + v);
+      return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === void 0 ? Infinity : Number(m[4])];
+    };
+    const x = parse(a);
+    const y = parse(b);
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+    return 0;
   }
   function stampProblem(stamp) {
     if (!stamp || typeof stamp !== "object") return "the stamp is not an object";
@@ -1589,7 +1603,11 @@ var engine = (() => {
       // Whether a release a check finds is fetched and applied with no further prompt. Off until someone turns it on: a
       // download nobody asked for spends someone's bandwidth, and the setting is how they asked. The check still runs
       // with it off, because knowing a release exists is what makes installing by hand possible.
-      "updates.autoDownload": { group: "updates", label: "Download updates automatically", type: "toggle", default: false }
+      "updates.autoDownload": { group: "updates", label: "Download updates automatically", type: "toggle", default: false },
+      // Whether the installed server installs a verified release by itself. On by default for now (issue 117): every
+      // install is verified, backed up, health checked and rolled back on failure. Off, the server still checks and
+      // installs nothing; service update --pause on the Mac does the same from there.
+      "updates.serverAuto": { group: "updates", label: "Update the server automatically", type: "toggle", default: true }
     }
   };
   function settingsFields(schema = SETTINGS_SCHEMA) {
@@ -1710,6 +1728,12 @@ var engine = (() => {
     if (state === "ready") return { type: "updateReady", title: "Update ready", body: "Restart the app to install the downloaded update." };
     if (state === "error") return { type: "error", title: "Update failed", body: why || "The update could not be checked for or downloaded." };
     return null;
+  }
+  var SERVER_UPDATE_ERRORS = ["refused", "rolled_back", "rollback_failed"];
+  function serverUpdateNotice(outcome) {
+    if (!outcome || !SERVER_UPDATE_ERRORS.includes(outcome.state)) return null;
+    const notice = updateNotice("error", outcome.version, outcome.detail || null);
+    return { ...notice, title: "Server update failed", key: "server:" + outcome.state + ":" + (outcome.version || "") + ":" + (outcome.at || "") };
   }
   function messageNotice(title, m) {
     const count = Array.isArray(m.attachments) ? m.attachments.length : 0;

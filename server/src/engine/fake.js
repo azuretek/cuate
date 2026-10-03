@@ -16,8 +16,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   let attempts = 0;
   let liveSent = false;
   const sends = [];
-  // send: how a send answers. afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
-  const behavior = { send: 'ok', afterDelayMs: 0 };
+  // send: how a send answers. sendDelayMs: how long a send takes to answer, so a test can hold one in flight.
+  // afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0 };
   const transports = new Set();
 
   const lastAt = (chatId) => messages.filter((m) => m.chat_id === chatId && !m.is_reaction).reduce((a, m) => (m.created_at > a ? m.created_at : a), '');
@@ -127,7 +128,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
             const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file });
             sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null });
-            reply(req.id, { ok: true, id: m.id, guid: m.guid });
+            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: m.guid }), behavior.sendDelayMs).unref();
+            else reply(req.id, { ok: true, id: m.id, guid: m.guid });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }
