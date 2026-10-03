@@ -373,7 +373,9 @@ test('placeholder text is dimmed from its token, on every field', () => {
   for (const f of walk('core/app/components')) assert.equal(/::placeholder|placeholder-shown/.test(read(f)), false, f + ' styles a placeholder of its own');
   const fields = walk('core/app/components').flatMap((f) => [...read(f).matchAll(/<(\w[\w-]*)\b[^>]*\s\.?placeholder=/g)].map((m) => f + ' <' + m[1]));
   assert.ok(fields.length >= 5, 'the guard sees the fields that carry a placeholder: ' + fields.join(', '));
-  for (const f of fields) assert.match(f, /<(?:input|textarea)$/, f + ' carries a placeholder the rule does not reach');
+  // A component handed a placeholder (the composer) draws it on a field of its own, which the rule reaches.
+  const forwards = (tag) => { try { return /<(?:input|textarea)\b[^>]*\s\.placeholder=\$\{this\.placeholder\}/.test(read('core/app/components/' + tag + '.js')); } catch { return false; } };
+  for (const f of fields) assert.ok(/<(?:input|textarea)$/.test(f) || forwards(f.split('<')[1]), f + ' carries a placeholder the rule does not reach');
 });
 
 // The conventions catalogue (issue 185) stays true: every rule names the issue it came from, every test it says
