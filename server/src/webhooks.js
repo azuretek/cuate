@@ -7,6 +7,8 @@ import { createCipheriv, createHmac, randomBytes, randomUUID } from 'node:crypto
 import { apiSpec } from './paths.js';
 
 export const ALL_EVENTS = '*';
+/** The event a test delivery carries. No publish ever sends it, so it reaches only the one hook a test names. */
+export const TEST_EVENT = 'hook.test';
 export const DEFAULT_EVENTS = ['message.new'];
 /** Consecutive given-up deliveries after which an endpoint is switched off. */
 export const DISABLE_AFTER_GIVEUPS = 20;
@@ -20,6 +22,25 @@ const b64url = (buf) => Buffer.from(buf).toString('base64url');
 
 /** The event names an endpoint can ask for: every event the spec names. */
 export const eventNames = () => Object.keys(apiSpec.events);
+
+// A value of a declared type with placeholder content: every field present, optional ones too, so a receiver sees the
+// whole shape. Nothing in it came from a message.
+function placeholder(type, models) {
+  const base = type.replace(/\?$/, '');
+  if (base.endsWith('[]')) return [placeholder(base.slice(0, -2), models)];
+  if (base === 'string') return 'placeholder';
+  if (base === 'number') return 0;
+  if (base === 'boolean') return false;
+  if (base === 'object') return {};
+  return Object.fromEntries(Object.entries(models[base]).map(([k, t]) => [k, placeholder(t, models)]));
+}
+
+/** Data shaped like an event's, as the spec declares it, with placeholder content. */
+export function sampleData(name) {
+  const model = apiSpec.events[name];
+  if (!model) throw new Error(name + ' is not an event: ' + eventNames().join(', '));
+  return placeholder(model, apiSpec.models);
+}
 
 /** A new endpoint secret or encryption key: 32 random bytes, base64url. */
 export const newKeyMaterial = () => b64url(randomBytes(32));
@@ -105,6 +126,7 @@ export function createWebhooks({
     if (log) log.emit('webhook.gaveup', { endpoint: sub.id, trigger: payload.event, attempts, status: status == null ? undefined : status, error: error == null ? undefined : error });
     if (sub.giveUps >= disableAfterGiveUps) disable(sub, 'give_ups');
     else if (sub.firstUndelivered !== null && now() - sub.firstUndelivered >= disableAfterMs) disable(sub, 'no_delivery');
+    return { ok: false, attempts, status, error };
   }
 
   function delivered(sub, payload, attempts, status) {
@@ -113,6 +135,7 @@ export function createWebhooks({
     sub.lastDelivered = now();
     sub.firstUndelivered = null;
     if (log) log.emit('webhook.delivered', { endpoint: sub.id, trigger: payload.event, attempts, status });
+    return { ok: true, attempts, status, error: null };
   }
 
   async function post(sub, payload, body) {
@@ -148,24 +171,46 @@ export function createWebhooks({
     return JSON.stringify(sub.encrypt ? { ...head, jwe: encrypt(sub.key, data) } : { ...head, data });
   }
 
+  // One delivery to one endpoint, tracked so drain waits for it; the promise resolves to how it ended.
+  function send(sub, head, data) {
+    stats.queued += 1;
+    if (sub.firstUndelivered === null) sub.firstUndelivered = now();
+    const p = post(sub, head, bodyFor(sub, head, data));
+    const tracked = p.catch(() => {});
+    inflight.add(tracked);
+    tracked.finally(() => inflight.delete(tracked));
+    return p;
+  }
+
   // Queueing is synchronous and never awaits the network, which is what keeps a live event off the server's path.
   function enqueue(name, data) {
-    if (closed) return;
+    if (closed || name === TEST_EVENT) return;
     const head = { id: randomUUID(), event: name, sentAt: new Date(now()).toISOString() };
     for (const sub of subs) {
       if (!sub.active || !(sub.all || sub.events.includes(name))) continue;
-      stats.queued += 1;
-      if (sub.firstUndelivered === null) sub.firstUndelivered = now();
-      const p = post(sub, head, bodyFor(sub, head, data)).catch(() => {});
-      inflight.add(p);
-      p.finally(() => inflight.delete(p));
+      send(sub, head, data).catch(() => {});
     }
+  }
+
+  /**
+   * One test delivery to one endpoint, through the same signing, encryption, retries and log events as a live one.
+   * It carries TEST_EVENT and no message content; with a shape, its data is that event's, with placeholder content,
+   * and the shape is named in the clear beside the event. Resolves to { ok, attempts, status, error }.
+   */
+  function test(id, { shape = null } = {}) {
+    const sub = subs.find((s) => s.id === id);
+    if (!sub) return Promise.reject(new Error('no hook ' + id));
+    if (!sub.active) return Promise.reject(new Error('hook ' + id + ' is switched off'));
+    const data = shape ? sampleData(shape) : { hook: id, test: true };
+    const head = { id: randomUUID(), event: TEST_EVENT, ...(shape ? { shape } : {}), sentAt: new Date(now()).toISOString() };
+    return send(sub, head, data);
   }
 
   return {
     get endpoints() { return subs; },
     stats,
     enqueue,
+    test,
     /** Take a new endpoint list, as on a reload. An endpoint kept by id, and still on, keeps its failure count. */
     setEndpoints(list) {
       const before = new Map(subs.map((s) => [s.id, s]));

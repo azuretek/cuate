@@ -65,6 +65,7 @@ node server/src/main.js hooks list
 node server/src/main.js hooks disable tool        # and enable, remove
 node server/src/main.js hooks rotate tool         # a new secret and key; the old ones stay until --retire
 node server/src/main.js hooks rotate tool --retire
+node server/src/main.js hooks test tool          # one test delivery, now; --event message.new shapes it like one
 ```
 
 `add` prints the endpoint's secret and its encryption key once, for the receiver to keep in its own secret store; they are in `config.json` (mode 0600) and never in a log or in `hooks list`. An event name the spec does not hold is refused, and so is an `http` URL that is not loopback. Every change is read by a running service on SIGHUP, which `hooks` sends and confirms from the service's log, so no app is disconnected.
@@ -75,6 +76,8 @@ Each delivery is one POST:
 - `x-webhook-signature: t=<unix seconds>,v1=<hex>` is the HMAC-SHA256 of `<t>.<the exact body>` under the secret (its text, as UTF-8). While a secret is rotating there is one `v1` for each, so a receiver can switch at its own pace. Refuse a delivery whose `t` is more than five minutes away, so an old one cannot be replayed.
 - A delivery that is not accepted is retried after 1, 2, 4 and 8 seconds, except a 4xx other than 408 and 429, which resending cannot change. Then it is given up on and logged as `webhook.gaveup` with its id. There is no queue on disk: a receiver that missed events reads them back through the messages API, which is the record.
 - After 20 deliveries in a row are given up on, or a day passes with none delivered while some were tried, the endpoint is switched off in `config.json` with the reason and the last error, `webhook.disabled` is logged, and `doctor` names it. `hooks enable` switches it back on.
+
+`hooks test ID` proves a receiver without waiting for a real event. It sends one delivery to that hook and no other, from the command's own process, through the same signing, encryption, retries and log events as a live one (the log lines print to the terminal). Its event is `hook.test`, which nothing else ever sends, and its data is `{ "hook": ID, "test": true }`, with no message in it. With `--event TYPE` the data is shaped like that event's, every field present with placeholder content, and the body names the shape in the clear beside the event, as `"shape": TYPE`, so a receiver can run the payload through the handler for the real one. It prints the status the receiver answered with and exits 0 when the receiver accepted the delivery; a refusal, after the retries a live delivery gets, a hook that is switched off, a missing hook and an unknown `--event` each print why and exit 1. A test delivery is not counted against the hook: it never switches a hook off.
 
 A receiver in plain Node, verifying first and decrypting second:
 
