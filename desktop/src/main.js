@@ -1575,7 +1575,7 @@ async function runSmoke(w) {
     }
     await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(listWasOpen)));
     report.noticeClearMobile = Object.values(clear).every((hits) => hits.length === 0);
-    if (!report.noticeClearMobile) console.error('notice covers: ' + JSON.stringify(clear));
+    report.noticeCovers = clear;
     report.updates = report.updates && report.noticeClearMobile;
     if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });

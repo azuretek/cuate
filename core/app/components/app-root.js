@@ -641,7 +641,7 @@ class AppRoot extends KitElement {
   onPointerDown = (e) => {
     if (this.phase !== 'ready' || this.view !== 'messages') return;
     const sidebar = this.querySelector('.sidebar');
-    if (!sidebar || getComputedStyle(sidebar).position !== 'fixed') return;   // the drawer exists only on the phone
+    if (!sidebar || getComputedStyle(sidebar).position === 'static') return;   // the drawer exists only on the phone
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const open = this.listOpen;
     if (!open && !isEdgeStart(e.clientX)) return;   // only an edge drag opens the list
