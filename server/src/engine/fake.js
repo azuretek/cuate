@@ -4,7 +4,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
-import { buildFixtures } from './fixtures.js';
+import { buildFixtures, imsgReaction } from './fixtures.js';
 
 export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000 } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
@@ -46,8 +46,16 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       broadcast(m);
       return m;
     },
-    react(chatId, targetGuid, type, sender) {
-      const m = add({ chat_id: chatId, is_from_me: false, sender, is_reaction: true, reaction_type: type, is_reaction_add: true, reacted_to_guid: targetGuid });
+    // Someone else's reaction: a standard kind, or any emoji, added or taken off. The target's own reactions change as
+    // they would in chat.db (one per person), and the row streams in imsg's shape, so the adapter maps what imsg sends.
+    react(chatId, targetGuid, kindOrEmoji, sender, { remove = false } = {}) {
+      const { type, emoji } = imsgReaction(kindOrEmoji);
+      const target = messages.find((x) => x.guid === targetGuid && x.chat_id === chatId && !x.is_reaction);
+      if (target) {
+        const others = (target.reactions || []).filter((r) => r.is_from_me || r.sender !== sender);
+        target.reactions = remove ? others : [...others, { type, emoji, sender, is_from_me: false }];
+      }
+      const m = add({ chat_id: chatId, is_from_me: false, sender, is_reaction: true, reaction_type: type, reaction_emoji: emoji, is_reaction_add: !remove, reacted_to_guid: targetGuid });
       broadcast(m);
       return m;
     },
@@ -152,8 +160,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (!target) return fail(req.id, -32602, 'unknown message_guid');
             const adding = p.remove !== true;
             const others = (target.reactions || []).filter((r) => !r.is_from_me);
-            target.reactions = adding ? [...others, { reaction_type: p.kind, is_from_me: true }] : others;
-            const m = add({ chat_id: p.chat_id, is_from_me: true, is_reaction: true, reaction_type: p.kind, is_reaction_add: adding, reacted_to_guid: target.guid });
+            target.reactions = adding ? [...others, { ...imsgReaction(p.kind), is_from_me: true }] : others;
+            const m = add({ chat_id: p.chat_id, is_from_me: true, is_reaction: true, reaction_type: p.kind, reaction_emoji: imsgReaction(p.kind).emoji, is_reaction_add: adding, reacted_to_guid: target.guid });
             tapbacks.push({ chatId: p.chat_id, targetId: target.guid, kind: p.kind, remove: !adding });
             reply(req.id, { ok: true });
             setTimeout(() => broadcast(m), 30).unref();
