@@ -41,7 +41,8 @@ struct ShellWebView: UIViewRepresentable {
         if ProcessInfo.processInfo.arguments.contains("--rotation-fixture"),
            let url = Bundle.main.url(forResource: "rotation-fixture", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
-            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
+            controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
         #endif
         configuration.userContentController = controller

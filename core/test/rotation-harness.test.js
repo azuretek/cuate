@@ -10,8 +10,8 @@ test('native fixture supplies the message arrays consumed by the conversation', 
     get updateComplete() {
       for (const message of this.messages) {
         assert.equal(message.attachments.length, 0);
-        assert.equal(message.reactions.length, 0);
-        assert.equal(message.replyTo, null);
+        assert.ok(Array.isArray(message.reactions));
+        assert.ok(message.replyTo === null || message.replyTo.startsWith('rotation-'));
       }
       throw new Error('render contract reached');
     },

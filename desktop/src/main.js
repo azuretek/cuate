@@ -481,6 +481,14 @@ async function runSmoke(w) {
     for (const t0 = Date.now(); w.isVisible() !== want && Date.now() - t0 < ms;) await pause(100);
     return w.isVisible() === want;
   };
+  // Restoring a minimised window is asynchronous on macOS: the window stays minimised until the restore animation ends,
+  // which can be after the page has already drawn what the click asked for. The raise is read as a state the window
+  // reaches, the same way the minimise is, never sampled once.
+  const raisedWithin = async (ms = 5000) => {
+    const raised = () => w.isVisible() && !w.isMinimized();
+    for (const t0 = Date.now(); !raised() && Date.now() - t0 < ms;) await pause(100);
+    return raised();
+  };
   const closeWindow = barLayout.drawn
     ? () => js("(() => { document.querySelector('.conv-head .window-control.close').click(); return true; })()")
     : () => { w.close(); };
@@ -517,7 +525,8 @@ async function runSmoke(w) {
   // About is the last section of Settings (issue 134): the tray's About opens Settings and brings that section up.
   trayItem('about').click();
   await waitFor(aboutRevealed, 10000);
-  const aboutRaised = w.isVisible() && !w.isMinimized();
+  const aboutRaised = await raisedWithin();
+  const aboutState = { visible: w.isVisible(), minimised: w.isMinimized() };
   w.close();
   const hidAgain = await visibleWithin(false);
   trayItem('checkUpdates').click();
@@ -533,7 +542,7 @@ async function runSmoke(w) {
   const trayShown = await visibleWithin(true);
   const trayChecks = { order: trayOrder === 'show|settings|about|checkUpdates|quit', settingsRaised, aboutRaised, hidAgain, updatesRaised, shown: trayShown, quitting: !lifecycle.quitting };
   report.tray = Object.values(trayChecks).every(Boolean);
-  console.log('tray: ' + JSON.stringify({ checks: trayChecks, minimised }));
+  console.log('tray: ' + JSON.stringify({ checks: trayChecks, minimised, aboutState }));
 
   // The emoji panel: the grid draws first, the search field and the categories sit below it, the recently used row
   // (once there is one) sits last, nearest the emoji button, and the panel keeps one height, so typing a query
@@ -730,8 +739,8 @@ async function runSmoke(w) {
   console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
-  await waitFor(`Boolean(${replySel}?.querySelector('.reply-quote'))`, 20000);
-  const replied = await js(`(() => { const r = ${replySel}; const quote = r.querySelector('.reply-quote'); return { quote: quote.textContent, enabled: !quote.disabled, cleared: !document.querySelector('app-composer .composer-reply') }; })()`);
+  await waitFor(`Boolean(${replySel}?.querySelector('.reply-link'))`, 20000);
+  const replied = await js(`(() => { const r = ${replySel}; const quote = r.querySelector('.reply-link'); return { quote: quote.textContent, enabled: !quote.disabled, cleared: !document.querySelector('app-composer .composer-reply') }; })()`);
   await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
   await pause(300);
   await shot('16-replied-light.png');
@@ -739,10 +748,10 @@ async function runSmoke(w) {
   await pause(400);
   await shot('16b-replied-dark.png');
   nativeTheme.themeSource = 'light';
-  await js(`${replySel}.querySelector('.reply-quote').click()`);
+  await js(`${replySel}.querySelector('.reply-link').click()`);
   await waitFor(`document.querySelector(${q(row)})?.classList.contains('flash')`, 5000);
   const wentTo = await js(`(() => { const r = document.querySelector(${q(row)}).getBoundingClientRect(); const l = document.querySelector('.messages').getBoundingClientRect(); return r.bottom > l.top && r.top < l.bottom; })()`);
-  const replyChecks = { focused: replyFocused, quoted: replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn'), enabled: replied.enabled, cleared: replied.cleared, wentTo };
+  const replyChecks = { focused: replyFocused, relationship: !replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn'), enabled: replied.enabled, cleared: replied.cleared, wentTo };
   report.reply = Object.values(replyChecks).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied }));
 

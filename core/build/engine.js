@@ -1559,7 +1559,9 @@ var engine = (() => {
     for (const group of THEME_GROUPS) put(group, theme[group]);
     const own = theme.schemes && typeof theme.schemes === "object" ? theme.schemes[scheme] : null;
     if (own && typeof own === "object") for (const group of THEME_GROUPS) put(group, own[group]);
-    put("color", theme.color && theme.color[scheme]);
+    const colors = theme.color && theme.color[scheme];
+    if (colors?.fg) put("color", { "bg-raised-fg": colors.fg, "selection-fg": colors.fg });
+    put("color", colors);
     return [...out];
   }
   function themeFonts(theme) {
@@ -1573,6 +1575,8 @@ var engine = (() => {
     background: ["color", "bg"],
     foreground: ["color", "fg"],
     card: ["color", "bg-raised"],
+    "card-foreground": ["color", "bg-raised-fg"],
+    "accent-foreground": ["color", "selection-fg"],
     muted: ["color", "bg-sunken"],
     "muted-foreground": ["color", "fg-muted"],
     border: ["color", "border"],
@@ -1601,8 +1605,6 @@ var engine = (() => {
   var REFUSE = {
     popover: "the app draws no popover surface",
     "popover-foreground": "the app draws no popover surface",
-    "card-foreground": "the app takes its words from fg, not a per-surface foreground",
-    "accent-foreground": "the app has no colour on the selection highlight",
     ring: "the app derives its focus ring from accent",
     "font-serif": "the app sets no serif type",
     "tracking-tighter": "the app has one letter spacing, tracking-normal",

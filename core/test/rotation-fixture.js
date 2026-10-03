@@ -11,13 +11,16 @@
   root.openChatId = chat.id;
   root.messages = Array.from({ length: 100 }, (_, i) => ({
     id: 'rotation-' + i, chatId: chat.id, text: 'Synthetic rotation message ' + i + ' with enough words to wrap when the phone turns.',
-    sentAt: '2026-01-01T12:00:00.000Z', fromMe: i % 2 === 0, sender: 'Fixture', attachments: [], reactions: [], replyTo: null,
+    sentAt: '2026-01-01T12:00:00.000Z', fromMe: i % 2 === 0, sender: 'Fixture', attachments: [], reactions: i % 3 === 0 ? [{ type: 'love', sender: 'Fixture', fromMe: false }] : [], replyTo: i % 4 === 1 ? 'rotation-' + (i - 1) : null,
   }));
+  const scheme = window.fixtureScheme === 'dark' ? 'dark' : 'light';
+  root.settings = { ...root.settings, 'appearance.skin': scheme };
   root.phase = 'ready';
   root.conn = 'open';
   root.sending = true;
   root.listOpen = false;
   await root.updateComplete;
+  root.applyTheme();
   const conversation = root.querySelector('app-conversation');
   await conversation.updateComplete;
   const composer = conversation.querySelector('app-composer');
@@ -54,7 +57,10 @@
     frames = previousWidth === innerWidth ? frames + 1 : 0;
     previousWidth = innerWidth;
     const current = rows().find(row => row.dataset.id === key);
-    const ok = !blank && current && Math.abs(current.getBoundingClientRect().top - top() - offset) <= 2
+    const relationships = [...scroller.querySelectorAll('.reply-link')];
+    const chatDesign = document.documentElement.dataset.scheme === scheme && relationships.length === 25 && relationships.every(link => !link.textContent.includes('Synthetic rotation message'))
+      && !scroller.querySelector('.reply-quote') && scroller.querySelector('.reaction');
+    const ok = Boolean(chatDesign) && !blank && current && Math.abs(current.getBoundingClientRect().top - top() - offset) <= 2
       && field.value === 'Rotation draft with caret' && field.selectionStart === 9 && field.selectionEnd === 9
       && document.activeElement === field && frames >= 10;
     const label = (innerWidth > innerHeight ? 'landscape' : 'portrait') + ':' + (ok ? 'pass' : 'fail');

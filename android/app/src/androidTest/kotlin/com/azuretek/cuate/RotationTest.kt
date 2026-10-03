@@ -53,8 +53,59 @@ class RotationTest {
         throw AssertionError("Rotation retention failed: $result")
     }
 
+    // The DOM can report the proof before the compositor presents that frame, and a
+    // starting window or a system dialog can cover it. Keep capturing until the pixels
+    // themselves show a populated conversation in the requested scheme, and two captures
+    // in a row are identical, so a frame still drawing the previous proof label is never kept.
+    private fun schemeShown(capture: android.graphics.Bitmap, scheme: String): Boolean {
+        val top = capture.height / 10
+        val bottom = capture.height * 85 / 100
+        var total = 0L
+        var count = 0
+        var darkest = 255
+        var brightest = 0
+        for (y in top until bottom step 8) {
+            for (x in 0 until capture.width step 8) {
+                val pixel = capture.getPixel(x, y)
+                val luma = (299 * android.graphics.Color.red(pixel) + 587 * android.graphics.Color.green(pixel)
+                    + 114 * android.graphics.Color.blue(pixel)) / 1000
+                total += luma
+                count++
+                if (luma < darkest) darkest = luma
+                if (luma > brightest) brightest = luma
+            }
+        }
+        if (count == 0 || brightest - darkest < 96) return false
+        val mean = total / count
+        return if (scheme == "dark") mean < 80 else mean > 160
+    }
+
+    private fun captureScheme(scheme: String): android.graphics.Bitmap {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        var previous: android.graphics.Bitmap? = null
+        do {
+            instrumentation.waitForIdleSync()
+            val capture = instrumentation.uiAutomation.takeScreenshot()
+            if (capture != null && schemeShown(capture, scheme)) {
+                val last = previous
+                if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
+                last?.recycle()
+                previous = capture
+            } else {
+                capture?.recycle()
+            }
+        } while (System.nanoTime() < deadline)
+        previous?.recycle()
+        throw AssertionError("The screen never showed the populated $scheme conversation")
+    }
+
     @Test
-    fun conversationSurvivesPortraitLandscapePortrait() {
+    fun lightConversation() = conversation("light")
+
+    @Test
+    fun darkConversation() = conversation("dark")
+
+    private fun conversation(scheme: String) {
         val intent = Intent(instrumentation.targetContext, MainActivity::class.java)
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
@@ -65,8 +116,20 @@ class RotationTest {
             // Fixture bytes exist in the test APK only. No production intent or bridge bypass.
             val fixture = instrumentation.context.assets.open("rotation-fixture.js").bufferedReader().use { it.readText() }
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             awaitProof(scenario, false)
+            val capture = captureScheme(scheme)
+            // AGP copies this directory before uninstalling the app and its data.
+            val outputDir = java.io.File(requireNotNull(
+                InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+            ) { "The test runner must provide a retained output directory" })
+            assertTrue("Cannot create capture directory", outputDir.isDirectory || outputDir.mkdirs())
+            val output = java.io.File(outputDir, "chat-$scheme.png")
+            output.outputStream().use {
+                assertTrue("Screenshot encoding failed", capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+            }
+            assertTrue("Screenshot is empty", output.length() > 0)
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             awaitProof(scenario, true)
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
