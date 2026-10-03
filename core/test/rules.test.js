@@ -399,6 +399,26 @@ test('the System, Light, Dark switch and the text size chips read at 4.5:1 in bo
   assert.equal(contrastRatio('hsl(0 0% 0%)', '#fff'), null, 'a form it cannot read gives no ratio rather than a wrong one');
 });
 
+test('placeholder text is dimmed from its own token, legible on every field surface, and follows a theme (issue 185)', () => {
+  // A hint in a field must never read as something you typed: its colour is the placeholder token, set apart from the
+  // text colour in both schemes, and still 4.5:1 on the surfaces a field is drawn on (the page, the raised card).
+  const spec = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url), 'utf8'));
+  for (const scheme of ['light', 'dark']) {
+    const c = spec.color[scheme];
+    assert.equal(typeof c.placeholder, 'string', scheme + ' has a placeholder token');
+    assert.notEqual(c.placeholder.toLowerCase(), c.fg.toLowerCase(), scheme + ' placeholder is not the text colour');
+    assert.ok(contrastRatio(c.placeholder, c.fg) > 1.5, scheme + ' placeholder is visibly dimmer than the text ' + contrastRatio(c.placeholder, c.fg));
+    for (const surface of ['bg', 'bg-raised']) assert.ok(contrastRatio(c.placeholder, c[surface]) >= 4.5, scheme + ' placeholder on ' + surface + ' ' + contrastRatio(c.placeholder, c[surface]));
+  }
+  // An imported theme names a muted foreground, not a placeholder, so the placeholder follows it; a theme that names
+  // its own placeholder keeps it.
+  const vars = new Map(themeVars({ color: { dark: { fg: '#eeeeee', 'fg-muted': '#999999' } } }, 'dark'));
+  assert.equal(vars.get('--color-placeholder'), '#999999', 'a theme\'s muted foreground dims its placeholders');
+  const own = new Map(themeVars({ color: { light: { 'fg-muted': '#777777', placeholder: '#666666' } } }, 'light'));
+  assert.equal(own.get('--color-placeholder'), '#666666', 'a theme that names its placeholder keeps it');
+  assert.equal(new Map(themeVars({ color: { light: { fg: '#111111' } } }, 'light')).has('--color-placeholder'), false, 'with no muted foreground the token stands');
+});
+
 test('a theme value that could end the declaration or reach the network is refused', () => {
   for (const v of ['#fff', 'oklch(0.5 0.1 40)', 'rgba(0, 0, 0, 0.4)', '"Fira Code", monospace', '0.5rem']) assert.equal(safeValue(v), true, v);
   for (const v of ['red; background: blue', 'url(https://example.com/x.png)', 'image-set("x.png" 1x)', '@import "x"', '}', 'a\\62', '', 'x'.repeat(201)]) assert.equal(safeValue(v), false, v);
