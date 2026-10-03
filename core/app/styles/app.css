@@ -4,6 +4,10 @@
 html, body { margin: 0; height: 100%; }
 body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); letter-spacing: var(--font-tracking); color: var(--color-fg); background: var(--color-bg); }
 button, input, textarea { font: inherit; color: inherit; }
+/* The caret, native form controls and selected text take the theme's colours rather than the platform's accent,
+   which is a system blue on iOS and macOS (issue 59). */
+:root { caret-color: var(--color-accent); accent-color: var(--color-accent); }
+::selection { background: var(--color-selection); color: var(--color-selection-fg); }
 code { font-family: var(--font-mono); font-size: var(--font-size-sm); }
 app-root { display: block; height: 100%; }
 .muted { color: var(--color-fg-muted); }

@@ -1,20 +1,27 @@
-// Writes core/app/styles/tokens.css from core/spec/tokens.json; --check fails when the file is stale.
+// Writes core/app/styles/tokens.css, and the iOS shell's accent colour set, from core/spec/tokens.json; --check fails
+// when either is stale.
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tokensCss } from '../core/kit/rules/tokens.js';
+import { tokensCss, accentColorset } from '../core/kit/rules/tokens.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const spec = JSON.parse(readFileSync(path.join(root, 'core/spec/tokens.json'), 'utf8'));
-const out = path.join(root, 'core/app/styles/tokens.css');
-const css = tokensCss(spec);
+const { product } = JSON.parse(readFileSync(path.join(root, 'core/spec/naming.json'), 'utf8'));
+const outputs = [
+  ['core/app/styles/tokens.css', tokensCss(spec)],
+  ['ios/' + product + '/Assets.xcassets/AccentColor.colorset/Contents.json', JSON.stringify(accentColorset(spec), null, 2) + '\n'],
+];
 if (process.argv.includes('--check')) {
-  if (readFileSync(out, 'utf8') !== css) {
-    console.error('core/app/styles/tokens.css is stale: run pnpm run tokens');
+  const stale = outputs.filter(([file, text]) => readFileSync(path.join(root, file), 'utf8') !== text).map(([file]) => file);
+  if (stale.length) {
+    console.error(stale.join(', ') + (stale.length > 1 ? ' are' : ' is') + ' stale: run pnpm run tokens');
     process.exit(1);
   }
-  console.log('tokens.css is fresh');
+  console.log('the generated tokens are fresh');
 } else {
-  writeFileSync(out, css);
-  console.log('wrote core/app/styles/tokens.css');
+  for (const [file, text] of outputs) {
+    writeFileSync(path.join(root, file), text);
+    console.log('wrote ' + file);
+  }
 }

@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tokensCss } from '../kit/rules/tokens.js';
+import { tokensCss, accentColorset } from '../kit/rules/tokens.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SKIP = new Set(['node_modules', '.git', 'out', 'dist', 'vendor']);
@@ -102,6 +102,25 @@ test('the product name lives only where naming.json says', () => {
 
 test('tokens.css is fresh', () => {
   assert.equal(read('core/app/styles/tokens.css'), tokensCss(json('core/spec/tokens.json')));
+});
+
+// No surface wears a platform's accent (issue 59): the system blue an iOS asset catalog, an Android resource or the
+// page's own native controls fall back to is replaced by the tokens' accent, so a caret, a text selection, a native
+// control or a launcher tile never shows a colour the theme did not choose.
+test('no shell wears a platform accent: the phone shells and the page take theirs from the tokens', () => {
+  const spec = json('core/spec/tokens.json');
+  const ios = 'ios/' + json('core/spec/naming.json').product;
+  const SYSTEM_BLUES = /#(?:007aff|0a84ff|0040dd|409cff|0071e3)\b/i;
+  const shells = [...walk(ios), ...walk('android/app/src/main')].filter((f) => /\.(?:json|xml|swift|kt|plist)$/.test(f));
+  for (const f of shells) assert.equal(SYSTEM_BLUES.test(read(f)), false, f + ' carries a platform system blue');
+  assert.deepEqual(json(ios + '/Assets.xcassets/AccentColor.colorset/Contents.json'), accentColorset(spec), 'the iOS accent colour set is the tokens\' accent, light and dark (pnpm run tokens)');
+  const tile = /<rect\b[^>]*\bfill="(#[0-9a-f]{6})"/i.exec(read('desktop/build/icon.svg'))[1].toLowerCase();
+  const launcher = /<color name="ic_launcher_background">(#[0-9A-Fa-f]{6})<\/color>/.exec(read('android/app/src/main/res/values/colors.xml'))[1].toLowerCase();
+  assert.equal(launcher, tile, 'the Android launcher tile is the app icon\'s own tile colour (desktop/build/icon.svg)');
+  const css = read('core/app/styles/app.css');
+  assert.match(css, /:root\s*\{[^}]*caret-color:\s*var\(--color-accent\)/, 'the caret is the theme\'s accent');
+  assert.match(css, /:root\s*\{[^}]*accent-color:\s*var\(--color-accent\)/, 'native form controls take the theme\'s accent');
+  assert.match(css, /::selection\s*\{[^}]*background:\s*var\(--color-selection\)/, 'selected text is drawn in the theme\'s selection colour');
 });
 
 test('the vendored Lit build is the pinned one', () => {
