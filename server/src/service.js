@@ -3,6 +3,7 @@
 // anywhere. The pure parts are exported for the tests; the rest runs launchctl, plutil, tailscale, git and pnpm
 // directly, never through a shell.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   accessSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync,
   statSync, unlinkSync, writeFileSync,
@@ -10,7 +11,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { ROOT, naming } from './paths.js';
-import { assertSeparateData, currentVersion, defaultInstallRoot, installLayout, installRootOf, readState, setPaused } from './install.js';
+import { assertSeparateData, canonical, currentVersion, defaultInstallRoot, installLayout, installRootOf, readDrill, readState, setDrill, setPaused } from './install.js';
 
 export const LABEL = naming.ids.server;
 const MAIN = path.join(ROOT, 'server', 'src', 'main.js');
@@ -18,11 +19,27 @@ const TAILSCALE_APP = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
 const SYSTEM_PATH = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Where the LaunchAgent and its log live, both named from core/spec/naming.json. */
-export function servicePaths(home = os.homedir()) {
+/**
+ * The LaunchAgent label for a service. A checkout, and the install root under the home folder, use the server id from
+ * core/spec/naming.json. Any other install root adds a short hash of its path, so a second install on the same Mac (a
+ * rehearsal of an update, a test) has its own LaunchAgent, log and launchctl target, and can never boot out, restart or
+ * rewrite the service at the usual path. The root is compared with the home default, not SERVER_INSTALL_ROOT, because
+ * launchd starts the server without that variable and the server must name the same label as the command that
+ * installed it.
+ */
+export function serviceLabel(L = null, home = os.homedir()) {
+  if (!L) return LABEL;
+  const root = canonical(L.root);
+  if (root === canonical(path.join(home, 'Library', 'Application Support', naming.slug + '-server-install'))) return LABEL;
+  return LABEL + '.' + createHash('sha256').update(root).digest('hex').slice(0, 10);
+}
+
+/** Where the LaunchAgent and its log live, both named from core/spec/naming.json, and from the label's own suffix. */
+export function servicePaths(home = os.homedir(), label = LABEL) {
+  const suffix = label === LABEL ? '' : '-' + label.slice(LABEL.length + 1);
   return {
-    plist: path.join(home, 'Library', 'LaunchAgents', LABEL + '.plist'),
-    log: path.join(home, 'Library', 'Logs', naming.slug + '-server.log'),
+    plist: path.join(home, 'Library', 'LaunchAgents', label + '.plist'),
+    log: path.join(home, 'Library', 'Logs', naming.slug + '-server' + suffix + '.log'),
   };
 }
 
@@ -151,10 +168,10 @@ function tailText(file, bytes = 256 * 1024) {
   }
 }
 
-const target = () => 'gui/' + process.getuid() + '/' + LABEL;
+const target = (label = LABEL) => 'gui/' + process.getuid() + '/' + label;
 
-export function launchdState() {
-  const r = sh('/bin/launchctl', ['print', target()], { timeout: 15000 });
+export function launchdState(label = LABEL) {
+  const r = sh('/bin/launchctl', ['print', target(label)], { timeout: 15000 });
   return r.code === 0 ? { loaded: true, ...parseLaunchd(r.out) } : { loaded: false };
 }
 
@@ -226,8 +243,10 @@ export async function install({ dataDir, config, doctor, tailscale = false, node
   // under the install root, and the LaunchAgent runs whatever its current link points at from then on.
   let main = MAIN;
   let workdir = ROOT;
+  let label = LABEL;
   if (release) {
     const L = installLayout(installRoot || defaultInstallRoot({ env, home }));
+    label = serviceLabel(L, home);
     const { installRelease } = await import('./updater.js');
     assertSeparateData(L, dataDir);
     const r = await installRelease({ L, only: version });
@@ -250,8 +269,8 @@ export async function install({ dataDir, config, doctor, tailscale = false, node
   const engineBin = config.engine.kind === 'imsg' ? (path.isAbsolute(config.engine.bin) ? config.engine.bin : which(config.engine.bin, env)) : null;
   if (config.engine.kind === 'imsg' && !engineBin) throw new Error('cannot find the engine ' + config.engine.bin + ' on PATH');
   const pathDirs = [...new Set([path.dirname(bin), ...(engineBin ? [path.dirname(engineBin)] : []), ...SYSTEM_PATH])];
-  const P = servicePaths(home);
-  const want = renderPlist({ node: bin, main, root: workdir, dataDir, log: P.log, pathDirs });
+  const P = servicePaths(home, label);
+  const want = renderPlist({ label, node: bin, main, root: workdir, dataDir, log: P.log, pathDirs });
   const have = existsSync(P.plist) ? readFileSync(P.plist, 'utf8') : null;
   if (have !== want) {
     mkdirSync(path.dirname(P.plist), { recursive: true });
@@ -269,33 +288,35 @@ export async function install({ dataDir, config, doctor, tailscale = false, node
     print('ok    ' + P.plist + ' is current');
   }
   const prev = lastEvent(tailText(P.log), 'server.ready');
-  const st = launchdState();
+  const st = launchdState(label);
   if (st.loaded && have === want) {
     const h = await get('http://127.0.0.1:' + config.port + '/healthz');
-    if (h.status !== 200) throw new Error(LABEL + ' is loaded but 127.0.0.1:' + config.port + ' does not answer; read ' + P.log);
-    print('ok    ' + LABEL + ' is running and answers on 127.0.0.1:' + config.port);
+    if (h.status !== 200) throw new Error(label + ' is loaded but 127.0.0.1:' + config.port + ' does not answer; read ' + P.log);
+    print('ok    ' + label + ' is running and answers on 127.0.0.1:' + config.port);
   } else {
-    if (st.loaded) sh('/bin/launchctl', ['bootout', target()], { timeout: 30000 });
+    if (st.loaded) sh('/bin/launchctl', ['bootout', target(label)], { timeout: 30000 });
     await bootstrap(P.plist);
     await waitReady(P.log, prev ? prev.run : null, config.port);
-    print('done  ' + (st.loaded ? 'reloaded ' : 'loaded ') + LABEL + ': it runs at every login and again after a crash, and answers on 127.0.0.1:' + config.port + ' (pid ' + (launchdState().pid || '?') + ')');
+    print('done  ' + (st.loaded ? 'reloaded ' : 'loaded ') + label + ': it runs at every login and again after a crash, and answers on 127.0.0.1:' + config.port + ' (pid ' + (launchdState(label).pid || '?') + ')');
   }
   if (tailscale) await publish({ port: config.port, print, env });
   return true;
 }
 
 /** launchd's three moves on the service, for the updater's post-switch half. Each returns once launchd has acted. */
-export function launchdControl({ home = os.homedir() } = {}) {
-  const P = servicePaths(home);
+export function launchdControl({ L = null, home = os.homedir() } = {}) {
+  const label = serviceLabel(L, home);
+  const P = servicePaths(home, label);
   return {
+    label,
     async restart() {
-      const r = sh('/bin/launchctl', ['kickstart', '-k', target()], { timeout: 30000 });
+      const r = sh('/bin/launchctl', ['kickstart', '-k', target(label)], { timeout: 30000 });
       if (r.code !== 0) throw new Error('launchctl kickstart failed: ' + (r.err || r.out));
     },
     async stop() {
-      sh('/bin/launchctl', ['bootout', target()], { timeout: 30000 });
-      for (let i = 0; i < 20 && launchdState().loaded; i++) await sleep(500);
-      if (launchdState().loaded) throw new Error(LABEL + ' is still loaded');
+      sh('/bin/launchctl', ['bootout', target(label)], { timeout: 30000 });
+      for (let i = 0; i < 20 && launchdState(label).loaded; i++) await sleep(500);
+      if (launchdState(label).loaded) throw new Error(label + ' is still loaded');
     },
     async start() {
       await bootstrap(P.plist);
@@ -306,7 +327,7 @@ export function launchdControl({ home = os.homedir() } = {}) {
 /** Whether the LaunchAgent runs the installed path under this install root, which is what lets the updater restart it. */
 export function runsInstalled(L, home = os.homedir()) {
   if (process.platform !== 'darwin') return false;
-  const P = servicePaths(home);
+  const P = servicePaths(home, serviceLabel(L, home));
   return existsSync(P.plist) && readFileSync(P.plist, 'utf8').includes('<string>' + xml(path.join(L.current, 'server', 'src', 'main.js')) + '</string>');
 }
 
@@ -320,15 +341,16 @@ export function describeInstall(L) {
   if (!v) return null;
   const o = state.outcome;
   const last = o ? ', last update: ' + o.state + ' ' + (o.version || '') + ' at ' + o.at : '';
-  return 'installed ' + v + ' under ' + L.root + (state.paused ? ', updates paused' : ', updates on') + last;
+  return 'installed ' + v + ' under ' + L.root + (state.paused ? ', updates paused' : ', updates on') + (readDrill(L) ? ', rollback drill armed' : '') + last;
 }
 
 /** The LaunchAgent, the port, the switch the running server started with, its log, and the tailnet entry. */
-export async function status({ config, print = console.log, env = process.env, home = os.homedir() }) {
-  const P = servicePaths(home);
-  const st = launchdState();
+export async function status({ config, installRoot = null, print = console.log, env = process.env, home = os.homedir() }) {
+  const label = installRoot ? serviceLabel(installLayout(installRoot), home) : LABEL;
+  const P = servicePaths(home, label);
+  const st = launchdState(label);
   const detail = st.loaded ? [st.state, st.pid && 'pid ' + st.pid, st.lastExit && 'last exit ' + st.lastExit].filter(Boolean).join(', ') : 'not loaded; run service install';
-  print((st.loaded ? 'ok    ' : 'warn  ') + LABEL + ': ' + detail);
+  print((st.loaded ? 'ok    ' : 'warn  ') + label + ': ' + detail);
   const h = await get('http://127.0.0.1:' + config.port + '/healthz');
   print((h.status === 200 ? 'ok    ' : 'fail  ') + '127.0.0.1:' + config.port + (h.status === 200 ? ' answers' : ' does not answer'));
   const start = lastEvent(tailText(P.log), 'server.start');
@@ -337,7 +359,7 @@ export async function status({ config, print = console.log, env = process.env, h
     print((differs ? 'warn  ' : 'ok    ') + 'the server started with sending ' + (start.sending ? 'on' : 'off') + (differs ? ', and the config now says ' + (config.sending.enabled ? 'on' : 'off') + ': service restart applies it' : ''));
   }
   print('ok    log: ' + P.log);
-  const installed = describeInstall(installRootFor(null, { env, home }));
+  const installed = describeInstall(installRootFor(installRoot, { env, home }));
   if (installed) print('ok    ' + installed);
   const ts = findTailscale(env);
   if (ts) {
@@ -364,7 +386,13 @@ export async function restart({ config, print = console.log, home = os.homedir()
  * the running installed server to check now, and wait for what it did. With neither, the development path: fast-forward
  * this checkout to its upstream, install the server dependency, and restart the service.
  */
-export async function update({ config, print = console.log, env = process.env, home = os.homedir(), pause = false, resume = false, release = false, installRoot = null, seconds = 300 }) {
+export async function update({ config, print = console.log, env = process.env, home = os.homedir(), pause = false, resume = false, drill = null, release = false, installRoot = null, seconds = 300 }) {
+  if (drill !== null) {
+    const L = installRootFor(installRoot, { env, home });
+    setDrill(L, drill);
+    print('done  ' + (drill ? 'rollback drill armed: the next update is started, answers its health check, is failed on purpose and rolled back, and that version is marked bad' : 'rollback drill disarmed') + ' (' + L.root + ')');
+    return true;
+  }
   if (pause || resume) {
     const L = installRootFor(installRoot, { env, home });
     setPaused(L, pause);
@@ -403,10 +431,11 @@ export async function update({ config, print = console.log, env = process.env, h
 
 /** Ask the installed server to check now (SIGUSR1), then report the check and, if it switched, the health check's verdict. */
 async function requestRelease({ L, print, home, seconds }) {
+  const label = serviceLabel(L, home);
   if (!runsInstalled(L, home)) throw new Error('the LaunchAgent does not run the installed path under ' + L.root + ': install it with service install --release');
-  if (!launchdState().loaded) throw new Error(LABEL + ' is not loaded; run service install --release');
+  if (!launchdState(label).loaded) throw new Error(label + ' is not loaded; run service install --release');
   const asked = new Date().toISOString();
-  const r = sh('/bin/launchctl', ['kill', 'SIGUSR1', target()], { timeout: 15000 });
+  const r = sh('/bin/launchctl', ['kill', 'SIGUSR1', target(label)], { timeout: 15000 });
   if (r.code !== 0) throw new Error('launchctl kill SIGUSR1 failed: ' + (r.err || r.out));
   const until = Date.now() + seconds * 1000;
   let check = null;
@@ -427,13 +456,14 @@ async function requestRelease({ L, print, home, seconds }) {
 }
 
 /** Unload and delete the LaunchAgent and withdraw the tailnet entry it published; keep the data and the code. */
-export async function remove({ config, print = console.log, env = process.env, home = os.homedir() }) {
-  const P = servicePaths(home);
-  if (launchdState().loaded) {
-    sh('/bin/launchctl', ['bootout', target()], { timeout: 30000 });
-    for (let i = 0; i < 10 && launchdState().loaded; i++) await sleep(1000);
-    if (launchdState().loaded) throw new Error(LABEL + ' is still loaded');
-    print('done  unloaded ' + LABEL);
+export async function remove({ config, installRoot = null, print = console.log, env = process.env, home = os.homedir() }) {
+  const label = installRoot ? serviceLabel(installLayout(installRoot), home) : LABEL;
+  const P = servicePaths(home, label);
+  if (launchdState(label).loaded) {
+    sh('/bin/launchctl', ['bootout', target(label)], { timeout: 30000 });
+    for (let i = 0; i < 10 && launchdState(label).loaded; i++) await sleep(1000);
+    if (launchdState(label).loaded) throw new Error(label + ' is still loaded');
+    print('done  unloaded ' + label);
   }
   if (existsSync(P.plist)) {
     unlinkSync(P.plist);

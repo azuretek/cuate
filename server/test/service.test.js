@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { naming } from '../src/paths.js';
-import { LABEL, describeInfo, fillHandoff, lastEvent, parseLaunchd, renderPlist, serveDecision, servicePaths, which } from '../src/service.js';
+import { installLayout } from '../src/install.js';
+import { LABEL, describeInfo, fillHandoff, lastEvent, parseLaunchd, renderPlist, serveDecision, serviceLabel, servicePaths, which } from '../src/service.js';
 import { boot } from './helpers.js';
 
 const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
@@ -28,6 +29,23 @@ test('the LaunchAgent is named from naming.json, and so is its log', () => {
   const p = servicePaths('/h');
   assert.equal(p.plist, path.join('/h', 'Library', 'LaunchAgents', naming.ids.server + '.plist'));
   assert.equal(p.log, path.join('/h', 'Library', 'Logs', naming.slug + '-server.log'));
+});
+
+test('a second install root gets its own LaunchAgent label and log, and the usual one keeps the server id', () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'srv-label-'));
+  try {
+    const usual = installLayout(path.join(home, 'Library', 'Application Support', naming.slug + '-server-install'));
+    assert.equal(serviceLabel(null, home), LABEL, 'a checkout');
+    assert.equal(serviceLabel(usual, home), LABEL, 'the install root under the home folder');
+    const other = serviceLabel(installLayout(path.join(home, 'rehearsal')), home);
+    assert.match(other, new RegExp('^' + LABEL.replace(/\./g, '\\.') + '\\.[a-f0-9]{10}$'));
+    assert.notEqual(serviceLabel(installLayout(path.join(home, 'another')), home), other, 'each root has its own');
+    assert.equal(serviceLabel(installLayout(path.join(home, 'rehearsal')), home), other, 'and keeps it');
+    const p = servicePaths(home, other);
+    assert.equal(p.plist, path.join(home, 'Library', 'LaunchAgents', other + '.plist'));
+    assert.equal(p.log, path.join(home, 'Library', 'Logs', naming.slug + '-server-' + other.slice(LABEL.length + 1) + '.log'));
+    assert.notEqual(p.log, servicePaths(home).log, 'it never writes into the usual service log');
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test('the LaunchAgent runs this server with its data folder, at login and after a crash', () => {
