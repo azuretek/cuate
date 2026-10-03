@@ -1543,15 +1543,30 @@ async function runSmoke(w) {
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   await waitFor("Boolean(document.querySelector('app-settings [data-action=\"signout\"]'))");
+  // The host's own motion preference decides which arrival the form runs, and hosts differ: Windows Server, which the
+  // windows-latest runner is, has client-area animation off, so Chromium reports prefers-reduced-motion: reduce there
+  // and the form takes the plain fade. Both paths are pinned by emulation rather than inherited, so the spring is
+  // checked on every platform and the reduced path is checked too. The host's own value is reported for the record.
+  report.hostReducedMotion = await js("matchMedia('(prefers-reduced-motion: reduce)').matches");
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await pause(150);
   await js("document.querySelector('app-settings [data-action=\"signout\"]').click()");
   await waitFor("Boolean(document.querySelector('app-onboarding form'))");
   // The form arrives on the sibling app's spring (motion.spring and motion.spring-ease, issue 59), so the capture waits
   // the spring out and the check reads the animation the form actually runs.
-  const arrival = await js("(() => { const s = getComputedStyle(document.querySelector('app-onboarding .onboarding')); const r = getComputedStyle(document.documentElement); return { name: s.animationName, duration: s.animationDuration, ease: s.animationTimingFunction, spring: r.getPropertyValue('--motion-spring').trim() }; })()");
+  const readArrival = "(() => { const s = getComputedStyle(document.querySelector('app-onboarding .onboarding')); const r = getComputedStyle(document.documentElement); return { name: s.animationName, duration: s.animationDuration, ease: s.animationTimingFunction, spring: r.getPropertyValue('--motion-spring').trim(), normal: r.getPropertyValue('--motion-normal').trim() }; })()";
+  const arrival = await js(readArrival);
   await pause(800);
   await shot('09-onboarding.png');
-  report.onboarding = arrival.name === 'onboarding-in' && arrival.ease.startsWith('linear(') && Math.round(parseFloat(arrival.duration) * 1000) === parseFloat(arrival.spring);
-  if (!report.onboarding) console.error('onboarding arrival: ' + JSON.stringify(arrival));
+  // Under reduced motion the same form takes the plain fade for motion.normal, never the spring.
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await pause(150);
+  const reducedArrival = await js(readArrival);
+  await cdp('Emulation.setEmulatedMedia', { media: '', features: [] });
+  const springOk = arrival.name === 'onboarding-in' && arrival.ease.startsWith('linear(') && Math.round(parseFloat(arrival.duration) * 1000) === parseFloat(arrival.spring);
+  const reducedOk = reducedArrival.name === 'surface-scrim-in' && !reducedArrival.ease.startsWith('linear(') && Math.round(parseFloat(reducedArrival.duration) * 1000) === parseFloat(reducedArrival.normal);
+  report.onboarding = springOk && reducedOk;
+  if (!report.onboarding) console.error('onboarding arrival: ' + JSON.stringify({ arrival, reducedArrival, host: report.hostReducedMotion }));
   report.captures = captured.length;
   writeFileSync(path.join(SMOKE, 'report.json'), JSON.stringify(report, null, 1));
   console.log('SMOKE ' + JSON.stringify(report));
