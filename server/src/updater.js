@@ -16,7 +16,7 @@ import path from 'node:path';
 import { artifactNames, sha256, verifyArtifact, writeFiles } from './artifact.js';
 import { backupDataDir, restoreDataDir } from './backup.js';
 import { compareVersions } from '../../core/kit/rules/build.js';
-import { acquireUpdateLock, assertSeparateData, currentVersion, nodeSatisfies, pointCurrent, prune, readState, updateState, versionDir } from './install.js';
+import { acquireUpdateLock, assertSeparateData, currentVersion, nodeSatisfies, pointCurrent, prune, readDrill, readState, setDrill, updateState, versionDir } from './install.js';
 import { naming, ROOT } from './paths.js';
 import { dataFormatOf, openStore, revokeTokenIn } from './store.js';
 
@@ -415,6 +415,9 @@ async function finishSwitchLocked({ L, dataDir, port, service, log, fetchImpl = 
   if (!p) return null;
   const t0 = now();
   let health;
+  // A rollback drill is read once and disarmed by this finish, so it fails exactly one switch.
+  const drill = !recover && readDrill(L);
+  if (drill) setDrill(L, false);
   const first = withHealthToken(dataDir);
   try {
     if (recover) throw new Error('interrupted update');
@@ -425,6 +428,8 @@ async function finishSwitchLocked({ L, dataDir, port, service, log, fetchImpl = 
   } finally {
     first.revoke();
   }
+  // Only the candidate's verdict is forced: the previous version's health check below is the real one.
+  if (drill && health.ok) health = { ok: false, error: 'rollback drill: ' + p.to + ' answered its health check and was failed on purpose' };
   if (health.ok) {
     const state = updateState(L, (s) => {
       s.installed = [...(s.installed || []).filter((v) => v !== p.to), p.to];
