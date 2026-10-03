@@ -1304,17 +1304,24 @@ async function runSmoke(w) {
   // read dark and fail a check about the scheme the platform is driving.
   await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.skin': 'system' } }) });
   await waitFor("document.documentElement.dataset.scheme === 'light' || document.documentElement.dataset.scheme === 'dark'");
+  const platformAccent = {};
   const surface = async (scheme) => {
     const expected = expectedTokens(tokenSpec, scheme);
     nativeTheme.themeSource = scheme;
     await waitFor(`document.documentElement.dataset.scheme === ${JSON.stringify(scheme)}`);
     const resolved = await js(`(() => { const s = getComputedStyle(document.documentElement); const out = {}; for (const n of ${JSON.stringify(Object.keys(expected))}) out[n] = s.getPropertyValue(n).trim(); return out; })()`);
+    // The caret and native controls wear the scheme's accent, never the platform's system blue (issue 59): what the
+    // root resolves for each is compared with the accent token drawn as a colour in the same scheme.
+    const accent = await js("(() => { const p = document.createElement('i'); p.style.color = 'var(--color-accent)'; document.body.append(p); const want = getComputedStyle(p).color; p.remove(); const s = getComputedStyle(document.documentElement); return { want, caret: s.caretColor, control: s.accentColor }; })()");
+    platformAccent[scheme] = accent.caret === accent.want && accent.control === accent.want;
+    if (!platformAccent[scheme]) console.error('platform accent ' + scheme + ': ' + JSON.stringify(accent));
     return tokenMismatches({ expected, resolved });
   };
   const surfaceFound = { light: await surface('light'), dark: await surface('dark') };
   report.surfaceLight = surfaceFound.light.length === 0;
   report.surfaceDark = surfaceFound.dark.length === 0;
-  report.surface = report.surfaceLight && report.surfaceDark;
+  report.platformAccent = platformAccent.light === true && platformAccent.dark === true;
+  report.surface = report.surfaceLight && report.surfaceDark && report.platformAccent;
   if (!report.surface) console.error('surface mismatches: ' + JSON.stringify(surfaceFound));
   // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
   // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
