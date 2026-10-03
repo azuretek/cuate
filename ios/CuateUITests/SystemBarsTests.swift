@@ -71,7 +71,9 @@ final class SystemBarsTests: XCTestCase {
         var last = ["no proof"]
         repeat {
             var out: [String] = []
-            if !app.keyboards.firstMatch.exists { out.append("the software keyboard is not up") }
+            let keyboard = app.keyboards.firstMatch
+            let keyboardTop: Double? = keyboard.exists ? Double(keyboard.frame.minY) : nil
+            if keyboardTop == nil { out.append("the software keyboard is not up") }
             let parts = keysMarker(app).label.split(separator: ":").map(String.init)
             let n = parts.count == 11 ? parts.dropFirst(3).compactMap { Double($0) } : []
             if parts.count != 11 || n.count != 8 || parts[1] != kind {
@@ -85,6 +87,9 @@ final class SystemBarsTests: XCTestCase {
                 if kind == "conversation" && abs(surface) > 0.5 { out.append("the header moved to \(surface)") }
                 if kind == "settings" && surface + 0.5 < inset { out.append("the settings sheet starts at \(surface), under the \(inset) status bar") }
                 if fieldTop + 0.5 < inset || fieldBottom > height + 0.5 { out.append("the field (\(fieldTop) to \(fieldBottom)) is not in sight between \(inset) and \(height)") }
+                // On the screen, not only in the page's own idea of its height: the web view starts at the screen's top
+                // edge at scale 1, so a page point is a screen point, and the field must end above the keyboard.
+                if let keyboardTop, fieldBottom > keyboardTop + 0.5 { out.append("the field ends at \(fieldBottom), under the keyboard at \(keyboardTop)") }
             }
             last = out
             if out.isEmpty { break }

@@ -208,10 +208,23 @@ class SystemBarsTest {
         }
     }
 
-    private fun keyboardShown(scenario: ActivityScenario<MainActivity>): Boolean {
-        var shown = false
-        scenario.onActivity { shown = it.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true }
-        return shown
+    /** The keyboard's top edge on the screen in device pixels, or null while no keyboard is up. */
+    private fun keyboardTop(scenario: ActivityScenario<MainActivity>): Int? {
+        var top: Int? = null
+        scenario.onActivity { activity ->
+            val insets = activity.window.decorView.rootWindowInsets
+            if (insets?.isVisible(WindowInsets.Type.ime()) == true) {
+                top = activity.window.decorView.height - insets.getInsets(WindowInsets.Type.ime()).bottom
+            }
+        }
+        return top
+    }
+
+    /** Where the web view's top edge is on the screen, in device pixels. */
+    private fun webTop(scenario: ActivityScenario<MainActivity>): Int {
+        val at = IntArray(2)
+        scenario.onActivity { webView(it.findViewById(android.R.id.content))!!.getLocationOnScreen(at) }
+        return at[1]
     }
 
     /**
@@ -239,7 +252,11 @@ class SystemBarsTest {
             val raw = evaluate(scenario, "JSON.stringify(window.systemBarsKeysProof())")
             val p = JSONObject(JSONObject("{\"v\":$raw}").getString("v"))
             val out = ArrayList<String>()
-            if (!keyboardShown(scenario)) out.add("the soft keyboard is not up")
+            val keyboard = keyboardTop(scenario)
+            if (keyboard == null) out.add("the soft keyboard is not up")
+            // On the screen, not only in the page's own idea of its height: the field must end above the keyboard.
+            val fieldBottomOnScreen = webTop(scenario) + p.getDouble("fieldBottom") * dpr
+            if (keyboard != null && fieldBottomOnScreen > keyboard + 1) out.add("the field ends at ${fieldBottomOnScreen.toInt()}px, under the keyboard at ${keyboard}px")
             if (!p.getBoolean("focused")) out.add("the $kind field does not have focus")
             if (p.getDouble("scrollY") != 0.0 || p.getDouble("doc") != 0.0) out.add("the page scrolled to ${p.getDouble("scrollY")}")
             if (p.getDouble("viewportTop") > 0.5) out.add("the view slid up by ${p.getDouble("viewportTop")}")
