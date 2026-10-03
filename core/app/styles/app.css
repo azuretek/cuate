@@ -309,16 +309,21 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid {
 /* macOS pushes the header content below the traffic lights, keeping the surface to the top edge. */
 .app-window[data-platform="darwin"] .sidebar-head,
 .app-window[data-platform="darwin"] .conv-head { height: calc(var(--size-header) + var(--size-window-strip)); padding-block-start: var(--size-window-strip); }
-/* The window controls, drawn in the contact header on Windows and Linux: pinned to its right at its full height, so
-   they read as part of that bar rather than a strip of their own. */
-.window-controls { display: flex; align-self: stretch; margin-inline-start: auto; -webkit-app-region: no-drag; }
-.window-control { width: var(--size-window-control); display: grid; place-items: center; border: 0; background: none; color: var(--color-fg-muted); cursor: pointer; padding: 0; -webkit-app-region: no-drag; }
-/* The close button is the widest, as Windows draws it. */
-.window-control.close { width: var(--size-window-control-close); }
+/* The window controls, drawn in the contact header on Windows and Linux: tight to the window's top-right corner where
+   the platform's own title-bar buttons sit, close nearest the corner, set in from the top edge and from the right edge
+   by the one inset so the two offsets match. The end margin gives back the header's own padding so the inset is
+   measured from the window's edge. Hover and press draw a rounded box inside that inset rather than a full-height
+   block, and close keeps its own tint (issue 131). */
+.window-controls { display: flex; align-self: flex-start; gap: var(--size-window-control-gap); margin-block-start: var(--size-window-control-inset); margin-inline: auto calc(var(--size-window-control-inset) - var(--space-4)); -webkit-app-region: no-drag; }
+.window-control { width: var(--size-window-control); height: var(--size-window-control-h); display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); cursor: pointer; padding: 0; transition: background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease); -webkit-app-region: no-drag; }
 .window-control:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
+.window-control:active { background: var(--color-border); color: var(--color-fg); }
 .window-control:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
-.window-control.close:hover { background: var(--color-danger); color: var(--color-danger-fg); }
-.window-control svg { display: block; }
+.window-control.close:hover, .window-control.close:active { background: var(--color-danger); color: var(--color-danger-fg); }
+/* The glyphs take their size and stroke weight from tokens; the stroke does not scale with the glyph, so the weight
+   stays the token's at any size. */
+.window-control svg { display: block; width: var(--size-window-glyph); height: var(--size-window-glyph); stroke-width: var(--size-window-glyph-stroke); }
+.window-control svg * { vector-effect: non-scaling-stroke; }
 
 /* Settings and About arrive and leave like an iOS sheet: up from the bottom edge over a fading scrim, and back
    down on close. Chela's own stylesheet moves them exactly this way, on these values, so a reader who uses both
