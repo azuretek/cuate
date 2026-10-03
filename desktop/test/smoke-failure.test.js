@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { sanitizeText, sanitizeState, smokeStateExpression, retainSmokeFailure } from '../src/smoke-failure.js';
+import { sanitizeText, sanitizeState, smokeStateExpression, smokeTraceInstaller, retainSmokeFailure, TRACE_LIMIT } from '../src/smoke-failure.js';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'smoke-failure-'));
 
@@ -37,6 +37,73 @@ test('the renderer state expression compiles', () => {
   assert.match(expr, /sheetPresent/);
   assert.match(expr, /bannerText/);
   assert.doesNotThrow(() => new Function('return ' + expr));
+});
+
+// A page stand-in with just what the installer touches: listeners on the document, the body's class list and one
+// MutationObserver. Enough to drive the installer as the page would, without a browser.
+function fakePage() {
+  const listeners = {};
+  const classes = new Set();
+  let observer = null;
+  const document = {
+    visibilityState: 'visible',
+    addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
+    body: { classList: { contains: (c) => classes.has(c) } },
+  };
+  const el = (cls) => ({ classList: { contains: (c) => c === cls } });
+  const window = {};
+  const page = new Function('window', 'document', 'performance', 'MutationObserver', 'return ' + smokeTraceInstaller());
+  const run = () => page(window, document, { now: () => 1234.4 }, class { constructor(fn) { observer = fn; } observe() {} });
+  const fire = (type, target, extra = {}) => (listeners[type] || []).forEach((fn) => fn({ target, ...extra }));
+  const setLeaving = (on) => { if (on) classes.add('surface--leaving'); else classes.delete('surface--leaving'); observer(); };
+  return { window, document, run, fire, setLeaving, sheet: el('sheet'), scrim: el('sheet-scrim'), other: el('bubble') };
+}
+
+test('the sheet trace records whether a departure started, ended or was cancelled, and the page visibility', () => {
+  const p = fakePage();
+  assert.equal(p.run(), true);
+  p.setLeaving(true);
+  p.document.visibilityState = 'hidden';
+  p.fire('visibilitychange', p.document);
+  p.fire('animationstart', p.sheet, { animationName: 'surface-sheet-out' });
+  p.fire('animationstart', p.other, { animationName: 'press' });
+  p.fire('animationcancel', p.scrim, { animationName: 'surface-scrim-out' });
+  assert.deepEqual(p.window.__smokeTrace.map((x) => [x.e, x.who, x.anim, x.vis]), [
+    ['leaving-on', undefined, undefined, 'visible'],
+    ['visibility', undefined, undefined, 'hidden'],
+    ['animationstart', 'sheet', 'surface-sheet-out', 'hidden'],
+    ['animationcancel', 'scrim', 'surface-scrim-out', 'hidden'],
+  ]);
+  assert.equal(p.window.__smokeTrace[0].t, 1234);
+  // Installing again (the smoke reinstalls on every load) keeps the one trace rather than doubling its listeners.
+  assert.equal(p.run(), true);
+  p.fire('animationend', p.sheet, { animationName: 'surface-sheet-out' });
+  assert.equal(p.window.__smokeTrace.filter((x) => x.e === 'animationend').length, 1);
+});
+
+test('the sheet trace is bounded', () => {
+  const p = fakePage();
+  p.run();
+  for (let i = 0; i < TRACE_LIMIT * 3; i += 1) p.fire('animationstart', p.sheet, { animationName: 'a' + i });
+  assert.equal(p.window.__smokeTrace.length, TRACE_LIMIT);
+  assert.equal(p.window.__smokeTrace.at(-1).anim, 'a' + (TRACE_LIMIT * 3 - 1));
+  assert.match(smokeStateExpression(), /__smokeTrace/);
+});
+
+test('retainSmokeFailure records what the shell knows about the window, and survives a shell that throws', async () => {
+  const dir = scratch();
+  try {
+    const shown = await retainSmokeFailure({
+      evaluate: async () => ({}), capture: async () => null, write: (name, data) => writeFileSync(join(dir, name), data),
+      error: new Error('x'), shell: () => ({ visible: false, minimized: false, focused: false, throttled: true }),
+    });
+    assert.deepEqual(shown.shell, { visible: false, minimized: false, focused: false, throttled: true });
+    const broken = await retainSmokeFailure({
+      evaluate: async () => ({}), capture: async () => null, write: () => {}, error: new Error('x'),
+      shell: () => { throw new Error('window destroyed'); },
+    });
+    assert.equal(broken.shell.error, 'window destroyed');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('retainSmokeFailure writes a sanitized dump and bounded screenshot, only on failure', async () => {
