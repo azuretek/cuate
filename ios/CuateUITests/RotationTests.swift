@@ -18,7 +18,10 @@ final class RotationTests: XCTestCase {
             XCUIDevice.shared.orientation = orientation
             let proof = app.webViews.staticTexts[label + ":pass"].firstMatch
             XCTAssertTrue(proof.waitForExistence(timeout: 20), app.debugDescription)
-            let attachment = XCTAttachment(image: settled(app, landscape: label == "landscape"))
+            let image = settled(app, landscape: label == "landscape")
+            // The verdict must still read pass once the screen has settled, so a capture never keeps a fail label.
+            XCTAssertTrue(proof.exists, "the \(scheme) \(label) verdict stopped reading pass during the capture: " + app.debugDescription)
+            let attachment = XCTAttachment(image: image)
             attachment.name = scheme + "-" + label
             attachment.lifetime = .keepAlways
             add(attachment)

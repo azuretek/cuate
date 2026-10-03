@@ -93,6 +93,7 @@ class RotationTest {
         val held = after.optString("label") == "portrait:pass" && after.getBoolean("ok")
             && after.getInt("lastFail") < before.getInt("seq")
         if (!held || shown != "pass") {
+            keep(capture, "chat-$scheme-refused.png")
             throw AssertionError(
                 "The $scheme capture did not keep a passing verdict: page says " + after.optString("label") +
                     " (failing " + after.optJSONArray("failing") + ", last fail at sample " + after.optInt("lastFail") +
@@ -129,23 +130,45 @@ class RotationTest {
         return if (scheme == "dark") mean < 80 else mean > 160
     }
 
-    private fun captureScheme(scheme: String): android.graphics.Bitmap {
+    private fun captureScheme(scenario: ActivityScenario<MainActivity>, scheme: String): android.graphics.Bitmap {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         var previous: android.graphics.Bitmap? = null
+        var taken = 0
+        var shown = 0
         do {
             instrumentation.waitForIdleSync()
             val capture = instrumentation.uiAutomation.takeScreenshot()
+            if (capture != null) taken++
             if (capture != null && schemeShown(capture, scheme)) {
+                shown++
                 val last = previous
                 if (last != null && last.sameAs(capture)) { last.recycle(); return capture }
                 last?.recycle()
                 previous = capture
             } else {
+                capture?.let { keep(it, "chat-$scheme-unsettled.png") }
                 capture?.recycle()
             }
         } while (System.nanoTime() < deadline)
+        previous?.let { keep(it, "chat-$scheme-unsettled.png") }
         previous?.recycle()
-        throw AssertionError("The screen never showed the populated $scheme conversation")
+        throw AssertionError(
+            "The screen never showed the populated $scheme conversation: $taken captures, $shown in the scheme, " +
+                "none twice alike; page " + evaluate(scenario, "JSON.stringify(window.rotationProof || null)"),
+        )
+    }
+
+    private fun outputDir(): java.io.File {
+        val dir = java.io.File(requireNotNull(
+            InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+        ) { "The test runner must provide a retained output directory" })
+        assertTrue("Cannot create capture directory", dir.isDirectory || dir.mkdirs())
+        return dir
+    }
+
+    // A capture the test refused is kept beside the passing ones, so a failure shows what the screen drew.
+    private fun keep(capture: android.graphics.Bitmap, name: String) {
+        java.io.File(outputDir(), name).outputStream().use { capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     @Test
@@ -168,14 +191,10 @@ class RotationTest {
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             val passed = awaitProof(scenario, false)
-            val capture = captureScheme(scheme)
+            val capture = captureScheme(scenario, scheme)
             assertVerdictHeld(scenario, passed, capture, scheme)
             // AGP copies this directory before uninstalling the app and its data.
-            val outputDir = java.io.File(requireNotNull(
-                InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
-            ) { "The test runner must provide a retained output directory" })
-            assertTrue("Cannot create capture directory", outputDir.isDirectory || outputDir.mkdirs())
-            val output = java.io.File(outputDir, "chat-$scheme.png")
+            val output = java.io.File(outputDir(), "chat-$scheme.png")
             output.outputStream().use {
                 assertTrue("Screenshot encoding failed", capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
             }
