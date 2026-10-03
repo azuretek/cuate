@@ -56,18 +56,20 @@ class SettingsPageTest {
         throw AssertionError("The Settings page never passed its walk: $result")
     }
 
-    // The page as painted, not a frame the WebView drew before it: the app icon's own tile colour
-    // (desktop/build/icon.svg) is on screen, which it only is once Settings has drawn its app icon choices.
+    // The page as painted, not a frame the WebView drew before it: the first light fixed palette's accent
+    // (core/spec/app-icons.json), the middle of that choice's tile, is on screen, which it only is once Settings has
+    // drawn its app icon choices. The tile is a gradient, so the band in that colour is narrow: every pixel is read.
     private fun iconShown(capture: android.graphics.Bitmap): Boolean {
-        val tile = android.graphics.Color.rgb(0x15, 0x6c, 0x68)
-        var hits = 0
-        for (y in 0 until capture.height step 4) {
-            for (x in 0 until capture.width step 4) {
-                val p = capture.getPixel(x, y)
-                if (Math.abs(android.graphics.Color.red(p) - android.graphics.Color.red(tile)) <= 8
-                    && Math.abs(android.graphics.Color.green(p) - android.graphics.Color.green(tile)) <= 8
-                    && Math.abs(android.graphics.Color.blue(p) - android.graphics.Color.blue(tile)) <= 8) hits++
-            }
+        val spec = JSONObject(BundledSpec.text(instrumentation.targetContext.assets, "spec/app-icons.json")).getJSONArray("icons")
+        val accent = (0 until spec.length()).map { spec.getJSONObject(it) }
+            .first { it.optString("scheme") == "light" && it.has("colors") }.getJSONObject("colors").getString("accent")
+        val tile = android.graphics.Color.parseColor(accent)
+        val pixels = IntArray(capture.width * capture.height)
+        capture.getPixels(pixels, 0, capture.width, 0, 0, capture.width, capture.height)
+        val hits = pixels.count { p ->
+            Math.abs(android.graphics.Color.red(p) - android.graphics.Color.red(tile)) <= 8
+                && Math.abs(android.graphics.Color.green(p) - android.graphics.Color.green(tile)) <= 8
+                && Math.abs(android.graphics.Color.blue(p) - android.graphics.Color.blue(tile)) <= 8
         }
         return hits >= 50
     }
