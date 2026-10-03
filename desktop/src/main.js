@@ -321,6 +321,35 @@ async function runSmoke(w) {
   };
   report.sort = Object.values(sortChecks).every(Boolean);
   console.log('sort: ' + JSON.stringify({ checks: sortChecks, iconStyle, recentNames, byName, sortAZ, sortZA, sortRecent }));
+  // The header's icons are the icon set (core/spec/tokens.json icons, issue 59): each control draws its glyph as a mask
+  // painted in its own text colour at icon.size, so the glyph follows the scheme. Read in light and in dark.
+  const iconRead = () => js(`(() => {
+    const root = getComputedStyle(document.documentElement);
+    return ['.filter-button', '.sort-button', '.gear-button'].map((sel) => {
+      const b = document.querySelector('.sidebar-head ' + sel);
+      const i = b && b.querySelector('.icon[data-icon]');
+      if (!i) return { sel, icon: null, text: b ? b.textContent.trim() : null };
+      const s = getComputedStyle(i);
+      const r = i.getBoundingClientRect();
+      return { sel, icon: i.dataset.icon, mask: (s.maskImage || s.webkitMaskImage || '').slice(0, 30), paint: s.backgroundColor, color: getComputedStyle(b).color, width: r.width, size: parseFloat(root.getPropertyValue('--icon-size')), text: b.textContent.trim() };
+    });
+  })()`);
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  const iconsLight = await iconRead();
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  const iconsDark = await iconRead();
+  nativeTheme.themeSource = 'light';
+  const iconOk = (list) => list.every((x) => x.icon && x.mask.startsWith('url("data:image/svg+xml') && x.paint === x.color && x.width === x.size && x.text === '');
+  const iconChecks = {
+    light: iconOk(iconsLight),
+    dark: iconOk(iconsDark),
+    names: JSON.stringify(iconsLight.map((x) => x.icon)) === JSON.stringify(['list-filter', 'arrow-up-down', 'settings']),
+    follows: iconsLight.every((x, n) => x.paint !== iconsDark[n].paint),
+  };
+  report.icons = Object.values(iconChecks).every(Boolean);
+  console.log('icons: ' + JSON.stringify({ checks: iconChecks, iconsLight, iconsDark }));
   // The filter icon opens a dropdown holding the filters, the filter in force shows as a clearable chip, and clearing
   // the chip lifts it.
   await js("document.querySelector('.sidebar-head .filter-button').click()");
@@ -1322,9 +1351,13 @@ async function runSmoke(w) {
   await waitFor("Boolean(document.querySelector('app-settings [data-action=\"signout\"]'))");
   await js("document.querySelector('app-settings [data-action=\"signout\"]').click()");
   await waitFor("Boolean(document.querySelector('app-onboarding form'))");
-  await pause(300);
+  // The form arrives on the sibling app's spring (motion.spring and motion.spring-ease, issue 59), so the capture waits
+  // the spring out and the check reads the animation the form actually runs.
+  const arrival = await js("(() => { const s = getComputedStyle(document.querySelector('app-onboarding .onboarding')); const r = getComputedStyle(document.documentElement); return { name: s.animationName, duration: s.animationDuration, ease: s.animationTimingFunction, spring: r.getPropertyValue('--motion-spring').trim() }; })()");
+  await pause(800);
   await shot('09-onboarding.png');
-  report.onboarding = true;
+  report.onboarding = arrival.name === 'onboarding-in' && arrival.ease.startsWith('linear(') && Math.round(parseFloat(arrival.duration) * 1000) === parseFloat(arrival.spring);
+  if (!report.onboarding) console.error('onboarding arrival: ' + JSON.stringify(arrival));
   report.captures = captured.length;
   writeFileSync(path.join(SMOKE, 'report.json'), JSON.stringify(report, null, 1));
   console.log('SMOKE ' + JSON.stringify(report));

@@ -14,12 +14,17 @@ app-root { display: block; height: 100%; }
 .spinner { width: var(--size-spinner); height: var(--size-spinner); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-border); border-top-color: var(--color-accent); animation: spin var(--motion-spin) linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* The icon set (core/spec/tokens.json icons): tokens.css gives each data-icon its glyph as a mask, and the element
+   paints it in its own text colour, so an icon follows the scheme, the theme and a control's hover and open states the
+   way a word would. Its size is icon.size unless the control around it sets one. */
+.icon { display: inline-block; flex: none; width: var(--icon-size); height: var(--icon-size); background-color: currentColor; -webkit-mask: var(--icon-glyph) center / contain no-repeat; mask: var(--icon-glyph) center / contain no-repeat; }
+
 .shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 .sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: var(--size-header); padding: 0 var(--space-4); flex: none; }
 /* The header's three icons are one kind of control (issue 136): the filter, the sort and the gear share their size,
    their hover and their open state, so the sort reads as one of the set rather than a pill of its own. */
-.filter-button, .sort-button, .gear-button { flex: none; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.filter-button, .sort-button, .gear-button { flex: none; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 .filter-button:hover, .sort-button:hover, .gear-button:hover { background: var(--color-bg-sunken); }
 .filter-button[aria-expanded="true"], .sort-button[aria-expanded="true"] { background: var(--color-selection); color: var(--color-fg); }
 .filter-button:focus-visible, .sort-button:focus-visible, .gear-button:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
@@ -160,7 +165,11 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 
 
 .onboarding-wrap { height: 100%; display: grid; place-items: center; padding: var(--space-5); }
-.onboarding { width: 100%; max-width: var(--size-onboarding); display: flex; flex-direction: column; gap: var(--space-4); }
+.onboarding { width: 100%; max-width: var(--size-onboarding); display: flex; flex-direction: column; gap: var(--space-4); animation: onboarding-in var(--motion-spring) var(--motion-spring-ease) both; }
+/* The first screen arrives on the sibling app's spring (motion.spring, sampled from SwiftUI's own), rising the
+   height of one gap as it fades in, the way Chela's pairing screen arrives. Reduced motion takes the plain fade. */
+@keyframes onboarding-in { from { opacity: 0; transform: translateY(var(--space-4)); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .onboarding { animation: surface-scrim-in var(--motion-normal) ease-out both; } }
 .field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .field input { font-size: var(--font-size-md); color: var(--color-fg); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); }
 .field input:focus { outline: none; border-color: var(--color-accent); }
@@ -178,7 +187,7 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
 .sheet-back:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
 .sheet-back-icon { display: inline-flex; width: var(--size-back-icon); height: var(--size-back-icon); }
-.sheet-back-icon svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sheet-back-icon .icon { width: 100%; height: 100%; }
 .sheet-esc { margin-left: auto; padding: var(--space-1) var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-sunken); color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); text-transform: uppercase; }
 .sheet-head { flex: none; padding: var(--space-4) var(--space-4) var(--space-2); }
 .sheet-title { margin: 0; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); }
@@ -331,7 +340,7 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
 .section-name { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
 .section-actions { display: flex; align-items: center; gap: var(--space-1); }
-.icon-button { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; padding: 0 var(--space-1); border-radius: var(--radius-sm); }
+.icon-button { display: inline-flex; align-items: center; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; padding: 0 var(--space-1); border-radius: var(--radius-sm); }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
 .list-empty, .section-empty { margin: 0; padding: var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 
@@ -405,6 +414,7 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
 .sort-choice:hover { background: var(--color-bg-sunken); }
 .sort-choice[aria-checked="true"] { color: var(--color-accent); font-weight: var(--font-weight-bold); }
 .sort-check { display: inline-block; width: var(--space-3); }
+.sort-check .icon { width: var(--space-3); height: var(--space-3); }
 
 /* Edit is a small text control, not an icon (issue 137): a rounded highlight on hover and, while edit mode is on, a
    steady one, so it reads as pressed. In edit mode each row carries a checkbox and the row holds the actions. */
@@ -471,6 +481,6 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-close { position: absolute; top: var(--space-4); right: var(--space-4); z-index: 1; display: grid; place-items: center; width: var(--size-viewer-close); height: var(--size-viewer-close); padding: 0; border: var(--size-border) solid var(--color-image-edge); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-md); cursor: pointer; }
 .viewer-close:hover { background: var(--color-bg-sunken); }
 .viewer-close:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
-.viewer-close svg { width: 50%; height: 50%; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+.viewer-close .icon { width: 50%; height: 50%; }
 .viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }

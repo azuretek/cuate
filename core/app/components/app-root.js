@@ -810,7 +810,7 @@ class AppRoot extends KitElement {
     const current = normalizeSort(this.settings['chats.sort']);
     return html`<div class="sort-menu" role="menu" aria-label="Sort conversations">
       ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${() => this.chooseSort(o)}>
-        <span class="sort-check" aria-hidden="true">${o === current ? '✓' : ''}</span>${SORT_LABELS[o]}
+        <span class="sort-check" aria-hidden="true">${o === current ? html`<span class="icon" data-icon="check" aria-hidden="true"></span>` : nothing}</span>${SORT_LABELS[o]}
       </button>`)}
     </div>`;
   }
@@ -995,9 +995,9 @@ class AppRoot extends KitElement {
         <select class="search-mode" aria-label="Search by" @change=${(e) => this.setFilters({ mode: e.currentTarget.value })}>${this.modeOptions(f.mode)}</select>
         <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })} @keydown=${this.onSearchKey}>
       </span>
-      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; }}>≡</button>
-      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; }}>⇅</button>
-      <button type="button" class="gear-button" aria-label="Settings" @click=${() => this.openSettings()}>⚙</button>
+      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; }}><span class="icon" data-icon="list-filter" aria-hidden="true"></span></button>
+      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; }}><span class="icon" data-icon="arrow-up-down" aria-hidden="true"></span></button>
+      <button type="button" class="gear-button" aria-label="Settings" @click=${() => this.openSettings()}><span class="icon" data-icon="settings" aria-hidden="true"></span></button>
       ${this.sortOpen ? this.sortMenu() : nothing}
       ${this.filterOpen ? this.filterMenu() : nothing}
     </header>`;

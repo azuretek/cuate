@@ -101,10 +101,10 @@ class AppChatList extends KitElement {
         ? html`<input class="group-rename" data-id=${section.id} .value=${section.name} aria-label="Group name" @keydown=${this.onRenameKey} @blur=${this.commitRename}>`
         : html`<span class="section-name">${section.name}</span>`}
       <span class="section-actions">
-        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' up'} ?disabled=${i <= 0} @click=${() => this.moveGroupBy(section, -1)}>↑</button>
-        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' down'} ?disabled=${i >= (this.groups.length - 1)} @click=${() => this.moveGroupBy(section, 1)}>↓</button>
-        <button type="button" class="icon-button" aria-label=${'Rename ' + section.name} @click=${() => this.startRename(section.id)}>✎</button>
-        ${this.editing ? html`<button type="button" class="icon-button" aria-label=${'Delete ' + section.name} @click=${() => this.fire('groupdelete', { id: section.id, name: section.name })}>✕</button>` : nothing}
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' up'} ?disabled=${i <= 0} @click=${() => this.moveGroupBy(section, -1)}><span class="icon" data-icon="chevron-up" aria-hidden="true"></span></button>
+        <button type="button" class="icon-button" aria-label=${'Move ' + section.name + ' down'} ?disabled=${i >= (this.groups.length - 1)} @click=${() => this.moveGroupBy(section, 1)}><span class="icon" data-icon="chevron-down" aria-hidden="true"></span></button>
+        <button type="button" class="icon-button" aria-label=${'Rename ' + section.name} @click=${() => this.startRename(section.id)}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button>
+        ${this.editing ? html`<button type="button" class="icon-button" aria-label=${'Delete ' + section.name} @click=${() => this.fire('groupdelete', { id: section.id, name: section.name })}><span class="icon" data-icon="x" aria-hidden="true"></span></button>` : nothing}
       </span>
     </header>`;
   }
