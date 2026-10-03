@@ -717,12 +717,15 @@ async function runSmoke(w) {
   const emojiDesktop = await emojiOn();
   await both('14e-emoji-reaction');
   const emojiSize = w.getSize();
+  // The conversation is the pane at this width, and the drawer is left as it was found, since a later check opens it.
+  const emojiListOpen = await js("document.querySelector('app-root').listOpen");
   w.setSize(390, 844);
   await js("(() => { const root = document.querySelector('app-root'); if (root.listOpen) root.closeDrawer(); return true; })()");
   await pause(500);
   const emojiPhone = await emojiOn();
   await both('14f-emoji-reaction-phone');
   w.setSize(...emojiSize);
+  await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(emojiListOpen)}; return true; })()`);
   await pause(300);
   const shows = (list) => Array.isArray(list) && list.some((r) => r.text.includes('\u{1F64C}') && !r.mine);
   const receivedEmoji = shows(emojiDesktop) && shows(emojiPhone);
