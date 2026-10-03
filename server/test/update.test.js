@@ -16,11 +16,16 @@ import { createLogger } from '../../core/kit/log.js';
 import { compareVersions } from '../../core/kit/rules/build.js';
 import { serverUpdateNotice } from '../../core/app/rules/notifications.js';
 import { artifactNames, digestText, manifestOf, sha256, writeTarball } from '../src/artifact.js';
-import { currentVersion, installLayout, installRootOf, nodeSatisfies, pointCurrent, presentVersions, pruneList, readState, updateState } from '../src/install.js';
+import { assertInstalledPlatform, currentVersion, installLayout, installRootOf, nodeSatisfies, pointCurrent, presentVersions, pruneList, readState, updateState } from '../src/install.js';
 import { naming, logSpec } from '../src/paths.js';
 import { DATA_FORMAT, DATA_NEWER, dataFormatOf, openStore } from '../src/store.js';
 import { backoffMs, createUpdater, downloadPrefix, drain, finishSwitch, installRelease, pickRelease, releasesUrl } from '../src/updater.js';
 import { boot, waitFor } from './helpers.js';
+
+// A test that repoints `current` runs where the installed path does. The installed path is macOS's
+// (assertInstalledPlatform in src/install.js), and these run on Linux too because a rename over a link is the same POSIX
+// rename there; Windows refuses to rename over a link, so they skip it the way the service's own tests skip it.
+const SWITCHES = { skip: process.platform === 'win32' && 'the installed path runs on macOS only; Windows cannot rename over a link' };
 
 const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
 const repo = naming.repo;
@@ -206,7 +211,7 @@ test('two previous versions are kept, and a version that never became current is
   assert.deepEqual(pruneList({ present: [a, b], current: b, installed: [a, b] }), []);
 });
 
-test('current is repointed by a rename, and an installed server finds its install root from its own code', (t) => {
+test('current is repointed by a rename, and an installed server finds its install root from its own code', SWITCHES, (t) => {
   const s = scratch();
   t.after(s.cleanup);
   for (const n of [1, 2]) mkdirSync(path.join(s.L.versions, release(n).version, 'server', 'src'), { recursive: true });
@@ -219,6 +224,11 @@ test('current is repointed by a rename, and an installed server finds its instal
   assert.equal(installRootOf(realpathSync(s.L.current)), realpathSync(s.L.root));
   assert.equal(installRootOf(path.dirname(path.dirname(cli))), null, 'a checkout is not an install');
   assert.throws(() => pointCurrent(s.L, release(3).version), /not installed/);
+});
+
+test('the installed path refuses to run off macOS, as the service does', () => {
+  assert.doesNotThrow(() => assertInstalledPlatform('darwin'));
+  for (const platform of ['win32', 'linux']) assert.throws(() => assertInstalledPlatform(platform), /macOS only.*from a checkout/);
 });
 
 test('a bad digest is refused and nothing changes', async (t) => {
@@ -270,7 +280,7 @@ test('a tampered file is refused, as is an asset from anywhere but this reposito
   assert.match(notice.body, /stays on/);
 });
 
-test('a version that fails its health check rolls back by itself to the previous one, which then serves', async (t) => {
+test('a version that fails its health check rolls back by itself to the previous one, which then serves', SWITCHES, async (t) => {
   const s = await installed(t);
   s.gh.add(build(2, { broken: true }));
   const r = await s.updater.check();
@@ -299,7 +309,7 @@ test('a version that fails its health check rolls back by itself to the previous
   assert.equal(s.events('update.check').at(-1).reason, 'current');
 });
 
-test('a healthy version stays, and the oldest beyond two previous go only after it passed', async (t) => {
+test('a healthy version stays, and the oldest beyond two previous go only after it passed', SWITCHES, async (t) => {
   const s = await installed(t);
   for (const n of [2, 3, 4]) {
     s.gh.add(build(n));
@@ -391,7 +401,7 @@ test('candidate probation refuses a send until health is committed', async (t) =
   assert.equal((await request()).status, 201);
 });
 
-test('startup preserves a live finisher transaction and recovers migrated data after it dies', async (t) => {
+test('startup preserves a live finisher transaction and recovers migrated data after it dies', SWITCHES, async (t) => {
   const s = await installed(t); s.gh.add(build(2));
   const u = createUpdater({ L: s.L, dataDir: s.dataDir, log: s.log, running: release(1).version, repo, slug, fetchImpl: s.gh.fetchImpl, handoff: async () => {} });
   await u.check(); await s.service.kill();
@@ -419,7 +429,7 @@ test('a pause during drain releases the gate and leaves current untouched', asyn
   assert.equal(currentVersion(s.L), release(1).version);
 });
 
-test('format rollback never discards a send accepted after the backup', async (t) => {
+test('format rollback never discards a send accepted after the backup', SWITCHES, async (t) => {
   const s = await installed(t);
   s.gh.add(build(2));
   const u = createUpdater({ L: s.L, dataDir: s.dataDir, log: s.log, running: release(1).version, repo, slug, fetchImpl: s.gh.fetchImpl, handoff: async () => {} });
@@ -436,7 +446,7 @@ test('format rollback never discards a send accepted after the backup', async (t
   assert.ok(readState(s.L).pending);
 });
 
-test('rollback stops the candidate before reading its format, preserving accepted sends', async (t) => {
+test('rollback stops the candidate before reading its format, preserving accepted sends', SWITCHES, async (t) => {
   const s = await installed(t);
   s.gh.add(build(2));
   const u = createUpdater({ L: s.L, dataDir: s.dataDir, log: s.log, running: release(1).version, repo, slug, fetchImpl: s.gh.fetchImpl, handoff: async () => {} });
@@ -458,7 +468,7 @@ test('rollback stops the candidate before reading its format, preserving accepte
   try { assert.equal(after.getSend('accepted-after-snapshot').message_id, '42'); } finally { after.close(); }
 });
 
-test('startup recovers an interrupted switch to last known good before opening the data', async (t) => {
+test('startup recovers an interrupted switch to last known good before opening the data', SWITCHES, async (t) => {
   const s = await installed(t);
   s.gh.add(build(2));
   const u = createUpdater({ L: s.L, dataDir: s.dataDir, log: s.log, running: release(1).version, repo, slug, fetchImpl: s.gh.fetchImpl, handoff: async () => {} });

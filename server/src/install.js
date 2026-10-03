@@ -33,13 +33,22 @@ export const KEEP_PREVIOUS = 2;
 export const KEEP_BACKUPS = 3;
 const VERSION = /^\d+\.\d+\.\d+(-dev\.\d+\.[a-f0-9]{10})?$/;
 
+/**
+ * The installed path is macOS's, as the service is (server/src/service.js): a LaunchAgent runs `current`, and `current`
+ * is repointed by renaming a new link over it, which POSIX makes atomic and Windows refuses. Off macOS the server runs
+ * from a checkout under the host's own service manager, so an installed layout there is refused rather than switched
+ * some weaker way.
+ */
+export const INSTALLED_PLATFORM = 'darwin';
+
+export function assertInstalledPlatform(platform = process.platform) {
+  if (platform !== INSTALLED_PLATFORM) throw new Error('the installed server runs on macOS only, under its LaunchAgent; on ' + platform + ', run "run" from a checkout under your own service manager');
+}
+
 /** Where releases are installed, apart from the data folder: SERVER_INSTALL_ROOT, else beside it under its own name. */
-export function defaultInstallRoot({ env = process.env, platform = process.platform, home = os.homedir() } = {}) {
+export function defaultInstallRoot({ env = process.env, home = os.homedir() } = {}) {
   if (env.SERVER_INSTALL_ROOT) return env.SERVER_INSTALL_ROOT;
-  const name = naming.slug + '-server-install';
-  if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', name);
-  if (platform === 'win32') return path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), name);
-  return path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), name);
+  return path.join(home, 'Library', 'Application Support', naming.slug + '-server-install');
 }
 
 // Resolve existing ancestors too: a not-yet-created child of a symlink is not a separate data folder.

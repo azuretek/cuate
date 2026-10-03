@@ -25,7 +25,7 @@ The data folder defaults to `~/Library/Application Support/<name>-server`; pass 
 
 ## Installed releases and safe updates
 
-From a checkout, run `node server/src/main.js service install --release --data DIR` (optionally `--version V --install-root ROOT`). This is an explicit service change, not something a client release performs. It keeps the existing data folder and runs `ROOT/current/server/src/main.js`. Code lives in `ROOT/versions/V`; code and data must not contain one another, including through symlinks. Node and the Messages engine remain host dependencies.
+From a checkout, run `node server/src/main.js service install --release --data DIR` (optionally `--version V --install-root ROOT`). This is an explicit service change, not something a client release performs. It keeps the existing data folder and runs `ROOT/current/server/src/main.js`. Code lives in `ROOT/versions/V`; code and data must not contain one another, including through symlinks. Node and the Messages engine remain host dependencies. The installed path is macOS only, like the service: `current` is a link replaced by an atomic rename, which Windows refuses, so a server started from an install layout anywhere else stops with an error and is run from a checkout under that host's own service manager instead.
 
 Auto-update follows dev prereleases only. It checks two minutes after startup and every four hours, backs off failed checks, and installs at most one release per check. Downloads have byte and time bounds. The tarball must match GitHub's recorded SHA-256 and its digest file; the shared artifact verifier checks every file and the Node range before unpacking.
 

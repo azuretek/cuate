@@ -17,9 +17,10 @@ const macEvent = (name, fields) => {
 export default {
   name: 'run',
   async run({ dataDir, store, engineSetup }) {
-    const { installRootOf, installLayout, readState, assertSeparateData } = await import('../install.js');
+    const { installRootOf, installLayout, readState, assertSeparateData, assertInstalledPlatform } = await import('../install.js');
     const installRoot = installRootOf(ROOT);
     const L = installRoot ? installLayout(installRoot) : null;
+    if (L) assertInstalledPlatform();
     if (L) assertSeparateData(L, dataDir);
     const config = loadConfig(dataDir);
     const { createLogger } = await import('../../../core/kit/log.js');
