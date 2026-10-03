@@ -99,6 +99,8 @@
   --color-scrollbar-thumb: rgba(110, 105, 96, 0.42);
   --color-scrollbar-track: transparent;
   --color-image-edge: rgba(33, 30, 26, 0.10);
+  --color-bg-raised-fg: #211e1a;
+  --color-selection-fg: #211e1a;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) {
@@ -126,6 +128,8 @@
     --color-scrollbar-thumb: rgba(139, 139, 148, 0.42);
     --color-scrollbar-track: transparent;
     --color-image-edge: rgba(244, 244, 245, 0.12);
+    --color-bg-raised-fg: #f4f4f5;
+    --color-selection-fg: #f4f4f5;
   }
 }
 :root[data-scheme="dark"] {
@@ -154,6 +158,8 @@
   --color-scrollbar-thumb: rgba(139, 139, 148, 0.42);
   --color-scrollbar-track: transparent;
   --color-image-edge: rgba(244, 244, 245, 0.12);
+  --color-bg-raised-fg: #f4f4f5;
+  --color-selection-fg: #f4f4f5;
 }
 :root[data-scheme="light"] {
   color-scheme: light;
@@ -183,6 +189,8 @@
   --color-scrollbar-thumb: rgba(110, 105, 96, 0.42);
   --color-scrollbar-track: transparent;
   --color-image-edge: rgba(33, 30, 26, 0.10);
+  --color-bg-raised-fg: #211e1a;
+  --color-selection-fg: #211e1a;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) [data-palette="default"] {
@@ -210,6 +218,8 @@
     --color-scrollbar-thumb: rgba(139, 139, 148, 0.42);
     --color-scrollbar-track: transparent;
     --color-image-edge: rgba(244, 244, 245, 0.12);
+    --color-bg-raised-fg: #f4f4f5;
+    --color-selection-fg: #f4f4f5;
   }
 }
 :root[data-scheme="dark"] [data-palette="default"] {
@@ -237,4 +247,6 @@
   --color-scrollbar-thumb: rgba(139, 139, 148, 0.42);
   --color-scrollbar-track: transparent;
   --color-image-edge: rgba(244, 244, 245, 0.12);
+  --color-bg-raised-fg: #f4f4f5;
+  --color-selection-fg: #f4f4f5;
 }

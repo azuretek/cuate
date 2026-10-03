@@ -700,8 +700,8 @@ async function runSmoke(w) {
   console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
-  await waitFor(`Boolean(${replySel}?.querySelector('.reply-quote'))`, 20000);
-  const replied = await js(`(() => { const r = ${replySel}; const quote = r.querySelector('.reply-quote'); return { quote: quote.textContent, enabled: !quote.disabled, cleared: !document.querySelector('app-composer .composer-reply') }; })()`);
+  await waitFor(`Boolean(${replySel}?.querySelector('.reply-link'))`, 20000);
+  const replied = await js(`(() => { const r = ${replySel}; const quote = r.querySelector('.reply-link'); return { quote: quote.textContent, enabled: !quote.disabled, cleared: !document.querySelector('app-composer .composer-reply') }; })()`);
   await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
   await pause(300);
   await shot('16-replied-light.png');
@@ -709,10 +709,10 @@ async function runSmoke(w) {
   await pause(400);
   await shot('16b-replied-dark.png');
   nativeTheme.themeSource = 'light';
-  await js(`${replySel}.querySelector('.reply-quote').click()`);
+  await js(`${replySel}.querySelector('.reply-link').click()`);
   await waitFor(`document.querySelector(${q(row)})?.classList.contains('flash')`, 5000);
   const wentTo = await js(`(() => { const r = document.querySelector(${q(row)}).getBoundingClientRect(); const l = document.querySelector('.messages').getBoundingClientRect(); return r.bottom > l.top && r.top < l.bottom; })()`);
-  const replyChecks = { focused: replyFocused, quoted: replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn'), enabled: replied.enabled, cleared: replied.cleared, wentTo };
+  const replyChecks = { focused: replyFocused, relationship: !replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn'), enabled: replied.enabled, cleared: replied.cleared, wentTo };
   report.reply = Object.values(replyChecks).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied }));
 

@@ -58,7 +58,7 @@ app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .chat-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; outline: none; transition: background var(--motion-fast) var(--motion-ease); }
 .chat-row:hover { background: var(--color-bg-sunken); }
 .chat-row:focus-visible { box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
-.chat-row.selected { background: var(--color-selection); }
+.chat-row.selected { background: var(--color-selection); color: var(--color-selection-fg); }
 .avatar { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); display: grid; place-items: center; background: var(--color-bg-sunken); color: var(--color-fg-muted); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); }
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
@@ -77,7 +77,7 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .load-older { align-self: center; margin-bottom: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
 .separator { align-self: center; margin: var(--space-4) 0 var(--space-2); font-size: var(--font-size-xs); color: var(--color-fg-muted); }
 .bubble-row { display: flex; flex-direction: column; align-items: flex-start; margin-top: var(--space-1); }
-.bubble-row.first { margin-top: var(--space-3); }
+.bubble-row.first { margin-top: var(--space-4); }
 .bubble-row.mine { align-items: flex-end; }
 .sender { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: 0 var(--space-3) var(--space-1); }
 .bubble { max-width: var(--size-bubble-max); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -86,8 +86,8 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble.sms { background: var(--color-bubble-sms); color: var(--color-bubble-sms-fg); }
 .bubble.state-sending { opacity: 0.7; }
 .bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }
-.reactions { display: flex; gap: var(--space-1); margin: var(--space-1) var(--space-2) 0; font-size: var(--font-size-sm); }
-.reaction { background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: 0 var(--space-2); }
+.reactions { display: flex; flex-wrap: wrap; gap: var(--space-1); position: relative; margin: calc(var(--space-1) * -1) var(--space-2) 0; font-size: var(--font-size-sm); }
+.reaction { background: var(--color-bg-raised); color: var(--color-bg-raised-fg); box-shadow: var(--shadow-sm); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: 0 var(--space-2); }
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
 /* A message's own controls (issue 138). React and Reply sit beside the bubble and show on hover or keyboard focus,
    where there is a pointer that hovers; a touch screen opens the same menu with a long press, and a right click does
@@ -106,7 +106,7 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; }
 .bubble-row.mine .message-pop { left: auto; right: 0; }
 .message-picker .emoji-picker { position: static; }
-.message-menu { display: flex; flex-direction: column; min-width: max-content; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); }
+.message-menu { display: flex; flex-direction: column; min-width: max-content; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
 .tapback-row { display: flex; gap: var(--space-1); padding-bottom: var(--space-1); margin-bottom: var(--space-1); border-bottom: var(--size-border) solid var(--color-border); }
 .tapback { flex: none; width: var(--size-emoji); height: var(--size-emoji); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font-size: var(--font-size-lg); line-height: 1; cursor: pointer; }
 .tapback:hover, .tapback:focus-visible { background: var(--color-bg-sunken); outline: none; }
@@ -115,12 +115,13 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .menu-item { border: 0; background: none; color: var(--color-fg); text-align: left; white-space: nowrap; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--color-bg-sunken); outline: none; }
 .menu-item:disabled { opacity: 0.4; cursor: default; }
-.reaction.mine { background: var(--color-selection); border-color: var(--color-accent); }
+.reaction.mine { background: var(--color-selection); color: var(--color-selection-fg); border-color: var(--color-accent); }
 .message-note { font-size: var(--font-size-xs); color: var(--color-danger); margin: var(--space-1) var(--space-2) 0; }
-/* A reply quotes the message it answers above its bubble; pressing the quote goes to that message and lights it. */
-.reply-quote { display: flex; flex-direction: column; align-items: flex-start; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); padding: var(--space-1) var(--space-3); border: 0; border-inline-start: calc(var(--size-border) * 3) solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-sunken); color: var(--color-fg-muted); font-size: var(--font-size-sm); text-align: left; cursor: pointer; }
-.reply-quote:hover:not(:disabled), .reply-quote:focus-visible { border-inline-start-color: var(--color-accent); outline: none; }
-.reply-quote:disabled { cursor: default; }
+/* A compact relationship points to the original without repeating its body. */
+.reply-link { display: inline-flex; align-items: center; gap: var(--space-1); max-width: var(--size-bubble-max); margin-bottom: var(--space-1); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); font-size: var(--font-size-xs); text-align: left; cursor: pointer; }
+.reply-link span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-link:hover:not(:disabled), .reply-link:focus-visible { color: var(--color-fg); text-decoration: underline; outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.reply-link:disabled { cursor: default; }
 .reply-who { font-weight: var(--font-weight-medium); color: var(--color-fg); }
 .reply-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bubble-row.flash .bubble, .bubble-row.flash .attachment-image { animation: flash var(--motion-sheet-out) var(--motion-ease) 3; }
@@ -155,7 +156,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .tool:hover { background: var(--color-bg-sunken); }
 .tool:disabled { opacity: 0.4; cursor: default; }
 /* One fixed height, so narrowing the grid never resizes the panel and never moves the composer below it. */
-.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); z-index: 3; }
+.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); z-index: 3; }
 .emoji-search { flex: none; width: 100%; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); outline: none; }
 .emoji-search:focus { border-color: var(--color-accent); }
 .emoji-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); flex: none; }
@@ -171,7 +172,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-cell:hover { background: var(--color-bg-sunken); }
 .emoji-empty { flex: 1; min-height: 0; padding: var(--space-3); text-align: center; }
 /* The attach menu: a short list opening upward beside the attach button, the reference's shape, not a sheet. */
-.attach-menu { position: absolute; left: var(--space-4); bottom: 100%; display: flex; flex-direction: column; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--size-picker-shadow); z-index: 3; }
+.attach-menu { position: absolute; left: var(--space-4); bottom: 100%; display: flex; flex-direction: column; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); z-index: 3; }
 .attach-item { border: 0; background: none; color: var(--color-fg); text-align: left; white-space: nowrap; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; }
 .attach-item:hover, .attach-item:focus-visible { background: var(--color-bg-sunken); outline: none; }
 /* A staged file sits above the field until it is sent or removed. */
@@ -502,3 +503,7 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-close svg { width: 50%; height: 50%; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
 .viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }
+
+/* Raised surfaces keep the foreground supplied by their theme. */
+.sidebar, .filter-menu, .message-menu, .attachment-file, .emoji-picker, .attach-menu, .sheet-rows, .staged-file, .load-older { color: var(--color-bg-raised-fg); }
+.message-menu .menu-item, .attach-menu .menu-item { color: inherit; }

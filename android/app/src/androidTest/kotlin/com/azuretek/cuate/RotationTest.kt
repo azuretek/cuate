@@ -54,7 +54,12 @@ class RotationTest {
     }
 
     @Test
-    fun conversationSurvivesPortraitLandscapePortrait() {
+    fun lightConversation() = conversation("light")
+
+    @Test
+    fun darkConversation() = conversation("dark")
+
+    private fun conversation(scheme: String) {
         val intent = Intent(instrumentation.targetContext, MainActivity::class.java)
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
@@ -65,8 +70,12 @@ class RotationTest {
             // Fixture bytes exist in the test APK only. No production intent or bridge bypass.
             val fixture = instrumentation.context.assets.open("rotation-fixture.js").bufferedReader().use { it.readText() }
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             awaitProof(scenario, false)
+            val capture = instrumentation.uiAutomation.takeScreenshot()
+            val output = java.io.File(instrumentation.targetContext.getExternalFilesDir(null), "chat-$scheme.png")
+            output.outputStream().use { capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             awaitProof(scenario, true)
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }

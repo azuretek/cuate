@@ -66,6 +66,8 @@ jobs:
           script: |
             bash scripts/boot-proof.sh
             ./gradlew --no-daemon :app:connectedDebugAndroidTest
+            adb pull /sdcard/Android/data/com.azuretek.cuate/files/chat-light.png proof/chat-light.png
+            adb pull /sdcard/Android/data/com.azuretek.cuate/files/chat-dark.png proof/chat-dark.png
 
       - name: Keep the boot proof
         if: always()
