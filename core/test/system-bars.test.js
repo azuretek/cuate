@@ -97,6 +97,55 @@ test('the shells\' own surface before the page paints is the tokens\' page colou
   assert.match(shell, /Color\("Surface"\)/);
 });
 
+// Issue 180: the conversation header stays pinned, the page never scrolls or zooms as a whole, and a keyboard never
+// slides it under the status bar. The keyboard and the pinch are held on the phones' own tests and the desktop smoke.
+test('only the media viewer zooms: every page zoom gesture and key is recognised', async () => {
+  const { pageZoomAttempt } = await import('../app/rules/zoom.js');
+  assert.equal(pageZoomAttempt({ type: 'wheel', ctrlKey: true }), true, 'a trackpad pinch is a ctrl wheel');
+  assert.equal(pageZoomAttempt({ type: 'wheel' }), false, 'a plain wheel scrolls');
+  assert.equal(pageZoomAttempt({ type: 'gesturestart' }), true);
+  assert.equal(pageZoomAttempt({ type: 'gesturechange' }), true);
+  for (const key of ['+', '=', '-', '0']) {
+    assert.equal(pageZoomAttempt({ type: 'keydown', key, ctrlKey: true }), true, 'ctrl ' + key);
+    assert.equal(pageZoomAttempt({ type: 'keydown', key, metaKey: true }), true, 'cmd ' + key);
+    assert.equal(pageZoomAttempt({ type: 'keydown', key }), false, key + ' alone is typing, and the viewer\'s own key');
+  }
+  assert.equal(pageZoomAttempt({ type: 'keydown', key: 'c', ctrlKey: true }), false);
+  const root = read('core/app/components/app-root.js');
+  const hold = /\n {2}holdPage\(\) \{[\s\S]*?\n {2}\}\n/.exec(root)[0];
+  assert.match(hold, /closest\('app-image-viewer'\)\) return;/, 'the viewer keeps its own zoom');
+  assert.match(hold, /e\.preventDefault\(\)/);
+  assert.match(hold, /\[window, 'wheel', refuse, \{ passive: false/, 'a wheel can only be refused by a listener that is not passive');
+  assert.match(hold, /window\.scrollTo\(0, 0\)/, 'the page is put back if anything scrolls it as a whole');
+  assert.match(hold, /scrollIntoView\(\{ block: 'nearest'/, 'a focused field is kept in sight inside its own view');
+  assert.match(root, /connectedCallback\(\) \{[\s\S]*?this\.holdPage\(\);/);
+});
+
+test('the page never scrolls or zooms as a whole, so the header stays pinned on every platform', () => {
+  const viewport = /<meta name="viewport" content="([^"]*)"/.exec(read('core/app/index.html'))[1];
+  for (const part of ['maximum-scale=1', 'user-scalable=no', 'viewport-fit=cover']) assert.ok(viewport.includes(part), part);
+  const css = read('core/app/styles/app.css');
+  assert.match(css, /\nhtml, body \{[^}]*overflow: hidden;[^}]*overscroll-behavior: none;/);
+  assert.match(css, /\nhtml \{ touch-action: pan-x pan-y; \}/, 'no native pinch on the page');
+  assert.match(css, /\.viewer \{[^}]*touch-action: none/, 'the viewer still takes every touch for its own zoom');
+  assert.match(css, /\napp-conversation \{[^}]*flex-direction: column/);
+  assert.match(css, /\n\.conv-head \{[^}]*flex: none;/, 'the header is outside the scrolled messages');
+  assert.match(css, /\n\.messages \{[^}]*overflow-y: auto/, 'the messages scroll under it');
+});
+
+test('the phones keep the page still: no web view zoom, no whole-page scroll, the keyboard ends the view', () => {
+  const shell = read(ios + 'ShellView.swift');
+  assert.match(shell, /\.ignoresSafeArea\(\.container\)/, 'iOS: the web view ends at the keyboard rather than sliding under it');
+  assert.doesNotMatch(shell, /\.ignoresSafeArea\(\)\n/, 'not every safe area, which includes the keyboard');
+  assert.match(shell, /scrollView\.isScrollEnabled = false/);
+  assert.match(shell, /observe\(\\\.contentOffset/, 'iOS puts back a whole-page scroll');
+  assert.match(shell, /observe\(\\\.zoomScale/, 'and a zoom');
+  const activity = read(kotlin + 'MainActivity.kt');
+  assert.match(activity, /settings\.setSupportZoom\(false\)/);
+  assert.match(activity, /settings\.builtInZoomControls = false/);
+  assert.match(activity, /settings\.textZoom = 100/, 'text size is the setting\'s, not the system scale on top of it');
+});
+
 test('the system bars fixture is a test build seam only', () => {
   assert.match(read(ios + 'ShellView.swift'), /#if DEBUG[\s\S]*--system-bars-fixture[\s\S]*#endif/);
   assert.match(read('ios/project.yml'), /CONFIGURATION.*Debug[\s\S]*core\/test\/system-bars-fixture/);

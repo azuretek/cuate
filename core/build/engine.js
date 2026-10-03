@@ -168,6 +168,7 @@ var engine = (() => {
     optionLabel: () => optionLabel,
     orderChats: () => orderChats,
     outcomeOf: () => outcomeOf,
+    pageZoomAttempt: () => pageZoomAttempt,
     panBounds: () => panBounds,
     panBy: () => panBy,
     parseColour: () => parseColour,
@@ -2199,6 +2200,13 @@ var engine = (() => {
   var ZOOM_DOUBLE_TAP_MS = 300;
   var ZOOM_DOUBLE_TAP_PX = 32;
   var zoomFit = () => ({ scale: ZOOM_FIT, x: 0, y: 0 });
+  var PAGE_ZOOM_KEYS = /* @__PURE__ */ new Set(["+", "=", "-", "_", "0"]);
+  function pageZoomAttempt({ type, ctrlKey = false, metaKey = false, key = "" } = {}) {
+    if (type === "wheel") return Boolean(ctrlKey);
+    if (type === "gesturestart" || type === "gesturechange") return true;
+    if (type === "keydown") return Boolean(ctrlKey || metaKey) && PAGE_ZOOM_KEYS.has(key);
+    return false;
+  }
   function zoomMax(native) {
     const n = Number(native);
     const byPixels = Number.isFinite(n) && n > 0 ? n * 2 : 0;

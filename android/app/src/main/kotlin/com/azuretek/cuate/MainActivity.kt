@@ -74,6 +74,12 @@ class MainActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
+            // Only the media viewer zooms, in the page (issue 180): the web view itself never zooms, and the page's
+            // text size is the text-size setting's rather than the system font scale applied on top of it.
+            settings.setSupportZoom(false)
+            settings.builtInZoomControls = false
+            settings.displayZoomControls = false
+            settings.textZoom = 100
             addJavascriptInterface(bridge, HostBridge.INTERFACE_NAME)
             webViewClient = ShellClient()
             webChromeClient = PickerClient()

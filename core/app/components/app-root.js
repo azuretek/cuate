@@ -22,6 +22,7 @@ import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, systemBars, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { backdropReturns, sheetLeaveDeadline } from '../rules/sheet.js';
+import { pageZoomAttempt } from '../rules/zoom.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -160,11 +161,43 @@ class AppRoot extends KitElement {
       this.offWindow = window.bridge.on('window.state', (data) => { this.maximized = Boolean(data && data.maximized); });
       this.offOpen = window.bridge.on('app.open', (data) => this.openScreen(data && data.screen));
     }
+    if (typeof window !== 'undefined') this.holdPage();
     this.boot();
+  }
+
+  // The page itself never scrolls or zooms (issue 180). A zoom asked for anywhere but the media viewer is refused; a
+  // keyboard that shrinks the view leaves the focused field in view inside its own scroller; and anything that scrolls
+  // the page as a whole (iOS reveals a focused field that way) is put back, so the header stays pinned and nothing
+  // slides under the status bar.
+  holdPage() {
+    const refuse = (e) => {
+      if (!pageZoomAttempt(e)) return;
+      if (e.target && typeof e.target.closest === 'function' && e.target.closest('app-image-viewer')) return;
+      e.preventDefault();
+    };
+    const pin = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
+    const reveal = () => requestAnimationFrame(() => {
+      const field = document.activeElement;
+      if (field && field.matches && field.matches('input, textarea, [contenteditable]')) field.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      pin();
+    });
+    const viewport = window.visualViewport;
+    this.pageHolds = [
+      [window, 'wheel', refuse, { passive: false, capture: true }],
+      [window, 'keydown', refuse, { capture: true }],
+      [window, 'gesturestart', refuse, { passive: false, capture: true }],
+      [window, 'gesturechange', refuse, { passive: false, capture: true }],
+      [window, 'scroll', pin, { passive: true }],
+      [window, 'resize', reveal, { passive: true }],
+      ...(viewport ? [[viewport, 'resize', reveal, { passive: true }]] : []),
+    ];
+    for (const [target, type, fn, options] of this.pageHolds) target.addEventListener(type, fn, options);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    for (const [target, type, fn, options] of this.pageHolds || []) target.removeEventListener(type, fn, options);
+    this.pageHolds = null;
     if (this.schemeQuery && this.onSchemeChange) this.schemeQuery.removeEventListener('change', this.onSchemeChange);
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }
