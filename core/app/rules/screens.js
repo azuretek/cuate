@@ -3,7 +3,7 @@
 // is tested with no Electron and no DOM.
 //
 //   settings   the settings sheet
-//   about      the settings sheet with its last section, About, brought into view (issue 134)
+//   about      the About page, a page of its own on every platform (issue 171)
 //   updates    the main surface with no sheet over it, which is where the update banner reports a check's outcome
 //
 // The sheets exist only once the app is connected. Before then (the boot splash, or the first read), a request is held
@@ -19,4 +19,11 @@ export function screenFor(screen, { phase }) {
   if (phase === 'boot' || phase === 'loading') return 'hold';
   if (phase !== 'ready') return null;
   return screen === 'updates' ? 'main' : screen;
+}
+
+// Settings and About are pages of one sheet (issue 171). About opened from Settings' last row is pushed over it, so its
+// back strip returns to Settings; About opened on its own (the tray, the app menu) has nothing under it, so its back
+// closes the sheet. The page under the one on screen, or null when back closes the sheet.
+export function pageAfterBack(view, from) {
+  return view === 'about' && from === 'settings' ? 'settings' : null;
 }

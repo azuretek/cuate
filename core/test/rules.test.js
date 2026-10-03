@@ -808,15 +808,13 @@ test('a refused write rolls back only the keys it named', () => {
   assert.deepEqual(settingsAfterRefusal(current, before, { 'appearance.skin': 'dark', 'chats.order': ['a'] }), { 'appearance.skin': 'system', 'appearance.textScale': 150 }, 'the named keys return to what they held, and one that did not exist is removed');
 });
 
-// Issue 134: About is the last section of Settings, with chela's full details inline and in chela's order.
-test('About is the last section of Settings, and This device sits just above it with no About link', () => {
+// Issue 134 put About at the bottom of Settings with chela's full details in chela's order; issue 171 made it a page
+// of its own, opened from that last row (core/test/about-page.test.js holds the page).
+test('About is the last section of Settings, and This device sits just above it', () => {
   const groups = settingsGroups();
   assert.equal(groups.at(-1).id, 'about', 'About is the last section');
   assert.equal(groups.at(-1).kind, 'about');
   assert.equal(groups.at(-2).id, 'device');
-  const page = readFileSync(new URL('../app/components/app-settings.js', import.meta.url), 'utf8');
-  assert.equal(/data-action="about"/.test(page), false, 'the separate About link has gone');
-  assert.ok(page.includes('<app-about'), 'the settings page draws the About section itself');
 });
 
 test('the About section shows every field in chela\'s order, each from its own half', () => {

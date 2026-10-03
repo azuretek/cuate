@@ -23,6 +23,12 @@ export function dismissNotice(notices, id) {
   return notices.map((n) => n.id === id ? { ...n, read: true } : n);
 }
 
+// A question asked again (About's Check for updates, issue 171) deserves its answer even when the same answer was read
+// and dismissed before: the dismissed card is forgotten so the next one arrives unread. An unread card is left alone.
+export function forgetRead(notices, id) {
+  return notices.some((n) => n.id === id && n.read) ? notices.filter((n) => n.id !== id) : notices;
+}
+
 export function appUpdateNotice(status) {
   if (!status) return null;
   const banner = updateBanner(status.state, status);

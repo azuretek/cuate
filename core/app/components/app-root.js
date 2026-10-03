@@ -14,10 +14,11 @@ import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
-import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
+import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
+import { checkAnswer } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
 import './app-notices.js';
-import { screenFor } from '../rules/screens.js';
+import { screenFor, pageAfterBack } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
@@ -29,6 +30,7 @@ import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
 import './app-settings.js';
+import './app-about.js';
 import './app-image-viewer.js';
 import './app-slide-confirm.js';
 
@@ -48,9 +50,10 @@ class AppRoot extends KitElement {
     // conversation it is drawing until the new one is ready, then swaps in one step (issue 142).
     selecting: { state: true },
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
-    // showing. view says which page the main pane draws (the conversation or settings). settingsSection asks the
-    // settings page to bring one of its sections into view (About, from the tray).
-    view: { state: true }, listOpen: { state: true }, settingsSection: { state: true },
+    // showing. view says which page the sheet draws, if any (the conversation, settings or about). aboutFrom says what
+    // About was opened from ('settings' when it was pushed over Settings, so its back returns there), and pageMotion
+    // how the page on screen arrived inside the sheet ('push' or 'pop'; null when the sheet itself arrived).
+    view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true },
     // The sheet's leaving state has to be reactive: the departure is driven from body.surface--leaving, which updated()
     // writes after a render, so a plain field would never repaint and the leave would never begin.
     sheetLeaving: { state: true }, pendingSheet: { state: true },
@@ -124,13 +127,14 @@ class AppRoot extends KitElement {
     this.messageNote = null;
     // Every menu and modal the page draws closes on a press outside it and on Escape, through the kit's one behaviour
     // (core/kit/dismiss.js): the filter and sort menus (each one's button keeps both, so it switches between them),
-    // the group prompt, the delete confirm and the Settings sheet. The sheet closes the way its strip does, running its
-    // departure, and a sheet already leaving is not open.
+    // the group prompt, the delete confirm and the sheet. The sheet goes back the way its strip does (pageBack): About
+    // pushed over Settings returns to Settings, and any other page runs the sheet's departure. A sheet already leaving
+    // is not open.
     dismissable(this, { name: 'filter', open: () => this.filterOpen, close: () => { this.filterOpen = false; } });
     dismissable(this, { name: 'sort', open: () => this.sortOpen, close: () => { this.sortOpen = false; } });
     dismissable(this, { name: 'group', open: () => this.naming, close: () => { this.naming = false; } });
     dismissable(this, { name: 'confirm', open: () => Boolean(this.pendingDelete), close: () => this.cancelDelete() });
-    dismissable(this, { name: 'sheet', open: () => this.sheetShowing && !this.sheetLeaving, close: () => this.closeView() });
+    dismissable(this, { name: 'sheet', open: () => this.sheetShowing && !this.sheetLeaving, close: () => this.pageBack() });
     // The custom properties last written from a theme, so a change removes the ones it no longer sets.
     this.themeApplied = [];
     this.schemeQuery = null;
@@ -148,7 +152,8 @@ class AppRoot extends KitElement {
     // The shell's tray asks for a screen over app.open; one asked for before the app is ready is answered once it is.
     this.offOpen = null;
     this.heldScreen = null;
-    this.settingsSection = null;
+    this.aboutFrom = null;
+    this.pageMotion = null;
   }
 
   connectedCallback() {
@@ -600,16 +605,50 @@ class AppRoot extends KitElement {
     }
   }
 
+  // Settings asked for while About is up goes back to Settings inside the same sheet, the way About's back does.
   openSettings() {
-    this.openSheet('settings');
     this.settingsProblem = '';
+    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'pop'); return; }
+    this.openSheet('settings');
   }
 
-  // About is the last section of Settings (issue 134), so asking for About opens Settings and brings that section into
-  // view, the sheet already up included.
+  // About is a page of its own on every platform (issue 171). From Settings it is pushed inside the sheet that is
+  // already up, so its back returns to Settings; asked for on its own (the tray, the app menu) the sheet arrives with
+  // About as its page, and back closes it. Asking for it while it is up changes nothing.
   openAbout() {
-    this.openSettings();
-    this.settingsSection = { id: 'about' };
+    if (this.view === 'about' && !this.sheetLeaving) return;
+    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'push'); return; }
+    this.aboutFrom = null;
+    this.pageMotion = null;
+    this.openSheet('about');
+  }
+
+  // A page moved inside the sheet that is up: no departure and no arrival of the sheet, only the page.
+  showPage(view, motion) {
+    if (view !== 'about') this.aboutFrom = null;
+    this.pageMotion = motion;
+    this.view = view;
+  }
+
+  // A page's back strip (and Escape): the page under it when there is one (rules/screens.js), else the sheet closes.
+  pageBack() {
+    const under = pageAfterBack(this.view, this.aboutFrom);
+    if (under) this.showPage(under, 'pop');
+    else this.closeView();
+  }
+
+  // About's Check for updates (issue 171): the shell runs the same check the tray's item runs (updates.check) and
+  // answers the state it reached, which becomes the app notice exactly as an update.state event does; a later outcome
+  // (a release found, nothing newer) arrives on that event as the tray's check's does. A card for the same answer
+  // that was read and dismissed is forgotten first, so asking again shows the answer again. The press shows the check
+  // until the shell answers, and fails when the shell refused it.
+  async checkUpdates() {
+    this.appNotices = forgetRead(this.appNotices, 'app-update');
+    let answer;
+    try { answer = await this.bridge('updates.check', {}); } catch { return false; }
+    const state = checkAnswer(answer, String(this.host && this.host.platform || '').toLowerCase());
+    if (state) this.onUpdate(state);
+    return true;
   }
 
   // A link the page asked to open (About's source, licence and issue links) goes to the shell, which opens the
@@ -674,11 +713,12 @@ class AppRoot extends KitElement {
     const next = this.pendingSheet;
     this.pendingSheet = null;
     this.view = next || 'messages';
-    if (this.view !== 'settings') this.settingsSection = null;
+    this.pageMotion = null;
+    if (this.view !== 'about') this.aboutFrom = null;
   }
 
   get sheetShowing() {
-    return this.view === 'settings';
+    return this.view === 'settings' || this.view === 'about';
   }
 
   // The drawer's scrim closes it, the same thing the conversation's back control does: show the pane behind it.
@@ -1099,10 +1139,15 @@ class AppRoot extends KitElement {
     return this.listOpen || !this.openChatId ? 'list' : 'conversation';
   }
 
-  // The settings page is a sheet, so it is drawn by sheetBody and never in the main pane. About is its last section.
+  // Settings and About are pages of the one sheet, so they are drawn by sheetBody and never in the main pane. Each
+  // carries how it arrived (data-motion), which the stylesheet turns into the screen push or pop.
   sheetBody() {
-    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host} .reveal=${this.settingsSection}
-      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.closeView()}></app-settings>`;
+    if (this.view === 'about') {
+      return html`<app-about data-motion=${this.pageMotion || 'none'} .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : 'Back to app'}
+        @check-updates=${(e) => respond(e, this.checkUpdates())} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
+    }
+    return html`<app-settings data-motion=${this.pageMotion || 'none'} .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
+      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}></app-settings>`;
   }
 
   mainView(chat) {
@@ -1182,7 +1227,7 @@ class AppRoot extends KitElement {
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <main class="main">${this.mainView(chat)}</main>
-      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
+      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}

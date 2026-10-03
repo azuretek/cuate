@@ -93,6 +93,7 @@ var engine = (() => {
     channelOf: () => channelOf,
     chatPreview: () => chatPreview,
     chatTitle: () => chatTitle,
+    checkAnswer: () => checkAnswer,
     checkedCount: () => checkedCount,
     checksumMatches: () => checksumMatches,
     clampPan: () => clampPan,
@@ -128,6 +129,7 @@ var engine = (() => {
     failedBanner: () => failedBanner,
     filterChats: () => filterChats,
     forgetChats: () => forgetChats,
+    forgetRead: () => forgetRead,
     formatListTime: () => formatListTime,
     formatSeparator: () => formatSeparator,
     formatTraceparent: () => formatTraceparent,
@@ -170,6 +172,7 @@ var engine = (() => {
     optionLabel: () => optionLabel,
     orderChats: () => orderChats,
     outcomeOf: () => outcomeOf,
+    pageAfterBack: () => pageAfterBack,
     pageZoomAttempt: () => pageZoomAttempt,
     panBounds: () => panBounds,
     panBy: () => panBy,
@@ -952,7 +955,14 @@ var engine = (() => {
     if (platform === "linux") {
       return appImage ? { action: INSTALL, check: true, autoDownload: true, canInstall: true, reason: "an AppImage replaces itself in place" } : { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "not running as an AppImage, so there is no file an update could replace" };
     }
+    if (platform === "ios") return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "updates to this app arrive through TestFlight" };
+    if (platform === "android") return { action: NOTIFY, check: false, autoDownload: false, canInstall: false, reason: "updates to this app are installed from a newer APK" };
     return { action: NOTIFY, check: true, autoDownload: false, canInstall: false, reason: "no install path on this platform" };
+  }
+  function checkAnswer(answer, platform) {
+    if (!answer || typeof answer !== "object" || !updateBanner(answer.state, { canInstall: true })) return null;
+    const detail = answer.detail ?? (answer.state === "unsupported" ? capability({ platform, packaged: true }).reason : null);
+    return { state: answer.state, version: answer.version ?? null, percent: answer.percent ?? null, detail: detail ?? null, canInstall: Boolean(answer.canInstall) };
   }
   function policy({ autoDownload = false, ...opts }) {
     const base = capability(opts);
@@ -1062,6 +1072,9 @@ var engine = (() => {
   }
   function dismissNotice(notices, id) {
     return notices.map((n) => n.id === id ? { ...n, read: true } : n);
+  }
+  function forgetRead(notices, id) {
+    return notices.some((n) => n.id === id && n.read) ? notices.filter((n) => n.id !== id) : notices;
   }
   function appUpdateNotice(status) {
     if (!status) return null;
@@ -2036,7 +2049,7 @@ var engine = (() => {
       { id: "notifications", label: "Notifications", description: "Which events raise a notice on this device." },
       { id: "updates", label: "Updates", description: "How a release this app finds is fetched." },
       { id: "device", kind: "device", label: "This device", description: "The server this app talks to, and the way out of it." },
-      { id: "about", kind: "about", label: "About", description: "The build this device is running and the server it talks to. Select a value to copy it." }
+      { id: "about", kind: "about", label: "About", description: "The build this device is running, the server it talks to, and a check for updates." }
     ],
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
@@ -2352,6 +2365,9 @@ var engine = (() => {
     if (phase === "boot" || phase === "loading") return "hold";
     if (phase !== "ready") return null;
     return screen === "updates" ? "main" : screen;
+  }
+  function pageAfterBack(view, from) {
+    return view === "about" && from === "settings" ? "settings" : null;
   }
   return __toCommonJS(engine_exports);
 })();

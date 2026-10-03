@@ -7,6 +7,7 @@
     "app.info": { "args": {}, "returns": "AppInfo" },
     "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
     "open.external": { "args": { "url": "string" }, "returns": "boolean" },
+    "updates.check": { "args": {}, "returns": "UpdateState?" },
     "updates.configure": { "args": { "autoDownload": "boolean" }, "returns": "boolean" },
     "updates.download": { "args": {}, "returns": "boolean" },
     "updates.install": { "args": {}, "returns": "boolean" },

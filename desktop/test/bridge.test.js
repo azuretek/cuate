@@ -32,6 +32,20 @@ test('with no updater the update commands answer false rather than throwing', as
   assert.equal(await h['updates.install']({}), false);
 });
 
+// Issue 171: About's Check for updates asks the shell for the tray's own check and draws the state it answers.
+test('updates.check runs the tray\'s check and answers the state it reached', async () => {
+  let checks = 0;
+  const state = { state: 'checking', version: null, canInstall: true };
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true, checkUpdates: () => { checks += 1; return state; } });
+  assert.deepEqual(await h['updates.check']({}), state);
+  assert.equal(checks, 1, 'one press, one check');
+});
+
+test('with no check wired, updates.check answers null rather than throwing', async () => {
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true });
+  assert.equal(await h['updates.check']({}), null);
+});
+
 test('secure storage encrypts at rest and refuses bad keys and values', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'bridge-'));
   const file = path.join(dir, 'store.json');

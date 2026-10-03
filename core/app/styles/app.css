@@ -220,10 +220,31 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .button.primary { background: var(--color-accent); color: var(--color-accent-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
-/* Settings draws in the app's one sheet surface: a top strip that is itself the back control, the page's title and its
-   one-line description, then its sections, the last of which is About (issue 134). The chrome is drawn by app-sheet. */
-app-settings { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
-app-about { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+/* Settings and About are the two pages of the app's one sheet surface: a top strip that is itself the back control, the
+   page's title and its one-line description, then its sections. Settings ends with the row that opens About, a page of
+   its own on every platform (issue 171). The chrome is drawn by app-sheet. */
+app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+/* A row that opens another page: the whole row is the control, the value beside its label, and the chevron at its end. */
+.setting-nav { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: none; color: var(--color-fg); font: inherit; text-align: left; cursor: pointer; }
+.setting-nav:first-child { border-top: 0; }
+.setting-nav:hover { background: var(--color-bg-sunken); }
+.setting-nav:focus-visible { outline: none; box-shadow: inset 0 0 0 var(--size-border) var(--color-accent); }
+.setting-nav .setting-label { color: var(--color-fg); }
+.setting-nav-value { margin-left: auto; color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); overflow-wrap: anywhere; text-align: right; min-width: 0; }
+.setting-nav .icon { flex: none; color: var(--color-fg-muted); }
+/* About opens with the app's own icon, its name and its version, centred over the page, then Check for updates. */
+.about-head { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); text-align: center; }
+.about-icon { width: var(--size-app-icon); height: var(--size-app-icon); margin-bottom: var(--space-2); }
+.about-name { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); }
+.about-version { color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.about-check { align-self: flex-start; }
+/* A page moved inside the sheet that is up (About from Settings, and back) slides across on the screen-push token and
+   the sheet's curve, Chela's screen motion; the sheet itself does not move. */
+@keyframes page-push { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes page-pop { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+app-settings[data-motion="push"], app-about[data-motion="push"] { animation: page-push var(--motion-screen) var(--motion-sheet-ease) both; }
+app-settings[data-motion="pop"], app-about[data-motion="pop"] { animation: page-pop var(--motion-screen) var(--motion-sheet-ease) both; }
+@media (prefers-reduced-motion: reduce) { app-settings[data-motion], app-about[data-motion] { animation: none; } }
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
 .sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
@@ -255,8 +276,8 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .about-link-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); min-width: 0; }
 .about-link { text-decoration: none; font-size: var(--font-size-sm); }
 .about-link:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.about-copy { align-self: flex-start; }
-.about-compare { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
+.about-copy { align-self: flex-start; margin-top: var(--space-2); }
+.about-compare { margin: var(--space-2) 0 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .about-compare.mismatch { color: var(--color-danger); }
 /* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
 .theme-import { flex-direction: column; align-items: stretch; gap: var(--space-2); }
@@ -534,7 +555,9 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* Floating notice geometry: clear header controls and reserve the composer below. The stack scrolls, which clips
    whatever paints outside its padding box, so its padding holds the card's shadow and a negative margin keeps
    the card where a 4px inset puts it. */
-app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 2; }
+/* The stack draws above a sheet's backdrop and card (z-index 3 and 4), so an answer to a press on a sheet, About's
+   Check for updates (issue 171), is seen while the sheet stays up; see the band below for where it sits then. */
+app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 5; }
 .app-window { position: relative; }
 .app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
@@ -553,6 +576,16 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 @keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
+/* While a sheet is up (Settings, About, a confirm, the image viewer) and a notice is showing, the notices take a band of
+   their own above the sheet on every width, as a phone always does: the sheet's backdrop is placed in the body, so it
+   starts below the band, and a card answering a press on the sheet (About's Check for updates, issue 171) never covers
+   the sheet. The band is the backdrop's own dim. With no notice nothing here applies, so the backdrop stays fixed over
+   the whole window. The stack's rule is :where()-wrapped so the phone's own padding below, which holds the safe-area
+   insets, still wins on a phone. */
+.app-window:has(.sheet-scrim):has(.app-notice) .app-body { position: relative; }
+.app-window:has(.sheet-scrim):has(.app-notice) .sheet-scrim { position: absolute; }
+.app-window:has(.sheet-scrim):has(.app-notice) app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-scrim); }
+:where(.app-window:has(.sheet-scrim):has(.app-notice)) .app-notice-stack { margin: 0; padding: var(--space-3) var(--space-4); }
 /* On a phone there is no free corner: a floating card lands on the open drawer's Edit control and its first rows, or on
    the conversation's header and messages. There the notices take a band of their own at the top of the window and the
    surfaces start below it, the drawer included (it is placed in the body, not the viewport), so a notice never covers a
