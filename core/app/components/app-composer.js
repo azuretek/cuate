@@ -153,14 +153,20 @@ class AppComposer extends KitElement {
   // fits (issue 139). The height is the text's own plus the field's border, since the box is sized border-box and the
   // text's height leaves the border out: the field set to that alone was a border short and drew the platform's bar
   // over a single line. Past the maximum it scrolls, and only then does it carry the app's themed bar. It is measured
-  // with scrolling off, so a bar's own width never changes where the lines wrap.
+  // with scrolling off, so a bar's own width never changes where the lines wrap. While it is measured the field drops to
+  // one line, so the composer holds its own height until the field has its new one: a composer that shrank for that
+  // moment made the conversation above it taller, the browser pulled a conversation at its end back by the difference,
+  // and the conversation took that as the person scrolling away from the end.
   grow(e) {
     const t = e.currentTarget;
+    const box = t.parentElement;
+    if (box) box.style.minHeight = box.offsetHeight + 'px';
     t.classList.remove('scrolls');
     t.style.height = 'auto';
     const want = t.scrollHeight + t.offsetHeight - t.clientHeight;
     t.style.height = want + 'px';
     t.classList.toggle('scrolls', want > parseFloat(getComputedStyle(t).maxHeight));
+    if (box) box.style.minHeight = '';
   }
 
   toggleEmoji() {
