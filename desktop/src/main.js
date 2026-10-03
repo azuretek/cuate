@@ -220,17 +220,107 @@ async function runSmoke(w) {
   })()`);
   report.resyncKeeps = resync.least > 0 && resync.after > 0;
   if (!report.resyncKeeps) console.error('resync: ' + JSON.stringify(resync));
-  // The chats header is a search field, a filter icon and a gear, and no heading text or Settings text button.
-  report.header = await js("(() => { const h = document.querySelector('.sidebar-head'); if (!h) return false; const gone = !h.querySelector('.title') && !h.querySelector('.text-button') && !h.querySelector('h1'); return Boolean(h.querySelector('.chat-search') && h.querySelector('.filter-button') && h.querySelector('.gear-button') && gone); })()");
-  // Typing narrows the list live, by the chat's name and by its last message.
-  await js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = 'weekend'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
-  await waitFor("document.querySelectorAll('.chat-row').length === 1 && document.querySelector('.chat-row .chat-name')?.textContent === 'Weekend plans'");
+  // The chats header is a search field with its mode, a filter icon, a sort icon and a gear, and no heading text, no
+  // Settings text button and no pencil Edit button (issue 137).
+  report.header = await js("(() => { const h = document.querySelector('.sidebar-head'); if (!h) return false; const gone = !h.querySelector('.title') && !h.querySelector('.text-button') && !h.querySelector('h1') && !h.querySelector('.edit-button'); return Boolean(h.querySelector('.search-box .search-mode') && h.querySelector('.search-box .chat-search') && h.querySelector('.filter-button') && h.querySelector('.sort-button') && h.querySelector('.gear-button') && gone); })()");
+  const setSearch = (v) => js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = " + JSON.stringify(v) + "; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  const setMode = (v) => js("(() => { const s = document.querySelector('.sidebar-head .search-mode'); s.value = " + JSON.stringify(v) + "; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+  const pressEnter = () => js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()");
+  const rowNames = "[...document.querySelectorAll('.chat-row .chat-name')].map((n) => n.textContent)";
+  const namesAre = (list) => 'JSON.stringify(' + rowNames + ') === ' + JSON.stringify(JSON.stringify(list));
+  // Typing narrows the list live: Contact reads the chat's name, Full text its messages.
+  await setMode('contact');
+  await setSearch('weekend');
+  await waitFor(namesAre(['Weekend plans']));
   report.headerSearchName = true;
-  await js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = 'thank'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
-  await waitFor("document.querySelectorAll('.chat-row').length === 1 && document.querySelector('.chat-row .chat-name')?.textContent === '+15555550142'");
+  await setMode('text');
+  await setSearch('thank');
+  await waitFor(namesAre(['+15555550142']));
   report.headerSearchMessage = true;
-  await js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await setSearch('');
+  await setMode('contact');
   await waitFor("document.querySelectorAll('.chat-row').length >= 3");
+  // Enter makes a term of what was typed and each later term refines, each in its own mode (issue 133): a Contact
+  // "a" keeps the two chats whose names or people carry it, then a Full text "corner" keeps the one whose messages do.
+  // Switching that chip to Contact empties the list and the empty text names both terms; removing chips widens it again.
+  await setSearch('a');
+  await pressEnter();
+  await waitFor("document.querySelectorAll('.search-term').length === 1 && document.querySelector('.sidebar-head .chat-search').value === '' && " + namesAre(['Avery Quinn', 'Weekend plans']));
+  await setMode('text');
+  await setSearch('corner');
+  await pressEnter();
+  await waitFor("document.querySelectorAll('.search-term').length === 2 && " + namesAre(['Weekend plans']));
+  const termModes = await js("JSON.stringify([...document.querySelectorAll('.search-term')].map((t) => [t.querySelector('.term-text').textContent, t.dataset.mode, t.querySelector('.term-mode').value]))");
+  const termPad = await js("(() => { const s = getComputedStyle(document.querySelector('.search-term')); return { top: s.paddingTop, left: s.paddingLeft, right: s.paddingRight, gap: getComputedStyle(document.querySelector('.search-terms')).gap }; })()");
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('13-search-terms-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('13b-search-terms-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js("(() => { const s = document.querySelectorAll('.search-term .term-mode')[1]; s.value = 'contact'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+  await waitFor("document.querySelectorAll('.chat-row').length === 0 && Boolean(document.querySelector('.list-empty'))");
+  const emptyText = await js("document.querySelector('.list-empty').textContent.trim()");
+  await js("document.querySelectorAll('.search-term .chip-clear')[1].click()");
+  await waitFor("document.querySelectorAll('.search-term').length === 1 && " + namesAre(['Avery Quinn', 'Weekend plans']));
+  await js("document.querySelector('.search-term .chip-clear').click()");
+  await waitFor("document.querySelectorAll('.search-term').length === 0 && document.querySelectorAll('.chat-row').length >= 3");
+  await setMode('contact');
+  const searchChecks = {
+    modes: termModes === JSON.stringify([['a', 'contact', 'contact'], ['corner', 'text', 'text']]),
+    padded: parseFloat(termPad.top) > 0 && parseFloat(termPad.left) > 0 && parseFloat(termPad.gap) > 0,
+    emptyNames: emptyText === 'No conversations match "a" (Contact) and "corner" (Contact).',
+  };
+  report.searchTerms = Object.values(searchChecks).every(Boolean);
+  console.log('search terms: ' + JSON.stringify({ checks: searchChecks, termModes, termPad, emptyText }));
+  // The sort icon is one of the header's icons (issue 136): its computed look matches the filter button's, and its
+  // menu orders the list Recent, Name A to Z and Name Z to A, marks the choice and stores it on the server.
+  const iconStyle = await js(`(() => {
+    const keys = ['backgroundColor', 'color', 'fontSize', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderTopStyle', 'borderTopLeftRadius', 'boxShadow', 'cursor'];
+    const read = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return Object.fromEntries(keys.map((k) => [k, s[k]])); };
+    return { sort: read('.sidebar-head .sort-button'), filter: read('.sidebar-head .filter-button'), gear: read('.sidebar-head .gear-button') };
+  })()`);
+  const sortHeld = async () => (await (await fetch(process.env.SMOKE_SERVER_URL + '/api/v1/settings', { headers: { authorization: 'Bearer ' + process.env.SMOKE_TOKEN } })).json()).values || {};
+  const recentNames = await js('JSON.stringify(' + rowNames + ')');
+  const byName = await js("JSON.stringify(" + rowNames + ".sort(new Intl.Collator(navigator.language, { sensitivity: 'base', numeric: true }).compare))");
+  const chooseSort = async (label, value) => {
+    await js("document.querySelector('.sidebar-head .sort-button').click()");
+    await waitFor("Boolean(document.querySelector('.sort-menu'))");
+    const menu = await js("JSON.stringify([...document.querySelectorAll('.sort-menu .sort-choice')].map((b) => b.textContent.replace(/\\u2713/g, '').trim()))");
+    if (label === 'Name A to Z') {
+      nativeTheme.themeSource = 'light';
+      await pause(300);
+      await shot('14-sort-menu-light.png');
+      nativeTheme.themeSource = 'dark';
+      await pause(300);
+      await shot('14b-sort-menu-dark.png');
+      nativeTheme.themeSource = 'light';
+    }
+    await js("[...document.querySelectorAll('.sort-menu .sort-choice')].find((b) => b.textContent.includes(" + JSON.stringify(label) + ")).click()");
+    await waitFor("!document.querySelector('.sort-menu')");
+    const t0 = Date.now();
+    while ((await sortHeld())['chats.sort'] !== value && Date.now() - t0 < 10000) await pause(200);
+    await js("document.querySelector('.sidebar-head .sort-button').click()");
+    await waitFor("Boolean(document.querySelector('.sort-menu'))");
+    const marked = await js("[...document.querySelectorAll('.sort-menu .sort-choice[aria-checked=true]')].map((b) => b.textContent.replace(/\\u2713/g, '').trim()).join('|')");
+    await js("document.querySelector('.sidebar-head .sort-button').click()");
+    return { menu, marked, held: (await sortHeld())['chats.sort'], names: await js('JSON.stringify(' + rowNames + ')') };
+  };
+  const sortAZ = await chooseSort('Name A to Z', 'name');
+  const sortZA = await chooseSort('Name Z to A', 'name-desc');
+  const sortRecent = await chooseSort('Recent', 'recent');
+  const sameLook = JSON.stringify(iconStyle.sort) === JSON.stringify(iconStyle.filter) && JSON.stringify(iconStyle.gear) === JSON.stringify(iconStyle.filter);
+  const sortChecks = {
+    sameLook,
+    menu: sortAZ.menu === JSON.stringify(['Recent', 'Name A to Z', 'Name Z to A']),
+    az: sortAZ.names === byName && sortAZ.marked === 'Name A to Z' && sortAZ.held === 'name',
+    za: sortZA.names === JSON.stringify(JSON.parse(byName).reverse()) && sortZA.marked === 'Name Z to A' && sortZA.held === 'name-desc',
+    recent: sortRecent.names === recentNames && sortRecent.marked === 'Recent' && sortRecent.held === 'recent',
+    changes: byName !== recentNames,
+  };
+  report.sort = Object.values(sortChecks).every(Boolean);
+  console.log('sort: ' + JSON.stringify({ checks: sortChecks, iconStyle, recentNames, byName, sortAZ, sortZA, sortRecent }));
   // The filter icon opens a dropdown holding the filters, the filter in force shows as a clearable chip, and clearing
   // the chip lifts it.
   await js("document.querySelector('.sidebar-head .filter-button').click()");
@@ -296,6 +386,9 @@ async function runSmoke(w) {
   // check, and its outcome is drawn where the scheduled check reports, the update banner; a run from source cannot
   // update itself, so it says that in the app.
   const trayItem = (id) => trayMenu.getMenuItemById(id);
+  // The About section is on screen with its heading at the top of the scrolling body, or as near it as the body can
+  // scroll, which is the end of the page.
+  const aboutRevealed = "(() => { const body = document.querySelector('app-settings .sheet-body'); const s = body && body.querySelector('[data-section=about]'); if (!s || !s.querySelector('.about-row')) return false; const off = s.getBoundingClientRect().top - body.getBoundingClientRect().top; const end = body.scrollTop + body.clientHeight >= body.scrollHeight - 2; return Math.abs(off) <= 2 || (end && off > 0 && off < body.clientHeight); })()";
   const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
   trayItem('settings').click();
   const settingsRaised = await visibleWithin(true);
@@ -303,8 +396,9 @@ async function runSmoke(w) {
   w.minimize();
   for (const t0 = Date.now(); !w.isMinimized() && Date.now() - t0 < 3000;) await pause(100);
   const minimised = w.isMinimized();
+  // About is the last section of Settings (issue 134): the tray's About opens Settings and brings that section up.
   trayItem('about').click();
-  await waitFor("Boolean(document.querySelector('app-about .sheet-back'))", 10000);
+  await waitFor(aboutRevealed, 10000);
   const aboutRaised = w.isVisible() && !w.isMinimized();
   w.close();
   const hidAgain = await visibleWithin(false);
@@ -388,6 +482,74 @@ async function runSmoke(w) {
   report.attachMenu = Object.values(attachChecks).every(Boolean);
   console.log('attach menu: ' + JSON.stringify({ checks: attachChecks, menu: attachMenu }));
   await shot('03b-after-file-send.png');
+
+  // Reactions and threaded replies (issue 138). A right click opens a message's menu; a standard tapback goes out
+  // through the server and shows on the bubble as yours, and choosing it again takes it off. The hover control opens
+  // the same menu, whose full emoji panel offers any emoji, and one the engine cannot send is refused under the
+  // message. Reply quotes the parent above the field, the sent reply shows its parent quoted, and pressing the quote
+  // goes to the parent and lights it.
+  const TARGET = 'FAKE-0013';
+  const REPLY = 'Replying from the desktop smoke';
+  const row = '.bubble-row[data-id="' + TARGET + '"]';
+  const q = (s) => JSON.stringify(s);
+  await js(`(() => { const b = document.querySelector(${q(row + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 })); return true; })()`);
+  await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu')}))`, 10000);
+  await pause(250);
+  const reactMenu = await js(`(() => { const m = document.querySelector(${q(row + ' .message-menu')}); const list = document.querySelector('.messages').getBoundingClientRect(); const r = m.getBoundingClientRect(); return { tapbacks: m.querySelectorAll('.tapback-row .tapback[role=menuitemcheckbox]').length, more: Boolean(m.querySelector('.tapback-more')), reply: [...m.querySelectorAll('.menu-item')].some((b) => b.textContent.trim() === 'Reply'), inside: r.top >= list.top - 1 && r.bottom <= list.bottom + 1, side: m.dataset.side }; })()`);
+  await shot('13-message-menu-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('13b-message-menu-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')}).click()`);
+  await waitFor(`[...document.querySelectorAll(${q(row + ' .reaction.mine')})].some((r) => r.textContent.includes('\u{1F44D}'))`, 10000);
+  const reacted = !(await js(`Boolean(document.querySelector(${q(row + ' .message-menu')}))`));
+  await pause(300);
+  await shot('14-reacted-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('14b-reacted-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js(`(() => { const b = document.querySelector(${q(row + ' .bubble')}); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })); return true; })()`);
+  await waitFor(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')})?.getAttribute('aria-checked') === 'true'`, 10000);
+  await js(`document.querySelector(${q(row + ' .tapback[aria-label="like"]')}).click()`);
+  await waitFor(`!document.querySelector(${q(row + ' .reaction.mine')})`, 10000);
+  const unreacted = await js(`!document.querySelector(${q(row + ' .message-menu')}) && !document.querySelector(${q(row + ' .reaction.mine')})`);
+  await js(`document.querySelector(${q(row + ' .message-action[aria-label="React"]')}).click()`);
+  await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu .tapback-more')}))`, 10000);
+  await js(`document.querySelector(${q(row + ' .message-menu .tapback-more')}).click()`);
+  await waitFor(`Boolean(document.querySelector(${q(row + ' app-emoji-picker .emoji-grid .emoji-cell')}))`, 10000);
+  await js(`(() => { const f = document.querySelector(${q(row + ' app-emoji-picker .emoji-search')}); f.value = 'party'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await pause(250);
+  const customPicked = await js(`(() => { const cells = [...document.querySelectorAll(${q(row + ' app-emoji-picker .emoji-grid .emoji-cell')})]; const c = cells.find((x) => x.textContent === '\u{1F389}') || cells[0]; if (!c) return null; const t = c.textContent; c.click(); return t; })()`);
+  await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
+  const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector(${q(row + ' app-emoji-picker')})`);
+  const reactChecks = { menu: reactMenu.tapbacks === 6 && reactMenu.more && reactMenu.reply, inside: reactMenu.inside, reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom };
+  report.react = Object.values(reactChecks).every(Boolean);
+  console.log('react: ' + JSON.stringify({ checks: reactChecks, menu: reactMenu, customPicked }));
+
+  await js(`document.querySelector(${q(row + ' .message-action[aria-label="Reply"]')}).click()`);
+  await waitFor("(document.querySelector('app-composer .composer-reply .reply-text')?.textContent || '').includes('See you soon')", 10000);
+  const replyFocused = await js("document.activeElement === document.querySelector('app-composer textarea')");
+  await pause(200);
+  await shot('15-replying-light.png');
+  await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
+  const replySel = `[...document.querySelectorAll('.bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
+  await waitFor(`Boolean(${replySel}?.querySelector('.reply-quote'))`, 20000);
+  const replied = await js(`(() => { const r = ${replySel}; const quote = r.querySelector('.reply-quote'); return { quote: quote.textContent, enabled: !quote.disabled, cleared: !document.querySelector('app-composer .composer-reply') }; })()`);
+  await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
+  await pause(300);
+  await shot('16-replied-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('16b-replied-dark.png');
+  nativeTheme.themeSource = 'light';
+  await js(`${replySel}.querySelector('.reply-quote').click()`);
+  await waitFor(`document.querySelector(${q(row)})?.classList.contains('flash')`, 5000);
+  const wentTo = await js(`(() => { const r = document.querySelector(${q(row)}).getBoundingClientRect(); const l = document.querySelector('.messages').getBoundingClientRect(); return r.bottom > l.top && r.top < l.bottom; })()`);
+  const replyChecks = { focused: replyFocused, quoted: replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn'), enabled: replied.enabled, cleared: replied.cleared, wentTo };
+  report.reply = Object.values(replyChecks).every(Boolean);
+  console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied }));
 
   // Pictures (issue 126): a received picture and a staged one both show an aspect-correct, dressed preview, and the
   // viewer opens over the sheet's own blurred, darkened backdrop. The desktop drives the viewer with real mouse input
@@ -582,15 +744,127 @@ async function runSmoke(w) {
   const cdp = (method, params) => wc.debugger.sendCommand(method, params);
   const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
 
-  // The sidebar's Add group control stays on one line (issue 122): at the smallest window the shell allows and at every
-  // text size from 50% to 300%, the label renders as one line, in full at 100%, and shortens with an ellipsis rather
-  // than wrapping where the row is too narrow for it. The line count is read from the label's own text boxes and
-  // checked against the button's height, so a wrap fails here on whichever platform drew it.
+  // Edit is a small text control at the left of the row above the list (issue 137); the pencil, the New group field and
+  // the Add group button are gone. Edit shows a checkbox on every row; two chats are grouped with no name and take the
+  // default; then one chat is deleted, and only carrying the slider to the end deletes it: a press on the thumb and a
+  // drag let go halfway both leave everything as it was. Values are checked at the server.
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  const editTheme = async (name) => {
+    nativeTheme.themeSource = 'light';
+    await pause(300);
+    await shot(name + '-light.png');
+    nativeTheme.themeSource = 'dark';
+    await pause(300);
+    await shot(name + '-dark.png');
+    nativeTheme.themeSource = 'light';
+  };
+  const rowCheck = (name) => js("(() => { const r = [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name').textContent === " + JSON.stringify(name) + "); r.querySelector('.chat-check').click(); return r.dataset.chat; })()");
+  const editLayout = await js(`(() => {
+    const row = document.querySelector('.sidebar .list-tools');
+    const t = row && row.querySelector('.edit-toggle');
+    if (!t) return null;
+    const pad = parseFloat(getComputedStyle(row).paddingLeft);
+    return {
+      label: t.textContent.trim(), first: row.firstElementChild === t, inset: t.getBoundingClientRect().left - row.getBoundingClientRect().left - pad,
+      gone: !document.querySelector('.edit-button') && !document.querySelector('.new-group-name') && !document.querySelector('.add-group-button') && !document.querySelector('.add-group'),
+      radius: getComputedStyle(t).borderTopLeftRadius,
+    };
+  })()`);
+  await js("document.querySelector('.list-tools .edit-toggle').click()");
+  await waitFor("document.querySelector('.list-tools .edit-toggle').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.chat-row .chat-check').length === document.querySelectorAll('.chat-row').length");
+  const activeBg = await js("getComputedStyle(document.querySelector('.list-tools .edit-toggle')).backgroundColor");
+  const groupIds = [await rowCheck('Avery Quinn'), await rowCheck('+15555550142')];
+  await waitFor("document.querySelector('.edit-count').textContent.trim() === '2 selected'");
+  // Edit, select-all, the count and the three actions share one row.
+  const editRowTops = await js("[...document.querySelectorAll('.list-tools.editing > *, .list-tools.editing .edit-actions > *')].map((el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); })");
+  await editTheme('15-edit-mode');
+  await js("document.querySelector('.edit-group').click()");
+  await waitFor("Boolean(document.querySelector('.group-prompt .group-name-input'))");
+  await pause(900);
+  // The prompt sits on the sheet backdrop, centred in the window.
+  const prompt = await js("(() => { const p = document.querySelector('.group-prompt'); const b = p.getBoundingClientRect(); return { backdrop: p.parentElement.classList.contains('sheet-scrim') && getComputedStyle(p.parentElement).position === 'fixed', dx: Math.abs(b.left + b.width / 2 - window.innerWidth / 2), dy: Math.abs(b.top + b.height / 2 - window.innerHeight / 2) }; })()");
+  await editTheme('16-group-prompt');
+  await js("document.querySelector('.group-prompt .group-create').click()");
+  const t1 = Date.now();
+  let groupedHeld = await held();
+  while (!(Array.isArray(groupedHeld['chats.groups']) && groupedHeld['chats.groups'].length === 1) && Date.now() - t1 < 10000) { await pause(200); groupedHeld = await held(); }
+  await waitFor("!document.querySelector('.group-prompt') && document.querySelector('.list-tools .edit-toggle').getAttribute('aria-pressed') === 'false' && [...document.querySelectorAll('.section-name')].some((s) => s.textContent === 'Group 1')");
+  const madeGroup = (groupedHeld['chats.groups'] || [])[0] || {};
+  const grouped = madeGroup.name === 'Group 1' && groupIds.every((id) => (groupedHeld['chats.placement'] || {})[id] === madeGroup.id);
+  await js("document.querySelector('.list-tools .edit-toggle').click()");
+  await waitFor("document.querySelectorAll('.chat-row .chat-check').length > 0");
+  const deleteId = await rowCheck('Weekend plans');
+  await js("document.querySelector('.edit-delete').click()");
+  await waitFor("Boolean(document.querySelector('.confirm-modal app-slide-confirm .slide-thumb'))");
+  // The card rises on the sheet's own motion; the thumb is measured once it has settled.
+  await pause(900);
+  const modal = await js("({ title: document.querySelector('#confirm-title').textContent.trim(), what: document.querySelector('.confirm-what').textContent.trim(), backdrop: document.querySelector('.confirm-modal').parentElement.classList.contains('sheet-scrim'), button: Boolean(document.querySelector('.confirm-modal .confirm-delete, .confirm-modal .danger-button')) })");
+  await editTheme('17-delete-confirm');
+  const thumbBox = () => js("(() => { const t = document.querySelector('.confirm-modal .slide-thumb').getBoundingClientRect(); const k = document.querySelector('.confirm-modal .slide-track').getBoundingClientRect(); return { x: t.left + t.width / 2, y: t.top + t.height / 2, end: k.right - 2, start: k.left }; })()");
+  const slideMouse = (type, x, y) => cdp('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
+  const slideTo = async (fraction, release = true) => {
+    const b = await thumbBox();
+    const to = b.x + (b.end - b.x) * fraction;
+    await slideMouse('mousePressed', b.x, b.y);
+    for (let i = 1; i <= 8; i += 1) await slideMouse('mouseMoved', b.x + ((to - b.x) * i) / 8, b.y);
+    if (release) await slideMouse('mouseReleased', to, b.y);
+  };
+  // A press alone is not a slide.
+  const pressAt = await thumbBox();
+  await slideMouse('mousePressed', pressAt.x, pressAt.y);
+  await slideMouse('mouseReleased', pressAt.x, pressAt.y);
+  await pause(400);
+  const afterPress = { open: await js("Boolean(document.querySelector('.confirm-modal'))"), hidden: (await held())['chats.hidden'] || [] };
+  // Let go halfway and the thumb returns to the start; the delete has not happened.
+  await slideTo(0.5, false);
+  await pause(150);
+  await shot('17c-delete-sliding.png');
+  const b2 = await thumbBox();
+  await slideMouse('mouseReleased', b2.x, b2.y);
+  await pause(500);
+  const afterHalf = { open: await js("Boolean(document.querySelector('.confirm-modal'))"), value: await js("document.querySelector('.confirm-modal .slide-thumb').getAttribute('aria-valuenow')"), hidden: (await held())['chats.hidden'] || [] };
+  // Carried to the end, it deletes.
+  await slideTo(1);
+  await waitFor("!document.querySelector('.confirm-modal')", 10000);
+  const t2 = Date.now();
+  let deletedHeld = await held();
+  while (!(deletedHeld['chats.hidden'] || []).includes(deleteId) && Date.now() - t2 < 10000) { await pause(200); deletedHeld = await held(); }
+  const leftNames = await js('JSON.stringify(' + rowNames + ')');
+  const editChecks = {
+    layout: Boolean(editLayout) && editLayout.label === 'Edit' && editLayout.first && Math.abs(editLayout.inset) < 1 && editLayout.gone && parseFloat(editLayout.radius) > 0,
+    active: activeBg !== 'rgba(0, 0, 0, 0)' && activeBg !== 'transparent',
+    oneRow: editRowTops.length >= 5 && Math.max(...editRowTops) - Math.min(...editRowTops) <= 2,
+    prompt: prompt.backdrop && prompt.dx < 2 && prompt.dy < 2,
+    grouped,
+    modal: modal.title === 'Are you sure?' && modal.what === 'Delete 1 conversation?' && modal.backdrop && !modal.button,
+    pressIsNotSlide: afterPress.open && !afterPress.hidden.includes(deleteId),
+    halfReturns: afterHalf.open && afterHalf.value === '0' && !afterHalf.hidden.includes(deleteId),
+    deleted: (deletedHeld['chats.hidden'] || []).includes(deleteId) && !JSON.parse(leftNames).includes('Weekend plans'),
+  };
+  report.editMode = Object.values(editChecks).every(Boolean);
+  console.log('edit mode: ' + JSON.stringify({ checks: editChecks, editLayout, activeBg, editRowTops, prompt, groupIds, madeGroup, deleteId, modal, afterPress, afterHalf, leftNames }));
+  // The smoke's own changes go back, so every later step sees the three chats ungrouped. The page's own delete write
+  // has to have answered first: an answer is taken for the keys it wrote (settingsAfterWrite), so one landing after the
+  // reset would draw the deleted chat as hidden again.
+  await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
+  const reset = await putSettings({ 'chats.hidden': [], 'chats.groups': [], 'chats.placement': {} });
+  if (!reset.ok) throw new Error('the server refused the chat arrangement reset: ' + reset.status);
+  try {
+    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && !document.querySelector('.chat-section')", 10000);
+  } catch (e) {
+    const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], groups: s['chats.groups'], placement: s['chats.placement'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
+    console.error('chat arrangement reset: ' + JSON.stringify({ page, held: await held() }));
+    throw e;
+  }
+
+  // The Edit control stays one line (it replaced Add group, which issue 122 held to this): at the smallest window the
+  // shell allows and at every text size from 50% to 300%, its label renders as one line, in full. The line count is
+  // read from the label's own text boxes and checked against the control's height, so a wrap fails here on whichever
+  // platform drew it.
   const [minW, minH] = w.getMinimumSize();
   await cdp('Emulation.setDeviceMetricsOverride', { width: minW, height: minH, deviceScaleFactor: 1, mobile: false });
-  const addGroupLine = () => js(`(() => {
-    const b = document.querySelector('.add-group .add-group-button');
+  const editLine = () => js(`(() => {
+    const b = document.querySelector('.list-tools .edit-toggle');
     if (!b) return null;
     const s = getComputedStyle(b);
     const size = parseFloat(s.fontSize);
@@ -599,26 +873,24 @@ async function runSmoke(w) {
     const range = document.createRange();
     range.selectNodeContents(b);
     const lines = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size;
-    return { size, line, inner, lines, full: b.scrollWidth <= b.clientWidth, label: b.textContent.trim(), title: b.title, wide: window.innerWidth };
+    return { size, line, inner, lines, full: b.scrollWidth <= b.clientWidth, label: b.textContent.trim(), wide: window.innerWidth };
   })()`);
-  const addGroupSizes = {};
-  const labelPx = "parseFloat(getComputedStyle(document.querySelector('.add-group .add-group-button')).fontSize)";
+  const editSizes = {};
+  const labelPx = "parseFloat(getComputedStyle(document.querySelector('.list-tools .edit-toggle')).fontSize)";
   const plainLabel = await js(labelPx);
   for (const scale of [50, 100, 200, 300]) {
     const scaleSet = await putSettings({ 'appearance.textScale': scale });
     if (!scaleSet.ok) throw new Error('the server refused the text size write: ' + scaleSet.status);
     await waitFor('Math.abs(' + labelPx + ' - ' + (plainLabel * scale / 100) + ') < 0.6', 10000);
     await pause(200);
-    const m = await addGroupLine();
-    addGroupSizes[scale] = m;
-    if (scale !== 50) await shot('10-add-group-' + scale + '.png');
+    editSizes[scale] = await editLine();
+    if (scale !== 50) await shot('10-edit-row-' + scale + '.png');
   }
   await putSettings({ 'appearance.textScale': 100 });
   await waitFor('Math.abs(' + labelPx + ' - ' + plainLabel + ') < 0.6', 10000);
   await cdp('Emulation.clearDeviceMetricsOverride', {});
-  report.addGroup = Object.values(addGroupSizes).every((m) => m && m.lines === 1 && m.inner < m.line * 1.5 && m.label === 'Add group' && m.title === 'Add group' && m.wide === minW)
-    && addGroupSizes[100].full;
-  console.log('add group: ' + JSON.stringify({ minW, minH, sizes: addGroupSizes }));
+  report.editLine = Object.values(editSizes).every((m) => m && m.lines === 1 && m.inner < m.line * 1.5 && m.label === 'Edit' && m.full && m.wide === minW);
+  console.log('edit line: ' + JSON.stringify({ minW, minH, sizes: editSizes }));
 
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
@@ -928,15 +1200,20 @@ async function runSmoke(w) {
   const narrowSettings = await sideways();
   report.sheetWidthSettings = narrowSettings.doc <= narrowSettings.inner && narrowSettings.body <= narrowSettings.inner;
 
-  // About: every value comes from the server's info route, and it shares the sheet's chrome.
-  await js("document.querySelector('app-settings [data-action=about]').click()");
-  await waitFor("Boolean(document.querySelector('app-about .sheet-back'))");
+  // About: the last section of Settings (issue 134), every value from the half that owns it, brought into view the
+  // way the tray's About brings it, and checked at the same narrow width.
+  await js("document.querySelector('app-settings').reveal = { id: 'about' }");
+  await waitFor(aboutRevealed);
   await pause(1000);
-  report.sheetHitAreaAbout = await sheetHit('app-about');
+  report.sheetHitAreaAbout = await sheetHit('app-settings');
+  report.aboutLast = await js("(() => { const s = [...document.querySelectorAll('app-settings .sheet-section')]; return s.length > 1 && s.at(-1).dataset.section === 'about' && !document.querySelector('app-settings [data-action=about]'); })()");
   const narrowAbout = await sideways();
   report.sheetWidthAbout = narrowAbout.doc <= narrowAbout.inner && narrowAbout.body <= narrowAbout.inner;
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(300);
+  // Back at full width the section is asked for again, so the captures show it where the tray's About puts it.
+  await js("document.querySelector('app-settings').reveal = { id: 'about' }");
+  await waitFor(aboutRevealed);
   nativeTheme.themeSource = 'light';
   await pause(200);
   await shot('06-about.png');
@@ -945,12 +1222,14 @@ async function runSmoke(w) {
   await shot('06b-about-dark.png');
   nativeTheme.themeSource = 'light';
   await pause(200);
-  // The client's own build and the server's, each from its own half, plus the one action that copies the lot.
-  report.about = await js("(() => { const rows = [...document.querySelectorAll('app-about .setting-row')].map((r) => r.textContent); return rows.some((t) => t.includes('Client version')) && rows.some((t) => t.includes('Server version')) && rows.some((t) => t.includes('Electron')) && Boolean(document.querySelector('app-about .about-copy')); })()");
+  // The client's own build and the server's, in chela's order, each value copyable, the links, and the one action that
+  // copies the lot.
+  const aboutOrder = ['product', 'version', 'channel', 'build', 'commit', 'builtAt', 'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt', 'platform', 'arch', 'electron', 'chromium', 'node', 'installSource', 'packaged', 'updateChannel', 'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion'];
+  const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')) }))()");
+  report.about = report.aboutLast && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
+  if (!report.about) console.error('about: ' + JSON.stringify({ last: report.aboutLast, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
   if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
-  await js("document.querySelector('app-about .sheet-back').click()");
-  await waitFor("Boolean(document.querySelector('app-settings'))");
   await js("document.querySelector('app-settings .sheet-back').click()");
   await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
 
