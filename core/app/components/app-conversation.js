@@ -105,10 +105,13 @@ class AppConversation extends KitElement {
     this.pop = { id: m.id, kind: 'menu', side: 'above' };
   }
 
-  // React chooses from the composer's own emoji panel, the one used for typing, rather than a second picker.
-  openReact(m) {
+  // React chooses from the composer's own emoji panel, the one used for typing, rather than a second picker. The list
+  // makes room above the panel and brings the message into that room, so the panel never covers what it reacts to.
+  async openReact(m) {
     this.pop = null;
     this.reactFor = m.id;
+    await this.updateComplete;
+    this.rowOf?.(m.id)?.scrollIntoView({ block: 'nearest' });
   }
 
   reactPicked(char) {
@@ -232,7 +235,7 @@ class AppConversation extends KitElement {
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
     return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
-      <div class="messages" role="log" aria-live="polite" data-thread=${thread ? this.replyingTo.id : nothing}>
+      <div class="messages" role="log" aria-live="polite" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         ${this.hasMore ? html`<button class=${'load-older' + (thread ? ' faded' : '')} ?inert=${Boolean(thread)} @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
         ${items.map((it) => (it.kind === 'separator' ? html`<div class=${'separator' + (thread ? ' faded' : '')}>${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, thread)))}
       </div>

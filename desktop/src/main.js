@@ -670,7 +670,8 @@ async function runSmoke(w) {
     await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu .message-action[aria-label="React"]')}))`, 10000);
     await js(`document.querySelector(${q(row + ' .message-menu .message-action[aria-label="React"]')}).click()`);
     await waitFor("Boolean(document.querySelector('app-composer app-emoji-picker .emoji-grid .emoji-cell'))", 10000);
-    const state = await js(`({ composer: Boolean(document.querySelector('app-composer app-emoji-picker')), inList: Boolean(document.querySelector('.messages app-emoji-picker')), menu: Boolean(document.querySelector(${q(row + ' .message-menu')})), targeted: document.querySelector(${q(row)}).classList.contains('targeted') })`);
+    await pause(300); // the list makes room above the panel and brings the message into it
+    const state = await js(`({ composer: Boolean(document.querySelector('app-composer app-emoji-picker')), inList: Boolean(document.querySelector('.messages app-emoji-picker')), menu: Boolean(document.querySelector(${q(row + ' .message-menu')})), targeted: document.querySelector(${q(row)}).classList.contains('targeted'), clear: document.querySelector(${q(row + ' .bubble')}).getBoundingClientRect().bottom <= document.querySelector('app-composer .emoji-picker').getBoundingClientRect().top })`);
     await js(`(() => { const f = document.querySelector('app-composer .emoji-search'); f.value = ${q(query)}; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await pause(250);
     return state;
@@ -694,7 +695,7 @@ async function runSmoke(w) {
     menu: Boolean(theirMenu) && Boolean(theirMenu.time) && theirMenu.datetime.length > 0 && theirMenu.labels.join('|') === 'Reply in thread|React' && theirMenu.icons.join('|') === 'reply|smile-plus' && theirMenu.drawn && theirMenu.tapbacks === 0,
     inside: Boolean(theirMenu) && theirMenu.inside,
     ownNoReply: Boolean(ownMenu) && Boolean(ownMenu.time) && ownMenu.labels.join('|') === 'React',
-    composerPanel: panel.composer && !panel.inList && !panel.menu && panel.targeted,
+    composerPanel: panel.composer && !panel.inList && !panel.menu && panel.targeted && panel.clear,
     reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom,
   };
   report.react = Object.values(reactChecks).every(Boolean);
@@ -720,6 +721,7 @@ async function runSmoke(w) {
       focused: document.activeElement === c.querySelector('textarea'), transition: getComputedStyle(document.querySelector(${q(row)})).transitionDuration,
     };
   })()`);
+  await pause(1200); // the refused reaction's failure mark on the emoji button runs out before the capture
   await startReply();
   const focused = await focusState();
   await both('15-thread-focus');
