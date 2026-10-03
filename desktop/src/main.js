@@ -1791,7 +1791,7 @@ async function runSmoke(w) {
   // A message's menu at phone width (issue 169): a finger held on someone else's message opens it with the time, Reply
   // in thread and React, then Reply in thread fades every message outside the thread. Light and dark of each.
   const phoneRow = '.bubble-row[data-id="FAKE-0013"]';
-  const touchAt = (type) => js(`(() => { const b = document.querySelector(${JSON.stringify(phoneRow + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent(${JSON.stringify(type)}, { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', isPrimary: true, button: 0, buttons: type === 'pointerdown' ? 1 : 0, clientX: r.left + 8, clientY: r.top + 8 })); return true; })()`);
+  const touchAt = (type) => js(`(() => { const b = document.querySelector(${JSON.stringify(phoneRow + ' .bubble')}); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent(${JSON.stringify(type)}, { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', isPrimary: true, button: 0, buttons: ${type === 'pointerdown' ? 1 : 0}, clientX: r.left + 8, clientY: r.top + 8 })); return true; })()`);
   const phoneBoth = async (name) => {
     await pause(300);
     await shot(name + '-light.png');
