@@ -45,8 +45,12 @@
   --size-back-icon: 15px;
   --size-picker-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
   --size-window-strip: 32px;
-  --size-window-control: 46px;
-  --size-window-control-close: 58px;
+  --size-window-control: 36px;
+  --size-window-control-h: 28px;
+  --size-window-control-inset: 6px;
+  --size-window-control-gap: 2px;
+  --size-window-glyph: 10px;
+  --size-window-glyph-stroke: 1px;
   --size-scrollbar: thin;
   --size-scrim-blur: 6px;
   --size-staged-preview: 96px;
