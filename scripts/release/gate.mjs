@@ -120,8 +120,23 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 // for a commit whose platforms were fine. The buffer is a ceiling, not an allocation.
 export const GH_MAX_BUFFER = 64 * 1024 * 1024;
 
-export const ghJson = (bin, args, env = process.env) =>
-  JSON.parse(execFileSync(bin, args, { encoding: 'utf8', env, maxBuffer: GH_MAX_BUFFER }));
+// GitHub answers a busy moment with a 5xx or a dropped connection, and one such answer threw out of the gate and failed
+// it for a commit whose platforms were fine (PR 201: "gh api .../actions/runs/<id>" failed during an HTTP 504 spell). A
+// transient answer is asked again after a growing pause; anything else, a 404 or a refusal, fails at once.
+export const TRANSIENT_GH = /HTTP 5\d\d|couldn't respond to your request in time|ETIMEDOUT|ECONNRESET|EAI_AGAIN|TLS handshake timeout|unexpected EOF/i;
+
+export const ghJson = (bin, args, env = process.env, { attempts = 5, waitMs = 5000 } = {}) => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return JSON.parse(execFileSync(bin, args, { encoding: 'utf8', env, maxBuffer: GH_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] }));
+    } catch (error) {
+      const said = String(error.stderr || '') + ' ' + String(error.message || '');
+      if (attempt >= attempts || !TRANSIENT_GH.test(said)) throw error;
+      process.stderr.write('a transient GitHub answer to ' + [bin, ...args].join(' ') + ', asking again (' + attempt + ' of ' + attempts + '): ' + said.trim().split('\n').pop() + '\n');
+      sleep(waitMs * attempt);
+    }
+  }
+};
 
 const ghApi = (endpoint, env = process.env) => ghJson('gh', ['api', endpoint], env);
 

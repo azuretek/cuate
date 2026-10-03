@@ -6,7 +6,9 @@
 // without joining the gate fails a test instead of publishing silently.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse } from 'yaml';
 import { judge, isSupersession, check, findRun, splitList, ghJson } from '../../scripts/release/gate.mjs';
 
@@ -139,6 +141,23 @@ test('a GitHub answer larger than the 1 MiB default output buffer is read whole'
   const size = 3 * 1024 * 1024;
   const answer = ghJson(process.execPath, ['-e', 'process.stdout.write(JSON.stringify({ pad: "x".repeat(' + size + ') }))']);
   assert.equal(answer.pad.length, size);
+});
+
+test('a transient GitHub answer is asked again, and any other failure is not', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gate-gh-'));
+  const count = join(dir, 'count');
+  // Answers HTTP 504 on the first two calls, as GitHub did during the spell that failed PR 201's gate, then the run.
+  const flaky = 'const fs = require("fs"); const n = fs.existsSync(' + JSON.stringify(count) + ') ? Number(fs.readFileSync(' + JSON.stringify(count) + ', "utf8")) : 0;'
+    + ' fs.writeFileSync(' + JSON.stringify(count) + ', String(n + 1));'
+    + ' if (n < 2) { process.stderr.write("gh: We couldn\'t respond to your request in time. (HTTP 504)\\n"); process.exit(1); }'
+    + ' process.stdout.write(JSON.stringify({ id: 7 }));';
+  assert.deepEqual(ghJson(process.execPath, ['-e', flaky], process.env, { waitMs: 1 }), { id: 7 });
+  assert.equal(readFileSync(count, 'utf8'), '3');
+  const notFound = 'process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1);';
+  assert.throws(() => ghJson(process.execPath, ['-e', notFound], process.env, { waitMs: 1 }), /HTTP 404/);
+  writeFileSync(count, '0');
+  assert.throws(() => ghJson(process.execPath, ['-e', flaky], process.env, { attempts: 2, waitMs: 1 }), /HTTP 504/);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test('splitList reads a comma separated pipeline list', () => {
