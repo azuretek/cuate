@@ -220,6 +220,7 @@ var engine = (() => {
     stripInlineObjects: () => stripInlineObjects,
     summarizeReactions: () => summarizeReactions,
     swatchVars: () => swatchVars,
+    systemBars: () => systemBars,
     tapbackType: () => tapbackType,
     termsSentence: () => termsSentence,
     textScale: () => textScale,
@@ -1699,6 +1700,9 @@ var engine = (() => {
   function resolveScheme(preference, systemDark) {
     if (preference === "light" || preference === "dark") return preference;
     return systemDark ? "dark" : "light";
+  }
+  function systemBars(preference, scheme) {
+    return { scheme: scheme === "dark" ? "dark" : "light", followSystem: preference !== "light" && preference !== "dark" };
   }
   function cssVarName(group, key) {
     return group === "color" ? `--color-${key}` : `--${group}-${key}`;

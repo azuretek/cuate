@@ -22,6 +22,10 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
 
     weak var webView: WKWebView?
 
+    /// The window's style for the page's scheme: unspecified while the page follows the system, so the status bar and
+    /// the page both follow it, and the page's own scheme while its skin is an explicit choice.
+    private var barsStyle: UIUserInterfaceStyle = .unspecified
+
     private let store: KeychainSecureStore
     private let commands: Set<String>
 
@@ -111,6 +115,10 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             settle(id: id, ok: true, value: false)
         case "window.close":
             settle(id: id, ok: true, value: false)
+        // The page paints behind the status bar and the home indicator and names the scheme it drew, so the status
+        // bar's text contrasts with it: dark on light, light on dark.
+        case "system.bars":
+            settle(id: id, ok: true, value: systemBars(args))
         default:
             settle(id: id, ok: false, value: "undeclared bridge command: " + name)
         }
@@ -159,6 +167,21 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         center.add(request)
         return true
+    }
+
+    private func systemBars(_ args: [String: Any]) -> Bool {
+        guard let scheme = args["scheme"] as? String, scheme == "light" || scheme == "dark" else { return false }
+        let followsSystem = args["followSystem"] as? Bool ?? true
+        barsStyle = followsSystem ? .unspecified : (scheme == "dark" ? .dark : .light)
+        DispatchQueue.main.async { [weak self] in self?.applySystemBars() }
+        return true
+    }
+
+    /// The status bar takes its style from the window's, so an explicit skin sets the window's; following the system,
+    /// the window follows it too. Applied again once the page has loaded, in case the page spoke before the web view
+    /// was in a window.
+    func applySystemBars() {
+        webView?.window?.overrideUserInterfaceStyle = barsStyle
     }
 
     private func openExternal(_ args: [String: Any]) -> Bool {

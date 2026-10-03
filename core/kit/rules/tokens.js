@@ -22,15 +22,37 @@ function iconRules(spec) {
 // system blue, which the web view's caret, text selection and every native control draw in (issue 59), so the shell
 // wears the tokens' accent instead. scripts/gen-tokens.mjs writes it; a guard fails when it is stale.
 export function accentColorset(spec) {
+  return colorset(spec, 'accent');
+}
+
+// The iOS asset catalog's surface colour set, from the tokens' page surface (bg) in each scheme: what the shell shows
+// behind the page and under its loading cover before the page has painted, so the status bar and the home indicator
+// never flash a system white or black that the page does not draw (issue 175).
+export function surfaceColorset(spec) {
+  return colorset(spec, 'bg');
+}
+
+// The Android shell's surface colour, the same token for one scheme, as a resource file: values/ for light and
+// values-night/ for dark, read by the window background and the loading cover (issue 175).
+export function androidSurfaceColors(spec, scheme) {
+  const hex = rgbHex(spec.color[scheme].bg, 'bg');
+  return ['<?xml version="1.0" encoding="utf-8"?>', '<!-- Generated from core/spec/tokens.json by scripts/gen-tokens.mjs. Do not edit. -->', '<resources>', '    <color name="surface">' + hex.toUpperCase() + '</color>', '</resources>', ''].join('\n');
+}
+
+function rgbHex(hex, name) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) throw new Error('the ' + name + ' token must be a #rrggbb colour, not ' + hex);
+  return hex;
+}
+
+function colorset(spec, token) {
   const srgb = (hex) => {
-    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
-    if (!m) throw new Error('the accent token must be a #rrggbb colour, not ' + hex);
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(rgbHex(hex, token));
     return { 'color-space': 'srgb', components: { alpha: '1.000', blue: '0x' + m[3].toUpperCase(), green: '0x' + m[2].toUpperCase(), red: '0x' + m[1].toUpperCase() } };
   };
   return {
     colors: [
-      { color: srgb(spec.color.light.accent), idiom: 'universal' },
-      { appearances: [{ appearance: 'luminosity', value: 'dark' }], color: srgb(spec.color.dark.accent), idiom: 'universal' },
+      { color: srgb(spec.color.light[token]), idiom: 'universal' },
+      { appearances: [{ appearance: 'luminosity', value: 'dark' }], color: srgb(spec.color.dark[token]), idiom: 'universal' },
     ],
     info: { author: 'xcode', version: 1 },
   };
