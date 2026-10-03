@@ -42,24 +42,25 @@ function page(scheme) {
   return { p, cards, sheet };
 }
 
-for (const scheme of ['light', 'dark']) {
-  test('every card previews its own theme once the sheet has drawn it, in ' + scheme, async () => {
-    const { p, cards, sheet } = page(scheme);
-    p.updated(new Map());
-    await sheet.updateComplete;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(cards.length, held.length + 1, 'the default and every held theme');
-    assert.deepEqual([...cards[0].props.keys()], [], 'the default card sets nothing, so the default palette shows');
-    for (const [i, t] of held.entries()) {
-      const c = cards[i + 1];
-      assert.equal(c.dataset.themeId, t.id);
-      assert.equal(c.style.getPropertyValue('--color-accent'), t.color[scheme].accent, t.name + ' shows its own accent');
-      assert.equal(c.style.getPropertyValue('--color-bg'), t.color[scheme].bg, t.name + ' shows its own background');
-    }
-    const accents = cards.slice(1).map((c) => c.style.getPropertyValue('--color-accent'));
-    assert.equal(new Set(accents).size, held.length, 'no two different themes show the same swatches');
-  });
+async function previewsOwn(scheme) {
+  const { p, cards, sheet } = page(scheme);
+  p.updated(new Map());
+  await sheet.updateComplete;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(cards.length, held.length + 1, 'the default and every held theme');
+  assert.deepEqual([...cards[0].props.keys()], [], 'the default card sets nothing, so the default palette shows');
+  for (const [i, t] of held.entries()) {
+    const c = cards[i + 1];
+    assert.equal(c.dataset.themeId, t.id);
+    assert.equal(c.style.getPropertyValue('--color-accent'), t.color[scheme].accent, t.name + ' shows its own accent');
+    assert.equal(c.style.getPropertyValue('--color-bg'), t.color[scheme].bg, t.name + ' shows its own background');
+  }
+  const accents = cards.slice(1).map((c) => c.style.getPropertyValue('--color-accent'));
+  assert.equal(new Set(accents).size, held.length, 'no two different themes show the same swatches');
 }
+
+test('every card previews its own theme once the sheet has drawn it, in light', () => previewsOwn('light'));
+test('every card previews its own theme once the sheet has drawn it, in dark', () => previewsOwn('dark'));
 
 test('a scheme change repaints every card in the new scheme, and leaves no colour of the old one behind', async () => {
   const { p, cards, sheet } = page('light');
