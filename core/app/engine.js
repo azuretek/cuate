@@ -18,6 +18,7 @@ export { anchorFrom, scrollFor } from '../kit/rules/scroll.js';
 export * from '../kit/rules/build.js';
 export * from './rules/build-spec.js';
 export * from './rules/attach.js';
+export * from './rules/app-notices.js';
 export * from './rules/chats.js';
 export * from './rules/emoji.js';
 export * from './rules/connection.js';
