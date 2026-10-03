@@ -93,7 +93,10 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-tab { border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-fg-muted); font-size: var(--font-size-xs); padding: var(--space-1) var(--space-2); cursor: pointer; }
 .emoji-tab.active { background: var(--color-selection); color: var(--color-fg); }
 .emoji-row, .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--size-emoji), 1fr)); gap: var(--space-1); overflow-y: auto; }
-.emoji-row { flex: none; border-bottom: var(--size-border) solid var(--color-border); padding-bottom: var(--space-2); }
+/* The recently used row sits on the edge facing the emoji button, and its divider faces the grid from whichever side it is on. */
+.emoji-row { flex: none; }
+.emoji-row.at-bottom { border-top: var(--size-border) solid var(--color-border); padding-top: var(--space-2); }
+.emoji-row.at-top { border-bottom: var(--size-border) solid var(--color-border); padding-bottom: var(--space-2); }
 .emoji-grid { flex: 1; min-height: 0; }
 .emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
 .emoji-cell:hover { background: var(--color-bg-sunken); }

@@ -297,6 +297,28 @@ export function frequentEmoji(uses, { limit = 8 } = {}) {
     .slice(0, limit);
 }
 
+// Which side of the emoji button the picker opened on, read from where each one was drawn: 'below' when the
+// panel's middle sits lower than the button's, 'above' otherwise. The panel opens upward from the composer today;
+// a rect that cannot be read keeps that answer rather than guessing.
+export function pickerSide(panel, anchor) {
+  const middle = (r) => (Number(r?.top) + Number(r?.bottom)) / 2;
+  const p = middle(panel);
+  const a = middle(anchor);
+  if (!Number.isFinite(p) || !Number.isFinite(a)) return 'above';
+  return p > a ? 'below' : 'above';
+}
+
+// The picker's sections in the order they draw, top to bottom, which is also the order the keyboard walks. The
+// grid, the search field and the categories keep their order whichever way the panel opens. The recently used row
+// sits on the edge facing the emoji button, so the characters reached for most are the shortest move away: last
+// (the bottom edge) when the panel opens above the button, first (the top edge) when it opens below. With nothing
+// used yet the row, and the divider that goes with it, is not drawn.
+export function emojiPickerSections({ side = 'above', recents = false } = {}) {
+  const body = ['grid', 'search', 'tabs'];
+  if (!recents) return body;
+  return side === 'below' ? ['recents', ...body] : [...body, 'recents'];
+}
+
 // A character is only offered to the composer if the catalogue knows it, so the
 // picker cannot push an arbitrary string into a message.
 export function isEmoji(char) {
