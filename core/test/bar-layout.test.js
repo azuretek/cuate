@@ -32,14 +32,28 @@ test('the top strip drags, with the controls and interactives out of it', () => 
   assert.match(styles, /\.sidebar-head, \.conv-head \{ -webkit-app-region: drag; \}/, 'the two headers are the drag strip');
   const noDrag = /\.chat-search, \.filter-button, \.gear-button, \.conv-back, \.window-controls, \.window-control \{ -webkit-app-region: no-drag; \}/;
   assert.match(styles, noDrag, 'the search, the header buttons and the window controls opt out');
-  assert.match(styles, /\.window-controls \{ display: flex; align-self: stretch; margin-inline-start: auto; -webkit-app-region: no-drag; \}/, 'the controls pin to the right of the contact header');
+  assert.match(styles, /\.window-controls \{ display: flex; align-self: flex-start; gap: var\(--size-window-control-gap\); margin-block-start: var\(--size-window-control-inset\); margin-inline: auto calc\(var\(--size-window-control-inset\) - var\(--space-4\)\); -webkit-app-region: no-drag; \}/, 'the controls sit in the top-right corner, one inset from the top and from the right');
 });
 
 test('macOS leaves the lights room without drawing anything of its own', () => {
   const styles = css().replace(/\/\*[\s\S]*?\*\//g, '');
   const reserve = /\.app-window\[data-platform="darwin"\] \.sidebar-head,\n\.app-window\[data-platform="darwin"\] \.conv-head \{ height: calc\(var\(--size-header\) \+ var\(--size-window-strip\)\); padding-block-start: var\(--size-window-strip\); \}/;
   assert.match(styles, reserve, 'the content is pushed below the lights');
-  assert.match(styles, /\.window-control\.close \{ width: var\(--size-window-control-close\); \}/, 'close is the widest control');
+});
+
+test('the window controls hover as a rounded box sized from tokens (issue 131)', () => {
+  const styles = css().replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = /^\.window-control \{([^}]*)\}/m.exec(styles);
+  assert.ok(rule, 'the .window-control rule exists');
+  assert.match(rule[1], /width: var\(--size-window-control\);/, 'the width is a token');
+  assert.match(rule[1], /height: var\(--size-window-control-h\);/, 'the height is a token, not the header\'s full height');
+  assert.match(rule[1], /border-radius: var\(--radius-sm\);/, 'the hover box is rounded by the radius token');
+  assert.match(styles, /\.window-control\.close:hover, \.window-control\.close:active \{ background: var\(--color-danger\); color: var\(--color-danger-fg\); \}/, 'close keeps its own tint');
+  assert.match(styles, /\.window-control svg \{ display: block; width: var\(--size-window-glyph\); height: var\(--size-window-glyph\); stroke-width: var\(--size-window-glyph-stroke\); \}/, 'the glyph size and weight are tokens');
+  // Every control is the same size now that the hover is a box rather than a full-height block.
+  assert.equal(/window-control-close/.test(styles), false, 'no control carries a width of its own');
+  const glyphs = read('../app/components/window-controls.js');
+  assert.equal(/stroke-width|<svg[^>]*\s(?:width|height)=/.test(glyphs), false, 'the glyphs carry no size or weight in the markup');
 });
 
 test('the contact header draws the controls and the page answers their clicks', () => {
