@@ -801,6 +801,8 @@ async function runSmoke(w) {
       ids: sharp.map((r) => r.dataset.id), sharp: sharp.every((r) => { for (let e = r; e; e = e.parentElement) if (getComputedStyle(e).filter !== 'none') return false; return true; }),
       blurred: getComputedStyle(list).filter.includes('blur'), inert: list.inert, behind: list.querySelectorAll('.bubble-row').length,
       indicator: (c.querySelector('.composer-thread')?.textContent || '').trim(), repeats: c.textContent.includes('See you soon'), banner: Boolean(c.querySelector('.composer-reply')),
+      placeholder: c.querySelector('textarea')?.placeholder || '', close: Boolean(document.querySelector('.conv-head .thread-close')), back: Boolean(document.querySelector('.conv-head .conv-back')),
+      separators: view ? view.querySelectorAll('.separator').length : 0,
       focused: document.activeElement === c.querySelector('textarea'), animation: view ? getComputedStyle(view).animationName : null, labels: document.querySelectorAll('.messages .reply-link').length + [...list.querySelectorAll('.bubble-row')].filter((r) => /Reply to/.test(r.textContent)).length,
     };
   })()`);
@@ -811,7 +813,7 @@ async function runSmoke(w) {
   await startReply();
   const focused = await focusState();
   await both('15-thread-focus');
-  await js("document.querySelector('app-composer .composer-thread button[aria-label=\"Cancel reply\"]').click()");
+  await js("document.querySelector('.conv-head .thread-close').click()");
   await waitFor("!document.querySelector('.conv-body').dataset.thread && !document.querySelector('.thread-view')", 5000);
   await pause(400);
   const cancelled = await focusState();
@@ -823,10 +825,11 @@ async function runSmoke(w) {
   await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { media: '', features: [] });
   const threadChecks = {
     view: focused.thread === TARGET && focused.ids.join('|') === TARGET && focused.sharp && focused.blurred && focused.inert && focused.behind > 1,
-    noBanner: focused.indicator === 'Replying in thread' && !focused.repeats && !focused.banner,
+    noBanner: !focused.indicator && focused.placeholder === 'Reply' && !focused.repeats && !focused.banner,
+    header: focused.close && !focused.back && focused.separators === focused.ids.length,
     noLabels: focused.labels === 0,
     focused: focused.focused,
-    restored: !cancelled.thread && !cancelled.blurred && !cancelled.inert && !cancelled.indicator && cancelled.ids.length === 0,
+    restored: !cancelled.thread && !cancelled.blurred && !cancelled.inert && !cancelled.indicator && cancelled.ids.length === 0 && cancelled.placeholder === 'Message' && !cancelled.close,
     reduced: still.animation === 'none' && focused.animation === 'thread-in' && still.blurred,
   };
   console.log('thread view: ' + JSON.stringify({ checks: threadChecks, focused, cancelled, still }));
@@ -860,7 +863,7 @@ async function runSmoke(w) {
       scrollTop: Math.round(m.scrollTop), fromEnd: Math.round(m.scrollHeight - m.clientHeight - m.scrollTop),
       text: t.value, start: t.selectionStart, end: t.selectionEnd, focused: document.activeElement === t,
       h: t.offsetHeight, max: parseFloat(s.maxHeight), hidden: t.scrollHeight - t.clientHeight, overflow: s.overflowY,
-      thread: document.querySelector('.conv-body').dataset.thread || '', indicator: Boolean(document.querySelector('app-composer .composer-thread')),
+      thread: document.querySelector('.conv-body').dataset.thread || '', indicator: t.placeholder === 'Reply',
     };
   })()`);
   const fits = (s) => s.hidden <= 0 || (s.overflow === 'auto' && Math.abs(s.h - s.max) < 1);
@@ -911,8 +914,8 @@ async function runSmoke(w) {
   console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.messages .bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
-  await waitFor(`Boolean(${replySel}?.querySelector('.reply-mark'))`, 20000);
-  const replied = await js(`(() => { const r = ${replySel}; const mark = r.querySelector('.reply-mark'); return { id: r.dataset.id, quote: mark.getAttribute('aria-label'), text: r.textContent, enabled: !mark.disabled, cleared: !document.querySelector('app-composer .composer-thread') && !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') }; })()`);
+  await waitFor(`Boolean(${replySel}?.previousElementSibling?.matches('.thread-ghost-row'))`, 20000);
+  const replied = await js(`(() => { const r = ${replySel}; const g = r.previousElementSibling; return { id: r.dataset.id, root: g.dataset.thread, ghost: (g.querySelector('.thread-ghost')?.textContent || '').trim(), count: (g.querySelector('.thread-count')?.textContent || '').trim(), side: g.classList.contains('theirs') ? 'theirs' : 'mine', line: Boolean(r.querySelector('.thread-line')), text: r.textContent, enabled: !g.querySelector('.thread-ghost').disabled, cleared: !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') && document.querySelector('app-composer textarea').placeholder === 'Message' }; })()`);
   await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
   await pause(300);
   await shot('16-replied-light.png');
@@ -920,17 +923,72 @@ async function runSmoke(w) {
   await pause(400);
   await shot('16b-replied-dark.png');
   nativeTheme.themeSource = 'light';
-  // The reply's mark opens its thread, and the reply sent from the thread is in it, after its first message.
-  await js(`${replySel}.querySelector('.reply-mark').click()`);
+  // The reply count opens its thread, and the reply sent from the thread is in it, after its first message.
+  await js(`${replySel}.previousElementSibling.querySelector('.thread-count').click()`);
   await waitFor(`Boolean(document.querySelector(${q('.thread-view .bubble-row[data-id="' + TARGET + '"]')}))`, 5000);
   await pause(400);
   const landed = await js(`[...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id)`);
   await both('16c-thread-with-reply');
   await escape();
   await waitFor("!document.querySelector('.thread-view')", 5000);
-  const replyChecks = { focused: replyFocused, relationship: !replied.quote.includes('See you soon') && replied.quote.includes('Avery Quinn') && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2 };
+  // The fixture's own thread (issue 195): Avery's reply to your earlier message carries the line, the ghost of your
+  // message sits above the two replies with their count, and the ordinary messages, which the engine chains to the
+  // message before them, carry nothing. The thread opens from the line, and on a phone from the reply itself, with
+  // exactly its three messages, on a desktop window and at a phone's width, light and dark.
+  const FIXTURE_ROOT = 'FAKE-0009';
+  const FIXTURE_REPLY = 'FAKE-0014';
+  const marksState = () => js(`(() => {
+    const list = document.querySelector('.messages');
+    const rows = [...list.querySelectorAll('.bubble-row')];
+    const reply = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
+    const ghost = reply && reply.previousElementSibling;
+    if (reply) reply.scrollIntoView({ block: 'center' });
+    const line = reply && reply.querySelector('.thread-line');
+    const lr = line && line.getBoundingClientRect();
+    const br = reply && reply.querySelector('.bubble').getBoundingClientRect();
+    return {
+      lines: rows.filter((r) => r.querySelector('.thread-line')).map((r) => r.dataset.id),
+      ghosts: [...list.querySelectorAll('.thread-ghost-row')].map((g) => g.dataset.thread),
+      marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => r.dataset.id),
+      ghostRoot: ghost && ghost.matches('.thread-ghost-row') ? ghost.dataset.thread : null, ghostSide: ghost && ghost.classList.contains('mine') ? 'mine' : 'theirs',
+      count: ghost ? (ghost.querySelector('.thread-count')?.textContent || '').trim() : '', ghostFill: ghost && ghost.querySelector('.thread-ghost') ? getComputedStyle(ghost.querySelector('.thread-ghost')).backgroundColor : '',
+      lineLeftOfBubble: Boolean(lr && br) && lr.right <= br.left + 1 && lr.top < br.top,
+    };
+  })()`);
+  const marks = await marksState();
+  await both('16d-thread-marks');
+  await js(`document.querySelector('.messages .bubble-row[data-id="${FIXTURE_REPLY}"] .thread-line').click()`);
+  await waitFor(`document.querySelector('.conv-body')?.dataset.thread === ${q(FIXTURE_ROOT)}`, 5000);
+  await pause(400);
+  const fixtureThread = await focusState();
+  await both('16e-fixture-thread');
+  await js("document.querySelector('.conv-head .thread-close').click()");
+  await waitFor("!document.querySelector('.thread-view')", 5000);
+  const marksListOpen = await js("document.querySelector('app-root').listOpen");
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await js("(() => { const root = document.querySelector('app-root'); if (root.listOpen) root.closeDrawer(); return true; })()");
+  await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'", 5000);
+  await pause(400);
+  const phoneMarks = await marksState();
+  await both('16f-thread-marks-phone');
+  await js(`document.querySelector('.messages .bubble-row[data-id="${FIXTURE_REPLY}"] .bubble').click()`);
+  await waitFor(`document.querySelector('.conv-body')?.dataset.thread === ${q(FIXTURE_ROOT)}`, 5000);
+  await pause(400);
+  const fixturePhoneThread = await focusState();
+  await both('16g-fixture-thread-phone');
+  await js("document.querySelector('.conv-head .thread-close').click()");
+  await waitFor("!document.querySelector('.thread-view')", 5000);
+  await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
+  await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(marksListOpen)}; return true; })()`);
+  await pause(300);
+  const fixtureIds = [FIXTURE_ROOT, FIXTURE_REPLY, 'FAKE-0015'].join('|');
+  const marksOk = (m) => m.lines.join('|') === FIXTURE_REPLY && m.marked.includes(FIXTURE_REPLY) && m.marked.includes('FAKE-0015') && m.marked.includes(replied.id) && m.marked.length === 3 && m.ghostRoot === FIXTURE_ROOT && m.ghostSide === 'mine' && m.count === '2 Replies' && m.ghosts.length === 2 && m.ghostFill === 'rgba(0, 0, 0, 0)' && m.lineLeftOfBubble;
+  const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && !t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
+  const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.ghost.includes('See you soon') && replied.side === 'theirs' && replied.count === '1 Reply' && !replied.line && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
-  console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed }));
+  console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
 
   // Pictures (issue 126): a received picture and a staged one both show an aspect-correct, dressed preview, and the
   // viewer opens over the sheet's own blurred, darkened backdrop. The desktop drives the viewer with real mouse input
@@ -2017,11 +2075,11 @@ async function runSmoke(w) {
   await js(`document.querySelector(${JSON.stringify(phoneRow + ' .message-action[aria-label="Reply in thread"]')}).click()`);
   await waitFor("Boolean(document.querySelector('.conv-body')?.dataset.thread) && Boolean(document.querySelector('.thread-view .bubble-row'))", 10000);
   await pause(400);
-  const phoneThread = await js("(() => { const list = document.querySelector('.messages'); return { ids: [...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id), blurred: getComputedStyle(list).filter.includes('blur'), indicator: (document.querySelector('app-composer .composer-thread')?.textContent || '').trim() }; })()");
+  const phoneThread = await js("(() => { const list = document.querySelector('.messages'); return { ids: [...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id), blurred: getComputedStyle(list).filter.includes('blur'), placeholder: document.querySelector('app-composer textarea')?.placeholder || '', close: Boolean(document.querySelector('.conv-head .thread-close')), back: Boolean(document.querySelector('.conv-head .conv-back')) }; })()");
   await phoneBoth('08c-phone-thread-focus');
-  await js("document.querySelector('app-composer .composer-thread button[aria-label=\"Cancel reply\"]').click()");
+  await js("document.querySelector('.conv-head .thread-close').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
-  report.phoneMessageMenu = phoneMenu.labels.join('|') === 'Reply in thread|React' && Boolean(phoneMenu.time) && phoneMenu.inView && phoneThread.ids[0] === 'FAKE-0013' && phoneThread.ids.length === 2 && phoneThread.blurred && phoneThread.indicator === 'Replying in thread';
+  report.phoneMessageMenu = phoneMenu.labels.join('|') === 'Reply in thread|React' && Boolean(phoneMenu.time) && phoneMenu.inView && phoneThread.ids[0] === 'FAKE-0013' && phoneThread.ids.length === 2 && phoneThread.blurred && phoneThread.placeholder === 'Reply' && phoneThread.close && !phoneThread.back;
   console.log('phone message menu: ' + JSON.stringify({ phoneMenu, phoneThread }));
 
   // The gesture: the drawer follows the finger from the left edge, settles by where the finger left it, and takes no
