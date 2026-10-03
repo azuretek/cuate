@@ -40,6 +40,8 @@ class AppComposer extends KitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.setPreview(null);
+    if (this.fit) this.fit.disconnect();
+    this.fit = null;
   }
 
   // A staged picture shows the picture itself, not only its name; anything else, or a picture this engine cannot
@@ -71,6 +73,31 @@ class AppComposer extends KitElement {
   // Choosing a message to reply to puts the caret in the field, ready to type the reply.
   updated(changed) {
     if (changed.has('replyTo') && this.replyTo) this.field()?.focus();
+    this.watchFit();
+  }
+
+  // The field's height is set from its text, so anything that moves where its lines wrap or how tall they are sets it
+  // again: a new width (a resized window, a rotated phone, the sidebar) or a new text size or font, which the hidden
+  // ruler beside the field follows. Without it the field kept the height of its old width or size and hid the lines
+  // that no longer fit, with no bar to reach them (issue 139). Only a change of the field's own width or the ruler's
+  // size counts, never the height the field is given here, and the field is set in the next frame, outside the
+  // observer's own delivery.
+  watchFit() {
+    if (this.fit || typeof ResizeObserver !== 'function') return;
+    const t = this.field();
+    const ruler = this.querySelector('.composer-ruler');
+    if (!t || !ruler) return;
+    let seen = '';
+    this.fit = new ResizeObserver(() => {
+      const now = t.offsetWidth + ' ' + ruler.offsetWidth + ' ' + ruler.offsetHeight;
+      if (now === seen) return;
+      seen = now;
+      requestAnimationFrame(() => {
+        if (t.isConnected && t.offsetWidth) this.grow({ currentTarget: t });
+      });
+    });
+    this.fit.observe(t);
+    this.fit.observe(ruler);
   }
 
   submit(e) {
@@ -84,7 +111,7 @@ class AppComposer extends KitElement {
     this.stageProblem = '';
     this.setPreview(null);
     t.value = '';
-    t.style.height = '';
+    this.grow({ currentTarget: t });
     t.focus();
     return work;
   }
@@ -122,10 +149,24 @@ class AppComposer extends KitElement {
     this.grow({ currentTarget: t });
   }
 
+  // The field grows a line at a time with its text, up to the composer's maximum height, and nothing scrolls while it
+  // fits (issue 139). The height is the text's own plus the field's border, since the box is sized border-box and the
+  // text's height leaves the border out: the field set to that alone was a border short and drew the platform's bar
+  // over a single line. Past the maximum it scrolls, and only then does it carry the app's themed bar. It is measured
+  // with scrolling off, so a bar's own width never changes where the lines wrap. While it is measured the field drops to
+  // one line, so the composer holds its own height until the field has its new one: a composer that shrank for that
+  // moment made the conversation above it taller, the browser pulled a conversation at its end back by the difference,
+  // and the conversation took that as the person scrolling away from the end.
   grow(e) {
     const t = e.currentTarget;
+    const box = t.parentElement;
+    if (box) box.style.minHeight = box.offsetHeight + 'px';
+    t.classList.remove('scrolls');
     t.style.height = 'auto';
-    t.style.height = t.scrollHeight + 'px';
+    const want = t.scrollHeight + t.offsetHeight - t.clientHeight;
+    t.style.height = want + 'px';
+    t.classList.toggle('scrolls', want > parseFloat(getComputedStyle(t).maxHeight));
+    if (box) box.style.minHeight = '';
   }
 
   toggleEmoji() {
@@ -214,6 +255,7 @@ class AppComposer extends KitElement {
         <input type="file" hidden @change=${this.picked}>
         <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}>\u{1F642}</button>
       </div>
+      <span class="composer-ruler" aria-hidden="true">M</span>
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.grow} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}>\u2191</button>
       ${this.attachOpen

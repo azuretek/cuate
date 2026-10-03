@@ -144,7 +144,12 @@ app-attachment { display: block; max-width: var(--size-bubble-max); margin-botto
 
 app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--color-border); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
-.composer textarea { flex: 1; resize: none; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); outline: none; }
+.composer textarea { flex: 1; resize: none; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
+/* The field grows with its text and scrolls only past its maximum, where the composer marks it (issue 139). */
+.composer textarea.scrolls { overflow-y: auto; }
+/* A letter in the field's type, never seen: its size changes with the text size and the font, and the composer sets
+   the field's height again when it does (issue 139). */
+.composer-ruler { position: absolute; visibility: hidden; pointer-events: none; white-space: pre; }
 .composer textarea:focus { border-color: var(--color-accent); }
 .send { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-send); font-weight: var(--font-weight-bold); line-height: 1; cursor: pointer; }
 .send:disabled { opacity: 0.4; cursor: default; }
@@ -372,7 +377,7 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
    theme on their own. Only the two standard properties are used: a width on ::-webkit-scrollbar turns an overlay
    scrollbar into a classic one, so a platform that draws overlay scrollbars would stop, while scrollbar-width and
    scrollbar-color thin and tint the platform's own bar and leave that behaviour alone (issue 85). */
-app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid {
+app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textarea {
   scrollbar-width: var(--size-scrollbar);
   scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }

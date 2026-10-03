@@ -415,6 +415,60 @@ async function runSmoke(w) {
   await pause(300);
   await shot('03-after-send.png');
 
+  // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
+  // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a
+  // bar, which is the width the bar takes from the field's box. Shift+Enter is pressed as a real key and adds a line,
+  // Enter sends, and the send brings the field back to one line.
+  const fieldReading = (value) => js(`(() => {
+    const t = document.querySelector('app-composer textarea');
+    t.value = ${JSON.stringify(value)};
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    const s = getComputedStyle(t);
+    const edge = parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth);
+    return { h: t.offsetHeight, max: parseFloat(s.maxHeight), bar: t.offsetWidth - t.clientWidth - edge, overflow: s.overflowY, hidden: t.scrollHeight - t.clientHeight, color: s.scrollbarColor };
+  })()`);
+  const empty = await fieldReading('');
+  const one = await fieldReading('one line');
+  const three = await fieldReading('first line\nsecond line\nthird line');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03e-composer-three-lines-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('03f-composer-three-lines-dark.png');
+  const many = await fieldReading(Array.from({ length: 30 }, (_, i) => 'line ' + (i + 1)).join('\n'));
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.scrollTop = t.scrollHeight; return true; })()");
+  await pause(300);
+  await shot('03g-composer-many-lines-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03h-composer-many-lines-light.png');
+  const cleared = await fieldReading('');
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.focus(); return document.activeElement === t; })()");
+  for (const ch of 'Typed in') wc.sendInputEvent({ type: 'char', keyCode: ch });
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter', modifiers: ['shift'] });
+  wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers: ['shift'] });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter', modifiers: ['shift'] });
+  for (const ch of 'the smoke') wc.sendInputEvent({ type: 'char', keyCode: ch });
+  await pause(200);
+  const typed = await js("(() => { const t = document.querySelector('app-composer textarea'); return { value: t.value, h: t.offsetHeight }; })()");
+  // Enter sends on its key press, so no character follows it into the emptied field.
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+  await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes('Typed in') && r.textContent.includes('the smoke') && !r.dataset.id.startsWith('local:'))`, 20000);
+  const sentBack = await js("(() => { const t = document.querySelector('app-composer textarea'); return { value: t.value, h: t.offsetHeight }; })()");
+  const composerChecks = {
+    oneLine: one.h === empty.h && one.bar === 0 && one.hidden <= 0,
+    threeLines: three.h > one.h * 2 && three.h < three.max && three.bar === 0 && three.hidden <= 0 && three.overflow === 'hidden',
+    atMaximum: Math.abs(many.h - many.max) < 1 && many.hidden > 0 && many.overflow === 'auto',
+    themedBar: many.color !== 'auto' && many.color !== '',
+    shrinks: cleared.h === empty.h && cleared.overflow === 'hidden',
+    shiftEnter: typed.value === 'Typed in\nthe smoke' && typed.h > empty.h,
+    enterSends: sentBack.value === '' && sentBack.h === empty.h,
+  };
+  report.composerGrows = Object.values(composerChecks).every(Boolean);
+  console.log('composer grows: ' + JSON.stringify({ checks: composerChecks, empty, one, three, many, cleared, typed, sentBack }));
+
   // Close goes to the tray (issue 115). A send is started and the window closed before it lands, through the control the
   // platform's user would press: the close in the contact header on Windows and Linux, the native close on macOS. The
   // window must hide rather than close, the app keep running, the server answer a request from outside while it is
@@ -596,6 +650,83 @@ async function runSmoke(w) {
   const replyFocused = await js("document.activeElement === document.querySelector('app-composer textarea')");
   await pause(200);
   await shot('15-replying-light.png');
+  // The message box grows while the conversation is scrolled back and while it is at its end, and the conversation keeps
+  // its place through both (issues 139 and 142). The reply is typed as real keys, Shift+Enter between its lines, with the
+  // conversation scrolled back: the first message in view must stay within 2px, the reply's quote must stay above the
+  // field, and the text, caret and a selection must survive the growth and window resizes that rewrap its long line,
+  // with the field growing and shrinking to fit each width. At the end of the conversation the same growth and resize
+  // must leave it at its end. The field is then emptied and the reply below is sent as before, still threaded.
+  const typeKeys = async (lines) => {
+    lines.forEach((line, i) => {
+      if (i) {
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter', modifiers: ['shift'] });
+        wc.sendInputEvent({ type: 'char', keyCode: '\r', modifiers: ['shift'] });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter', modifiers: ['shift'] });
+      }
+      for (const ch of line) wc.sendInputEvent({ type: 'char', keyCode: ch });
+    });
+    await pause(400);
+  };
+  const growPlace = () => js(`(() => {
+    const m = document.querySelector('.messages');
+    const top = m.getBoundingClientRect().top;
+    const first = [...m.querySelectorAll('.bubble-row')].find((r) => r.getBoundingClientRect().bottom - top > 0);
+    const t = document.querySelector('app-composer textarea');
+    const s = getComputedStyle(t);
+    return {
+      key: first ? first.dataset.id : null, offset: first ? Math.round(first.getBoundingClientRect().top - top) : null,
+      scrollTop: Math.round(m.scrollTop), fromEnd: Math.round(m.scrollHeight - m.clientHeight - m.scrollTop),
+      text: t.value, start: t.selectionStart, end: t.selectionEnd, focused: document.activeElement === t,
+      h: t.offsetHeight, max: parseFloat(s.maxHeight), hidden: t.scrollHeight - t.clientHeight, overflow: s.overflowY,
+      quote: document.querySelector('app-composer .composer-reply .reply-text')?.textContent || '',
+    };
+  })()`);
+  const fits = (s) => s.hidden <= 0 || (s.overflow === 'auto' && Math.abs(s.h - s.max) < 1);
+  const sameRow = (a, b) => Boolean(a.key) && a.key === b.key && Math.abs(a.offset - b.offset) <= 2;
+  const [w0, h0] = w.getSize();
+  const BACK = ['Typed while', 'scrolled back', 'and a last line long enough that a narrower window has to wrap it onto more lines than the wide window needed, so the field must grow again'];
+  await js("(() => { const m = document.querySelector('.messages'); m.scrollTop = Math.round((m.scrollHeight - m.clientHeight) / 2); document.querySelector('app-composer textarea').focus(); return true; })()");
+  await pause(400);
+  const backBefore = await growPlace();
+  await typeKeys(BACK);
+  const backGrown = await growPlace();
+  await shot('15c-composer-scrolled-back-light.png');
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.setSelectionRange(6, 19); return true; })()");
+  const backSteps = [];
+  for (const [width, height] of [[760, 600], [900, 640], [w0, h0]]) {
+    w.setSize(width, height);
+    await pause(600);
+    backSteps.push({ step: width + 'x' + height, ...(await growPlace()) });
+  }
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); const m = document.querySelector('.messages'); m.scrollTop = m.scrollHeight; t.focus(); return true; })()");
+  await pause(500);
+  const END = ['At the end', 'it stays', 'at the end'];
+  const endBefore = await growPlace();
+  await typeKeys(END);
+  const endGrown = await growPlace();
+  await shot('15d-composer-at-end-light.png');
+  w.setSize(760, 600);
+  await pause(600);
+  const endResized = await growPlace();
+  w.setSize(w0, h0);
+  await pause(600);
+  const endBack = await growPlace();
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); t.focus(); return true; })()");
+  await pause(300);
+  const keepChecks = {
+    scrolledBack: backBefore.scrollTop > 0 && backBefore.fromEnd > 100,
+    grewBack: backGrown.h > backBefore.h * 2 && backGrown.text === BACK.join('\n') && backGrown.start === backGrown.text.length && backGrown.end === backGrown.text.length && backGrown.focused,
+    placeOnGrowth: sameRow(backGrown, backBefore),
+    quoteKept: [backGrown, ...backSteps, endGrown, endResized].every((s) => s.quote.includes('See you soon')),
+    placeOnResize: backSteps.every((s) => sameRow(s, backGrown)),
+    draftOnResize: backSteps.every((s) => s.text === backGrown.text && s.start === 6 && s.end === 19),
+    fitsEveryWidth: [backGrown, ...backSteps].every(fits),
+    rewraps: backSteps[0].h > backGrown.h && Math.abs(backSteps[2].h - backGrown.h) <= 1,
+    endStays: endBefore.fromEnd <= 2 && endGrown.fromEnd <= 2 && endResized.fromEnd <= 2 && endBack.fromEnd <= 2,
+    grewAtEnd: endGrown.h > endBefore.h * 2 && endGrown.text === END.join('\n') && endGrown.start === endGrown.text.length && fits(endResized),
+  };
+  report.composerGrows = report.composerGrows && Object.values(keepChecks).every(Boolean);
+  console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
   await waitFor(`Boolean(${replySel}?.querySelector('.reply-quote'))`, 20000);
@@ -1011,7 +1142,7 @@ async function runSmoke(w) {
   await putSettings({ 'chats.groups': smokeGroups, 'chats.placement': { 1: 'smoke-g1', 2: 'smoke-g4', 3: 'smoke-g7' }, 'appearance.textScale': 200 });
   await waitFor("document.querySelectorAll('.chat-section').length >= 8 && document.documentElement.style.getPropertyValue('--font-size-md') !== ''", 10000);
   await pause(400);
-  const COMPOSED = 'Kept through every resize';
+  const COMPOSED = 'Kept through\nevery resize';
   const place = () => js(`(() => {
     const at = (view, sel, key) => {
       const top = view.getBoundingClientRect().top;
@@ -1024,7 +1155,8 @@ async function runSmoke(w) {
       conversation: at(document.querySelector('.messages'), '.bubble-row', 'id'),
       list: at(document.querySelector('app-chat-list'), '.chat-row', 'chat'),
       open: document.querySelector('app-root').openChatId,
-      text: t.value, caret: t.selectionStart, width: window.innerWidth, height: window.innerHeight,
+      text: t.value, caret: t.selectionStart, caretEnd: t.selectionEnd, fieldHidden: t.scrollHeight - t.clientHeight, fieldScrolls: getComputedStyle(t).overflowY === 'auto',
+      width: window.innerWidth, height: window.innerHeight,
     };
   })()`);
   await js(`(() => {
@@ -1038,8 +1170,9 @@ async function runSmoke(w) {
     l.scrollTop = targets.find((y) => y > 0 && y < room - 20) ?? Math.round(room / 2);
     const t = document.querySelector('app-composer textarea');
     t.value = ${JSON.stringify(COMPOSED)};
+    t.dispatchEvent(new Event('input', { bubbles: true }));
     t.focus();
-    t.setSelectionRange(5, 5);
+    t.setSelectionRange(5, 15);
     return true;
   })()`);
   await pause(300);
@@ -1063,7 +1196,7 @@ async function runSmoke(w) {
     conversation: steps.every((s) => same(s.conversation, start.conversation)),
     list: steps.every((s) => same(s.list, start.list)),
     open: steps.every((s) => s.open === start.open),
-    composer: steps.every((s) => s.text === COMPOSED && s.caret === 5),
+    composer: steps.every((s) => s.text === COMPOSED && s.caret === 5 && s.caretEnd === 15 && (s.fieldHidden <= 0 || s.fieldScrolls)),
     resized: new Set(steps.map((s) => s.width)).size >= 3,
   };
   report.resizeKeeps = Object.values(resizeChecks).every(Boolean);
