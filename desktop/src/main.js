@@ -862,7 +862,7 @@ async function runSmoke(w) {
 
   // About: the last section of Settings (issue 134), every value from the half that owns it, brought into view the
   // way the tray's About brings it, and checked at the same narrow width.
-  await js("document.querySelector('app-settings').section = { id: 'about' }");
+  await js("document.querySelector('app-settings').reveal = { id: 'about' }");
   await waitFor(aboutRevealed);
   await pause(1000);
   report.sheetHitAreaAbout = await sheetHit('app-settings');
@@ -872,7 +872,7 @@ async function runSmoke(w) {
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(300);
   // Back at full width the section is asked for again, so the captures show it where the tray's About puts it.
-  await js("document.querySelector('app-settings').section = { id: 'about' }");
+  await js("document.querySelector('app-settings').reveal = { id: 'about' }");
   await waitFor(aboutRevealed);
   nativeTheme.themeSource = 'light';
   await pause(200);

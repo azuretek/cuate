@@ -16,11 +16,11 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 // second one. Each group carries its own one-line description from the schema, and a group's rows sit on one surface
 // with a divider between them. The page and its chrome (the full-width back strip, the title, the description) are
 // drawn by app-sheet. About is the last section (issue 134), drawn by app-about from the shell's and the server's
-// build reports; `section` names a section to bring into view, which is how the tray's About opens this page there.
+// build reports; `reveal` names a section to bring into view, which is how the tray's About opens this page there.
 class AppSettings extends KitElement {
   static properties = {
     values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {}, urlBusy: {},
-    info: { attribute: false }, host: { attribute: false }, section: { attribute: false },
+    info: { attribute: false }, host: { attribute: false }, reveal: { attribute: false },
     importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
   };
 
@@ -42,8 +42,9 @@ class AppSettings extends KitElement {
     // The server's info and the shell's own report, which the About section draws.
     this.info = null;
     this.host = null;
-    // A request to bring one section into view: { id }. A new object each time, so asking twice scrolls twice.
-    this.section = null;
+    // A request to bring one section into view: { id }. A new object each time, so asking twice scrolls twice. Not
+    // named section: that is the method below that draws one, and a property of the same name replaces it.
+    this.reveal = null;
   }
 
   // Called by app-root when a URL import lands, so the field empties only on success and keeps a URL that failed.
@@ -220,7 +221,7 @@ class AppSettings extends KitElement {
   }
 
   render() {
-    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .content=${this.body()} .reveal=${this.section}></app-sheet>`;
+    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .content=${this.body()} .reveal=${this.reveal}></app-sheet>`;
   }
 }
 

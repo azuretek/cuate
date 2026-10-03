@@ -902,7 +902,7 @@ class AppRoot extends KitElement {
 
   // The settings page is a sheet, so it is drawn by sheetBody and never in the main pane. About is its last section.
   sheetBody() {
-    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host} .section=${this.settingsSection}
+    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host} .reveal=${this.settingsSection}
       @setting=${(e) => this.setSetting(e.detail)} @settings=${(e) => this.setSettings(e.detail)} @theme-import=${(e) => this.importThemeUrl(e.detail)} @signout=${() => this.signOut('')} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.closeView()}></app-settings>`;
   }
 
