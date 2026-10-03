@@ -1,12 +1,16 @@
 import { html } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
-import { backdropReturns } from '../rules/sheet.js';
+import { dismissable } from '../../kit/dismiss.js';
+import { pressOutside } from '../../kit/rules/dismiss.js';
 import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey } from '../rules/zoom.js';
 
 // The image viewer: one picture, large, over the app. It draws on the settings sheet's own backdrop (the same
 // .sheet-scrim, so the blur and the dim are one treatment, not a second), and it closes the three ways the sheet does:
-// Escape, its close control, and a press that both starts and ends on the backdrop (rules/sheet.js).
+// Escape, its close control, and a press that both starts and ends on the backdrop. It is registered with the kit's one
+// dismiss behaviour (core/kit/dismiss.js) as a panel that owns the whole surface: the kit closes it on Escape, in its
+// place among any other open panels, and leaves every press to the gestures below, which apply the kit's own rule for
+// a press outside (core/kit/rules/dismiss.js) to the backdrop.
 //
 // Every number it draws comes from rules/zoom.js. This only measures the picture and the stage, turns pointer, wheel
 // and key events into calls on those rules, and paints the view they answer:
@@ -32,6 +36,7 @@ class AppImageViewer extends KitElement {
     this.onKey = (e) => this.key(e);
     // Safari's own pinch would zoom the whole page under the viewer; the pointer events already carry the pinch.
     this.onGesture = (e) => e.preventDefault();
+    dismissable(this, { name: 'viewer', outside: false, open: () => true, close: () => this.close() });
   }
 
   connectedCallback() {
@@ -168,12 +173,12 @@ class AppImageViewer extends KitElement {
     const endsOnBackdrop = document.elementFromPoint(e.clientX, e.clientY) === this.stage();
     if (g.mouse) {
       if (g.button === 2) this.zoom(1 / ZOOM_STEP, p);
-      else if (g.button === 0 && backdropReturns(g.onBackdrop, endsOnBackdrop)) this.close();
+      else if (g.button === 0 && pressOutside(g.onBackdrop, endsOnBackdrop)) this.close();
       else if (g.button === 0 && g.onImage) this.zoom(ZOOM_STEP, p);
       return;
     }
     // A finger or a pen: a tap on the backdrop closes, two quick taps on the picture toggle the zoom.
-    if (backdropReturns(g.onBackdrop, endsOnBackdrop)) { this.close(); return; }
+    if (pressOutside(g.onBackdrop, endsOnBackdrop)) { this.close(); return; }
     const tap = { x: p.x, y: p.y, at: e.timeStamp };
     if (isDoubleTap(this.lastTap, tap)) {
       this.lastTap = null;
@@ -208,7 +213,7 @@ class AppImageViewer extends KitElement {
 
   render() {
     const label = this.alt || 'Image';
-    return html`<div class="sheet-scrim viewer" role="dialog" aria-modal="true" aria-label=${label}
+    return html`<div class="sheet-scrim viewer" data-dismiss="viewer" role="dialog" aria-modal="true" aria-label=${label}
         data-scale=${String(this.view.scale)} data-zoomed=${this.view.scale > 1.001 ? 'true' : 'false'} data-gesture=${this.moving ? 'on' : 'off'}
         @pointerdown=${this.onDown} @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${this.onCancel}
         @contextmenu=${this.onContext} @wheel=${this.onWheel}>

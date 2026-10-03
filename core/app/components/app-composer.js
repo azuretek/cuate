@@ -1,6 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
+import { dismissable } from '../../kit/dismiss.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck } from '../rules/attach.js';
 import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
@@ -32,6 +33,11 @@ class AppComposer extends KitElement {
     // Send is one press however it is made, the button or Enter: both run through this, so the send button shows the
     // send working and a second press while it runs is dropped rather than sending twice (core/kit/press.js).
     this.onSubmit = press((e) => this.submit(e), { on: () => this.querySelector('button.send') });
+    // The attach menu and the emoji panel close on a press outside them and on Escape, through the kit's one behaviour
+    // (core/kit/dismiss.js). Each tool button keeps both names, so pressing one while the other's panel is open
+    // switches panels rather than only closing the open one.
+    dismissable(this, { name: 'attach', open: () => this.attachOpen, close: () => { this.attachOpen = false; } });
+    dismissable(this, { name: 'emoji', open: () => this.emojiOpen, close: () => this.closeEmoji() });
   }
 
   connectedCallback() {
@@ -126,12 +132,8 @@ class AppComposer extends KitElement {
     return work;
   }
 
+  // Escape with a panel open is the kit's, which closes the panel before the field sees the key.
   key(e) {
-    if (e.key === 'Escape' && (this.emojiOpen || this.attachOpen)) {
-      this.closeEmoji();
-      this.attachOpen = false;
-      return;
-    }
     if (e.key === 'Escape' && this.replyTo) {
       this.cancelReply();
       return;
@@ -283,17 +285,17 @@ class AppComposer extends KitElement {
         </div>`
       : nothing}<form class="composer" @submit=${this.onSubmit}>
       <div class="composer-tools">
-        <button type="button" class="tool" aria-label="Attach" aria-haspopup="menu" aria-expanded=${this.attachOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleAttach())}>+</button>
+        <button type="button" class="tool" aria-label="Attach" aria-haspopup="menu" data-dismiss-keep="attach emoji" aria-expanded=${this.attachOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleAttach())}>+</button>
         <input type="file" hidden @change=${this.picked}>
-        <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}>\u{1F642}</button>
+        <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" data-dismiss-keep="attach emoji" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}>\u{1F642}</button>
       </div>
       <span class="composer-ruler" aria-hidden="true">M</span>
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.grow} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}>\u2191</button>
       ${this.attachOpen
-        ? html`<div class="attach-menu" role="menu" aria-label="Attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
+        ? html`<div class="attach-menu" role="menu" aria-label="Attach" data-dismiss="attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
         : nothing}
-      ${this.emojiOpen ? html`<app-emoji-picker .frequent=${this.frequent} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)}></app-emoji-picker>` : nothing}
+      ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .frequent=${this.frequent} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)}></app-emoji-picker>` : nothing}
     </form>`;
   }
 }

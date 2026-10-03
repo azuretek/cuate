@@ -2,6 +2,7 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press, runPress, emit, respond } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
+import { dismissable } from '../../kit/dismiss.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, messageActions, threadIds, threadRoot } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
@@ -47,24 +48,14 @@ class AppConversation extends KitElement {
     this.reactFor = null;
     this.pressTimer = null;
     this.swallowClick = { handleEvent: (e) => this.swallow(e), capture: true };
-    this.onDocKey = (e) => {
-      if (e.key !== 'Escape') return;
-      if (this.pop) this.closePop();
-      else if (this.replyingTo && !this.reactFor) this.closeThread();
-    };
-    this.onDocDown = (e) => { if (this.pop && !e.target.closest?.('.message-pop, .message-action')) this.closePop(); };
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    document.addEventListener('keydown', this.onDocKey);
-    document.addEventListener('pointerdown', this.onDocDown, true);
+    // The message menu and an open thread close on a press outside them and on Escape, through the kit's one behaviour
+    // (core/kit/dismiss.js). The composer keeps the thread open, since replying in it is typing there.
+    dismissable(this, { name: 'pop', open: () => Boolean(this.pop), close: () => this.closePop() });
+    dismissable(this, { name: 'thread', open: () => Boolean(this.replyingTo), close: () => this.closeThread() });
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    document.removeEventListener('keydown', this.onDocKey);
-    document.removeEventListener('pointerdown', this.onDocDown, true);
     clearTimeout(this.pressTimer);
   }
 
@@ -193,7 +184,7 @@ class AppConversation extends KitElement {
   menu(m) {
     const actions = messageActions(m, { sending: this.sending });
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
-    return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-side=${this.pop.side}>
+    return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side}>
       <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
       ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('react') ? html`<button type="button" class="message-action" aria-label="React" title="React" @click=${press(() => this.openReact(m))}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>` : nothing}
@@ -216,7 +207,7 @@ class AppConversation extends KitElement {
     const busy = this.reacting === m.id;
     const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
     const note = this.note && this.note.id === m.id ? this.note.text : '';
-    return html`<div class=${row} data-id=${m.id} tabindex=${front ? '0' : '-1'} aria-haspopup="true" aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
+    return html`<div class=${row} data-id=${m.id} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
       ${quote ? html`<button type="button" class="reply-mark" aria-label=${'In a thread' + (quote.who ? ' with ' + quote.who : '') + '. Open the thread'} title="Open the thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       <div class="bubble-body">
@@ -234,8 +225,8 @@ class AppConversation extends KitElement {
   threadView(lastMine, sms) {
     const ids = threadIds(this.messages, this.replyingTo.id);
     const items = groupMessages((this.messages || []).filter((m) => ids.has(m.id)));
-    return html`<div class="thread-view" role="dialog" aria-label="Thread" @click=${(e) => { if (e.target === e.currentTarget) this.closeThread(); }}>
-      <div class="thread-list">${items.filter((it) => it.kind === 'message').map((it) => this.bubble(it, lastMine, sms, 'thread'))}</div>
+    return html`<div class="thread-view">
+      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread">${items.filter((it) => it.kind === 'message').map((it) => this.bubble(it, lastMine, sms, 'thread'))}</div>
     </div>`;
   }
 
@@ -256,7 +247,7 @@ class AppConversation extends KitElement {
         </div>
         ${thread ? this.threadView(lastMine, sms) : nothing}
       </div>
-      <app-composer .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.sending ? 'Message' : 'Sending is off on the server'} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 

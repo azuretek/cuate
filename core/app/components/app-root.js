@@ -21,7 +21,8 @@ import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../ru
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
-import { backdropReturns, sheetLeaveDeadline } from '../rules/sheet.js';
+import { sheetLeaveDeadline } from '../rules/sheet.js';
+import { dismissable } from '../../kit/dismiss.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
 import './app-conversation.js';
@@ -119,8 +120,15 @@ class AppRoot extends KitElement {
     this.viewing = null;
     this.reacting = null;
     this.messageNote = null;
-    // Escape dismisses the confirm modal, bound once so the same function is added and removed.
-    this.confirmKey = (event) => { if (event.key === 'Escape') { event.preventDefault(); this.cancelDelete(); } };
+    // Every menu and modal the page draws closes on a press outside it and on Escape, through the kit's one behaviour
+    // (core/kit/dismiss.js): the filter and sort menus (each one's button keeps both, so it switches between them),
+    // the group prompt, the delete confirm and the Settings sheet. The sheet closes the way its strip does, running its
+    // departure, and a sheet already leaving is not open.
+    dismissable(this, { name: 'filter', open: () => this.filterOpen, close: () => { this.filterOpen = false; } });
+    dismissable(this, { name: 'sort', open: () => this.sortOpen, close: () => { this.sortOpen = false; } });
+    dismissable(this, { name: 'group', open: () => this.naming, close: () => { this.naming = false; } });
+    dismissable(this, { name: 'confirm', open: () => Boolean(this.pendingDelete), close: () => this.cancelDelete() });
+    dismissable(this, { name: 'sheet', open: () => this.sheetShowing && !this.sheetLeaving, close: () => this.closeView() });
     // The custom properties last written from a theme, so a change removes the ones it no longer sets.
     this.themeApplied = [];
     this.schemeQuery = null;
@@ -603,24 +611,6 @@ class AppRoot extends KitElement {
     if (screen) this.openScreen(screen);
   }
 
-  // The backdrop beside the card is the second way back, and it only takes a press that both begins and ends on it:
-  // a press inside the card is the page's own, and a drag that starts inside and is released over the backdrop (a
-  // selection dragged past the edge) is not a return. The rule lives in rules/sheet.js; these only read the targets.
-  onBackdropDown = (e) => {
-    this.downOnBackdrop = e.target === e.currentTarget;
-  };
-
-  onBackdropUp = (e) => {
-    const endsOnBackdrop = e.target === e.currentTarget;
-    const startsOnBackdrop = this.downOnBackdrop;
-    this.downOnBackdrop = false;
-    if (backdropReturns(startsOnBackdrop, endsOnBackdrop)) this.closeView();
-  };
-
-  onBackdropCancel = () => {
-    this.downOnBackdrop = false;
-  };
-
   // The departure ends on the sheet's own animationend, or at its deadline (the token duration plus a margin,
   // rules/sheet.js), whichever comes first: a window that draws no frames never sends the event.
   leaveSheet() {
@@ -825,7 +815,7 @@ class AppRoot extends KitElement {
     const f = this.filters || emptyFilters();
     const groups = this.chatGroups();
     const toggle = (key, value) => this.setFilters({ [key]: f[key] === value ? null : value });
-    return html`<div class="filter-menu" role="group" aria-label="Filter conversations">
+    return html`<div class="filter-menu" role="group" aria-label="Filter conversations" data-dismiss="filter">
       <div class="filter-menu-row">
         <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${press(() => this.setFilters({ unread: !f.unread }))}>Unread</button>
         <button type="button" class="chip" aria-pressed=${f.kind === 'direct' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'direct'))}>Direct</button>
@@ -874,7 +864,7 @@ class AppRoot extends KitElement {
   // the same setting the list has always read.
   sortMenu() {
     const current = normalizeSort(this.settings['chats.sort']);
-    return html`<div class="sort-menu" role="menu" aria-label="Sort conversations">
+    return html`<div class="sort-menu" role="menu" aria-label="Sort conversations" data-dismiss="sort">
       ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${press(() => this.chooseSort(o))}>
         <span class="sort-check" aria-hidden="true">${o === current ? html`<span class="icon" data-icon="check" aria-hidden="true"></span>` : nothing}</span>${SORT_LABELS[o]}
       </button>`)}
@@ -958,13 +948,12 @@ class AppRoot extends KitElement {
 
   onGroupNameKey(e) {
     if (e.key === 'Enter') { e.preventDefault(); this.querySelector('.group-create')?.click(); }
-    else if (e.key === 'Escape') { e.preventDefault(); this.naming = false; }
   }
 
   groupPrompt() {
     const n = this.selectionCount();
-    return html`<div class="sheet-scrim confirm-scrim" @click=${(e) => { if (e.target === e.currentTarget) this.naming = false; }}>
-      <section class="confirm-modal group-prompt" role="dialog" aria-modal="true" aria-labelledby="group-prompt-title">
+    return html`<div class="sheet-scrim confirm-scrim">
+      <section class="confirm-modal group-prompt" data-dismiss="group" role="dialog" aria-modal="true" aria-labelledby="group-prompt-title">
         <h2 id="group-prompt-title">Group ${n} conversation${n === 1 ? '' : 's'}</h2>
         <input class="group-name-input" type="text" placeholder="Name (optional)" aria-label="Group name, optional" @keydown=${this.onGroupNameKey}>
         <div class="confirm-actions">
@@ -988,14 +977,12 @@ class AppRoot extends KitElement {
   }
 
   holdConfirm() {
-    if (!this.pendingDelete || typeof window === 'undefined') return;
-    window.addEventListener('keydown', this.confirmKey);
+    if (!this.pendingDelete) return;
     this.updateComplete.then(() => { const el = this.querySelector('.confirm-modal .slide-thumb'); if (el) el.focus(); });
   }
 
   cancelDelete() {
     this.pendingDelete = null;
-    if (typeof window !== 'undefined') window.removeEventListener('keydown', this.confirmKey);
   }
 
   confirmDeleteSelection() {
@@ -1042,8 +1029,8 @@ class AppRoot extends KitElement {
     const body = isGroup
       ? "The group leaves this client's list. Its conversations stay, and no message is deleted on the Mac."
       : "They leave this client's list only. No message is deleted on the Mac.";
-    return html`<div class="sheet-scrim confirm-scrim" @click=${(e) => { if (e.target === e.currentTarget) this.cancelDelete(); }}>
-      <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    return html`<div class="sheet-scrim confirm-scrim">
+      <section class="confirm-modal" data-dismiss="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <h2 id="confirm-title">Are you sure?</h2>
         <p class="confirm-what">${title}</p>
         <p>${body}</p>
@@ -1062,8 +1049,8 @@ class AppRoot extends KitElement {
         <select class="search-mode" aria-label="Search by" @change=${(e) => this.setFilters({ mode: e.currentTarget.value })}>${this.modeOptions(f.mode)}</select>
         <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })} @keydown=${this.onSearchKey}>
       </span>
-      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${press(() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; })}><span class="icon" data-icon="list-filter" aria-hidden="true"></span></button>
-      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${press(() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; })}><span class="icon" data-icon="arrow-up-down" aria-hidden="true"></span></button>
+      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" data-dismiss-keep="filter sort" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${press(() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; })}><span class="icon" data-icon="list-filter" aria-hidden="true"></span></button>
+      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" data-dismiss-keep="filter sort" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${press(() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; })}><span class="icon" data-icon="arrow-up-down" aria-hidden="true"></span></button>
       <button type="button" class="gear-button" aria-label="Settings" @click=${press(() => this.openSettings())}><span class="icon" data-icon="settings" aria-hidden="true"></span></button>
       ${this.sortOpen ? this.sortMenu() : nothing}
       ${this.filterOpen ? this.filterMenu() : nothing}
@@ -1158,7 +1145,7 @@ class AppRoot extends KitElement {
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <main class="main">${this.mainView(chat)}</main>
-      ${this.sheetShowing ? html`<div class="sheet-scrim" @pointerdown=${this.onBackdropDown} @pointerup=${this.onBackdropUp} @pointercancel=${this.onBackdropCancel}><section class="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
+      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
