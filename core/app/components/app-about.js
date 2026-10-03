@@ -30,13 +30,13 @@ const APP_ICON = 'assets/app-icon.png';
 // go to the source, the licence and the issue tracker, from the repository the server reports; a press is handed to
 // the shell (open.external) by app-root, so it opens in the browser on every platform rather than in the app.
 class AppAbout extends KitElement {
-  static properties = { info: { attribute: false }, host: { attribute: false }, update: { attribute: false }, backLabel: {}, copied: { state: true }, copiedKey: { state: true } };
+  static properties = { info: { attribute: false }, host: { attribute: false }, release: { attribute: false }, backLabel: {}, copied: { state: true }, copiedKey: { state: true } };
 
   constructor() {
     super();
     this.info = null;
     this.host = null;
-    this.update = null;
+    this.release = null;
     this.backLabel = 'Back to app';
     this.copied = '';
     this.copiedKey = '';
@@ -85,9 +85,10 @@ class AppAbout extends KitElement {
     const links = aboutLinks(this.info && this.info.repository);
     const name = rows.find((r) => r.key === 'product');
     const version = rows.find((r) => r.key === 'version');
-    // The button and the line under it follow the update state the notice draws (issue 192): the button is the step
+    // The button and the line under it follow the update state the notice draws (issue 192; held as release, since
+    // update is the element's own render step): the button is the step
     // the notice offers, or the check; the line and the bar say how far a download has got.
-    const update = aboutUpdate(this.update);
+    const update = aboutUpdate(this.release);
     return html`
       <header class="about-head" data-section="identity">
         <img class="about-icon" src=${APP_ICON} alt="">
@@ -98,7 +99,7 @@ class AppAbout extends KitElement {
         <h3 class="sheet-section-title">Updates</h3>
         <p class="sheet-section-desc">Look for a newer version now. The answer appears as a notice.</p>
         <button type="button" class="button primary about-check" data-action="check-updates" data-command=${update.command || 'check'} @click=${press(() => this.fire('check-updates', { command: update.command }))}>${update.label}</button>
-        ${update.line ? html`<p class="about-update-line" role="status" data-update=${this.update.state}>${update.line}</p>` : nothing}
+        ${update.line ? html`<p class="about-update-line" role="status" data-update=${this.release.state}>${update.line}</p>` : nothing}
         ${update.percent !== null ? html`<progress class="about-update-progress" max="1" .value=${update.percent}></progress>` : nothing}
       </section>
       <section class="sheet-section" data-section="build">

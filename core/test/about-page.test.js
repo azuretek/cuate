@@ -171,6 +171,15 @@ test('checkAnswer: a shell\'s answer becomes the update state the notice draws',
   for (const s of states) assert.equal(checkAnswer({ state: s }, 'linux').state, s);
 });
 
+test('About takes the update state under a name that is not LitElement\'s own update()', () => {
+  // A reactive property called update shadows the element's render step, and the page throws "this.update is not a
+  // function" the moment About draws; it reached an emulator once (issue 192), so it is held here.
+  const about = read('core/app/components/app-about.js');
+  assert.doesNotMatch(about, /static properties = \{[^}]*\bupdate:/);
+  assert.match(about, /release: \{ attribute: false \}/);
+  assert.match(read('core/app/components/app-root.js'), /<app-about [^>]*\.release=\$\{this\.updateStatus\}/);
+});
+
 test('the phones name how they are updated, and both check', () => {
   assert.match(capability({ platform: 'ios', packaged: true }).reason, /TestFlight/);
   assert.match(capability({ platform: 'android', packaged: true }).reason, /APK/);
