@@ -58,12 +58,13 @@ class AboutPageTest {
 
     // The page as painted, not a frame the WebView drew before it: the top of the app icon's tile, the default theme's
     // accent lightened (core/app/rules/icon.js iconPalette, held to it by core/test/icon.test.js), is on screen, which
-    // it only is once the About page has drawn its icon.
+    // it only is once the About page has drawn its icon. The tile is a vertical gradient, so its top colour covers only
+    // a thin band of the 72 px icon: every pixel is sampled, not every fourth, or a low-density emulator finds too few.
     private fun iconShown(capture: android.graphics.Bitmap): Boolean {
         val tile = android.graphics.Color.rgb(0xd6, 0x5a, 0x4e)
         var hits = 0
-        for (y in 0 until capture.height step 4) {
-            for (x in 0 until capture.width step 4) {
+        for (y in 0 until capture.height) {
+            for (x in 0 until capture.width) {
                 val p = capture.getPixel(x, y)
                 if (Math.abs(android.graphics.Color.red(p) - android.graphics.Color.red(tile)) <= 8
                     && Math.abs(android.graphics.Color.green(p) - android.graphics.Color.green(tile)) <= 8
