@@ -211,6 +211,16 @@ test('every consumer reads the families the icon spec holds, never the old flat 
   }
 });
 
+test('the shell clears the fixed palette when Follow theme is chosen, through the one rule (issues 246 and 254)', () => {
+  // The tray (and the window icon) follows the theme while the choice is Follow theme: the shell must ask the shared
+  // rule for the choice's palette, which answers null for Follow theme, rather than keeping the last colour picked.
+  // A fixed variant keeps its own palette, so the rule still colours it whatever the theme.
+  assert.equal(fixedPalette(FOLLOW_THEME), null, 'Follow theme has no palette of its own');
+  const fixed = fixedPalette(icons.families[0].variants.dark.id);
+  assert.ok(fixed && fixed.colors, 'a fixed variant keeps its palette');
+  assert.match(read('desktop/src/main.js'), /appIconFixed\s*=\s*fixedPalette\(/, "the shell reads the choice's palette from the shared rule, so Follow theme clears it and the tray follows the theme");
+});
+
 test('every shell answers app.icon', () => {
   const spec = json('core/spec/host-bridge.json');
   assert.ok(spec.commands['app.icon'], 'the bridge declares app.icon');

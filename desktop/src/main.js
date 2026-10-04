@@ -17,6 +17,7 @@ import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { renderIcon } from '../../core/app/rules/icon.js';
+import { fixedPalette } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
@@ -65,8 +66,12 @@ let appIconApplied = appIconSpec.default;
 let appIconFixed = null;
 function setAppIcon(icon) {
   const choice = appIconVariants.find((i) => i.id === icon);
-  if (!choice) return { applied: false, icon };
-  appIconFixed = choice.colors ? { scheme: choice.scheme === 'dark' ? 'dark' : 'light', colors: choice.colors } : null;
+  const followTheme = icon === appIconSpec.followTheme.id;
+  if (!choice && !followTheme) return { applied: false, icon };
+  // The choice's palette comes from the one rule the page uses (rules/app-icons.js): a fixed variant's is its own,
+  // and Follow theme (no colours of its own) answers null, clearing the fixed palette so the tray, the window icon
+  // and the Dock draw from the active theme again rather than keeping the last colour picked.
+  appIconFixed = fixedPalette(icon, appIconSpec);
   appIconApplied = icon;
   applyIcons();
   return { applied: true, icon };
