@@ -86,12 +86,16 @@ class AboutPageTest {
         throw AssertionError("The About page never showed its notice: $result")
     }
 
-    // The page as painted, not a frame the WebView drew before it: the top of the app icon's tile, the default theme's
-    // accent lightened (core/app/rules/icon.js iconPalette, held to it by core/test/icon.test.js), is on screen, which
-    // it only is once the About page has drawn its icon. The tile is a vertical gradient, so its top colour covers only
-    // a thin band of the 72 px icon: every pixel is sampled, not every fourth, or a low-density emulator finds too few.
+    // The page as painted, not a frame the WebView drew before it: the tile of the icon in force (issue 246), whose
+    // accent core/app/rules/icon.js iconPalette turns into the tile's gradient, is on screen, which it only is once the
+    // About page has drawn its icon. The fixture chooses the rosa icon, so its accent is read from the spec rather than
+    // a fixed colour. The tile is a vertical gradient, so the accent covers only a band of the 72 px icon: every pixel
+    // is sampled, not every fourth, or a low-density emulator finds too few.
     private fun iconShown(capture: android.graphics.Bitmap): Boolean {
-        val tile = android.graphics.Color.rgb(0xd6, 0x5a, 0x4e)
+        val icons = JSONObject(BundledSpec.text(instrumentation.targetContext.assets, "spec/app-icons.json")).getJSONArray("icons")
+        val accent = (0 until icons.length()).map { icons.getJSONObject(it) }
+            .first { it.getString("id") == "rosa" }.getJSONObject("colors").getString("accent")
+        val tile = android.graphics.Color.parseColor(accent)
         var hits = 0
         for (y in 0 until capture.height) {
             for (x in 0 until capture.width) {

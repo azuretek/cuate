@@ -16,7 +16,9 @@
   await until(() => root.phase !== 'boot', 'the app to boot');
   if (root.phase !== 'onboarding') throw new Error('about fixture requires empty test storage');
   const scheme = window.fixtureScheme === 'dark' ? 'dark' : 'light';
-  root.settings = { ...root.settings, 'appearance.skin': scheme };
+  // The chosen icon (issue 246): About draws the choice in force, not one fixed drawing, so the fixture picks one
+  // and the native legs hold the page to its picture.
+  root.settings = { ...root.settings, 'appearance.skin': scheme, 'appearance.appIcon': 'rosa' };
   root.info = { product: (root.host && root.host.product) || 'App', serverVersion: '1.0.0', serverChannel: 'dev', apiVersion: 1, engine: { kind: 'fake', version: '1.0.0' }, repository: 'https://example.invalid/owner/app' };
   root.chats = [];
   root.phase = 'ready';
@@ -36,6 +38,7 @@
   await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page push to finish');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
+  if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
   const parts = [...about().querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section).join('|');
   if (parts !== 'identity|updates|build') throw new Error('About draws ' + parts);
   about().querySelector('[data-action=check-updates]').click();
