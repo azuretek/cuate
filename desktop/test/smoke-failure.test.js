@@ -158,7 +158,10 @@ test('retainSmokeFailure records a renderer error and a capture failure without 
 
 test('the smoke retains failure state only on its failure path', () => {
   const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-  const start = main.indexOf('runSmoke(win).catch');
+  // The smoke path is either runSmoke or, under SMOKE_DESIGN, the design capture; both end at the one failure path,
+  // which is what must retain the evidence. Anchor on that path's own message rather than the call's exact shape.
+  const start = main.indexOf("console.error('smoke failed: '");
+  assert.ok(start > 0, 'the smoke failure path is present');
   const catchBlock = main.slice(start, main.indexOf('app.exit(1);', start));
   assert.ok(catchBlock.includes('retainSmokeFailure('), 'retention must run inside the smoke failure path');
   assert.ok(!main.includes('SMOKE && retainSmokeFailure'), 'retention must not run on the success path');
