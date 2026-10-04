@@ -1721,7 +1721,9 @@ async function runSmoke(w) {
   // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
   // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
   const pickSkin = (skin) => clickSkin(skin);
-  await putSettings({ 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
+  // Follow theme is put in force: the tray follows the active theme only while the icon choice does (issue 246), since a
+  // fixed choice (Orange, the default) stands in for the theme in every image the shell draws.
+  await putSettings({ 'appearance.appIcon': 'theme', 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
   await pickSkin('light');
   await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
   report.themeLight = true;
