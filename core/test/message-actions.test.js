@@ -185,7 +185,7 @@ test('an open thread is its own conversation over the rest, which is blurred and
   const other = msg({ id: 'FAKE-0002', text: 'Unrelated message', sentAt: '2026-01-15T10:05:00.000Z' });
   const reply = msg({ id: 'FAKE-0003', replyTo: 'FAKE-0001', fromMe: true, sender: null, text: 'First reply', sentAt: '2026-01-15T10:06:00.000Z' });
   const h = host({ messages: [root, other, reply], replyingTo: { id: 'FAKE-0001' }, chat: { id: '1', name: 'Avery Quinn', participants: ['+15555550100'], isGroup: false, service: 'iMessage' }, hasMore: false, windowControls: null, uploadMaxBytes: 1 });
-  for (const k of ['bubble', 'threadView', 'menu', 'ghost', 'links', 'composerPlaceholder']) h[k] = conversation[k];
+  for (const k of ['bubble', 'threadView', 'menu', 'threadSummary', 'composerPlaceholder']) h[k] = conversation[k];
   const thread = words(conversation.threadView.call(h, false));
   assert.ok(thread.includes('Unique root body') && thread.includes('First reply'), 'the first message and its replies');
   assert.ok(thread.indexOf('Unique root body') < thread.indexOf('First reply'), 'in order');
@@ -225,7 +225,7 @@ test('a document attachment carries no thread mark and its press saves rather th
   const h = host({ messages: [doc] });
   const markup = words(conversation.bubble.call(h, { message: doc, first: true, last: true }, null, false, 'list'));
   assert.ok(!/thread-reply/.test(markup), 'a document in no thread carries no thread mark');
-  assert.equal(words(conversation.links.call(h)), '', 'and draws no line');
+  assert.equal(words(conversation.threadSummary.call(h, doc)), '', 'and carries no reply count');
   const attachment = defined['app-attachment'].prototype;
   const file = words(attachment.render.call({ attachment: pdf, client: {}, failed: false, src: '' }));
   assert.ok(file.includes('aria-label=Save booking.pdf') && file.includes('data-icon="download"'), 'a document is a save control under its real name');
