@@ -79,6 +79,8 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/chat-dark.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/about-light.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/about-dark.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/settings-light.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/settings-dark.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/update-ready-light.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/update-install-prompt-light.png
 
