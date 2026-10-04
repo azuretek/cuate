@@ -287,6 +287,52 @@ test('every icon a component draws is one the icon set holds, and no control dra
   for (const name of ['list-filter', 'arrow-up-down', 'settings', 'check', 'arrow-left', 'x', 'chevron-up', 'chevron-down', 'pencil']) assert.ok(used.has(name), name + ' is drawn');
 });
 
+// Every close (X) control is the one shared control (issue 213). Only core/app/components/close-button.js draws a
+// button with a Close or Dismiss label, a close or dismiss class, or the x glyph (a delete keeps the x glyph, labelled
+// Delete, and a backdrop is the press outside, never a close control); the image viewer, the thread card and the
+// notices draw theirs through it; and its stylesheet rule makes the whole button the hit area, a square around the
+// drawn circle sized from a token, with no window drag on it or on any backdrop or notice card drawn over the headers.
+test('every close control is the shared close button, whose whole circle takes the press', () => {
+  const SHARED = 'core/app/components/close-button.js';
+  const buttonTags = (src) => {
+    const out = [];
+    for (const m of src.matchAll(/<button\b/g)) {
+      let depth = 0;
+      let j = m.index;
+      for (; j < src.length; j += 1) {
+        if (src[j] === '{') depth += 1;
+        else if (src[j] === '}') depth -= 1;
+        else if (src[j] === '>' && depth === 0) break;
+      }
+      // The glyph is the button's first child, so it is read with the tag.
+      out.push(src.slice(m.index, src.indexOf('</button>', j) + 1 || j + 1));
+    }
+    return out;
+  };
+  const isClose = (tag) => /aria-label="?(?:Close|Dismiss)\b/.test(tag) || /class="(?:[^"]*[\s-])?(?:close|dismiss)(?:[\s-][^"]*)?"/.test(tag)
+    || (/data-icon="x"/.test(tag) && !/aria-label=\$\{'Delete |aria-label="Delete /.test(tag));
+  for (const f of walk('core/app').filter((f) => CODE.test(f) && f !== SHARED)) {
+    for (const tag of buttonTags(read(f))) {
+      if (/class="scrim"/.test(tag)) continue;
+      assert.ok(!isClose(tag), f + ': a close control of its own; draw it with closeButtonHtml from close-button.js: ' + tag.slice(0, 120));
+    }
+  }
+  for (const [f, owner] of [['core/app/components/app-image-viewer.js', 'viewer'], ['core/app/components/app-conversation.js', 'thread'], ['core/app/components/app-notices.js', 'notice']]) {
+    assert.match(read(f), new RegExp("closeButtonHtml\\(\\{ owner: '" + owner + "'"), f + ' draws its close control through the shared one');
+  }
+  const shared = read(SHARED);
+  assert.ok(buttonTags(shared).length === 1 && /data-icon="x"/.test(shared) && /@click=\$\{press\(/.test(shared), 'the shared control is one button, the x glyph, through the kit press');
+  const css = read('core/app/styles/app.css');
+  const rule = /^\.close-button \{([^}]*)\}/m.exec(css);
+  assert.ok(rule, 'the stylesheet draws the shared control');
+  for (const decl of ['width: var(--close-size)', 'height: var(--close-size)', 'padding: 0', 'border-radius: var(--radius-pill)', 'pointer-events: auto', '-webkit-app-region: no-drag']) {
+    assert.ok(rule[1].includes(decl), 'the close button rule carries ' + decl);
+  }
+  assert.match(rule[1], /--close-size: var\(--size-close\)/, 'its size is a token');
+  assert.match(css, /^\.sheet-scrim, \.app-notice \{ -webkit-app-region: no-drag; \}$/m, 'no backdrop or notice card takes a window drag');
+  assert.ok(!/\.(?:viewer-close|thread-close|app-notice-dismiss)\b/.test(css), 'no close control keeps a rule of its own');
+});
+
 // Every popover, menu and modal panel closes through the kit's one outside-dismiss behaviour (issue 170): a press
 // outside it or Escape closes it, and the closing press never reaches the control underneath. The inventory is read
 // from the templates, so a new panel fails here until it is registered: a menu, dialog or modal, and any element

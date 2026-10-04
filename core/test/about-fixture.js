@@ -45,9 +45,9 @@
   // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
   // own centre, so no sheet covers it; and the sheet starts below the notice's band, so the card covers no sheet.
   const card = document.querySelector('.app-notice').getBoundingClientRect();
-  const dismiss = document.querySelector('.app-notice .app-notice-dismiss').getBoundingClientRect();
+  const dismiss = document.querySelector('.app-notice .close-button').getBoundingClientRect();
   const top = document.elementFromPoint(dismiss.left + dismiss.width / 2, dismiss.top + dismiss.height / 2);
-  if (!top || !top.closest('.app-notice-dismiss')) throw new Error('the notice is covered by ' + (top ? top.className || top.tagName : 'nothing'));
+  if (!top || !top.closest('.close-button')) throw new Error('the notice is covered by ' + (top ? top.className || top.tagName : 'nothing'));
   if (document.querySelector('.sheet').getBoundingClientRect().top < card.bottom) throw new Error('the notice covers the sheet');
   // The button has shown its answer and is idle again, so the capture shows its label.
   await until(() => !about().querySelector('[data-action=check-updates]').dataset.press, 'the button to settle', 5000);

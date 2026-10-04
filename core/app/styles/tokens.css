@@ -59,7 +59,8 @@
   --size-scrollbar: thin;
   --size-scrim-blur: 6px;
   --size-staged-preview: 96px;
-  --size-viewer-close: 40px;
+  --size-close: 28px;
+  --size-close-lg: 40px;
   --size-press-spinner: 1em;
   --size-message-action: 28px;
   --size-app-icon: 72px;
