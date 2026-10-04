@@ -14,7 +14,7 @@ final class AboutPageTests: XCTestCase {
         // --update-fixture: the shell reads a synthetic release feed naming a newer build (issue 192), so the capture is
         // the update-available state, the notice and About's button both offering TestFlight.
         app.launchArguments = ["--about-fixture", "--update-fixture"] + (scheme == "dark" ? ["--fixture-dark"] : [])
-        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.startInPortrait()
         app.launch()
         defer { app.terminate() }
         let proof = app.webViews.staticTexts["about:pass"].firstMatch
