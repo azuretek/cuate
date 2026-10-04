@@ -504,6 +504,9 @@ async function runSmoke(w) {
   const search = await hmOpenOnPress('.sidebar-head .search-mode-button', '.search-menu');
   search.chose = (await hmPressAt(await hmAt('.search-menu .sort-choice:nth-child(2)'))) && await js("(document.querySelector('.search-mode-button').getAttribute('aria-label') || '').includes('Full text')");
   headerMenuChecks.search = search.opened && search.region === 'no-drag' && search.chose;
+  // Put the mode back to Contact through the same menu, so the steps after this one see the list the earlier ones left.
+  await hmOpenOnPress('.sidebar-head .search-mode-button', '.search-menu');
+  await hmPressAt(await hmAt('.search-menu .sort-choice:nth-child(1)'));
   const filter = await hmOpenOnPress('.sidebar-head .filter-button', '.filter-menu');
   filter.chose = (await hmPressAt(await hmAt('.filter-menu .chip'))) && await js("Boolean(document.querySelector('.active-chip'))");
   headerMenuChecks.filter = filter.opened && filter.region === 'no-drag' && filter.chose;
@@ -512,6 +515,10 @@ async function runSmoke(w) {
   const sort = await hmOpenOnPress('.sidebar-head .sort-button', '.sort-menu');
   sort.chose = (await hmPressAt(await hmAt('.sort-menu .sort-choice:nth-child(2)'))) && await js("document.querySelector('app-root').settings['chats.sort'] === 'name'");
   headerMenuChecks.sort = sort.opened && sort.region === 'no-drag' && sort.chose;
+  // Back to Recent, which the earlier sort step left and which the phone steps below select the first row under.
+  await hmOpenOnPress('.sidebar-head .sort-button', '.sort-menu');
+  await hmPressAt(await hmAt('.sort-menu .sort-choice:nth-child(1)'));
+  await waitFor("document.querySelector('app-root').settings['chats.sort'] === 'recent'", 5000);
   await hmShutMenus();
   await hmPress('.sidebar-head .gear-button');
   headerMenuChecks.gear = await js("Boolean(document.querySelector('.sheet')) && document.querySelector('app-root').view === 'settings'");
