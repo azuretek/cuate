@@ -3004,7 +3004,8 @@ var engine = (() => {
         const at = label ? TRAY_BADGE.text : TRAY_BADGE.dot;
         const [px, py, k] = place;
         const [cx, cy, r] = [px + at.cx * k, py + at.cy * k, at.r * k];
-        badge = { disk: circle(cx, cy, r), gap: circle(cx, cy, r + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
+        const grow = kind === "tray" ? 1 : 0;
+        badge = { disk: circle(cx, cy, r + grow), gap: circle(cx, cy, r + grow + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
       }
     }
     const tileShape = tile ? { kind: "rect", x: tile.x, y: tile.y, w: tile.w, h: tile.h, rx: tile.r, box: [tile.x, tile.y, tile.x + tile.w, tile.y + tile.h] } : null;

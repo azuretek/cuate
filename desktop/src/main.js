@@ -124,7 +124,21 @@ function applyIcons(next = {}) {
   // the overlay draws, so all three read alike: exact to 9, then 9+.
   if (process.platform === 'darwin' && app.dock) app.dock.setBadge(out.badgeText);
   else if (process.platform === 'linux') app.setBadgeCount(out.badgeCount);
-  if (SMOKE) smokeIcons.push({ scheme: iconState.scheme, accent: iconState.colors.accent || null, unread: out.badgeCount, mark: out.palette.mark, tray: out.tray.reps.map((r) => r.image.data.reduce((s, v, i) => (s + v * ((i % 251) + 1)) % 1000003, 0)).join(',') });
+  if (SMOKE) {
+    // Keep the taskbar overlay the shell hands Windows, with its count, so the proof shows a badge with a count.
+    if (out.overlay) {
+      try { writeFileSync(path.join(SMOKE, 'icon-overlay-' + out.badgeCount + '.png'), encodePng(out.overlay[out.overlay.length - 1].image)); } catch { /* a capture never fails the smoke */ }
+    }
+    smokeIcons.push({
+      scheme: iconState.scheme,
+      accent: iconState.colors.accent || null,
+      unread: out.badgeCount,
+      badge: out.badgeText,
+      overlay: out.overlay ? out.overlay.map((r) => r.image.width) : null,
+      mark: out.palette.mark,
+      tray: out.tray.reps.map((r) => r.image.data.reduce((s, v, i) => (s + v * ((i % 251) + 1)) % 1000003, 0)).join(','),
+    });
+  }
   return true;
 }
 const lifecycle = createLifecycle({
@@ -1662,6 +1676,13 @@ async function runSmoke(w) {
   const darkIcon = iconFor('dark', '#7fd6a8');
   report.trayIcon = Boolean(lightIcon && darkIcon) && lightIcon.mark === '#2a6f4b' && lightIcon.mark !== darkIcon.mark && (process.platform === 'darwin' || lightIcon.tray !== darkIcon.tray);
   console.log('tray icon: ' + JSON.stringify({ lightIcon, darkIcon, redraws: smokeIcons.length }));
+  // The unread count on the icon (issue 218): Windows draws the taskbar overlay, which is captured beside the report;
+  // macOS's Dock and the Linux panel draw their own badge from the label the shell gives them. At least one redraw
+  // carries a count, and on Windows that overlay was captured with it.
+  const counted = smokeIcons.filter((i) => i.unread > 0 && i.badge);
+  report.overlayIcon = counted.length > 0 && (process.platform === 'win32' ? counted.some((i) => i.overlay) : counted.some((i) => i.tray));
+  console.log('overlay icon: ' + JSON.stringify({ counted: counted.length, redraws: smokeIcons.length, badges: counted.map((i) => i.badge) }));
+  if (!report.overlayIcon) console.error('overlay icon: no counted redraw');
 
   // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
   // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default
