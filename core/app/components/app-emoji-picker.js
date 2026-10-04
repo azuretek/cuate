@@ -3,7 +3,8 @@ import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import { aimCarets } from '../../kit/popover.js';
-import { EMOJI_CATEGORIES, emojiInCategory, searchEmoji, frequentEmoji, emojiPickerSections, pickerSide, isEmoji } from '../rules/emoji.js';
+import { EMOJI_CATEGORIES } from '../rules/emoji-data.js';
+import { emojiInCategory, searchEmoji, frequentEmoji, emojiPickerSections, pickerSide, isEmoji } from '../rules/emoji.js';
 
 // The recently used list is the shell's storage, shared by every place the picker opens (the composer, and a
 // message's reaction), so an emoji used in one is recent in the other. A plain browser keeps it for the page, and a
