@@ -19,11 +19,15 @@ export function tapbackType(emoji) {
 export const MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
 export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
 
-// What a message's menu offers (issue 169): React on any message the engine can target, and Reply in thread only on
-// someone else's, since a thread is started by answering another person. Sending off on the server offers neither.
+// What a message's menu offers (issues 169 and 181): React on any message the engine can target, Reply in thread only
+// on someone else's, since a thread is started by answering another person, and Save when the message carries a file
+// that is really there (a picture or a video, or a document) to write to the platform's photo library or downloads
+// folder. Sending off on the server offers nothing to send, and so nothing to save either.
 export function messageActions(m, { sending = false } = {}) {
   if (!sending || !canTarget(m)) return [];
-  return m.fromMe ? ['react'] : ['reply', 'react'];
+  const base = m.fromMe ? ['react'] : ['reply', 'react'];
+  const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
+  return savable ? ['save', ...base] : base;
 }
 
 // The first message of the thread a message belongs to, followed up through replyTo (a parent not loaded included).
