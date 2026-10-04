@@ -99,6 +99,12 @@ class AppRoot extends KitElement {
     this.chats = [];
     this.openChatId = null;
     this.messages = [];
+    // The conversation each chat was last left showing, so switching back draws it at once from what we hold rather
+    // than waiting on the server (issue 200). The conversation's own scroll place lives with the conversation.
+    this.convos = new Map();
+    // Which open(request) is current; a page that arrives after a newer open was asked for is dropped, so a slow one
+    // never overwrites the conversation the person has since chosen.
+    this.openSeq = 0;
     this.conn = 'connecting';
     this.problem = '';
     this.hasMore = false;
@@ -458,6 +464,7 @@ class AppRoot extends KitElement {
     await this.bridge('storage.delete', { key: 'server.token' });
     this.chats = [];
     this.messages = [];
+    this.convos = new Map();
     this.openChatId = null;
     this.selecting = null;
     this.settings = {};
@@ -483,8 +490,22 @@ class AppRoot extends KitElement {
     if (this.typingChat && this.typingChat !== chatId) this.clearTyping();
     this.resetTyping();
     const refresh = this.openChatId === chatId;
-    this.selecting = refresh ? null : chatId;
-    if (refresh && show) this.listOpen = false;
+    // The conversation we already hold draws at once, before the server answers, so switching back never leaves the
+    // pane on the last conversation while a page is fetched and never blanks it (issue 200). A chat never opened has
+    // nothing to draw yet, so the list marks it and the pane keeps the conversation it has until the page arrives.
+    const convos = this.convos || (this.convos = new Map());
+    const cached = refresh ? null : convos.get(String(chatId));
+    if (cached) {
+      this.openChatId = chatId;
+      this.selecting = null;
+      this.messages = cached.messages;
+      this.hasMore = cached.hasMore;
+      this.problem = '';
+      if (show) this.listOpen = false;
+    } else {
+      this.selecting = refresh ? null : chatId;
+      if (refresh && show) this.listOpen = false;
+    }
     const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
     // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
@@ -493,19 +514,24 @@ class AppRoot extends KitElement {
     const watch = (m) => { if (m.chatId === chatId) arrived.push(m); };
     if (!this.arrivals) this.arrivals = new Set();
     this.arrivals.add(watch);
+    const seq = (this.openSeq = (this.openSeq || 0) + 1);
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50 });
-      if (refresh ? this.openChatId !== chatId : this.selecting !== chatId) return;
+      if (this.openSeq !== seq) return;
       if (!refresh) this.messageNote = null;
       this.openChatId = chatId;
       this.selecting = null;
-      this.messages = mergeMessages(arrived, messages);
+      // A page merged over the conversation we held keeps any older messages already loaded, and keeps a message that
+      // arrived live while the page was in flight (issue 66).
+      this.messages = mergeMessages(cached ? [...cached.messages, ...arrived] : arrived, messages);
       this.hasMore = hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
     } catch (e) {
-      if (this.selecting === chatId) this.selecting = null;
-      this.problem = this.describe(e);
+      if (this.openSeq === seq) {
+        if (this.selecting === chatId) this.selecting = null;
+        if (!cached) this.problem = this.describe(e);
+      }
     } finally {
       this.arrivals.delete(watch);
     }
@@ -1414,6 +1440,9 @@ class AppRoot extends KitElement {
   updated() {
     document.body.classList.toggle('surface--leaving', this.sheetLeaving === true);
     this.syncIcon();
+    // The conversation on screen is what a switch back to it draws (issue 200), kept after every render. Its pair of
+    // fields is always written together, so the cache never holds one conversation's messages under another's id.
+    if (this.openChatId && this.client) (this.convos = this.convos || new Map()).set(String(this.openChatId), { messages: this.messages, hasMore: this.hasMore });
     // Every open menu wears the shared caret, aimed at the control that opened it (issue 217).
     aimCarets(this);
   }
