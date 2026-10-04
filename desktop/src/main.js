@@ -1561,6 +1561,9 @@ async function runSmoke(w) {
   // the server's answer held open, a switch to a conversation we already hold must still draw at once and the search
   // field and the composer must answer while it is held.
   w.setSize(1000, 560);
+  // The switch check clicks chats on a desktop, which closes the list drawer (open with show). Put it back as it was,
+  // since a later check reads an open drawer on a phone; the same way the marks and emoji sections above restore it.
+  const switchListWasOpen = await js("document.querySelector('app-root').listOpen");
   await js("(() => { const root = document.querySelector('app-root'); root.listOpen = true; root.view = 'messages'; return true; })()");
   await pause(400);
   const SWITCH_A = 'Avery Quinn';
@@ -1594,6 +1597,7 @@ async function runSmoke(w) {
   console.log('switch instant: ' + JSON.stringify(heldSwitch));
   await clickRow(SWITCH_A);
   await waitFor(showsName(SWITCH_A), 10000);
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(switchListWasOpen)));
   w.setSize(1100, 720);
   await pause(300);
   await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
