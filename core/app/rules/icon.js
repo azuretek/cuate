@@ -489,7 +489,10 @@ export function renderIcon({ masters, palette, kind, size, unread = 0 }) {
       const at = label ? TRAY_BADGE.text : TRAY_BADGE.dot;
       const [px, py, k] = place;
       const [cx, cy, r] = [px + at.cx * k, py + at.cy * k, at.r * k];
-      badge = { disk: circle(cx, cy, r), gap: circle(cx, cy, r + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
+      // The colour tray's disc is drawn a pixel past its radius, so the rim the panel shows is solid rather than a
+      // soft seam; the template keeps its crisp cut-out boundary, which macOS recolours.
+      const grow = kind === 'tray' ? 1 : 0;
+      badge = { disk: circle(cx, cy, r + grow), gap: circle(cx, cy, r + grow + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
     }
   }
 

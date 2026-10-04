@@ -118,10 +118,12 @@ function applyIcons(next = {}) {
     // The window icon depends on the palette alone, so a new count leaves it as it is.
     const paletteKey = JSON.stringify(out.palette);
     if (out.window && paletteKey !== windowIconKey) { win.setIcon(nativeFrom([{ scale: 1, image: out.window }])); windowIconKey = paletteKey; }
-    if (process.platform === 'win32') win.setOverlayIcon(out.overlay ? nativeFrom([{ scale: 1, image: out.overlay }]) : null, out.description);
+    if (process.platform === 'win32') win.setOverlayIcon(out.overlay ? nativeFrom(out.overlay) : null, out.description);
   }
-  // macOS's Dock and a Linux launcher draw their own badge over the app icon; the shell only gives them the count.
-  if (process.platform !== 'win32') app.setBadgeCount(out.badgeCount);
+  // macOS's Dock and a Linux launcher draw their own badge over the app icon; the shell gives them the same label
+  // the overlay draws, so all three read alike: exact to 9, then 9+.
+  if (process.platform === 'darwin' && app.dock) app.dock.setBadge(out.badgeText);
+  else if (process.platform === 'linux') app.setBadgeCount(out.badgeCount);
   if (SMOKE) smokeIcons.push({ scheme: iconState.scheme, accent: iconState.colors.accent || null, unread: out.badgeCount, mark: out.palette.mark, tray: out.tray.reps.map((r) => r.image.data.reduce((s, v, i) => (s + v * ((i % 251) + 1)) % 1000003, 0)).join(',') });
   return true;
 }
