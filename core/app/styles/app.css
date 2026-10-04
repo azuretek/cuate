@@ -6,7 +6,7 @@
    every touch itself, touch-action: none). */
 html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
 html { touch-action: pan-x pan-y; }
-body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); letter-spacing: var(--font-tracking); color: var(--color-fg); background: var(--color-bg); }
+body { font-family: var(--font-family); font-size: var(--font-size-md); line-height: var(--font-line); letter-spacing: var(--font-tracking); color: var(--role-page-fg); background: var(--role-page); }
 button, input, textarea { font: inherit; color: inherit; }
 /* The caret, native form controls and selected text take the theme's colours rather than the platform's accent,
    which is a system blue on iOS and macOS (issue 59). */
@@ -62,15 +62,15 @@ app-root { display: block; height: 100%; }
 .shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
 /* The two headers run up behind the status bar and the list runs down behind the home indicator, so the bars take the
    header's and the list's own surface; the content starts below and ends above them (issue 175). */
-.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); padding-block-end: var(--inset-bottom); padding-inline-start: var(--inset-left); }
+.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--role-sidebar-edge); background: var(--role-sidebar); color: var(--role-sidebar-fg); padding-block-end: var(--inset-bottom); padding-inline-start: var(--inset-left); }
 .sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; flex: none; }
 /* The header's three icons are one kind of control (issue 136): the filter, the sort and the gear share their size,
    their hover and their open state, so the sort reads as one of the set rather than a pill of its own. */
-.filter-button, .sort-button, .gear-button { flex: none; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
-.filter-button:hover, .sort-button:hover, .gear-button:hover { background: var(--color-bg-sunken); }
-.filter-button[aria-expanded="true"], .sort-button[aria-expanded="true"] { background: var(--color-selection); color: var(--color-fg); }
+.filter-button, .sort-button, .gear-button { flex: none; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--role-head-icon); cursor: pointer; font-size: var(--font-size-lg); line-height: 1; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.filter-button:hover, .sort-button:hover, .gear-button:hover { background: var(--role-head-icon-hover); color: var(--role-head-icon-hover-fg); }
+.filter-button[aria-expanded="true"], .sort-button[aria-expanded="true"] { background: var(--role-head-icon-open); color: var(--role-head-icon-open-fg); }
 .filter-button:focus-visible, .sort-button:focus-visible, .gear-button:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
-.filter-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 4; }
+.filter-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-md); box-shadow: var(--role-menu-shadow); z-index: 4; }
 .filter-menu-row { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .text-button { background: none; border: 0; color: var(--color-accent); cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 .text-button:hover { background: var(--color-bg-sunken); }
@@ -79,23 +79,28 @@ app-root { display: block; height: 100%; }
 
 app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); }
-.chat-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; outline: none; transition: background var(--motion-fast) var(--motion-ease); }
-.chat-row:hover { background: var(--color-bg-sunken); }
+.chat-row { position: relative; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; outline: none; transition: background var(--motion-fast) var(--motion-ease); }
+.chat-row:hover { background: var(--role-row-hover); color: var(--role-row-hover-fg); }
+.chat-row:hover .chat-time, .chat-row:hover .chat-preview { color: var(--role-row-hover-fg); }
+.chat-row:active { background: var(--role-row-press); }
+.chat-row:not(:last-child)::after { content: ''; position: absolute; inset-inline: calc(var(--space-3) * 2 + var(--size-avatar)) var(--space-3); bottom: 0; height: var(--size-border); background: var(--role-row-divider); pointer-events: none; }
+.chat-row:hover::after, .chat-row.selected::after, .chat-row:has(+ .chat-row:hover)::after, .chat-row:has(+ .chat-row.selected)::after { opacity: 0; }
 .chat-row:focus-visible { box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
-.chat-row.selected { background: var(--color-selection); color: var(--color-selection-fg); }
-.avatar { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); display: grid; place-items: center; background: var(--color-bg-sunken); color: var(--color-fg-muted); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); }
+.chat-row.selected { background: var(--role-row-selected); color: var(--role-row-selected-fg); box-shadow: inset var(--space-1) 0 0 var(--role-row-selected-bar); }
+.chat-row.selected .chat-time, .chat-row.selected .chat-preview { color: var(--role-row-selected-muted); }
+.avatar { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); display: grid; place-items: center; background: var(--role-avatar); color: var(--role-avatar-fg); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); }
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
 .chat-name { font-weight: var(--font-weight-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-row.unread .chat-name { font-weight: var(--font-weight-bold); }
-.chat-time { flex: none; font-size: var(--font-size-xs); color: var(--color-fg-muted); }
-.chat-preview { font-size: var(--font-size-sm); color: var(--color-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.unread-dot { flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--color-unread); }
+.chat-time { flex: none; font-size: var(--font-size-xs); color: var(--role-sidebar-muted); }
+.chat-preview { font-size: var(--font-size-sm); color: var(--role-sidebar-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unread-dot { flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--role-unread); }
 
 .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding-inline-end: var(--inset-right); }
 .empty { margin: auto; color: var(--color-fg-muted); }
 app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.conv-head { display: flex; align-items: center; gap: var(--space-3); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; border-bottom: var(--size-border) solid var(--color-border); flex: none; }
+.conv-head { display: flex; align-items: center; gap: var(--space-3); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; border-bottom: var(--size-border) solid var(--role-divider); background: var(--role-conv-head); flex: none; }
 .conv-title { flex: 1; min-width: 0; }
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; }
 .load-older { align-self: center; margin-bottom: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
@@ -105,8 +110,8 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble-row.mine { align-items: flex-end; }
 .sender { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: 0 var(--space-3) var(--space-1); }
 .bubble { max-width: var(--size-bubble-max); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); white-space: pre-wrap; overflow-wrap: anywhere; }
-.bubble.them { background: var(--color-bubble-them); color: var(--color-bubble-them-fg); }
-.bubble.me { background: var(--color-bubble-me); color: var(--color-bubble-me-fg); }
+.bubble.them { background: var(--role-received); color: var(--role-received-fg); }
+.bubble.me { background: var(--role-sent); color: var(--role-sent-fg); }
 .bubble.sms { background: var(--color-bubble-sms); color: var(--color-bubble-sms-fg); }
 .bubble.state-sending { opacity: 0.7; }
 .bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }
@@ -127,7 +132,7 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: var(--space-1); z-index: 3; }
 .message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; }
 .bubble-row.mine .message-pop { left: auto; right: 0; }
-.message-menu { display: flex; align-items: center; gap: var(--space-2); min-width: max-content; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); box-shadow: var(--shadow-md); }
+.message-menu { display: flex; align-items: center; gap: var(--space-2); min-width: max-content; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-pill); box-shadow: var(--role-menu-shadow); }
 .message-time { font-size: var(--font-size-xs); color: var(--color-fg-muted); white-space: nowrap; }
 .message-menu .message-time:only-child { padding-inline-end: var(--space-2); }
 .message-action { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); cursor: pointer; }
@@ -174,17 +179,19 @@ app-attachment { display: block; max-width: var(--size-bubble-max); margin-botto
 .attachment-image.sticker { border-radius: 0; }
 .attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 
-app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--color-border); padding-block-end: var(--inset-bottom); }
+app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--role-divider); background: var(--role-composer-bar); padding-block-end: var(--inset-bottom); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
-.composer textarea { flex: 1; resize: none; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
+.composer textarea { flex: 1; resize: none; background: var(--role-composer-field); color: var(--role-composer-field-fg); box-shadow: 0 0 0 var(--size-border) var(--role-composer-field-ring); border: var(--size-border) solid var(--role-composer-field-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
 /* The field grows with its text and scrolls only past its maximum, where the composer marks it (issue 139). */
 .composer textarea.scrolls { overflow-y: auto; }
 /* A letter in the field's type, never seen: its size changes with the text size and the font, and the composer sets
    the field's height again when it does (issue 139). */
 .composer-ruler { position: absolute; visibility: hidden; pointer-events: none; white-space: pre; }
-.composer textarea:focus { border-color: var(--color-accent); }
-.send { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-send); font-weight: var(--font-weight-bold); line-height: 1; cursor: pointer; }
+.composer textarea:focus { border-color: var(--role-focus); }
+.send { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--role-button); color: var(--role-button-fg); font-size: var(--font-size-send); font-weight: var(--font-weight-bold); line-height: 1; cursor: pointer; }
 .send:disabled { opacity: 0.4; cursor: default; }
+.send:hover:not(:disabled), .button.primary:hover { background: var(--role-button-hover); }
+.send:active:not(:disabled), .button.primary:active { background: var(--role-button-press); }
 
 /* The composer's own controls: the emoji button, and the panel it opens beside the field rather than as a sheet. */
 .composer-tools { display: flex; align-items: flex-end; gap: var(--space-1); }
@@ -192,7 +199,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .tool:hover { background: var(--color-bg-sunken); }
 .tool:disabled { opacity: 0.4; cursor: default; }
 /* One fixed height, so narrowing the grid never resizes the panel and never moves the composer below it. */
-.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); z-index: 3; }
+.emoji-picker { position: absolute; left: var(--space-4); bottom: 100%; width: var(--size-picker); height: var(--size-picker-h); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-lg); box-shadow: var(--role-menu-shadow); z-index: 3; }
 .emoji-search { flex: none; width: 100%; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-1) var(--space-3); outline: none; }
 .emoji-search:focus { border-color: var(--color-accent); }
 .emoji-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); flex: none; }
@@ -208,7 +215,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-cell:hover { background: var(--color-bg-sunken); }
 .emoji-empty { flex: 1; min-height: 0; padding: var(--space-3); text-align: center; }
 /* The attach menu: a short list opening upward beside the attach button, the reference's shape, not a sheet. */
-.attach-menu { position: absolute; left: var(--space-4); bottom: 100%; display: flex; flex-direction: column; padding: var(--space-1); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); z-index: 3; }
+.attach-menu { position: absolute; left: var(--space-4); bottom: 100%; display: flex; flex-direction: column; padding: var(--space-1); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-lg); box-shadow: var(--role-menu-shadow); z-index: 3; }
 .attach-item { border: 0; background: none; color: var(--color-fg); text-align: left; white-space: nowrap; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; }
 .attach-item:hover, .attach-item:focus-visible { background: var(--color-bg-sunken); outline: none; }
 /* A staged file sits above the field until it is sent or removed. */
@@ -231,7 +238,7 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .field input:focus { outline: none; border-color: var(--color-accent); }
 .problem { color: var(--color-danger); margin: 0; }
 .button { border: 0; border-radius: var(--radius-md); padding: var(--space-2) var(--space-4); cursor: pointer; font-weight: var(--font-weight-medium); }
-.button.primary { background: var(--color-accent); color: var(--color-accent-fg); }
+.button.primary { background: var(--role-button); color: var(--role-button-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
 /* Settings and About are the two pages of the app's one sheet surface: a top strip that is itself the back control, the
@@ -429,10 +436,10 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .row-group, .group-rename, .group-name-input { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
 /* The search field and its mode are one box (issue 133): the mode is a small dropdown at the field's left edge, the
    field takes the rest, and the box takes the accent while either has focus. */
-.search-box { flex: 1; display: flex; align-items: stretch; min-width: 0; background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
+.search-box { flex: 1; display: flex; align-items: stretch; min-width: 0; background: var(--role-search); color: var(--role-search-fg); border: var(--size-border) solid var(--role-search-border); border-radius: var(--radius-sm); overflow: hidden; }
 .search-box:focus-within { border-color: var(--color-accent); }
-.search-mode { flex: none; border: 0; border-right: var(--size-border) solid var(--color-border); background: var(--color-bg-sunken); color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-xs); padding: 0 var(--space-1); cursor: pointer; }
-.chat-search { flex: 1; min-width: 0; border: 0; background: none; color: var(--color-fg); padding: var(--space-1) var(--space-2); }
+.search-mode { flex: none; border: 0; border-right: var(--size-border) solid var(--role-search-border); background: var(--color-bg-sunken); color: var(--role-search-fg); font: inherit; font-size: var(--font-size-xs); padding: 0 var(--space-1); cursor: pointer; }
+.chat-search { flex: 1; min-width: 0; border: 0; background: none; color: var(--role-search-fg); padding: var(--space-1) var(--space-2); }
 .chat-search:focus, .search-mode:focus { outline: none; }
 /* Each committed term is a chip: its own mode, its text and its own remove control, padded from the tokens and
    wrapping onto as many lines as the terms need. */
@@ -440,8 +447,9 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .search-term { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; min-width: 0; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2); background: var(--color-selection); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); font-size: var(--font-size-sm); }
 .term-mode { flex: none; border: 0; background: none; color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-xs); padding: 0; cursor: pointer; }
 .term-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: var(--font-weight-medium); }
-.chip { background: var(--color-bg-raised); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
-.chip[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); border-color: var(--color-accent); }
+.chip { background: var(--role-chip); color: var(--role-chip-fg); border: var(--size-border) solid var(--role-chip-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
+.chip:hover:not([aria-pressed="true"]) { background: var(--role-chip-hover); }
+.chip[aria-pressed="true"] { background: var(--role-chip-on); color: var(--role-chip-on-fg); border-color: var(--role-chip-on); }
 .active-filters { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .active-chip { display: inline-flex; align-items: center; gap: var(--space-1); background: var(--color-selection); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-2); font-size: var(--font-size-sm); }
 .chip-clear { background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; font-size: var(--font-size-sm); line-height: 1; padding: 0 var(--space-1); }
@@ -534,10 +542,13 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
 }
 
 /* The sort choices open under the sort icon, drawn as the filter menu is. */
-.sort-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); z-index: 4; }
-.sort-choice { display: flex; align-items: center; gap: var(--space-2); background: none; border: 0; color: var(--color-fg); text-align: left; cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
-.sort-choice:hover { background: var(--color-bg-sunken); }
-.sort-choice[aria-checked="true"] { color: var(--color-accent); font-weight: var(--font-weight-bold); }
+.sort-menu { position: absolute; top: 100%; left: var(--space-3); right: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-md); box-shadow: var(--role-menu-shadow); z-index: 4; }
+.sort-choice { display: flex; align-items: center; gap: var(--space-2); background: none; border: 0; color: var(--role-menu-fg); text-align: left; cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.sort-choice:hover { background: var(--role-menu-hover); color: var(--role-menu-hover-fg); }
+.sort-choice:active { background: var(--role-menu-press); }
+.sort-choice[aria-checked="true"] { color: var(--role-menu-checked); font-weight: var(--font-weight-bold); }
+.sort-choice:hover[aria-checked="true"] { color: var(--role-menu-hover-fg); }
+.sort-choice-note { color: var(--role-menu-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); }
 .sort-check { display: inline-block; width: var(--space-3); }
 .sort-check .icon { width: var(--space-3); height: var(--space-3); }
 
@@ -622,18 +633,19 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 .app-window { position: relative; }
 .app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
-.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-notice); background: var(--color-bg-raised); color: var(--color-bg-raised-fg); box-shadow: var(--shadow-md); font-size: var(--font-size-sm); animation: notice-in var(--motion-normal) var(--motion-ease); }
+.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-notice); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: inset var(--space-1) 0 0 var(--role-notice-stripe), var(--shadow-md); font-size: var(--font-size-sm); animation: notice-in var(--motion-normal) var(--motion-ease); }
 .app-notice-body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.app-notice-icon { color: var(--color-accent); flex: none; }
+.app-notice-icon { color: var(--role-notice-icon); flex: none; }
+.app-notice .muted { color: var(--role-notice-muted); }
 .app-notice[data-tone="error"] .app-notice-icon { color: var(--color-danger); }
 .app-notice[data-tone="warn"] .app-notice-icon { color: var(--color-warning); }
 .app-notice[data-tone="ok"] .app-notice-icon { color: var(--color-bubble-sms); }
 .app-notice .icon { display: block; }
 .app-notice-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
-.app-notice-action, .app-notice-dismiss { pointer-events: auto; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-accent); cursor: pointer; padding: var(--space-1); }
-.app-notice-action { align-self: flex-start; }
-.app-notice-dismiss { flex: none; color: var(--color-fg-muted); }
-.app-notice-action:hover, .app-notice-dismiss:hover { background: var(--color-bg-sunken); }
+.app-notice-action, .app-notice-dismiss { pointer-events: auto; border: 0; border-radius: var(--radius-sm); background: none; color: var(--role-notice-action); cursor: pointer; padding: var(--space-1); }
+.app-notice-action { align-self: flex-start; font-weight: var(--font-weight-medium); }
+.app-notice-dismiss { flex: none; color: var(--role-notice-muted); }
+.app-notice-action:hover, .app-notice-dismiss:hover { background: var(--role-notice-hover); }
 @keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
@@ -667,4 +679,4 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 }
 @media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }
 /* Raised surfaces keep the foreground supplied by their theme. */
-.sidebar, .filter-menu, .message-menu, .attachment-file, .emoji-picker, .attach-menu, .sheet-rows, .staged-file, .load-older { color: var(--color-bg-raised-fg); }
+.filter-menu, .message-menu, .attachment-file, .emoji-picker, .attach-menu, .sheet-rows, .staged-file, .load-older { color: var(--color-bg-raised-fg); }
