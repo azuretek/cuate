@@ -4,7 +4,7 @@ import { platformCapabilities } from './platform.js';
 const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 
 // The six standard tapbacks, in the order the Mac offers them, as { type, glyph }. These are the reactions every
-// engine can send; one that advertises tapback.emoji sends any other emoji as itself, and one that does not shows it
+// engine can send; one that advertises tapback.emoji version 2 sends any other emoji as itself, and one that does not shows it
 // when it arrives but refuses it when sent (issues 138 and 188).
 export const TAPBACKS = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
 
@@ -14,6 +14,34 @@ export function tapbackType(emoji) {
   const bare = String(emoji || '').replace(/\ufe0f/g, '');
   for (const t of TAPBACKS) if (t.glyph.replace(/\ufe0f/g, '') === bare) return t.type;
   return null;
+}
+
+// The `tapback.emoji` capability version an arbitrary emoji reaction needs. The engine names and versions its
+// capabilities, so the client asks for the version it needs rather than trusting a flag; a build advertising an
+// older version, or none, is refused before the bridge is asked, and the refusal names this version.
+export const EMOJI_TAPBACK_VERSION = 2;
+
+// The engine as one line for a reader, e.g. "imsg 0.9.2", or '' when the app does not know the build. The build is
+// named when it is known and never invented.
+export function engineLabel(engine) {
+  if (!engine || typeof engine !== 'object') return '';
+  const kind = typeof engine.kind === 'string' ? engine.kind : '';
+  const version = engine.version == null ? '' : String(engine.version);
+  return [kind, version].filter(Boolean).join(' ');
+}
+
+// What the reader is told when the engine cannot send the reaction they chose: the limit is named honestly, the
+// engine build is named only when it is known, and the version the engine would need is named. It is said in place
+// and in the app's own notice style, never as a raw error or a log line, and never as a silent downgrade to a
+// classic tapback (issue 241).
+export function reactionUnsupported(engine, needed = EMOJI_TAPBACK_VERSION) {
+  const label = engineLabel(engine);
+  return {
+    message: label
+      ? 'The message engine on the Mac (' + label + ') can send the six classic reactions, not arbitrary emoji.'
+      : 'The message engine on the Mac can send the six classic reactions, not arbitrary emoji.',
+    detail: 'An arbitrary emoji reaction needs tapback.emoji version ' + needed + '.',
+  };
 }
 
 // The id the engine can react to or thread a reply to: a message's guid. A message still being sent (local:) or a row

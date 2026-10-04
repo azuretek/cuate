@@ -33,6 +33,7 @@ var engine = (() => {
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
+    EMOJI_TAPBACK_VERSION: () => EMOJI_TAPBACK_VERSION,
     FOLLOW_THEME: () => FOLLOW_THEME,
     GLYPH_FLOOR: () => GLYPH_FLOOR,
     ICON_KINDS: () => ICON_KINDS,
@@ -156,6 +157,7 @@ var engine = (() => {
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
     emptyListText: () => emptyListText,
+    engineLabel: () => engineLabel,
     failedBanner: () => failedBanner,
     fallbackPhrase: () => fallbackPhrase,
     feedVersions: () => feedVersions,
@@ -247,6 +249,7 @@ var engine = (() => {
     quietCount: () => quietCount,
     reactionFallbackText: () => reactionFallbackText,
     reactionGlyph: () => reactionGlyph,
+    reactionUnsupported: () => reactionUnsupported,
     readyBanner: () => readyBanner,
     releaseAssets: () => releaseAssets,
     rememberPlace: () => rememberPlace,
@@ -1999,6 +2002,20 @@ var engine = (() => {
     const bare = String(emoji || "").replace(/\ufe0f/g, "");
     for (const t of TAPBACKS2) if (t.glyph.replace(/\ufe0f/g, "") === bare) return t.type;
     return null;
+  }
+  var EMOJI_TAPBACK_VERSION = 2;
+  function engineLabel(engine) {
+    if (!engine || typeof engine !== "object") return "";
+    const kind = typeof engine.kind === "string" ? engine.kind : "";
+    const version = engine.version == null ? "" : String(engine.version);
+    return [kind, version].filter(Boolean).join(" ");
+  }
+  function reactionUnsupported(engine, needed = EMOJI_TAPBACK_VERSION) {
+    const label = engineLabel(engine);
+    return {
+      message: label ? "The message engine on the Mac (" + label + ") can send the six classic reactions, not arbitrary emoji." : "The message engine on the Mac can send the six classic reactions, not arbitrary emoji.",
+      detail: "An arbitrary emoji reaction needs tapback.emoji version " + needed + "."
+    };
   }
   var MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
   var canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;

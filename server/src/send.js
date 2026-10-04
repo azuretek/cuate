@@ -9,7 +9,7 @@ import os from 'node:os';
 import nodePath from 'node:path';
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
-import { tapbackType } from '../../core/app/rules/messages.js';
+import { tapbackType, reactionUnsupported, EMOJI_TAPBACK_VERSION } from '../../core/app/rules/messages.js';
 import { platformCapabilities, reactionFallbackText, platformReactionUnsupported, platformThreadUnsupported } from '../../core/app/rules/platform.js';
 import { internalPayload } from './file-type.js';
 
@@ -121,7 +121,7 @@ export function createSender({ engine, store, config, log, platformOfChat = () =
   };
 
   // Add or remove this device owner's reaction on one message. Messages itself takes any emoji as a reaction; an
-  // engine that advertises tapback.emoji sends any emoji as itself, and one that does not sends only the six standard
+  // engine that advertises tapback.emoji version 2 sends any emoji as itself, and one that does not sends only the six standard
   // tapbacks (it folds some other emoji onto them, so passing one through would send the wrong reaction), so any other
   // emoji is refused before it costs rate budget or reaches the engine (issue 188). One reaction per message is in
   // flight at a time, because a tapback sent twice can undo itself.
@@ -170,8 +170,13 @@ export function createSender({ engine, store, config, log, platformOfChat = () =
     }
     const arbitrary = engine.supportsEmojiTapback();
     if (!arbitrary && !type) {
-      log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });
-      return { http: 422, error: ['reaction_unsupported', 'The message engine on the Mac cannot send an emoji reaction yet, only the six standard tapbacks.'] };
+      // The refusal names the limit and the version the engine would need, and the engine's own build, so the
+      // client can tell the reader which engine answered rather than blaming the app. It never folds the emoji
+      // onto a classic tapback, so nothing the reader did not choose is ever sent (issue 241).
+      const have = engine.emojiTapbackVersion ? engine.emojiTapbackVersion() : 0;
+      const refusal = reactionUnsupported(engine.info(), EMOJI_TAPBACK_VERSION);
+      log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId, needed: EMOJI_TAPBACK_VERSION, have });
+      return { http: 422, error: ['reaction_unsupported', refusal.message + ' ' + refusal.detail] };
     }
     const key = chatId + '/' + targetId;
     if (reacting.has(key)) return { http: 409, error: ['in_flight', 'A reaction to that message is still being sent.'] };
