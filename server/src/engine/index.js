@@ -189,10 +189,13 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // out, so a file on its own is not a text send carrying nothing.
   const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined);
 
-  // The running engine advertises `tapback.emoji` when its bridge can send an arbitrary emoji reaction. A stock
-  // bridge cannot: it builds only associated_message_type 2000 to 2005 and maps some emoji onto a standard kind, so
-  // without the feature the sender refuses any emoji that is not one of the six (issue 188).
-  const supportsEmojiTapback = () => state.features.includes('tapback.emoji');
+  // The running engine advertises `tapback.emoji.safe` when its bridge can send an arbitrary emoji reaction without
+  // crashing Messages. The first emoji build advertised only `tapback.emoji` and handed a freed invocation target to
+  // -retainArguments on send, so a client that trusted it took Messages down (SIGSEGV). `tapback.emoji` alone is
+  // therefore a build known to crash on an emoji reaction and is refused here. A stock bridge builds only
+  // associated_message_type 2000 to 2005 and folds some emoji onto a standard kind, so it is refused any emoji that is
+  // not one of the six (issue 188). The refusal is explicit and never downgraded to a classic tapback.
+  const supportsEmojiTapback = () => state.features.includes('tapback.emoji.safe');
 
   // imsg's bridge `tapback` adds or removes a reaction on a message by its guid, as an arbitrary `emoji` when the
   // engine advertises it, otherwise as one of the six classic `kind`s (issue 188).
