@@ -32,10 +32,13 @@ export function childTransport({ bin, args = [], log, env = process.env }) {
   };
   child.stdin.on('error', () => {});
   createInterface({ input: child.stdout }).on('line', (l) => { for (const cb of lines) cb(l); });
-  createInterface({ input: child.stderr }).on('line', (l) => log.emit('engine.stderr', { line: l }));
+  // The child's last diagnostic line is kept so its exit can carry it: when a child dies with a signal and no output,
+  // the last thing it said (or that it said nothing) is the only clue about why.
+  let lastStderr = null;
+  createInterface({ input: child.stderr }).on('line', (l) => { lastStderr = l; log.emit('engine.stderr', { line: l }); });
   child.on('exit', (code, signal) => {
     signalGroup('SIGKILL');
-    done({ code, signal });
+    done({ code, signal, stderr: lastStderr });
   });
   child.on('error', (err) => {
     log.emit('engine.error', { method: 'spawn', error: err.message });
