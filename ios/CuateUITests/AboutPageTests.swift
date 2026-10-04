@@ -4,7 +4,8 @@ import XCTest
 // Check for updates reads the release feed through this shell's own bridge (updates.releases, issue 192), whose answer
 // arrives as the app notice. The fixture
 // (core/test/about-fixture.js) drives the real components; this test waits for its proof and keeps a light and a dark
-// capture of the page with the notice up.
+// capture of the page. The notice floats over the top of the card (issue 253), so the fixture dismisses it once its
+// words are read, and the captures show the page.
 final class AboutPageTests: XCTestCase {
     func testLightAbout() { about(scheme: "light") }
     func testDarkAbout() { about(scheme: "dark") }
