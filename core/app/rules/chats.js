@@ -220,16 +220,15 @@ export function chatTitle(chat) {
 }
 
 import { stripInlineObjects } from './engine-imsg.js';
+import { messageSummary } from './payload.js';
 
 export function chatPreview(chat) {
   const m = chat.lastMessage;
   if (!m) return '';
-  const count = m.attachments || 0;
   // A message that carries an inline object reads as the object, not as the placeholder character, and one with nothing
-  // readable left is the attachment it actually is (issue #80).
-  const text = stripInlineObjects(m.text).trim();
-  const body = text || (count === 1 ? '1 attachment' : count > 1 ? count + ' attachments' : '');
-  return (m.fromMe ? 'You: ' : '') + body;
+  // readable left is the attachment it actually is (issue #80). A payload reads as the link it is, never as its name
+  // (issue 238).
+  return (m.fromMe ? 'You: ' : '') + messageSummary({ ...m, text: stripInlineObjects(m.text) });
 }
 
 export function initials(name) {
@@ -246,7 +245,7 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   const c = chats[i];
   if (c.lastMessageAt && c.lastMessageAt > message.sentAt) return { chats, known: true };
   const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
-  const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length };
+  const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
   const out = chats.slice();
   out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
   return { chats: orderChats(out), known: true };

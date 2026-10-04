@@ -12,6 +12,7 @@ import { windowControlsHtml } from './window-controls.js';
 import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
 import './app-attachment.js';
+import './app-link-card.js';
 
 // How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
 const LONG_PRESS_MS = 500;
@@ -346,7 +347,9 @@ class AppConversation extends KitElement {
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
-        ${m.text ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${mark ? () => this.openThread(m) : nothing}>${m.text}</div>` : nothing}
+        ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
+        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${mark ? () => this.openThread(m) : nothing}>${m.text}</div>` : nothing}
+        ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
       </div>

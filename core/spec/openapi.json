@@ -1285,6 +1285,12 @@
           },
           "attachments": {
             "type": "number"
+          },
+          "link": {
+            "$ref": "#/components/schemas/LinkCard"
+          },
+          "payloads": {
+            "type": "number"
           }
         },
         "required": [
@@ -1353,6 +1359,12 @@
               "$ref": "#/components/schemas/Attachment"
             }
           },
+          "link": {
+            "$ref": "#/components/schemas/LinkCard"
+          },
+          "payloads": {
+            "type": "number"
+          },
           "reactions": {
             "type": "array",
             "items": {
@@ -1367,6 +1379,7 @@
           "text",
           "sentAt",
           "attachments",
+          "payloads",
           "reactions"
         ],
         "additionalProperties": false
@@ -1400,6 +1413,28 @@
           "bytes",
           "sticker",
           "missing"
+        ],
+        "additionalProperties": false
+      },
+      "LinkCard": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "site": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "image": {
+            "$ref": "#/components/schemas/Attachment"
+          }
+        },
+        "required": [
+          "url",
+          "site"
         ],
         "additionalProperties": false
       },
