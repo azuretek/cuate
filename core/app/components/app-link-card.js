@@ -12,7 +12,7 @@ class AppLinkCard extends KitElement {
     const l = this.link;
     if (!l) return nothing;
     const title = String(l.title || '').trim();
-    return html`<a class="link-card" href=${l.url} target="_blank" rel="noopener noreferrer" @click=${(e) => e.stopPropagation()}>
+    return html`<a class=${'link-card' + (l.image ? ' has-image' : '')} href=${l.url} target="_blank" rel="noopener noreferrer" @click=${(e) => e.stopPropagation()}>
       ${l.image ? html`<span class="link-card-image"><app-attachment .attachment=${l.image} .client=${this.client}></app-attachment></span>` : nothing}
       <span class="link-card-body">
         <span class="link-card-site">${l.site || l.url}</span>

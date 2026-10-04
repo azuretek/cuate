@@ -14,6 +14,7 @@ await import('../app/components/app-root.js');
 const AppRoot = defined['app-root'];
 const { settingsFields, settingsGroups, settingsTabs } = await import('../app/rules/settings.js');
 const { appIconFor, appIconChoices, iconToApply, fixedPalette, FOLLOW_THEME } = await import('../app/rules/app-icons.js');
+const { TEXT_SCALES } = await import('../app/rules/theme.js');
 const { ICON_TOKENS, cssColour, iconPalette, contrast } = await import('../app/rules/icon.js');
 
 const read = (rel) => readFileSync(new URL('../../' + rel, import.meta.url), 'utf8');
@@ -41,7 +42,12 @@ function phoneBlock() {
 test('inventory: every setting the desktop page offers is reached from a tab, and the phone hides none of them', () => {
   const tabs = settingsTabs();
   assert.deepEqual(tabs.map((t) => t.id), settingsGroups().map((g) => g.id), 'one tab per section, in the schema\'s order');
-  assert.equal(tabs.at(-1).id, 'about', 'About is the last tab, so it stays reachable under Settings (issue 171)');
+  assert.deepEqual(tabs.map((t) => t.id), ['appearance', 'behavior', 'device'], 'with the notices and updates tabs merged into Behavior and no About tab (issue 244)');
+  assert.equal(tabs.some((t) => t.id === 'notifications' || t.id === 'updates' || t.id === 'about'), false, 'the Notifications, Updates and About tabs are gone (issue 244)');
+  const settings = read('core/app/components/app-settings.js');
+  assert.match(settings, /settings-about-row/, 'the About row is drawn on the page');
+  assert.match(settings, /data-action="about"/, 'the About row opens the About page');
+  assert.match(settings, /this\.aboutRow\(\)/, 'the About row is part of the body, so it sits under every tab');
   const seen = new Map();
   for (const tab of tabs) for (const key of tab.keys) { assert.ok(!seen.has(key), key + ' is in two tabs'); seen.set(key, tab.id); }
   for (const field of settingsFields()) assert.ok(seen.has(field.key), field.key + ' is reached from no tab');
@@ -218,4 +224,39 @@ test('issue 168: the way back to the chats list is the chats icon, labelled with
   const phone = phoneBlock();
   assert.match(phone, /\.sheet-back-wide\s*\{[^}]*display:\s*none/, 'the phone hides the desktop\'s arrow and label');
   assert.match(css, /\.sheet-back-narrow\s*\{[^}]*display:\s*none/, 'the desktop hides the phone\'s chats control');
+});
+
+// Issue 244: the text size is a slider whose positions are the schema's stops, so a key or a drag lands only on an
+// offered percentage; it is keyboard-operable (a range is), names itself, announces the percentage rather than the
+// index, writes the value as it moves (the live preview), and shows the value in force beside it. The stops are the
+// schema's own, so the slider and the schema cannot drift.
+test('text size is a slider that lands only on the schema stops and announces the percentage', () => {
+  const settings = read('core/app/components/app-settings.js');
+  const slider = /<div class="scale-slider[\s\S]*?<\/div>`/.exec(settings);
+  assert.ok(slider, 'the page draws the text size slider');
+  assert.match(slider[0], /type="range"/, 'it is a range control, so it is keyboard-operable');
+  assert.match(slider[0], /min="0" max=\$\{[^}]+\} step="1"/, 'its positions are the stops, so a move lands only on one');
+  assert.match(slider[0], /aria-label=\$\{field\.label\}/, 'it is named for its setting');
+  assert.match(slider[0], /aria-valuetext=\$\{[^}]*percent[^}]*\}/, 'a screen reader hears the percentage, not the index');
+  assert.match(slider[0], /<output class="scale-value"/, 'the percentage in force is written beside it');
+  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSlide\(e, field, stops\)\}/, 'a move writes the setting as it is made, the live preview');
+  const size = settingsFields().find((f) => f.key === 'appearance.textScale');
+  assert.deepEqual(size.options, TEXT_SCALES, 'the stops are the schema\'s percentages');
+  assert.match(read('core/app/styles/app.css'), /\.scale-range \{[^}]*accent-color: var\(--color-accent\)/, 'the track takes the theme accent');
+});
+
+// Issue 244: the tabs read as a strip on the body they open, not loose pills floating above it.
+test('Settings tabs read as a strip on the panel they open', () => {
+  const css = read('core/app/styles/app.css');
+  const nav = /\.sheet-nav \{[^}]*\}/.exec(css);
+  assert.ok(nav, 'the strip is styled');
+  assert.match(nav[0], /border-bottom: var\(--size-border\) solid var\(--color-border\)/, 'the strip sits on a baseline');
+  assert.match(nav[0], /background: var\(--color-bg-sunken\)/, 'the strip wears the sunken surface');
+  const tab = /\.settings-tab \{[^}]*\}/.exec(css);
+  assert.ok(tab, 'the tab is styled');
+  assert.match(tab[0], /margin-bottom: calc\(-1 \* var\(--size-border\)\)/, 'the tab overlaps the baseline');
+  assert.match(tab[0], /border-bottom: 0/, 'the tab has no bottom edge of its own');
+  const on = /\.settings-tab\[aria-selected="true"\] \{[^}]*\}/.exec(css);
+  assert.ok(on, 'the tab in force is styled');
+  assert.match(on[0], /background: var\(--color-bg-raised\)/, 'the tab in force is filled with the panel surface, so it joins the body');
 });
