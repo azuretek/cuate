@@ -25,7 +25,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // bridge: 'ready', or 'down' to answer the bridge-only calls (a tapback, a reply) the way imsg does with no bridge.
   // features: the rpc_features the fake's status advertises, so a test can model an engine that sends an arbitrary
   // emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', features };
+  // replyAnswer: 'own' answers a send with the guid of the row it created (what Messages does); 'existing' models the
+  // bridge's reply path, which has answered a threaded reply with the id of an existing message in the chat (issue 208),
+  // so a test can prove the server does not report that message as the one it created.
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', features, replyAnswer: 'own' };
   const tapbacks = [];
   const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
@@ -44,6 +47,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     sends,
     tapbacks,
     behavior,
+    messages,
     requests: [],
     get attempts() { return attempts; },
     incoming(chatId, text, sender) {
@@ -66,11 +70,22 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       return m;
     },
     crashAll() { for (const t of [...transports]) t.crash(); },
+    // Another person starts (or stops) typing in a chat, as imsg's injected bridge reports it: the event names the
+    // chat by its GUID. Only reaches an engine that subscribed, which the adapter does only with the switch on.
+    incomingTyping(chatId, typing = true) {
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat) return null;
+      const event = { event: typing ? 'started-typing' : 'stopped-typing', ts: new Date().toISOString(), data: { chatGuid: chat.guid } };
+      for (const t of transports) t.bridgeEvent(event);
+      return event;
+    },
     transport() {
       const lines = new Set();
       const exits = new Set();
       const subs = new Map();
+      const bridgeSubs = new Set();
       let nextSub = 0;
+      let nextBridgeSub = 0;
       let closed = false;
       const out = (obj) => {
         const s = JSON.stringify(obj);
@@ -91,7 +106,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
         switch (req.method) {
           case 'initialize':
           case 'status':
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, rpc_features: behavior.features });
+            // A ready bridge advertises its event stream, as imsg does when the non-launching bridge probe succeeds. The
+            // adapter only subscribes when the inbound-typing switch is on (issue 230).
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe'] : [] });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -129,6 +146,11 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'watch.unsubscribe':
             subs.delete(p.subscription);
             return reply(req.id, { ok: true });
+          case 'bridge.events.subscribe': {
+            nextBridgeSub += 1;
+            bridgeSubs.add(nextBridgeSub);
+            return reply(req.id, { subscription: nextBridgeSub, buffer_limit: p.buffer_limit || 256, resumable: false });
+          }
           case 'read': {
             const chat = chats.find((c) => c.id === p.chat_id);
             if (!chat) return fail(req.id, -32602, 'unknown chat_id');
@@ -146,13 +168,17 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (!p.text && !p.file) return fail(req.id, -32602, 'send needs text or a file.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
             if (p.reply_to && behavior.bridge !== 'ready') return noBridge(req.id);
             const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
-            // As Messages records it: reply_to_guid names the chat's previous message on every row, and only a reply
-            // carries thread_originator_guid, the message it was sent to (issue 195).
+            // As Messages records it: reply_to_guid names the chat's previous message on every row, and a reply carries
+            // thread_originator_guid with the part of the original it answers and no associated type at all, which is the
+            // shape Messages itself writes for a threaded reply (issues 195 and 208).
             const prev = [...messages].reverse().find((x) => x.chat_id === p.chat_id && !x.is_reaction);
             const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(prev ? { reply_to_guid: prev.guid } : {}), ...(p.reply_to ? { thread_originator_guid: p.reply_to, thread_originator_part: '0:0:0' } : {}) });
             sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null, replyTo: p.reply_to || null });
-            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: m.guid }), behavior.sendDelayMs).unref();
-            else reply(req.id, { ok: true, id: m.id, guid: m.guid });
+            // The answer names the row the engine created, unless the test asks it to model the bridge's reply path and
+            // hand back an existing message's id instead (issue 208).
+            const answerGuid = p.reply_to && behavior.replyAnswer === 'existing' ? String(p.reply_to) : m.guid;
+            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: answerGuid }), behavior.sendDelayMs).unref();
+            else reply(req.id, { ok: true, id: m.id, guid: answerGuid });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }
@@ -185,6 +211,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
         }
       };
       const t = {
+        // A bridge event, in imsg's normalized shape, to every active bridge.events.subscribe.
+        bridgeEvent(event) {
+          for (const id of bridgeSubs) out({ jsonrpc: '2.0', method: 'bridge.event', params: { subscription: id, event } });
+        },
         notify(m) {
           for (const [id, p] of subs) {
             if (m.is_reaction && !p.include_reactions) continue;

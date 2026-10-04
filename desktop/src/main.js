@@ -1032,8 +1032,12 @@ async function runSmoke(w) {
   console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.messages .bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
-  await waitFor(`Boolean(${replySel}?.previousElementSibling?.matches('.thread-ghost-row'))`, 20000);
-  const replied = await js(`(() => { const r = ${replySel}; const g = r.previousElementSibling; return { id: r.dataset.id, root: g.dataset.thread, ghost: (g.querySelector('.thread-ghost')?.textContent || '').trim(), count: (g.querySelector('.thread-count')?.textContent || '').trim(), side: g.classList.contains('theirs') ? 'theirs' : 'mine', line: Boolean(r.querySelector('.thread-line')), text: r.textContent, enabled: !g.querySelector('.thread-ghost').disabled, cleared: !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') && document.querySelector('app-composer textarea').placeholder === 'Message' }; })()`);
+  await waitFor(`Boolean(${replySel}) && Boolean(document.querySelector(${q(row)})?.nextElementSibling?.classList.contains('thread-replies'))`, 20000);
+  const replied = await js(`(() => {
+    const r = ${replySel};
+    const host = document.querySelector(${q(row)});
+    const sum = host && host.nextElementSibling && host.nextElementSibling.matches('.thread-replies') ? host.nextElementSibling : null;
+    return { id: r.dataset.id, root: r.dataset.thread, marked: r.classList.contains('thread-reply'), text: r.textContent, summary: sum ? { root: sum.dataset.thread, count: (sum.querySelector('.thread-count')?.textContent || '').trim(), side: sum.classList.contains('theirs') ? 'theirs' : 'mine', enabled: !sum.querySelector('.thread-count').disabled } : null, cleared: !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') && document.querySelector('app-composer textarea').placeholder === 'Message' }; })()`);
   await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
   await pause(300);
   await shot('16-replied-light.png');
@@ -1042,39 +1046,34 @@ async function runSmoke(w) {
   await shot('16b-replied-dark.png');
   nativeTheme.themeSource = 'light';
   // The reply count opens its thread, and the reply sent from the thread is in it, after its first message.
-  await js(`${replySel}.previousElementSibling.querySelector('.thread-count').click()`);
+  await js(`document.querySelector(${q(row)}).nextElementSibling.querySelector('.thread-count').click()`);
   await waitFor(`Boolean(document.querySelector(${q('.thread-view .bubble-row[data-id="' + TARGET + '"]')}))`, 5000);
   await pause(400);
   const landed = await js(`[...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id)`);
   await both('16c-thread-with-reply');
   await escape();
   await waitFor("!document.querySelector('.thread-view')", 5000);
-  // The fixture's own thread (issue 195): Avery's reply to your earlier message carries the line, the ghost of your
-  // message sits above the two replies with their count, and the ordinary messages, which the engine chains to the
-  // message before them, carry nothing. The thread opens from the line, and on a phone from the reply itself, with
-  // exactly its three messages, on a desktop window and at a phone's width, light and dark.
+  // The fixture's own threads (issues 195 and 208): the message each thread answers carries one quiet count line under
+  // it, each reply is marked once and links only to its own original, and the ordinary messages, which the engine chains
+  // to the message before them, carry nothing; no line is drawn between two messages. The thread opens from the count,
+  // and on a phone from the reply itself, with exactly its three messages, on a desktop window and at a phone's width,
+  // light and dark.
   const FIXTURE_ROOT = 'FAKE-0009';
   const FIXTURE_REPLY = 'FAKE-0014';
   const marksState = () => js(`(() => {
     const list = document.querySelector('.messages');
     const rows = [...list.querySelectorAll('.bubble-row')];
-    const reply = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
-    const ghost = reply && reply.previousElementSibling;
-    if (reply) reply.scrollIntoView({ block: 'center' });
-    const lines = [...list.querySelectorAll('.thread-line')].map((l) => ({ from: l.dataset.from, to: l.dataset.to, side: l.dataset.side, lane: Number(l.dataset.lane), hidden: l.hidden }));
+    const first = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
+    if (first) first.scrollIntoView({ block: 'center' });
     return {
-      pairs: lines.map((l) => l.from + '>' + l.to),
-      lanes: lines.map((l) => l.side + l.lane),
-      lines,
-      ghosts: [...list.querySelectorAll('.thread-ghost-row')].map((g) => ({ root: g.dataset.thread, side: g.classList.contains('mine') ? 'mine' : 'theirs', count: (g.querySelector('.thread-count')?.textContent || '').trim(), fill: getComputedStyle(g.querySelector('.thread-ghost')).backgroundColor })),
-      marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => r.dataset.id),
-      ghostRoot: ghost && ghost.matches('.thread-ghost-row') ? ghost.dataset.thread : null,
-      count: ghost ? (ghost.querySelector('.thread-count')?.textContent || '').trim() : '', ghostFill: ghost && ghost.querySelector('.thread-ghost') ? getComputedStyle(ghost.querySelector('.thread-ghost')).backgroundColor : '',
+      lines: list.querySelectorAll('.thread-line').length,
+      summaries: [...list.querySelectorAll('.thread-replies')].map((g) => ({ root: g.dataset.thread, side: g.classList.contains('mine') ? 'mine' : 'theirs', count: (g.querySelector('.thread-count')?.textContent || '').trim() })),
+      marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => ({ id: r.dataset.id, root: r.dataset.thread })),
     };
   })()`);
   const marks = await marksState();
   await both('16d-thread-marks');
-  await js(`document.querySelector('.messages .thread-line[data-from="${FIXTURE_ROOT}"][data-to="${FIXTURE_REPLY}"]').click()`);
+  await js(`document.querySelector('.messages .thread-replies[data-thread="${FIXTURE_ROOT}"] .thread-count').click()`);
   await waitFor(`document.querySelector('.conv-body')?.dataset.thread === ${q(FIXTURE_ROOT)}`, 5000);
   await pause(400);
   const fixtureThread = await focusState();
@@ -1101,20 +1100,22 @@ async function runSmoke(w) {
   await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(marksListOpen)}; return true; })()`);
   await pause(300);
   const fixtureIds = [FIXTURE_ROOT, FIXTURE_REPLY, 'FAKE-0015'].join('|');
-  // Two interleaved threads (issue 214): each draws a line only where it changes hands, T2's own side sits on its own
-  // lane beside T1's, and no message outside the two threads (the document included) is marked.
+  // Two interleaved threads (issues 195 and 208): each keeps its own count and its own path, every reply links only to
+  // its own original, nothing is inferred from adjacency, and no message outside a thread (the document included) is
+  // marked.
   const marksOk = (m) => {
-    const laneOf = (pair) => { const i = m.pairs.indexOf(pair); return i < 0 ? null : m.lanes[i]; };
-    const expected = ['FAKE-0009>FAKE-0014', 'FAKE-0014>FAKE-0015', 'FAKE-0016>FAKE-0017', 'FAKE-0017>FAKE-0018'];
-    const markedOk = ['FAKE-0014', 'FAKE-0015', 'FAKE-0017', 'FAKE-0018'].every((id) => m.marked.includes(id)) && m.marked.includes(replied.id) && !m.marked.includes('FAKE-0013') && !m.marked.includes('FAKE-0019');
-    return expected.every((p) => m.pairs.includes(p)) && m.lines.every((l) => !l.hidden)
-      && laneOf('FAKE-0009>FAKE-0014') !== laneOf('FAKE-0017>FAKE-0018')
-      && markedOk && m.ghostFill === 'rgba(0, 0, 0, 0)'
-      && m.ghosts.some((g) => g.root === 'FAKE-0009' && g.side === 'mine' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)')
-      && m.ghosts.some((g) => g.root === 'FAKE-0016' && g.side === 'theirs' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)');
+    const count = (root) => m.summaries.find((s) => s.root === root) || null;
+    const answers = { 'FAKE-0014': 'FAKE-0009', 'FAKE-0015': 'FAKE-0009', 'FAKE-0017': 'FAKE-0016', 'FAKE-0018': 'FAKE-0016' };
+    const markedOk = Object.entries(answers).every(([id, root]) => m.marked.some((x) => x.id === id && x.root === root))
+      && m.marked.some((x) => x.id === replied.id && x.root === TARGET)
+      && !m.marked.some((x) => x.id === 'FAKE-0013') && !m.marked.some((x) => x.id === 'FAKE-0019');
+    return m.lines === 0 && markedOk && m.summaries.length === 3
+      && count('FAKE-0009')?.count === '2 Replies' && count('FAKE-0009')?.side === 'mine'
+      && count('FAKE-0013')?.count === '1 Reply' && count('FAKE-0013')?.side === 'theirs'
+      && count('FAKE-0016')?.count === '2 Replies' && count('FAKE-0016')?.side === 'theirs';
   };
   const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
-  const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.ghost.includes('See you soon') && replied.side === 'theirs' && replied.count === '1 Reply' && !replied.line && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
+  const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.marked && Boolean(replied.summary) && replied.summary.root === TARGET && replied.summary.count === '1 Reply' && replied.summary.side === 'theirs' && !/Reply to/.test(replied.text), enabled: Boolean(replied.summary?.enabled), cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
 
@@ -1706,20 +1707,23 @@ async function runSmoke(w) {
   // A refused write would leave the wait below timing out on a value that was never stored, so it fails here instead.
   const scaleWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.textScale': 150 } }) });
   if (!scaleWrite.ok) throw new Error('the server refused the text size write: ' + scaleWrite.status);
-  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"150\"]')?.checked === true", 10000);
+  await waitFor("document.querySelector('app-settings .scale-range')?.getAttribute('aria-valuetext') === '150 percent'", 10000);
   report.settingsStreamed = true;
   // Text size is a percentage of the type tokens: at 150% the page and the chat list both draw their text half as
   // large again, and back at 100% they draw exactly what the tokens say (the surface check below holds that).
   const fontPx = (sel) => js("(() => { const e = document.querySelector(" + JSON.stringify(sel) + "); return e ? parseFloat(getComputedStyle(e).fontSize) : 0; })()");
-  report.textScaleChoices = await js("[...document.querySelectorAll('app-settings .scale-choice')].map((l) => l.textContent.trim()).join('|')");
+  report.textScaleChoices = await js("[...document.querySelectorAll('app-settings .scale-slider datalist option')].map((o) => o.getAttribute('label')).join('|')");
+  // The text size is a slider (issue 244): a range that announces the percentage, reads it beside the track, and lands
+  // only on a stop. Its stops come from the schema, so this holds the control the schema draws.
+  report.textScaleSlider = await js("(() => { const r = document.querySelector('app-settings .scale-range'); const v = document.querySelector('app-settings .scale-value'); return Boolean(r) && r.getAttribute('type') === 'range' && r.getAttribute('aria-valuetext') === '150 percent' && Boolean(v) && v.textContent.trim() === '150%'; })()");
   const scaledList = await fontPx('.chat-row .chat-name');
   const scaledPage = await fontPx('app-settings .setting-label');
   await putSettings({ 'appearance.textScale': 100 });
-  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"100\"]')?.checked === true", 10000);
+  await waitFor("document.querySelector('app-settings .scale-range')?.getAttribute('aria-valuetext') === '100 percent'", 10000);
   const plainList = await fontPx('.chat-row .chat-name');
   const plainPage = await fontPx('app-settings .setting-label');
   const near = (a, b) => Math.abs(a - b) < 0.6;
-  report.textScale = report.textScaleChoices === '50%|75%|100%|125%|150%|200%|300%' && plainList > 0 && plainPage > 0 && near(scaledList, plainList * 1.5) && near(scaledPage, plainPage * 1.5)
+  report.textScale = report.textScaleChoices === '50%|75%|100%|125%|150%|200%|300%' && report.textScaleSlider && plainList > 0 && plainPage > 0 && near(scaledList, plainList * 1.5) && near(scaledPage, plainPage * 1.5)
     && await js("!document.querySelector('app-settings [data-key=\"appearance.density\"]')");
   console.log('text scale: ' + JSON.stringify({ choices: report.textScaleChoices, scaledList, plainList, scaledPage, plainPage }));
   report.settings = report.settingsRead && report.skinSwitch && report.settingsWrote && report.settingsStreamed && report.textScale;
@@ -1876,14 +1880,14 @@ async function runSmoke(w) {
         const a = l.getBoundingClientRect(); const b = thumb.getBoundingClientRect();
         out.push({ what: 'switch ' + l.textContent.trim(), on, under: on ? Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 2 : true, fg: rgb(getComputedStyle(l).color), bg: rgb(on ? fill : track) });
       }
-      for (const l of s.querySelectorAll('.scale-choice')) out.push({ what: 'size ' + l.textContent.trim(), on: l.hasAttribute('data-selected'), under: true, fg: rgb(getComputedStyle(l).color), bg: rgb(getComputedStyle(l).backgroundColor) });
+      const sv = s.querySelector('.scale-value'); const srows = sv && sv.closest('.sheet-rows'); if (sv) out.push({ what: 'text size', on: false, under: true, fg: rgb(getComputedStyle(sv).color), bg: rgb(getComputedStyle(srows || sv).backgroundColor) });
       return out;
     })()`;
     const contrastIn = async (label) => {
       await pause(400);
       const pairs = await js(choicePairs);
       const rows = pairs.map((p) => ({ what: p.what, on: p.on, under: p.under, ratio: Math.round(contrastRatio(p.fg, p.bg) * 100) / 100 }));
-      const ok = rows.length >= 10 && rows.filter((r) => r.on).length === 2 && rows.every((r) => r.under && r.ratio >= 4.5);
+      const ok = rows.length >= 4 && rows.filter((r) => r.on).length === 1 && rows.every((r) => r.under && r.ratio >= 4.5);
       console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, rows }));
       return ok;
     };
@@ -2096,13 +2100,13 @@ async function runSmoke(w) {
   if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, themePicture, iconHeld, iconApplied, iconDrawn, iconMarked, themeAgain, now: appIconApplied }));
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
-  await showTab('notifications');
+  await showTab('behavior');
   nativeTheme.themeSource = 'light';
   await pause(300);
-  await shot('05e-settings-notifications.png');
+  await shot('05e-settings-behavior.png');
   nativeTheme.themeSource = 'dark';
   await pause(300);
-  await shot('05f-settings-notifications-dark.png');
+  await shot('05f-settings-behavior-dark.png');
   await showTab('appearance');
   nativeTheme.themeSource = 'light';
   await pause(300);
@@ -2226,21 +2230,22 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'dark';
   await pause(300);
   await shot('05h-settings-phone-dark.png');
-  await showTab('notifications');
-  await shot('05j-settings-phone-notifications-dark.png');
+  await showTab('behavior');
+  await shot('05j-settings-phone-behavior-dark.png');
   nativeTheme.themeSource = 'light';
   await pause(300);
-  await shot('05i-settings-phone-notifications.png');
+  await shot('05i-settings-phone-behavior.png');
   report.phoneSettings = phonePage.fills && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
   if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
-  // About lives under Settings (issue 171): its row is on the About tab.
-  await showTab('about');
+  // About is reached from the About row, which sits at the bottom of every Settings page rather than on a tab
+  // (issue 244): open it with the last tab in force, so the way back can be checked to land there.
+  await showTab('device');
 
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
   const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back-label') || {}).textContent || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
-  const aboutRow = await js("(() => { const s = [...document.querySelectorAll('app-settings .sheet-section')]; return s.length > 1 && s.at(-1).dataset.section === 'about' && Boolean(s.at(-1).querySelector('button[data-action=about]')) && !document.querySelector('app-settings app-about'); })()");
+  const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const body = s && s.querySelector('.sheet-body'); const row = body && body.querySelector('.settings-about-row'); const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.querySelector('button[data-action=about]') && row === body.lastElementChild && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
   await js("document.querySelector('app-settings [data-action=about]').click()");
   await waitFor(aboutShown);
   await pause(1000);
@@ -2312,7 +2317,8 @@ async function runSmoke(w) {
   await js("document.querySelector('app-about .sheet-back').click()");
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
-  report.aboutBackTab = await js(tabSel('about') + "?.getAttribute('aria-selected') === 'true'");
+  // Back from About returns to the tab the row was on (issue 244), here the last tab.
+  report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
   report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;

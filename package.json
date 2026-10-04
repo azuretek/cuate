@@ -17,10 +17,11 @@
   "scripts": {
     "lint": "eslint .",
     "test": "node --test --test-concurrency=1 \"core/test/*.test.js\" \"server/test/*.test.js\" \"desktop/test/*.test.js\"",
-    "build": "node scripts/gen-tokens.mjs --check && node scripts/gen-openapi.mjs --check && node scripts/gen-build-spec.mjs --check && node scripts/gen-engine-bundle.mjs --check && node scripts/gen-engine-fixtures.mjs --check && node scripts/gen-server-stamp.mjs --check && node desktop/scripts/icons.mjs --check",
+    "build": "node scripts/gen-tokens.mjs --check && node scripts/gen-openapi.mjs --check && node scripts/gen-build-spec.mjs --check && node scripts/gen-emoji.mjs --check && node scripts/gen-engine-bundle.mjs --check && node scripts/gen-engine-fixtures.mjs --check && node scripts/gen-server-stamp.mjs --check && node desktop/scripts/icons.mjs --check",
     "tokens": "node scripts/gen-tokens.mjs",
     "openapi": "node scripts/gen-openapi.mjs",
     "build-spec": "node scripts/gen-build-spec.mjs",
+    "emoji": "node scripts/gen-emoji.mjs",
     "engine": "node scripts/gen-engine-bundle.mjs",
     "fixtures": "node scripts/gen-engine-fixtures.mjs",
     "server-stamp": "node scripts/gen-server-stamp.mjs",

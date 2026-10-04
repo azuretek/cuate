@@ -13,6 +13,7 @@ import {
 import { mergeMessages, applyReaction } from '../rules/messages.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
+import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
 import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
@@ -50,14 +51,18 @@ class AppRoot extends KitElement {
   static properties = {
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
     conn: { state: true }, problem: { state: true }, hasMore: { state: true }, sending: { state: true },
+    // The live typing state of the open conversation (issue 230): { chatId, kind, at } for another of our signed-in
+    // devices, or null. Held here so the page clears a stale one and never shows another conversation's.
+    typing: { state: true },
     // The chat a press asked for while its page is on the way: the list marks it at once, and the pane keeps the
     // conversation it is drawing until the new one is ready, then swaps in one step (issue 142).
     selecting: { state: true },
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
     // showing. view says which page the sheet draws, if any (the conversation, settings or about). aboutFrom says what
     // About was opened from ('settings' when it was pushed over Settings, so its back returns there), and pageMotion
-    // how the page on screen arrived inside the sheet ('push' or 'pop'; null when the sheet itself arrived).
-    view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true },
+    // how the page on screen arrived inside the sheet ('down' when Settings returns, 'up' when About arrives; null when
+    // the sheet itself arrived). sheetMotion is how the sheet itself arrived ('down' for Settings, 'up' for About).
+    view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true }, sheetMotion: { state: true },
     // The Settings tab on show (issue 167), held here so a push to About and back returns to the tab it left.
     settingsTab: { state: true },
     // Follow theme's picture in Settings (issue 167): the app icon in the theme in force, drawn here as a PNG data URL.
@@ -134,6 +139,12 @@ class AppRoot extends KitElement {
     this.viewing = null;
     this.reacting = null;
     this.messageNote = null;
+    // Our own typing, told to the server while we compose: typingChat is the conversation we last said we were typing
+    // in, typingSentAt throttles the refresh, and typingTimer clears the indicator we draw for another device (230).
+    this.typing = null;
+    this.typingChat = null;
+    this.typingSentAt = 0;
+    this.typingTimer = null;
     // Every menu and modal the page draws closes on a press outside it and on Escape, through the kit's one behaviour
     // (core/kit/dismiss.js): the filter and sort menus (each one's button keeps both, so it switches between them),
     // the group prompt, the delete confirm and the sheet. The sheet goes back the way its strip does (pageBack): About
@@ -164,6 +175,9 @@ class AppRoot extends KitElement {
     this.heldScreen = null;
     this.aboutFrom = null;
     this.pageMotion = null;
+    // How the sheet itself arrives when it opens (issue 244): Settings slides down into place, About slides up into
+    // its place. It is set only on a fresh open, so switching pages inside the sheet does not slide the card twice.
+    this.sheetMotion = null;
     this.settingsTab = null;
     // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
     this.iconApplied = null;
@@ -238,6 +252,8 @@ class AppRoot extends KitElement {
     this.noticeHold = null;
     clearTimeout(this.sheetDeadline);
     this.sheetDeadline = null;
+    clearTimeout(this.typingTimer);
+    this.typingTimer = null;
   }
 
   // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
@@ -450,6 +466,8 @@ class AppRoot extends KitElement {
     this.selecting = null;
     this.settings = {};
     this.settingsRead = false;
+    this.typingChat = null;
+    this.resetTyping();
     this.view = 'messages';
     this.listOpen = true;
     delete this.dataset.state;
@@ -464,6 +482,10 @@ class AppRoot extends KitElement {
   // change together. A message delivered live while the page is in flight is kept: the page was read before it
   // arrived, so it is merged into the page rather than replaced by it (issue 66).
   async open(chatId, { show = false } = {}) {
+    // Leaving a conversation stops its typing, and the indicator belongs to the conversation on screen, so a change
+    // clears it rather than carrying one conversation's typing into another (issue 230).
+    if (this.typingChat && this.typingChat !== chatId) this.clearTyping();
+    this.resetTyping();
     const refresh = this.openChatId === chatId;
     this.selecting = refresh ? null : chatId;
     if (refresh && show) this.listOpen = false;
@@ -543,6 +565,10 @@ class AppRoot extends KitElement {
       const id = String(data.chatId);
       const unread = Number.isFinite(data.unread) ? data.unread : 0;
       this.chats = this.chats.map((c) => (c.id === id ? { ...c, unread } : c));
+    } else if (name === 'typing') {
+      // One of this account's other signed-in devices is typing in a conversation (issue 230). The server never sends
+      // this back to the device that sent it, so any we hear is another device, never our own draft.
+      this.receiveTyping(data);
     } else if (name === 'server.state') {
       this.sending = Boolean(data.sending);
     } else if (name === 'server.update') {
@@ -640,6 +666,8 @@ class AppRoot extends KitElement {
   async send({ text = '', file = null, replyTo = null } = {}) {
     const chatId = this.openChatId;
     if (!chatId || !this.client) return false;
+    // Sending ends our typing for the conversation, whatever the draft field then shows (issue 230).
+    this.clearTyping();
     const clientKey = newKey();
     const localId = 'local:' + clientKey;
     this.pending.set(clientKey, { localId, chatId, text, messageId: null });
@@ -691,10 +719,63 @@ class AppRoot extends KitElement {
     }
   }
 
+  // --- Our own typing, relayed between this account's devices (issue 230) ---
+  // While we compose the page tells the server, which relays it to this account's other signed-in devices, and to no
+  // one else. It is never a message and never enters history. A throttle keeps one report per couple of seconds while
+  // the draft stays non-empty; the server's own expiry covers the gaps between them.
+  onDraft({ empty }) {
+    this.relayTyping(!empty);
+  }
+
+  relayTyping(typing) {
+    const chatId = this.openChatId;
+    if (!chatId || !this.client) return;
+    if (!typing) {
+      if (this.typingChat === chatId) this.clearTyping();
+      return;
+    }
+    const now = Date.now();
+    if (this.typingChat !== chatId || now - this.typingSentAt > 2000) {
+      this.typingChat = chatId;
+      this.typingSentAt = now;
+      this.client.typing(chatId, true).catch(() => {});
+    }
+  }
+
+  // Stop, for the conversation we were typing in. It only ever sends a stop for a conversation we actually said we
+  // were typing in, so a draft in one conversation never stops another's.
+  clearTyping() {
+    const chatId = this.typingChat;
+    this.typingChat = null;
+    if (chatId && this.client) this.client.typing(chatId, false).catch(() => {});
+  }
+
+  // What another device's typing means for the conversation on screen. Events for another conversation are ignored,
+  // and a stale one clears itself even if no stop ever arrives, so a dropped connection cannot leave it up.
+  receiveTyping(data) {
+    const chatId = this.openChatId;
+    if (!data || !chatId) return;
+    if (!data.typing) {
+      if (String(data.chatId) === String(chatId)) this.resetTyping();
+      return;
+    }
+    const next = applyTyping(this.typing, data, { chatId, now: Date.now() });
+    if (!next) return;
+    this.typing = next;
+    clearTimeout(this.typingTimer);
+    this.typingTimer = setTimeout(() => { this.resetTyping(); }, TYPING_TTL_MS);
+  }
+
+  resetTyping() {
+    clearTimeout(this.typingTimer);
+    this.typingTimer = null;
+    this.typing = null;
+  }
+
   // Settings asked for while About is up goes back to Settings inside the same sheet, the way About's back does.
   openSettings() {
     this.settingsProblem = '';
-    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'pop'); return; }
+    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'down'); return; }
     // Settings arriving afresh opens on its first tab; only a return from About keeps the tab it left.
     if (!this.sheetShowing) this.settingsTab = null;
     this.openSheet('settings');
@@ -705,7 +786,7 @@ class AppRoot extends KitElement {
   // About as its page, and back closes it. Asking for it while it is up changes nothing.
   openAbout() {
     if (this.view === 'about' && !this.sheetLeaving) return;
-    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'push'); return; }
+    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'up'); return; }
     this.aboutFrom = null;
     this.pageMotion = null;
     this.openSheet('about');
@@ -715,13 +796,15 @@ class AppRoot extends KitElement {
   showPage(view, motion) {
     if (view !== 'about') this.aboutFrom = null;
     this.pageMotion = motion;
+    // A page moved inside the sheet that is up does not re-trigger the sheet's own arrival.
+    this.sheetMotion = null;
     this.view = view;
   }
 
   // A page's back strip (and Escape): the page under it when there is one (rules/screens.js), else the sheet closes.
   pageBack() {
     const under = pageAfterBack(this.view, this.aboutFrom);
-    if (under) this.showPage(under, 'pop');
+    if (under) this.showPage(under, 'down');
     else this.closeView();
   }
 
@@ -790,7 +873,7 @@ class AppRoot extends KitElement {
   // the next up. The motion and the dim are Chela's own conventions, so a reader who uses both apps sees one design
   // rather than two; this only sequences.
   openSheet(next) {
-    if (!this.sheetShowing) this.view = next;
+    if (!this.sheetShowing) { this.view = next; this.sheetMotion = next === 'about' ? 'up' : 'down'; }
     else if (this.view !== next) { this.pendingSheet = next; this.leaveSheet(); }
   }
 
@@ -843,6 +926,7 @@ class AppRoot extends KitElement {
     this.pendingSheet = null;
     this.view = next || 'messages';
     this.pageMotion = null;
+    this.sheetMotion = null;
     if (this.view !== 'about') this.aboutFrom = null;
   }
 
@@ -1295,7 +1379,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .reacting=${this.reacting} .note=${this.messageNote} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 
@@ -1377,7 +1461,7 @@ class AppRoot extends KitElement {
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0"></div>
       <main class="main">${this.mainView(chat)}</main>
-      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
+      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-view=${this.view} data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
