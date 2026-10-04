@@ -57,4 +57,4 @@ What works today, and the test that proves each. Planned work is at the end.
 
 ## Planned
 
-iPhone and Android apps; webhooks; export and backup; scheduled messages; the server looking after the Mac; metrics and tracing; the emoji engine and skins; rich content; edits, unsend and typing where the engine offers them. [Read and typing](read-and-typing.md) records what the engine actually reports for read state and typing, and why the app draws no typing indicator on the surface the server uses.
+iPhone and Android apps; webhooks; export and backup; scheduled messages; the server looking after the Mac; metrics and tracing; the emoji engine and skins; rich content; edits and unsend where the engine offers them; and the other person's typing where a bridge offers it. Our own typing is relayed between this account's signed-in devices and shown in the conversation header (issue 230); the other person's typing is not drawn where the engine cannot report it. [Read and typing](read-and-typing.md) records what the engine reports for read state and typing.

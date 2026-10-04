@@ -17,6 +17,7 @@ test('a history refresh preserves a live message received before its stale answe
     openChatId: '1', messages: [old], chats: [{ id: '1', unread: 0 }], pending: new Map(),
     client: { messages: () => new Promise((resolve) => { answer = resolve; }) },
     reconcile: proto.reconcile, describe: proto.describe,
+    clearTyping: proto.clearTyping, resetTyping: proto.resetTyping,
   };
   const work = proto.open.call(host, '1');
   proto.onEvent.call(host, { name: 'message.new', data: { message: live } });
@@ -35,6 +36,7 @@ test('opening another conversation keeps a live message for it received while it
     openChatId: '1', messages: [shown], chats: [{ id: '1', unread: 0 }, { id: '2', unread: 0 }], pending: new Map(),
     client: { messages: () => new Promise((resolve) => { answer = resolve; }) },
     reconcile: proto.reconcile, describe: proto.describe, bridge: async () => {},
+    clearTyping: proto.clearTyping, resetTyping: proto.resetTyping,
   };
   const work = proto.open.call(host, '2');
   proto.onEvent.call(host, { name: 'message.new', data: { message: live } });
