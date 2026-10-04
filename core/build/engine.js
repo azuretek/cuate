@@ -742,7 +742,7 @@ var engine = (() => {
   }
 
   // core/kit/rules/popover.js
-  var INSET = 6;
+  var INSET = 7;
   function caretX(anchor, box, align = "center") {
     if (!anchor || !box || !(box.width > 0)) return null;
     if (anchor.right <= box.left || anchor.left >= box.right) return null;

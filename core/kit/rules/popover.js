@@ -4,9 +4,9 @@
 // coordinate, or null when the control is not over the popover at all, which is an untargeted caret and what the
 // guard fails on.
 
-// Half the caret's own width, so the triangle is kept whole and never overhangs a popover's corner. The caret is 12px
+// Half the caret's own width, so the triangle is kept whole and never overhangs a popover's corner. The caret is 14px
 // (tokens size.caret), so this is exactly half of it.
-const INSET = 6;
+const INSET = 7;
 
 // align: 'center' aims at the control's middle; 'start' and 'end' aim at its near edge, which is what a control wider
 // than the popover (a message bubble under its menu) needs so the caret still sits on the popover.
