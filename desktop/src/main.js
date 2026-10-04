@@ -2138,7 +2138,7 @@ async function runSmoke(w) {
   const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconCount + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
   // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
   const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
-  const iconPick = 'rosa';
+  const iconPick = 'rosa_dark';
   const fixedOf = (id) => { const c = appIconVariants.find((i) => i.id === id); return { scheme: c.scheme, colors: c.colors }; };
   await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
   await js(iconChoice(iconPick) + '.click()');
