@@ -69,3 +69,28 @@ test('an arbitrary emoji can be taken off again where the engine sends it', asyn
   assert.equal((await r.json()).add, false);
   assert.equal(s.world.tapbacks.at(-1).remove, true);
 });
+
+test('the refusal names the limit, the version the engine would need, and the engine that answered', async (t) => {
+  const s = await boot();
+  t.after(() => s.close());
+  const r = await s.post(at('FAKE-0013'), s.tokens.device, { emoji: PARTY });
+  assert.equal(r.status, 422);
+  const body = await r.json();
+  assert.equal(body.error.code, 'reaction_unsupported');
+  assert.match(body.error.message, /six classic reactions, not arbitrary emoji/, 'the limit is named honestly');
+  assert.match(body.error.message, /tapback\.emoji version 2/, 'the version the engine would need is named');
+  assert.match(body.error.message, /fake/, 'the engine that answered is named, not the app');
+  assert.equal(s.world.tapbacks.length, 0, 'and nothing is sent');
+});
+
+test('an engine advertising an older version names it too, and still sends the classic six', async (t) => {
+  const s = await boot({ capabilities: caps(1) });
+  t.after(() => s.close());
+  const refused = await s.post(at('FAKE-0013'), s.tokens.device, { emoji: PARTY });
+  assert.equal(refused.status, 422);
+  assert.match((await refused.json()).error.message, /six classic reactions, not arbitrary emoji/);
+  const classic = await s.post(at('FAKE-0013'), s.tokens.device, { emoji: HEART });
+  assert.equal(classic.status, 201);
+  assert.equal((await classic.json()).type, 'love');
+  assert.equal(s.world.tapbacks.length, 1, 'only the refused emoji did not send; the classic six still do');
+});

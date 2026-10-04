@@ -2,6 +2,7 @@
 // the engine, restarting it with a backoff and resuming the live stream after the last row it saw.
 import { createRpc } from './rpc.js';
 import { mapChat, mapMessage, mapReaction } from '../../../core/app/rules/engine-imsg.js';
+import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 const numCode = (e) => (typeof e.code === 'number' ? e.code : null);
 const omit = (o, keys) => {
@@ -196,7 +197,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // refused here rather than reaching the crash. A stock bridge builds only associated_message_type 2000 to 2005 and
   // folds some emoji onto a standard kind, so it is refused any emoji that is not one of the six (issue 188). The
   // refusal is explicit and never downgraded to a classic tapback.
-  const REACTION_TAPBACK_EMOJI_VERSION = 2;
+  const REACTION_TAPBACK_EMOJI_VERSION = EMOJI_TAPBACK_VERSION;
   const capabilityVersion = (name) => {
     const value = state.capabilities && state.capabilities.features ? state.capabilities.features[name] : null;
     return Number.isInteger(value) ? value : 0;
@@ -232,6 +233,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     sendFile,
     react,
     supportsEmojiTapback,
+    capabilityVersion: (name) => capabilityVersion(name),
+    emojiTapbackVersion: () => capabilityVersion('tapback.emoji'),
     info: () => ({ kind: state.kind, version: state.version, ready: state.ready }),
     on: (cb) => listeners.add(cb),
     onState: (cb) => stateListeners.add(cb),
