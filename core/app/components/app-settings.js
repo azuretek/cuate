@@ -317,17 +317,22 @@ class AppSettings extends KitElement {
   }
 
   // Each section is the panel of its tab. Every panel is drawn and the ones not on show are hidden, so a tab's
-  // aria-controls always names a panel that exists and a hidden section keeps what was typed into it.
+  // aria-controls always names a panel that exists and a hidden section keeps what was typed into it. The About row is
+  // the panel's LAST child (issue 253), so every tab's body ends with it and it is reached by scrolling that tab's own
+  // body, rather than sitting only under the tab it happened to be added to. It is drawn from the schema here, so a
+  // tab added later carries it without a second place to remember.
   section(group) {
     return html`<section class="sheet-section" data-section=${group.id} role="tabpanel" id=${'settings-panel-' + group.id} aria-labelledby=${'settings-tab-' + group.id} ?hidden=${group.id !== this.current()}>
       <h3 class="sheet-section-title">${group.label}</h3>
       ${group.description ? html`<p class="sheet-section-desc">${group.description}</p>` : nothing}
       ${this.sectionBody(group)}
+      ${this.aboutRow()}
     </section>`;
   }
 
-  // The About row, at the bottom of every Settings page (issue 244): one row, its label, the version on the right and
-  // the chevron that opens the About page, reached from the tab in force.
+  // The About row, the last thing in EVERY tab's body (issues 244, 253): one row, its label, the version on the right
+  // and the chevron that opens the About page. It is drawn by section() as each panel's last child, so every tab ends
+  // with it and no tab can be added without one.
   aboutRow() {
     const version = (this.host && this.host.version) || '';
     return html`<div class="sheet-rows settings-about-row" data-section="about">
@@ -342,8 +347,7 @@ class AppSettings extends KitElement {
   body() {
     return html`
       ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
-      ${settingsGroups().map((group) => this.section(group))}
-      ${this.aboutRow()}`;
+      ${settingsGroups().map((group) => this.section(group))}`;
   }
 
   render() {

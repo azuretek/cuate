@@ -341,6 +341,11 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .sheet-title { margin: 0; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); }
 .sheet-desc { margin: var(--space-1) 0 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+/* The body scrolls, so its children keep their own height rather than shrinking to fit it: a shrunk tab panel drew its
+   own rows over the About row that follows, so on a tall tab (Appearance) the About row was covered and could not be
+   scrolled to (issue 253). Each child is a fixed-height item and the body scrolls to the end, which is that tab's
+   About row. */
+.sheet-body > * { flex: none; }
 .sheet-section { display: flex; flex-direction: column; min-width: 0; }
 .sheet-section[hidden] { display: none; }
 /* Settings' tabs (issue 167), drawn as a tab strip that belongs to the panel it opens (issue 244). The strip's band and

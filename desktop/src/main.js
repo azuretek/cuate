@@ -2118,15 +2118,21 @@ async function runSmoke(w) {
     await waitFor(tabSel(id) + ".getAttribute('aria-selected') === 'true'", 5000);
     await pause(200);
   };
+  // Issue 253: the About row is the last thing in EVERY tab's own body, reached by scrolling that tab's body to its
+  // end. The walk presses each tab the schema declares, scrolls its body to the bottom and reads the row (its label,
+  // its version on the right and its chevron), so a tab added later without one fails here at both widths.
+  const aboutInPanel = "(() => { const s = document.querySelector('app-settings'); const body = s.querySelector('.sheet-body'); const panel = s.querySelector('.sheet-section:not([hidden])'); const row = panel && panel.lastElementChild; const isRow = Boolean(row && row.classList.contains('settings-about-row')); const btn = isRow ? row.querySelector('button[data-action=about]') : null; const labelEl = btn ? btn.querySelector('.setting-label') : null; const value = btn ? btn.querySelector('.setting-nav-value') : null; const chevron = btn ? btn.querySelector('.icon[data-icon=chevron-right]') : null; body.scrollTop = body.scrollHeight; const br = body.getBoundingClientRect(); const rr = btn ? btn.getBoundingClientRect() : null; const valueRight = Boolean(value && labelEl && value.getBoundingClientRect().left > labelEl.getBoundingClientRect().left); return { last: isRow, label: labelEl ? labelEl.textContent.trim() : '', value: Boolean(value && value.textContent.trim().length > 0), valueRight, chevron: Boolean(chevron), reached: Boolean(rr && rr.height > 0 && rr.top >= br.top - 1 && rr.bottom <= br.bottom + 1) }; })()";
+  const walkAbout = (w) => Boolean(w && w.about && w.about.last && w.about.label === 'About' && w.about.value && w.about.valueRight && w.about.chevron && w.about.reached);
   const tabWalk = async () => {
     const out = {};
     for (const tab of settingsTabs()) {
       await showTab(tab.id);
       out[tab.id] = await js("(() => { const keys = " + JSON.stringify(tab.keys) + "; const s = document.querySelector('app-settings'); const shown = [...s.querySelectorAll('.sheet-section')].filter((x) => !x.hidden && x.getBoundingClientRect().height > 0).map((x) => x.dataset.section); const seen = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5; }; const panel = s.querySelector('.sheet-section:not([hidden])'); const missing = keys.filter((k) => !seen(panel.querySelector('[data-key=\"' + k + '\"]'))); const extra = " + JSON.stringify(tab.kind) + " === 'about' ? seen(panel.querySelector('[data-action=about]')) : " + JSON.stringify(tab.kind) + " === 'device' ? seen(panel.querySelector('[data-action=signout]')) : true; return { shown: shown.join('|'), missing, extra, doc: document.documentElement.scrollWidth <= innerWidth }; })()");
+      out[tab.id].about = await js(aboutInPanel);
     }
     return out;
   };
-  const tabsOk = (walk) => settingsTabs().every((t) => walk[t.id] && walk[t.id].shown === t.id && walk[t.id].missing.length === 0 && walk[t.id].extra && walk[t.id].doc);
+  const tabsOk = (walk) => settingsTabs().every((t) => walk[t.id] && walk[t.id].shown === t.id && walk[t.id].missing.length === 0 && walk[t.id].extra && walk[t.id].doc && walkAbout(walk[t.id]));
   const tabLabels = await js("[...document.querySelectorAll('app-settings [role=tablist] [role=tab]')].map((t) => t.textContent.trim()).join('|')");
   const desktopWalk = await tabWalk();
   report.settingsTabs = tabLabels === settingsTabs().map((t) => t.label).join('|') && tabsOk(desktopWalk);
@@ -2299,16 +2305,27 @@ async function runSmoke(w) {
   await shot('05i-settings-phone-behavior.png');
   report.phoneSettings = phonePage.fills && phonePage.blur && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
   if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
-  // About is reached from the About row, which sits at the bottom of every Settings page rather than on a tab
-  // (issue 244): open it with the last tab in force, so the way back can be checked to land there.
+  // Issue 253: the About row is the last thing in every tab's own body at 390px too, reached by scrolling that tab's
+  // body to its end; the walk above runs the same check at the phone's 375.
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await pause(300);
+  const aboutWalk390 = await tabWalk();
+  report.aboutEverywhere = tabsOk(aboutWalk390);
+  if (!report.aboutEverywhere) console.error('about everywhere: ' + JSON.stringify(aboutWalk390));
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 375', 5000);
+  await pause(200);
+  // About is reached from the About row, which is the last thing in every tab's own body rather than a tab
+  // (issues 244, 253): open it with the last tab in force, so the way back can be checked to land there.
   await showTab('device');
 
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
   const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back-label') || {}).textContent || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
-  const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const body = s && s.querySelector('.sheet-body'); const row = body && body.querySelector('.settings-about-row'); const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.querySelector('button[data-action=about]') && row === body.lastElementChild && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
-  await js("document.querySelector('app-settings [data-action=about]').click()");
+  const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const panel = s && s.querySelector('.sheet-section:not([hidden])'); const row = panel && panel.lastElementChild; const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.classList.contains('settings-about-row') && row.querySelector('button[data-action=about]') && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
+  await js("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()");
   await waitFor(aboutShown);
   await pause(1000);
   report.sheetHitAreaAbout = await sheetHit('app-about');

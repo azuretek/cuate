@@ -47,7 +47,11 @@ test('inventory: every setting the desktop page offers is reached from a tab, an
   const settings = read('core/app/components/app-settings.js');
   assert.match(settings, /settings-about-row/, 'the About row is drawn on the page');
   assert.match(settings, /data-action="about"/, 'the About row opens the About page');
-  assert.match(settings, /this\.aboutRow\(\)/, 'the About row is part of the body, so it sits under every tab');
+  // The row is each panel's LAST child (issue 253), so every tab's body ends with it, not only the tab it was added to.
+  const panel = /section\(group\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(panel, 'the page draws a panel per group');
+  assert.match(panel[0], /\$\{this\.sectionBody\(group\)\}[\s\S]*?\$\{this\.aboutRow\(\)\}[\s\S]*?<\/section>/, 'the About row is the last thing in the panel');
+  assert.doesNotMatch(settings, /map\(\(group\) => this\.section\(group\)\)\}[\s\S]{0,40}\$\{this\.aboutRow\(\)\}/, 'the row is not left outside the panels, under only one tab');
   const seen = new Map();
   for (const tab of tabs) for (const key of tab.keys) { assert.ok(!seen.has(key), key + ' is in two tabs'); seen.set(key, tab.id); }
   for (const field of settingsFields()) assert.ok(seen.has(field.key), field.key + ' is reached from no tab');
@@ -227,6 +231,30 @@ test('issue 168: the way back to the chats list is the chats icon, labelled with
   const phone = phoneBlock();
   assert.match(phone, /\.sheet-back-wide\s*\{[^}]*display:\s*none/, 'the phone hides the desktop\'s arrow and label');
   assert.match(css, /\.sheet-back-narrow\s*\{[^}]*display:\s*none/, 'the desktop hides the phone\'s chats control');
+});
+
+
+// Issue 253: the About row is the last thing in EVERY tab's own body at every width, and it is drawn from the one
+// schema, so a tab added later cannot land without it. The desktop smoke walks every tab the schema declares, scrolls
+// that tab's body to the end and reads the row at desktop width, 375 and 390.
+test('the About row is the last thing in every tab body, drawn from the one schema', () => {
+  const settings = read('core/app/components/app-settings.js');
+  assert.match(settings, /settingsGroups\(\)\.map\(\(group\) => this\.section\(group\)\)/, 'every group in the schema is drawn as a panel');
+  assert.match(settings, /section\(group\) \{[\s\S]*?\$\{this\.aboutRow\(\)\}[\s\S]*?<\/section>/, 'the panel ends with the About row');
+  const row = /aboutRow\(\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(row, 'the page draws the About row');
+  assert.match(row[0], /class="sheet-rows settings-about-row"/, 'the row is its own surface');
+  assert.match(row[0], /data-action="about"/, 'the row opens the About page');
+  assert.match(row[0], /class="setting-label">About</, 'the row is labelled About');
+  assert.match(row[0], /class="setting-nav-value">\$\{version\}</, 'the version sits on the value side, to the right');
+  assert.match(row[0], /data-icon="chevron-right"/, 'the row carries the chevron');
+  // The stylesheet keeps the body scrolling rather than shrinking a panel over the row that follows it (issue 253).
+  assert.match(read('core/app/styles/app.css'), /\.sheet-body > \* \{ flex: none; \}/, 'body children keep their height, so the row is reachable');
+  // The desktop smoke walks every tab the schema declares and holds the row, at both widths.
+  const smoke = read('desktop/src/main.js');
+  assert.match(smoke, /const aboutInPanel = "\(\(\) => \{/, 'the smoke reads the About row in the tab body');
+  assert.match(smoke, /walkAbout\(walk\[t\.id\]\)/, 'every tab in the walk must hold the row');
+  assert.match(smoke, /report\.aboutEverywhere = tabsOk\(aboutWalk390\)/, 'the walk runs at 390 too');
 });
 
 // Issue 244: the text size is a slider whose positions are the schema's stops, so a key or a drag lands only on an
