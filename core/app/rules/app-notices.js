@@ -81,9 +81,17 @@ export function noticeQuiet(notice, read = {}, closed = {}) {
 }
 
 // The notices with every remembered revision marked read, so the stack draws none of them. This only ever adds read:
-// a notice whose revision is in neither store is left exactly as putNotice made it, and a new revision is unread.
+// a notice whose revision is in neither store is left exactly as putNotice made it, and a new revision is unread. When
+// nothing is quiet the SAME array comes back, so a page that calls this on every update event does not re-render the
+// stack for nothing (the smoke's many events made that cost visible).
 export function quietNotices(notices, read = {}, closed = {}) {
-  return notices.map((n) => (noticeQuiet(n, read, closed) ? { ...n, read: true } : n));
+  let changed = false;
+  const out = notices.map((n) => {
+    if (n.read || !noticeQuiet(n, read, closed)) return n;
+    changed = true;
+    return { ...n, read: true };
+  });
+  return changed ? out : notices;
 }
 
 // A notice asked for again (About's Check for updates, issue 171) forgets its stored revision too, here and on the

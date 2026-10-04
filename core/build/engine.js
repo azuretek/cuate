@@ -1443,7 +1443,13 @@ var engine = (() => {
     return noticeStateOf(read, notice.id) === notice.revision || noticeStateOf(closed, notice.id) === notice.revision;
   }
   function quietNotices(notices, read = {}, closed = {}) {
-    return notices.map((n) => noticeQuiet(n, read, closed) ? { ...n, read: true } : n);
+    let changed = false;
+    const out = notices.map((n) => {
+      if (n.read || !noticeQuiet(n, read, closed)) return n;
+      changed = true;
+      return { ...n, read: true };
+    });
+    return changed ? out : notices;
   }
   function forgetNoticeState(state, id) {
     const out = noticeState(state);
