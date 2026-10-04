@@ -265,7 +265,8 @@ test('a reaction the engine cannot send is refused cleanly, costs no rate budget
   const custom = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F389}' });
   assert.equal(custom.http, 422);
   assert.equal(custom.error[0], 'reaction_unsupported');
-  assert.match(custom.error[1], /engine .*cannot send an emoji reaction yet/, 'the note names the engine as the limit, not the Mac (issue 188)');
+  assert.match(custom.error[1], /six classic reactions, not arbitrary emoji/, 'the note names the limit honestly (issue 241)');
+  assert.match(custom.error[1], /tapback\.emoji version 2/, 'and the version the engine would need');
   assert.equal((await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F44D}\u{1F3FD}' })).error[0], 'reaction_unsupported', 'a skin tone is not the like tapback');
   assert.equal(s.world.attempts, 0);
   s.world.behavior.bridge = 'down';
