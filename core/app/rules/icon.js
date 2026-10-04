@@ -6,12 +6,18 @@
 // theme and a platform cannot each grow their own drawing.
 
 // The colour tokens the icon reads, the only ones it may.
-export const ICON_TOKENS = ['accent', 'accent-fg', 'fg', 'bg', 'bg-raised', 'danger', 'danger-fg'];
+export const ICON_TOKENS = ['accent', 'accent-fg', 'fg', 'bg', 'bg-raised', 'danger', 'badge', 'badge-fg'];
 
 // The floors the glyph keeps: against the accent tile in light, against the raised surface in dark.
 export const GLYPH_FLOOR = { light: 2.6, dark: 4 };
-// Hue closer than this to the accent, on a saturated accent, and a danger badge would vanish into the tile.
-export const BADGE_HUE_GAP = 40;
+// The count on the badge reads on its fill at this floor, or the theme's danger cannot carry it and the standard red does.
+export const BADGE_TEXT_FLOOR = 4.5;
+// How far two colours must stand, in OKLab, to read as different. Nearer than this and the theme's danger would sink
+// into a tile of its own colour, so the standard red stands in.
+export const BADGE_APART = 0.15;
+// The sizes the Windows taskbar draws the overlay at, with the display scale each serves, so the count is never
+// resampled. The smallest is where a two-character count still reads; Windows scales it down on a lower-scale display.
+export const OVERLAY_SIZES = [[32, 2], [40, 2.5], [48, 3]];
 // A colour whose OKLCH chroma is below this reads as a neutral, with no hue to clash.
 export const SATURATED = 0.06;
 
@@ -129,6 +135,15 @@ export function hueDistance(x, y) {
 
 export const chroma = (x) => toOklch(x)[1];
 
+// How far apart two colours are, in OKLab: 0 for the same colour. The badge uses it to tell whether the theme's danger
+// reads as its own colour against the tile or sinks into it.
+export function colourDistance(x, y) {
+  const [L1, C1, h1] = toOklch(x);
+  const [L2, C2, h2] = toOklch(y);
+  const rad = (h) => (h * Math.PI) / 180;
+  return Math.hypot(L1 - L2, C1 * Math.cos(rad(h1)) - C2 * Math.cos(rad(h2)), C1 * Math.sin(rad(h1)) - C2 * Math.sin(rad(h2)));
+}
+
 // The tokens the icon reads for one scheme: what the theme or the page gives, where it reads as a colour, otherwise the
 // default token, so an unreadable value never leaves the icon without a colour.
 export function iconColours(defaults = {}, given = {}) {
@@ -146,10 +161,9 @@ export function iconColours(defaults = {}, given = {}) {
 //   dark:  the tile is bg-raised (a little lighter at the top) down to bg. The glyph is the dark accent, lightened step
 //          by step until it reads at 4:1 on bg-raised; the back bubble is the glyph at 45%.
 //
-// The mark is the glyph drawn with no tile behind it (the tray): the accent in light, the dark glyph in dark. The
-// badge is danger with danger-fg text, unless the accent is saturated and within 40 degrees of danger's hue, where it
-// would vanish into the tile: then it is the scheme's fg, its text whichever of bg and fg reads on it. Its ring, where
-// it has one, is the scheme's bg.
+// The mark is the glyph drawn with no tile behind it (the tray): the accent in light, the dark glyph in dark. The badge
+// is a solid disc with a white count: the theme's danger where the count reads on it at BADGE_TEXT_FLOOR and it stands
+// BADGE_APART from every colour of the tile, otherwise the standard red the badge token carries.
 export function iconPalette(colours, scheme = 'light') {
   const c = Object.fromEntries(ICON_TOKENS.map((k) => [k, cssColour(colours && colours[k])]));
   for (const k of ICON_TOKENS) if (!c[k]) throw new Error('the icon needs the ' + k + ' token as a colour');
@@ -173,16 +187,15 @@ export function iconPalette(colours, scheme = 'light') {
     tileBottom = fromOklch([L - 0.07, C, h + 4]);
     glyph = contrast(c['accent-fg'], c.accent) >= GLYPH_FLOOR.light ? c['accent-fg'] : c.fg;
   }
-  const clash = C >= SATURATED && hueDistance(c.accent, c.danger) < BADGE_HUE_GAP;
-  const badgeFill = clash ? c.fg : c.danger;
-  const badgeText = clash ? (contrast(c.bg, badgeFill) >= contrast(c.fg, badgeFill) ? c.bg : c.fg) : c['danger-fg'];
+  const tileColours = [tileTop, tileBottom, dark ? c['bg-raised'] : c.accent];
+  const own = contrast(c.danger, c['badge-fg']) >= BADGE_TEXT_FLOOR && tileColours.every((t) => colourDistance(c.danger, t) >= BADGE_APART);
   return {
     scheme: dark ? 'dark' : 'light',
     tile: { top: toHex(tileTop), bottom: toHex(tileBottom), behind: toHex(dark ? c['bg-raised'] : c.accent) },
     glyph: toHex(glyph),
     back: dark ? 0.45 : 0.5,
     mark: toHex(dark ? glyph : c.accent),
-    badge: { fill: toHex(badgeFill), text: toHex(badgeText), ring: toHex(c.bg), neutral: clash },
+    badge: { fill: toHex(own ? c.danger : c.badge), text: toHex(c['badge-fg']) },
   };
 }
 
@@ -410,9 +423,9 @@ export const SMALL_MAX = 32;
 //   tinted       the iOS tinted icon: the glyph alone in grays on black, which the system tints
 //   foreground   the Android adaptive foreground: the glyph alone inside the safe zone, over the accent background
 //   monochrome   the Android themed icon: the glyph's alpha alone
-//   tray         the tray and notification area: the glyph in the theme's colours, its count knocked out of it
-//   template     the macOS menu bar: the silhouette, its count knocked out of it, which macOS recolours
-//   overlay      the Windows taskbar overlay: the count's badge alone, ringed in the scheme's background
+//   tray         the tray and notification area: the glyph in the theme's colours, its badge a red disc with a white count
+//   template     the macOS menu bar: the silhouette, its badge knocked out, which macOS recolours
+//   overlay      the Windows taskbar overlay: a solid red disc filling the square, the count in white on it
 //
 // A slot of 32 px and under draws the simplified master (48 px for the app tile, whose glyph is smaller than its tile).
 export const ICON_KINDS = ['app', 'ios', 'tinted', 'foreground', 'monochrome', 'tray', 'template', 'overlay'];
@@ -426,7 +439,6 @@ const TILE = 4;
 const BADGE = 8;
 const DIGIT = 16;
 const GAP = 32;
-const RING = 64;
 const CUT = 128;
 // At this size and under, a tray pixel whose centre falls in a cut-out (an eye, the nose, the gap, the digit) is clear,
 // so each still reads as a hole when it is about one pixel across.
@@ -467,10 +479,10 @@ export function renderIcon({ masters, palette, kind, size, unread = 0 }) {
   // The badge, in pixels.
   let badge = null;
   if (kind === 'overlay') {
-    const label = badgeLabel(unread, 32);
+    const label = badgeLabel(unread, OVERLAY_SIZES[0][0]);
     if (label === null) return empty;
-    const ring = Math.max(1, S * 0.09);
-    badge = { disk: circle(S / 2, S / 2, S / 2 - ring), ring: circle(S / 2, S / 2, S / 2), digit: label ? labelStroke(label, S / 2, S / 2, (S - 2 * ring) * (label.length > 1 ? 0.46 : 0.56)) : null };
+    // The disc fills the square, so the count sits on a solid red circle the taskbar shows whole, no ring inside it.
+    badge = { disk: circle(S / 2, S / 2, S / 2), digit: label ? labelStroke(label, S / 2, S / 2, S * (label.length > 1 ? 0.44 : 0.54)) : null };
   } else if (kind === 'tray' || kind === 'template') {
     const label = badgeLabel(unread, S);
     if (label !== null) {
@@ -486,7 +498,6 @@ export function renderIcon({ masters, palette, kind, size, unread = 0 }) {
     let f = 0;
     if (tileShape && contains(tileShape, x, y)) f |= TILE;
     if (badge) {
-      if (badge.ring && contains(badge.ring, x, y)) f |= RING;
       if (contains(badge.disk, x, y)) return f | BADGE | (badge.digit && contains(badge.digit, x, y) ? DIGIT : 0);
       if (badge.gap && contains(badge.gap, x, y)) return f | GAP;
     }
@@ -513,12 +524,17 @@ export function renderIcon({ masters, palette, kind, size, unread = 0 }) {
     if (kind === 'overlay') {
       if (f & DIGIT) return [...hexRgb(p.badge.text), 1];
       if (f & BADGE) return [...hexRgb(p.badge.fill), 1];
-      return f & RING ? [...hexRgb(p.badge.ring), 1] : none;
+      return none;
     }
     if (kind === 'tray' || kind === 'template') {
       const ink = kind === 'template' ? [0, 0, 0] : markRgb;
-      if (f & DIGIT || f & GAP) return none;
-      if (f & BADGE) return kind === 'template' ? [0, 0, 0, 1] : [...hexRgb(p.badge.fill), 1];
+      if (f & GAP) return none;
+      if (f & BADGE) {
+        // The template's digit is knocked out, so macOS recolours the silhouette; the tray draws it in white, so the
+        // Windows notification area and the Linux panel read the same as the Windows overlay.
+        if (kind === 'template') return f & DIGIT ? none : [0, 0, 0, 1];
+        return f & DIGIT ? [...hexRgb(p.badge.text), 1] : [...hexRgb(p.badge.fill), 1];
+      }
       if (f & FRONT) return [...ink, 1];
       return f & BACK ? [...ink, kind === 'template' ? 1 : p.back] : none;
     }
