@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { iconPalette, iconColours, parseGlyph, renderIcon, onGroup, cssColour, contrast, hueDistance, chroma, unreadTotal, badgeLabel, ICON_TOKENS, GLYPH_FLOOR, BADGE_HUE_GAP, SATURATED, TRAY_BADGE, TRAY_CROP } from '../app/rules/icon.js';
+import { iconPalette, iconColours, parseGlyph, renderIcon, onGroup, cssColour, contrast, hueDistance, chroma, unreadTotal, badgeLabel, toOklch, colourDistance, ICON_TOKENS, GLYPH_FLOOR, BADGE_TEXT_FLOOR, BADGE_APART, OVERLAY_SIZES, SATURATED, TRAY_BADGE, TRAY_CROP } from '../app/rules/icon.js';
 import { importTheme } from '../app/rules/theme.js';
 
 const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8');
@@ -30,24 +30,70 @@ test('the palette derives every colour from the theme, and the glyph meets its c
   }
 });
 
-test('the badge never lands within 40 degrees of hue of the tile, and the default theme gets the neutral badge', () => {
+test('the unread badge is a solid red disc with a white count that reads on it, never lost in the tile (issue 218)', () => {
+  const white = cssHex(tokens.color.light['badge-fg']);
   for (const [name, theme] of Object.entries(THEMES)) {
     for (const scheme of ['light', 'dark']) {
       const colours = themed(theme, scheme);
       const p = iconPalette(colours, scheme);
-      const clashes = chroma(p.badge.fill) >= SATURATED && chroma(colours.accent) >= SATURATED && hueDistance(p.badge.fill, colours.accent) < BADGE_HUE_GAP;
-      assert.ok(!clashes, name + ' ' + scheme + ': the badge ' + p.badge.fill + ' sits within ' + BADGE_HUE_GAP + ' degrees of the accent ' + colours.accent);
-      assert.ok(contrast(p.badge.text, p.badge.fill) >= 3, name + ' ' + scheme + ': the count reads on its badge');
-      assert.equal(p.badge.ring, cssHex(colours.bg), 'the ring is the surrounding background');
+      const where = name + ' ' + scheme + ': the badge ' + p.badge.fill;
+      assert.equal(p.badge.text, cssHex(colours['badge-fg']), where + ' carries the white count');
+      assert.ok(contrast(p.badge.text, p.badge.fill) >= BADGE_TEXT_FLOOR, where + ' reads at ' + contrast(p.badge.text, p.badge.fill).toFixed(2) + ':1 under its count');
+      const [, C, h] = toOklch(p.badge.fill);
+      assert.ok(C >= 0.12 && (h <= 40 || h >= 345), where + ' is a red (chroma ' + C.toFixed(3) + ', hue ' + h.toFixed(0) + ')');
+      // The theme's own danger, wherever it reads under white and stands apart from every colour of the tile.
+      const own = contrast(colours.danger, colours['badge-fg']) >= BADGE_TEXT_FLOOR && [p.tile.top, p.tile.bottom, p.tile.behind].every((t) => colourDistance(colours.danger, t) >= BADGE_APART);
+      assert.equal(p.badge.fill, own ? cssHex(colours.danger) : cssHex(colours.badge), where + (own ? ' is the theme\'s danger' : ' falls back to the standard red'));
     }
   }
-  const light = iconPalette(themed(null, 'light'), 'light');
-  assert.equal(light.badge.neutral, true, 'accent #bd4531 and danger #b91c1c clash, so the default badge is the neutral one');
-  assert.equal(light.badge.fill, tokens.color.light.fg);
-  assert.equal(light.badge.text, tokens.color.light.bg);
-  const blue = iconPalette({ ...tokens.color.light, accent: '#0a84ff' }, 'light');
-  assert.equal(blue.badge.neutral, false, 'an accent far from danger keeps the danger badge');
-  assert.equal(blue.badge.fill, tokens.color.light.danger);
+  assert.equal(white, '#ffffff', 'the count is white');
+  // The default accent is a red: its danger would sink into the tile, so the badge is the standard red.
+  assert.equal(iconPalette(themed(null, 'light'), 'light').badge.fill, cssHex(tokens.color.light.badge));
+  // The default dark danger is a pale red a white count does not read on, so the standard red stands in.
+  assert.equal(iconPalette(themed(null, 'dark'), 'dark').badge.fill, cssHex(tokens.color.dark.badge));
+  // An accent far from red keeps the theme's danger.
+  assert.equal(iconPalette({ ...tokens.color.light, accent: '#0a84ff' }, 'light').badge.fill, cssHex(tokens.color.light.danger));
+});
+
+// The Windows taskbar overlay at every size Windows asks for, as the issue's acceptance renders it: a disc filling the
+// square, an exact count up to 9 and 9+ above, in bold white that fits inside the disc.
+test('the taskbar overlay fills its square with the badge, and its bold white count fits inside it (issue 218)', () => {
+  for (const scheme of ['light', 'dark']) {
+    const p = iconPalette(themed(null, scheme), scheme);
+    const fill = cssColour(p.badge.fill);
+    const ink = cssColour(p.badge.text);
+    for (const S of OVERLAY_SIZES.map(([s]) => s)) {
+      const drawn = {};
+      for (const n of [1, 5, 9, 12]) {
+        const img = renderIcon({ masters, palette: p, kind: 'overlay', size: S, unread: n });
+        const at = (x, y) => [0, 1, 2, 3].map((c) => img.data[(y * S + x) * 4 + c] / 255);
+        const where = scheme + ' ' + S + ' px, ' + n + ': ';
+        // The disc reaches every edge of the square, and is the badge colour there, not a ring of another colour.
+        for (const [x, y] of [[S >> 1, 0], [S >> 1, S - 1], [0, S >> 1], [S - 1, S >> 1]]) {
+          const [r, g, b, a] = at(x, y);
+          assert.ok(a >= 0.6, where + 'the disc reaches the edge at ' + x + ',' + y);
+          assert.ok(Math.hypot(r - fill[0], g - fill[1], b - fill[2]) < 0.08, where + 'the edge at ' + x + ',' + y + ' is the fill, not an outline');
+        }
+        // The count: pixels nearer the text colour than the fill.
+        let [x0, y0, x1, y1, inked] = [S, S, -1, -1, 0];
+        for (let y = 0; y < S; y += 1) for (let x = 0; x < S; x += 1) {
+          const [r, g, b, a] = at(x, y);
+          if (a < 0.5 || Math.hypot(r - ink[0], g - ink[1], b - ink[2]) >= Math.hypot(r - fill[0], g - fill[1], b - fill[2])) continue;
+          inked += 1;
+          [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
+          // It fits: every pixel of the count sits inside the disc, clear of its edge.
+          assert.ok(Math.hypot(x + 0.5 - S / 2, y + 0.5 - S / 2) <= S / 2 - Math.max(1, S / 16), where + 'the count at ' + x + ',' + y + ' runs into the edge');
+        }
+        const label = badgeLabel(n, OVERLAY_SIZES[0][0]);
+        assert.equal(label, n > 9 ? '9+' : String(n), 'the overlay spells the exact count to 9, then 9+, at every size');
+        assert.ok(y1 - y0 + 1 >= S * (label.length > 1 ? 0.4 : 0.5), where + 'the count stands ' + (y1 - y0 + 1) + ' px high');
+        // Bold: the count covers a good share of its own box, as a heavy weight does.
+        assert.ok(inked >= (x1 - x0 + 1) * (y1 - y0 + 1) * 0.3, where + 'the count is bold (' + inked + ' px in a ' + (x1 - x0 + 1) + ' by ' + (y1 - y0 + 1) + ' box)');
+        drawn[n] = Buffer.from(img.data).toString('base64');
+      }
+      assert.equal(new Set(Object.values(drawn)).size, 4, scheme + ' ' + S + ' px: 1, 5, 9 and 9+ each draw their own count');
+    }
+  }
 });
 
 test('the palette reads any CSS colour a theme carries, oklch() included, and works on the parsed colour', () => {
