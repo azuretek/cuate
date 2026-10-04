@@ -224,6 +224,18 @@ test('the app icon on About is generated from the Flor de muerto masters by the 
   assert.match(read('core/app/styles/app.css'), /\.about-icon \{[^}]*var\(--size-app-icon\)/);
 });
 
+test('About shows the icon in force, live for Follow theme, and follows a change without a reload (issue 246)', () => {
+  const about = read('core/app/components/app-about.js');
+  assert.match(about, /import \{ appIconChoices \} from '..\/rules\/app-icons.js'/);
+  assert.match(about, /currentIcon\(\)/);
+  assert.match(about, /appIconChoices\(this\.values \|\| \{\}, \{ themePicture: this\.themePicture \}\)/);
+  assert.match(about, /<img class="about-icon" src=\$\{this\.currentIcon\(\)\} alt="">/);
+  const root = read('core/app/components/app-root.js');
+  assert.match(root, /<app-about [^>]*\.values=\$\{this\.settings\} \.themePicture=\$\{this\.themePicture\}/, 'app-root hands About the settings and the live theme picture');
+  // The picture is not one fixed drawing any more.
+  assert.equal(about.includes('src=${APP_ICON}'), false, 'About no longer draws one fixed icon');
+});
+
 test('every shell declares and answers updates.check', () => {
   const spec = JSON.parse(read('core/spec/host-bridge.json'));
   assert.ok(spec.commands['updates.check'], 'the bridge spec declares the check');

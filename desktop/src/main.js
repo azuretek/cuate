@@ -2043,20 +2043,23 @@ async function runSmoke(w) {
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
   const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconSpec.icons.length + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
-  const themePicture = await js(iconChoice(appIconSpec.default) + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
-  await waitFor('Boolean(' + iconChoice('night') + ') && !' + iconChoice('night') + '.disabled', 10000);
-  await js(iconChoice('night') + '.click()');
-  for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== 'night' || appIconApplied !== 'night'); i += 1) await pause(200);
-  const iconHeld = (await held())['appearance.appIcon'] === 'night';
-  const iconApplied = appIconApplied === 'night';
+  // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
+  const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
+  const iconPick = 'rosa';
+  const fixedOf = (id) => ({ scheme: appIconSpec.icons.find((i) => i.id === id).scheme, colors: appIconSpec.icons.find((i) => i.id === id).colors });
+  await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
+  await js(iconChoice(iconPick) + '.click()');
+  for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== iconPick || appIconApplied !== iconPick); i += 1) await pause(200);
+  const iconHeld = (await held())['appearance.appIcon'] === iconPick;
+  const iconApplied = appIconApplied === iconPick;
   // A fixed palette stands in for the theme in the images the shell draws (the tray's mark is the palette's).
-  const nightMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: { scheme: appIconSpec.icons.find((i) => i.id === 'night').scheme, colors: appIconSpec.icons.find((i) => i.id === 'night').colors } }).palette.mark;
-  const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === nightMark;
-  const iconMarked = await js(iconChoice('night') + ".getAttribute('aria-checked') === 'true'");
+  const fixedMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedOf(iconPick) }).palette.mark;
+  const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === fixedMark;
+  const iconMarked = await js(iconChoice(iconPick) + ".getAttribute('aria-checked') === 'true'");
   await waitFor('!' + iconChoice(appIconSpec.default) + '.disabled', 10000);
   await js(iconChoice(appIconSpec.default) + '.click()');
   for (let i = 0; i < 50 && appIconApplied !== appIconSpec.default; i += 1) await pause(200);
-  const themeAgain = smokeIcons.at(-1).mark !== nightMark;
+  const themeAgain = smokeIcons.at(-1).mark !== fixedMark;
   report.appIcon = iconPictures && themePicture && iconHeld && iconApplied && iconDrawn && iconMarked && themeAgain && appIconApplied === appIconSpec.default && (await held())['appearance.appIcon'] === appIconSpec.default;
   if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, themePicture, iconHeld, iconApplied, iconDrawn, iconMarked, themeAgain, now: appIconApplied }));
 
