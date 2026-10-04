@@ -143,7 +143,7 @@ test('history pages from newest to oldest', async () => {
   assert.deepEqual(times, [...times].sort());
   const older = await (await s.get(route(1) + '?limit=50&before=' + encodeURIComponent(first.messages[0].sentAt), s.tokens.device)).json();
   conforms(older, 'MessageList');
-  assert.equal(older.messages.length, 5, 'the first chat holds eight messages, its thread of two included');
+  assert.equal(older.messages.length, 9, 'the first chat holds twelve messages, its two threads and a document included');
   assert.ok(older.messages.every((m) => m.sentAt < first.messages[0].sentAt));
   assert.equal(older.hasMore, false);
   assert.equal((await s.get(route('abc'), s.tokens.device)).status, 400);
@@ -323,7 +323,7 @@ test('a definite failure is reported as a failure', async () => {
 
 test('attachments are served by id, and only from inside the attachments folder', async () => {
   const b = await (await s.get(route(1) + '?limit=50', s.tokens.device)).json();
-  const a = b.messages.flatMap((m) => m.attachments)[0];
+  const a = b.messages.flatMap((m) => m.attachments).find((x) => x.mime === 'image/png');
   assert.ok(a);
   conforms(a, 'Attachment');
   const r = await s.get('/api/v1/attachments/' + a.id, s.tokens.device);

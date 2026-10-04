@@ -10,8 +10,9 @@ const CHATS = [
   { id: 3, name: '+15555550142', display_name: '', contact_name: '', identifier: '+15555550142', guid: 'SMS;-;+15555550142', service: 'SMS', is_group: false, participants: ['+15555550142'], unread_count: 0 },
 ];
 
-// [chat, minutes before the base time, from me, sender, text, has the photo, the guid of the message it replies to in a
-// thread]. Messages and its rows are ordered by guid; the two thread replies are appended so every earlier guid stays.
+// [chat, minutes before the base time, from me, sender, text, has the photo (true) or the document ('doc'), the guid
+// of the message it replies to in a thread]. Messages and its rows are ordered by guid; the thread replies and the
+// document are appended so every earlier guid stays.
 export const SCRIPT = [
   [3, 4000, false, '+15555550142', 'Your table for two is confirmed for Friday at 7.'],
   [3, 3990, true, null, 'Thank you'],
@@ -29,6 +30,13 @@ export const SCRIPT = [
   // A thread (issue 195): Avery used Reply on your "Yes! 10 at the usual place?" a while later, and you answered in it.
   [1, 120, false, '+15555550100', 'Could we make it 10:30 instead?', false, 'FAKE-0009'],
   [1, 118, true, null, '10:30 works.', false, 'FAKE-0009'],
+  // A second thread (issue 214), interleaved with the first so the two lines a run end draws sit on separate lanes:
+  // Avery asked about the campsite, you answered, and Avery replied, between the first thread's own messages.
+  [1, 260, false, '+15555550100', 'Did you book the campsite for the weekend?', false],
+  [1, 130, true, null, 'Booked it, site 12 by the water.', false, 'FAKE-0016'],
+  [1, 125, false, '+15555550100', 'Perfect, see you there.', false, 'FAKE-0016'],
+  // A document (issue 219) on a message of its own, in no thread, so a press saves it rather than opening anything.
+  [1, 90, false, '+15555550100', 'Here is the booking confirmation.', 'doc'],
 ];
 
 // The message Avery has not read yet: the newest in the first conversation.
@@ -46,8 +54,15 @@ const REACTIONS = {
   12: [{ ...imsgReaction('love'), sender: '+15555550100', is_from_me: false }],
 };
 
-export function buildFixtures({ base, imagePath, imageBytes }) {
+export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes }) {
   const chats = CHATS.map((c) => ({ ...c, participants: [...c.participants] }));
+  // The fixture's attachments, synthetic only: a photo is a small PNG, and 'doc' is the booking PDF a press saves
+  // rather than opens (issue 219).
+  const attachmentFor = (kind) => {
+    if (kind === 'doc') return [{ filename: 'booking.pdf', transfer_name: 'booking.pdf', uti: 'com.adobe.pdf', mime_type: 'application/pdf', total_bytes: docBytes, is_sticker: false, missing: false, original_path: docPath }];
+    if (kind) return [{ filename: 'sunset.png', transfer_name: 'sunset.png', uti: 'public.png', mime_type: 'image/png', total_bytes: imageBytes, is_sticker: false, missing: false, original_path: imagePath }];
+    return [];
+  };
   const messages = SCRIPT.map(([chat, minutes, fromMe, sender, text, photo, threadOf], i) => {
     const id = i + 1;
     const m = {
@@ -59,7 +74,7 @@ export function buildFixtures({ base, imagePath, imageBytes }) {
       sender_name: fromMe ? '' : NAMES[sender] || '',
       text,
       created_at: new Date(base - minutes * 60000).toISOString(),
-      attachments: photo ? [{ filename: 'sunset.png', transfer_name: 'sunset.png', uti: 'public.png', mime_type: 'image/png', total_bytes: imageBytes, is_sticker: false, missing: false, original_path: imagePath }] : [],
+      attachments: attachmentFor(photo),
     };
     if (!fromMe) m.is_read = m.guid !== UNREAD;
     if (REACTIONS[id]) m.reactions = REACTIONS[id];

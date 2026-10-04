@@ -61,6 +61,21 @@ test('with no icon wired, app.icon answers that nothing was applied', async () =
   assert.deepEqual(await h['app.icon']({ icon: 'night' }), { applied: false, icon: 'night' });
 });
 
+// Issue 219: a document pressed in a conversation is offered for saving under its real name.
+test('file.save hands the shell the file\'s name, type and bytes and answers what it did', async () => {
+  const saves = [];
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true, saveFile: (file) => { saves.push(file); return true; } });
+  assert.equal(await h['file.save']({ name: 'booking.pdf', mime: 'application/pdf', data: 'JVBERi0=' }), true);
+  assert.deepEqual(saves, [{ name: 'booking.pdf', mime: 'application/pdf', data: 'JVBERi0=' }]);
+  assert.equal(await h['file.save']({ name: 'booking.pdf', data: 12 }), true, 'a non-string data is emptied rather than trusted');
+  assert.deepEqual(saves[1], { name: 'booking.pdf', mime: '', data: '' });
+});
+
+test('with no save wired, file.save answers false rather than throwing', async () => {
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true });
+  assert.equal(await h['file.save']({ name: 'booking.pdf', mime: 'application/pdf', data: 'JVBERi0=' }), false);
+});
+
 test('secure storage encrypts at rest and refuses bad keys and values', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'bridge-'));
   const file = path.join(dir, 'store.json');
