@@ -11,7 +11,7 @@ final class SettingsPageTests: XCTestCase {
     private func settings(scheme: String) {
         let app = XCUIApplication()
         app.launchArguments = ["--settings-fixture"] + (scheme == "dark" ? ["--fixture-dark"] : [])
-        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.startInPortrait()
         app.launch()
         defer { app.terminate() }
         let proof = app.webViews.staticTexts["settings:pass"].firstMatch

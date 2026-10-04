@@ -8,11 +8,11 @@ final class RotationTests: XCTestCase {
     private func conversation(scheme: String) {
         let app = XCUIApplication()
         app.launchArguments = ["--rotation-fixture"] + (scheme == "dark" ? ["--fixture-dark"] : [])
-        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.startInPortrait()
         app.launch()
         defer {
             app.terminate()
-            XCUIDevice.shared.orientation = .portrait
+            XCUIDevice.shared.startInPortrait()
         }
         for (orientation, label) in [(UIDeviceOrientation.portrait, "portrait"), (.landscapeLeft, "landscape"), (.portrait, "portrait")] {
             XCUIDevice.shared.orientation = orientation
