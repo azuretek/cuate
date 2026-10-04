@@ -31,6 +31,7 @@ export * from './rules/drawer.js';
 export * from './rules/engine-imsg.js';
 export * from './rules/messages.js';
 export * from './rules/notifications.js';
+export * from './rules/payload.js';
 export * from './rules/settings.js';
 export * from './rules/sheet.js';
 export * from './rules/slide.js';
