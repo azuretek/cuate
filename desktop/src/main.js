@@ -2303,11 +2303,12 @@ async function runSmoke(w) {
   // card's, a notice's, and a notice's while the viewer is up (the notices then take their band over the backdrop), at
   // three window sizes down to the smallest, maximised, and at phone width. A press on a frameless window that lands in a drag region moves the window and
   // never reaches the page, whatever is drawn over that spot, so a synthetic click alone cannot see the fault. Each
-  // probe point (the centre, and near each edge at 85% of the radius, eight ways) is held to three things: the control
+  // probe point (the centre, and near each edge at 85% of the radius, eight ways) is held to four things: the control
   // is the topmost element there (nothing covers it); the point is outside every drag region as Chromium builds them
   // (each element whose app-region is drag or no-drag adds or removes its box in tree order, so the last one containing
-  // the point decides, and the drawing order plays no part); and a real click at the centre and at the four edges
-  // closes the surface.
+  // the point decides, and the drawing order plays no part); the point is not over a drag strip at all, even one a
+  // no-drag box cancels, so the control never depends on the window picking up a region that changed under it; and a
+  // real click at the centre and at the four edges closes the surface.
   const closeSurfaces = ['viewer', 'thread', 'notice', 'noticeOverViewer'];
   const CLOSE_NOTICE = 'smoke-close-213';
   const closeSel = {
@@ -2355,7 +2356,7 @@ async function runSmoke(w) {
     + '   const mode = (s.getPropertyValue("-webkit-app-region") || s.getPropertyValue("app-region") || "").trim();'
     + '   if ((mode !== "drag" && mode !== "no-drag") || s.visibility !== "visible") continue;'
     + '   const q = el.getBoundingClientRect();'
-    + '   if (q.width && q.height) regions.push({ drag: mode === "drag", q, name: String(el.className || el.tagName).split(" ")[0] });'
+    + '   if (q.width && q.height) regions.push({ drag: mode === "drag", q, name: String(el.getAttribute("class") || el.tagName).split(" ")[0] });'
     + ' }'
     + ' const cx = r.left + r.width / 2; const cy = r.top + r.height / 2; const rad = Math.min(r.width, r.height) / 2 * 0.85; const d = Math.SQRT1_2;'
     + ' const dirs = { centre: [0, 0], top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0], topRight: [d, -d], bottomRight: [d, d], bottomLeft: [-d, d], topLeft: [-d, -d] };'
@@ -2363,9 +2364,9 @@ async function runSmoke(w) {
     + ' for (const [k, [dx, dy]] of Object.entries(dirs)) {'
     + '   const x = Math.round(cx + dx * rad); const y = Math.round(cy + dy * rad);'
     + '   const top = document.elementFromPoint(x, y);'
-    + '   let region = null;'
-    + '   for (const g of regions) if (x >= g.q.left && x < g.q.right && y >= g.q.top && y < g.q.bottom) region = g;'
-    + '   points[k] = { x, y, hit: Boolean(top) && b.contains(top), over: top && !b.contains(top) ? String(top.className || top.tagName) : null, drag: Boolean(region && region.drag), region: region ? region.name : null };'
+    + '   let region = null; let strip = null;'
+    + '   for (const g of regions) if (x >= g.q.left && x < g.q.right && y >= g.q.top && y < g.q.bottom) { region = g; if (g.drag) strip = g.name; }'
+    + '   points[k] = { x, y, hit: Boolean(top) && b.contains(top), over: top && !b.contains(top) ? String(top.getAttribute("class") || top.tagName) : null, drag: Boolean(region && region.drag), region: region ? region.name : null, strip };'
     + ' }'
     + ' return { size: [Math.round(r.width), Math.round(r.height)], round: getComputedStyle(b).borderTopLeftRadius, points };'
     + '})()');
@@ -2375,6 +2376,16 @@ async function runSmoke(w) {
       await resetSurfaces();
       await openSurface(name);
       const geo = await closeGeometry(closeSel[name]);
+      if (label === '1100x720' && (name === 'thread' || name === 'viewer')) {
+        await shot('22-close-' + name + '-light.png');
+        nativeTheme.themeSource = 'dark';
+        await waitFor("document.documentElement.dataset.scheme === 'dark'", 5000);
+        await pause(300);
+        await shot('22b-close-' + name + '-dark.png');
+        nativeTheme.themeSource = 'light';
+        await waitFor("document.documentElement.dataset.scheme === 'light'", 5000);
+        await pause(200);
+      }
       const clicks = {};
       for (const k of ['centre', 'top', 'right', 'bottom', 'left']) {
         if (k !== 'centre') { await resetSurfaces(); await openSurface(name); }
@@ -2389,7 +2400,7 @@ async function runSmoke(w) {
       }
       await resetSurfaces();
       const points = geo ? geo.points : {};
-      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag) && Object.values(clicks).every(Boolean);
+      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag && !p.strip) && Object.values(clicks).every(Boolean);
       closeControlChecks[label + ':' + name] = ok;
       if (!ok) console.error('close control failed: ' + label + ' ' + name + ' ' + JSON.stringify({ geo, clicks }));
     }
