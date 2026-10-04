@@ -45,6 +45,8 @@ var engine = (() => {
     MAX_THEMES: () => MAX_THEMES,
     MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
+    NOTICE_CLOSED_KEY: () => NOTICE_CLOSED_KEY,
+    NOTICE_READ_KEY: () => NOTICE_READ_KEY,
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
     NOTIFY: () => NOTIFY,
@@ -212,6 +214,9 @@ var engine = (() => {
     normalizeSort: () => normalizeSort,
     noticeEnabled: () => noticeEnabled,
     noticeHoldMs: () => noticeHoldMs,
+    noticeQuiet: () => noticeQuiet,
+    noticeState: () => noticeState,
+    noticeStateOf: () => noticeStateOf,
     onGroup: () => onGroup,
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
@@ -236,6 +241,7 @@ var engine = (() => {
     progressFor: () => progressFor,
     putNotice: () => putNotice,
     quietCount: () => quietCount,
+    quietNotices: () => quietNotices,
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     releaseAssets: () => releaseAssets,
@@ -315,6 +321,7 @@ var engine = (() => {
     validate: () => validate,
     verificationCheck: () => verificationCheck,
     wheelFactor: () => wheelFactor,
+    withNoticeState: () => withNoticeState,
     zoomBy: () => zoomBy,
     zoomFit: () => zoomFit,
     zoomKey: () => zoomKey,
@@ -1402,6 +1409,37 @@ var engine = (() => {
       transient: status.state === "checking",
       percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null
     };
+  }
+  var NOTICE_READ_KEY = "notice.read";
+  var NOTICE_CLOSED_KEY = "notice.closed";
+  function noticeState(raw) {
+    let value = raw;
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        return {};
+      }
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const out = {};
+    for (const [id, revision] of Object.entries(value)) if (id && typeof revision === "string") out[id] = revision;
+    return out;
+  }
+  function noticeStateOf(state, id) {
+    return state && Object.hasOwn(state, id) ? state[id] : null;
+  }
+  function withNoticeState(state, id, revision) {
+    const out = noticeState(state);
+    if (id && typeof revision === "string") out[id] = revision;
+    return out;
+  }
+  function noticeQuiet(notice, read = {}, closed = {}) {
+    if (!notice) return false;
+    return noticeStateOf(read, notice.id) === notice.revision || noticeStateOf(closed, notice.id) === notice.revision;
+  }
+  function quietNotices(notices, read = {}, closed = {}) {
+    return notices.map((n) => noticeQuiet(n, read, closed) ? { ...n, read: true } : n);
   }
 
   // core/app/rules/payload.js
