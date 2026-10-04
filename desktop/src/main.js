@@ -826,7 +826,7 @@ async function runSmoke(w) {
   const unreacted = await js("!document.querySelector('app-composer app-emoji-picker')");
   await reactFrom('party');
   const customPicked = await pick('\u{1F389}');
-  await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
+  await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('six classic reactions, not arbitrary emoji')`, 10000);
   const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
   // Any emoji someone else reacted with arrives as a reaction on the message it names (issue 188): the fixture's raised
   // hands on your own message, drawn at the bubble's corner like a tapback and not marked as yours, on a desktop window
