@@ -18,8 +18,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sanitizeText } from '../src/smoke-failure.js';
+import { evaluateChecks, formatFailures } from '../src/smoke-checks.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const smokeStartedAt = Date.now();
 const out = process.env.SHOTS || path.join(root, 'desktop', 'out', 'smoke');
 mkdirSync(out, { recursive: true });
 rmSync(path.join(out, 'report.json'), { force: true });
@@ -81,6 +83,84 @@ appProc.stdout.on('data', (d) => {
 const killer = setTimeout(() => appProc.kill('SIGKILL'), 240000);
 const code = await new Promise((resolve) => { appProc.on('exit', resolve); appProc.on('error', (error) => { console.error(error.message); resolve(-1); }); });
 try { report = JSON.parse(readFileSync(path.join(out, 'report.json'), 'utf8')); } catch { /* absence fails below */ }
+// The required checks, each naming the bound it enforces, so a failure says the value it read and the
+// bound it had to meet rather than only that the run failed. Each entry reads the report key it names, so
+// the conventions catalogue can tie a rule to the smoke check that holds it (core/test/guards.test.js).
+const checks = [
+  { key: 'exit', bound: 'the app exited 0', value: () => code, test: (v) => v === 0 },
+  { key: 'report', bound: 'the app wrote a report', value: (report) => Boolean(report), test: (v) => v === true },
+  { key: 'version', bound: packed ? 'the app version equals the build version' : 'not a packaged run', value: (report) => (packed ? (report.info && report.info.version) : 'not packaged'), test: (v) => (packed ? v === process.env.BUILD_VERSION : true) },
+  { key: 'packaged', bound: packed ? 'the run reports itself packaged' : 'not a packaged run', value: (report) => (packed ? report.packaged : true), test: (v) => (packed ? v === true : true) },
+  { key: 'chats', bound: 'at least 3 chats listed', value: (report) => report.chats, test: (v) => v >= 3 },
+  { key: 'bubbles', bound: 'more than 0 message bubbles drawn', value: (report) => report.bubbles, test: (v) => v > 0 },
+  { key: 'images', bound: 'more than 0 attachment images drawn', value: (report) => report.images, test: (v) => v > 0 },
+  { key: 'resyncKeeps', bound: 'true', value: (report) => report.resyncKeeps, test: (v) => v === true },
+  { key: 'header', bound: 'true', value: (report) => report.header, test: (v) => v === true },
+  { key: 'windowBar', bound: 'true', value: (report) => report.windowBar, test: (v) => v === true },
+  { key: 'appMenu', bound: 'true', value: (report) => report.appMenu, test: (v) => v === true },
+  { key: 'live', bound: 'true', value: (report) => report.live, test: (v) => v === true },
+  { key: 'sent', bound: 'true', value: (report) => report.sent, test: (v) => v === true },
+  { key: 'composerGrows', bound: 'true', value: (report) => report.composerGrows, test: (v) => v === true },
+  { key: 'closeToTray', bound: 'true', value: (report) => report.closeToTray, test: (v) => v === true },
+  { key: 'tray', bound: 'true', value: (report) => report.tray, test: (v) => v === true },
+  { key: 'settings', bound: 'true', value: (report) => report.settings, test: (v) => v === true },
+  { key: 'theme', bound: 'true', value: (report) => report.theme, test: (v) => v === true },
+  { key: 'themeImport', bound: 'true', value: (report) => report.themeImport, test: (v) => v === true },
+  { key: 'themeUrl', bound: 'true', value: (report) => report.themeUrl, test: (v) => v === true },
+  { key: 'themePage', bound: 'true', value: (report) => report.themePage, test: (v) => v === true },
+  { key: 'themePicker', bound: 'true', value: (report) => report.themePicker, test: (v) => v === true },
+  { key: 'choiceContrast', bound: 'true', value: (report) => report.choiceContrast, test: (v) => v === true },
+  { key: 'notices', bound: 'true', value: (report) => report.notices, test: (v) => v === true },
+  { key: 'updates', bound: 'true', value: (report) => report.updates, test: (v) => v === true },
+  { key: 'about', bound: 'true', value: (report) => report.about, test: (v) => v === true },
+  { key: 'sheet', bound: 'true', value: (report) => report.sheet, test: (v) => v === true },
+  { key: 'phone', bound: 'true', value: (report) => report.phone, test: (v) => v === true },
+  { key: 'phoneDrawer', bound: 'true', value: (report) => report.phoneDrawer, test: (v) => v === true },
+  { key: 'phoneFits', bound: 'true', value: (report) => report.phoneFits, test: (v) => v === true },
+  { key: 'phoneComposer', bound: 'true', value: (report) => report.phoneComposer, test: (v) => v === true },
+  { key: 'phoneSend', bound: 'true', value: (report) => report.phoneSend, test: (v) => v === true },
+  { key: 'phoneEdgeOnly', bound: 'true', value: (report) => report.phoneEdgeOnly, test: (v) => v === true },
+  { key: 'phoneSettle', bound: 'true', value: (report) => report.phoneSettle, test: (v) => v === true },
+  { key: 'phoneTracks', bound: 'true', value: (report) => report.phoneTracks, test: (v) => v === true },
+  { key: 'phoneEdgeDrag', bound: 'true', value: (report) => report.phoneEdgeDrag, test: (v) => v === true },
+  { key: 'phoneReduced', bound: 'true', value: (report) => report.phoneReduced, test: (v) => v === true },
+  { key: 'phoneMessageMenu', bound: 'true', value: (report) => report.phoneMessageMenu, test: (v) => v === true },
+  { key: 'onboarding', bound: 'true', value: (report) => report.onboarding, test: (v) => v === true },
+  { key: 'surface', bound: 'true', value: (report) => report.surface, test: (v) => v === true },
+  { key: 'emojiPanel', bound: 'true', value: (report) => report.emojiPanel, test: (v) => v === true },
+  { key: 'attachMenu', bound: 'true', value: (report) => report.attachMenu, test: (v) => v === true },
+  { key: 'imagePreview', bound: 'true', value: (report) => report.imagePreview, test: (v) => v === true },
+  { key: 'imageViewer', bound: 'true', value: (report) => report.imageViewer, test: (v) => v === true },
+  { key: 'sendOnce', bound: 'true', value: (report) => report.sendOnce, test: (v) => v === true },
+  { key: 'importOnce', bound: 'true', value: (report) => report.importOnce, test: (v) => v === true },
+  { key: 'pressStates', bound: 'true', value: (report) => report.pressStates, test: (v) => v === true },
+  { key: 'resizeKeeps', bound: 'true', value: (report) => report.resizeKeeps, test: (v) => v === true },
+  { key: 'switchPlace', bound: 'true', value: (report) => report.switchPlace, test: (v) => v === true },
+  { key: 'switchInstant', bound: 'true', value: (report) => report.switchInstant, test: (v) => v === true },
+  { key: 'headerPinned', bound: 'true', value: (report) => report.headerPinned, test: (v) => v === true },
+  { key: 'noPageZoom', bound: 'true', value: (report) => report.noPageZoom, test: (v) => v === true },
+  { key: 'noBlank', bound: 'true', value: (report) => report.noBlank, test: (v) => v === true },
+  { key: 'searchTerms', bound: 'true', value: (report) => report.searchTerms, test: (v) => v === true },
+  { key: 'sort', bound: 'true', value: (report) => report.sort, test: (v) => v === true },
+  { key: 'icons', bound: 'true', value: (report) => report.icons, test: (v) => v === true },
+  { key: 'overlayIcon', bound: 'true', value: (report) => report.overlayIcon, test: (v) => v === true },
+  { key: 'editMode', bound: 'true', value: (report) => report.editMode, test: (v) => v === true },
+  { key: 'editLine', bound: 'true', value: (report) => report.editLine, test: (v) => v === true },
+  { key: 'react', bound: 'true', value: (report) => report.react, test: (v) => v === true },
+  { key: 'reply', bound: 'true', value: (report) => report.reply, test: (v) => v === true },
+  { key: 'document', bound: 'true', value: (report) => report.document, test: (v) => v === true },
+  { key: 'dismiss', bound: 'true', value: (report) => report.dismiss, test: (v) => v === true },
+  { key: 'placeholder', bound: 'true', value: (report) => report.placeholder, test: (v) => v === true },
+  { key: 'trayIcon', bound: 'true', value: (report) => report.trayIcon, test: (v) => v === true },
+  { key: 'closeControls', bound: 'true', value: (report) => report.closeControls, test: (v) => v === true },
+  { key: 'settingsTabs', bound: 'true', value: (report) => report.settingsTabs, test: (v) => v === true },
+  { key: 'phoneSettings', bound: 'true', value: (report) => report.phoneSettings, test: (v) => v === true },
+  { key: 'appIcon', bound: 'true', value: (report) => report.appIcon, test: (v) => v === true },
+  { key: 'chatsBack', bound: 'true', value: (report) => report.chatsBack, test: (v) => v === true },
+  { key: 'headerMenus', bound: 'true', value: (report) => report.headerMenus, test: (v) => v === true },
+  { key: 'carets', bound: 'true', value: (report) => report.carets, test: (v) => v === true },
+];
+const verdict = evaluateChecks(checks, report);
 clearTimeout(killer);
 await new Promise((resolve) => {
   server.once('close', resolve);
@@ -88,10 +168,16 @@ await new Promise((resolve) => {
 });
 rmSync(data, { recursive: true, force: true });
 rmSync(path.join(out, 'user-data'), { recursive: true, force: true });
-const ok = code === 0 && report && (!packed || (report.packaged && report.info.version === process.env.BUILD_VERSION)) && report.chats >= 3 && report.bubbles > 0 && report.images > 0 && report.resyncKeeps && report.header && report.windowBar && report.appMenu && report.live && report.sent && report.composerGrows && report.closeToTray && report.tray && report.settings && report.theme && report.themeImport && report.themeUrl && report.themePage && report.themePicker && report.choiceContrast && report.notices && report.updates && report.about && report.sheet && report.phone && report.phoneDrawer && report.phoneFits && report.phoneComposer && report.phoneSend && report.phoneEdgeOnly && report.phoneSettle && report.phoneTracks && report.phoneEdgeDrag && report.phoneReduced && report.phoneMessageMenu && report.onboarding && report.surface && report.emojiPanel && report.attachMenu && report.imagePreview && report.imageViewer && report.sendOnce && report.importOnce && report.pressStates && report.resizeKeeps && report.switchPlace && report.switchInstant && report.headerPinned && report.noPageZoom && report.noBlank && report.searchTerms && report.sort && report.icons && report.overlayIcon && report.editMode && report.editLine && report.react && report.reply && report.document && report.dismiss && report.placeholder && report.trayIcon && report.closeControls && report.settingsTabs && report.phoneSettings && report.appIcon && report.chatsBack && report.headerMenus && report.carets;
+const ok = verdict.ok;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
+  for (const line of formatFailures(verdict.results)) console.error('  ' + line);
   writeFailureNote(code, output);
   process.exit(1);
 }
-console.log('smoke ok: ' + JSON.stringify(report) + '; captures in ' + out);
+// The numbers a passing run measured, kept beside its captures, so a run leaves the values it read and not
+// only the verdict.
+try {
+  writeFileSync(path.join(out, 'checks.json'), JSON.stringify({ at: new Date().toISOString(), durationMs: Date.now() - smokeStartedAt, checks: verdict.results }, null, 1));
+} catch { /* the run's verdict stands without the record */ }
+console.log('smoke ok: ' + JSON.stringify(report) + '; ' + verdict.results.length + ' checks measured; captures in ' + out);
