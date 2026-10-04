@@ -1664,7 +1664,7 @@ async function runSmoke(w) {
   // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
   // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default
   // clears it at the server. Values are checked at the server and in what the page resolves, not in the page's copy.
-  const importCss = ':root { --primary: #8a3b12; --chart-1: #000000; }\n.dark { --primary: #e0a070; }';
+  const importCss = ':root { --primary: #8a3b12; --font-serif: serif; }\n.dark { --primary: #e0a070; }';
   await js(`(() => { const s = document.querySelector('app-settings'); const n = s.querySelector('.theme-import-name'); n.value = 'smoke import'; n.dispatchEvent(new Event('input', { bubbles: true })); const t = s.querySelector('.theme-import-text'); t.value = ${JSON.stringify(importCss)}; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await waitFor("!document.querySelector('app-settings .theme-import-action').disabled");
   await js("document.querySelector('app-settings .theme-import-action').click()");
@@ -1673,7 +1673,7 @@ async function runSmoke(w) {
   report.themeImportHeld = Boolean(imported) && imported.source === 'tweakcn' && imported.name === 'smoke import';
   await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#e0a070'", 10000);
   report.themeImportDrawn = true;
-  report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('chart-1'); })()");
+  report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('font-serif'); })()");
   await waitFor("!document.querySelector('app-settings [data-action=\"theme-default\"]').disabled", 10000);
   await js("document.querySelector('app-settings [data-action=\"theme-default\"]').click()");
   for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
