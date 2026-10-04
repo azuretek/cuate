@@ -101,6 +101,8 @@
   --color-bubble-them: #f4f1ec;
   --color-bubble-them-fg: #211e1a;
   --color-danger: #b91c1c;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
   --color-warning: #92400e;
   --color-selection: rgba(189, 69, 49, 0.12);
   --color-banner: rgba(146, 64, 14, 0.10);
@@ -131,6 +133,8 @@
     --color-bubble-them: #191c24;
     --color-bubble-them-fg: #f4f4f5;
     --color-danger: #f87171;
+    --color-badge: #dc2626;
+    --color-badge-fg: #ffffff;
     --color-warning: #f59e0b;
     --color-selection: rgba(255, 92, 92, 0.16);
     --color-banner: rgba(245, 158, 11, 0.12);
@@ -162,6 +166,8 @@
   --color-bubble-them: #191c24;
   --color-bubble-them-fg: #f4f4f5;
   --color-danger: #f87171;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
   --color-warning: #f59e0b;
   --color-selection: rgba(255, 92, 92, 0.16);
   --color-banner: rgba(245, 158, 11, 0.12);
@@ -194,6 +200,8 @@
   --color-bubble-them: #f4f1ec;
   --color-bubble-them-fg: #211e1a;
   --color-danger: #b91c1c;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
   --color-warning: #92400e;
   --color-selection: rgba(189, 69, 49, 0.12);
   --color-banner: rgba(146, 64, 14, 0.10);
@@ -224,6 +232,8 @@
     --color-bubble-them: #191c24;
     --color-bubble-them-fg: #f4f4f5;
     --color-danger: #f87171;
+    --color-badge: #dc2626;
+    --color-badge-fg: #ffffff;
     --color-warning: #f59e0b;
     --color-selection: rgba(255, 92, 92, 0.16);
     --color-banner: rgba(245, 158, 11, 0.12);
@@ -254,6 +264,8 @@
   --color-bubble-them: #191c24;
   --color-bubble-them-fg: #f4f4f5;
   --color-danger: #f87171;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
   --color-warning: #f59e0b;
   --color-selection: rgba(255, 92, 92, 0.16);
   --color-banner: rgba(245, 158, 11, 0.12);
