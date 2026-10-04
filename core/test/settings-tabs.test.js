@@ -293,11 +293,13 @@ test('the text size slider commits on release, so the app resizes once', () => {
   assert.ok(commit, 'the commit handler is drawn');
   assert.match(commit[0], /this\.fire\('setting', \{ key: field\.key, value: stops\[at\] \}\)/, 'the commit writes the stop exactly once');
   assert.match(settings, /onSliderKey\(e, field, stops\) \{[\s\S]*?e\.key !== 'Enter'[\s\S]*?this\.onSliderCommit\(e, field, stops\)/, 'Enter is the keyboard release');
-  // The commit is smoothed where the design allows it; reduced motion keeps the hard cut.
+  // The type sizes are committed in ONE step and are never transitioned: applyTheme() reads these very variables
+  // back off the root to scale a theme's own type sizes, so a transition on them would hand a half-way size into the
+  // next scale and commit the wrong size. That is the defect the desktop smoke caught at the 300% stop (issue 253),
+  // so the guard is a negative one: the stylesheet must not register or transition the type-size variables.
   const css = read('core/app/styles/app.css');
-  assert.match(css, /@property --font-size-md \{ syntax: '<length>'; inherits: true; initial-value: 0; \}/, 'the type sizes are registered so they can transition');
-  assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{\n {2}:root \{\n {4}transition: --font-size-xs/, 'the sizes fade only where motion is allowed');
-  assert.equal((css.match(/transition: --font-size-xs/g) || []).length, 1, 'one place smooths the sizes, under the motion query');
+  assert.doesNotMatch(css, /@property --font-size-/, 'the type sizes are not registered as transitionable lengths');
+  assert.doesNotMatch(css, /transition: --font-size-/, 'no type size is transitioned, so the read-back stays a settled value');
 });
 // Issue 244: the tabs read as a strip on the body they open, not loose pills floating above it.
 test('Settings tabs read as a strip on the panel they open', () => {
