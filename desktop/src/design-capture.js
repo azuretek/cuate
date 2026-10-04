@@ -84,11 +84,21 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
   // sees what the screenshot will actually contain rather than what the harness believes it set.
   const overlaysPresent = '(' + JSON.stringify(OVERLAYS) + ').filter((p) => document.querySelector(p[1])).map((p) => p[0])';
   const overlaysClear = '(' + JSON.stringify(OVERLAYS) + ').every((p) => !document.querySelector(p[1]))';
-  const shot = async (name, allowed = []) => {
+  // A shot may also name the panel it is about: beside the full frame it writes a close crop of that panel and a
+  // margin, so the caret and the panel edge read at size. The crop is the same page read back through CDP's own clip,
+  // so it is the live pixels and never a second render.
+  const shot = async (name, allowed = [], focus = '') => {
     const leaked = unexpectedOverlays(await js(overlaysPresent), allowed);
     if (leaked.length) throw new Error('overlay left open in ' + name + ': ' + leaked.join(', '));
     const r = await within(cdp('Page.captureScreenshot', { format: 'png' }), 8000);
     if (r && r.data) { writeFileSync(path.join(out, name), Buffer.from(r.data, 'base64')); shots.push(name); }
+    if (!focus) return;
+    const box = await js('(() => { const el = document.querySelector(' + JSON.stringify(focus) + '); if (!el) return null; const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; })()');
+    if (!box || !(box.w > 0)) return;
+    const m = 28;
+    const clip = { x: Math.max(0, box.x - m), y: Math.max(0, box.y - m), width: box.w + m * 2, height: box.h + m * 2, scale: 2 };
+    const c = await within(cdp('Page.captureScreenshot', { format: 'png', clip }), 8000);
+    if (c && c.data) { const crop = name.replace(/\.png$/, '-crop.png'); writeFileSync(path.join(out, crop), Buffer.from(c.data, 'base64')); shots.push(crop); }
   };
   const auth = { authorization: 'Bearer ' + token, 'content-type': 'application/json' };
   const putSettings = (values) => fetch(serverUrl + '/api/v1/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ values }) });
@@ -156,19 +166,19 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         await waitFor("Boolean(document.querySelector('.sort-menu:not(.search-menu)'))", 5000);
         await force('.sort-menu .sort-choice:not([aria-checked="true"])', ['hover']);
         await pause(250);
-        await shot(tag('3-sort-menu'), ['sort menu']);
+        await shot(tag('3-sort-menu'), ['sort menu'], '.sort-menu:not(.search-menu)');
         await resetState();
         await js("document.querySelector('.sidebar-head .filter-button').click()");
         await waitFor("Boolean(document.querySelector('.filter-menu'))", 5000);
         await force('.filter-menu .chip[aria-pressed="false"]', ['hover']);
         await pause(250);
-        await shot(tag('4-filter-menu'), ['filter menu']);
+        await shot(tag('4-filter-menu'), ['filter menu'], '.filter-menu');
         await resetState();
         await js("document.querySelector('.sidebar-head .search-mode-button')?.click()");
         await maybe("Boolean(document.querySelector('.search-menu'))", 1500);
         await force('.search-menu .sort-choice:not([aria-checked="true"])', ['hover']);
         await pause(250);
-        await shot(tag('5-search-menu'), ['search menu']);
+        await shot(tag('5-search-menu'), ['search menu'], '.search-menu');
         await resetState();
         await convPane();
         await js('(() => { ' + root + ".appNotices = [{ id: 'design-217', tone: 'info', message: 'Update 0.9 is ready to install', detail: 'It installs when you restart. Your conversations stay as they are.', action: { label: 'Restart now', command: 'design' }, percent: null, read: false }]; return true; })()");
@@ -190,13 +200,19 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         await js('(() => { const c = ' + conv + '; const m = [...c.messages].find((x) => x.text); if (m) c.openMenu(m); return true; })()');
         await maybe("Boolean(document.querySelector('.message-menu'))", 1500);
         await pause(350);
-        await shot(tag('8-message-menu'), ['message menu']);
+        await shot(tag('8-message-menu'), ['message menu'], '.message-menu');
         await resetState();
         await convPane();
         await js('(() => { const cmp = document.querySelector("app-composer"); if (cmp) { cmp.emojiOpen = true; cmp.attachOpen = false; } return true; })()');
         await maybe("Boolean(document.querySelector('.emoji-picker'))", 1500);
         await pause(350);
-        await shot(tag('9-emoji-panel'), ['emoji panel']);
+        await shot(tag('9-emoji-panel'), ['emoji panel'], '.emoji-picker');
+        await resetState();
+        await convPane();
+        await js('(() => { const cmp = document.querySelector("app-composer"); if (cmp) { cmp.attachOpen = true; cmp.emojiOpen = false; } return true; })()');
+        await maybe("Boolean(document.querySelector('.attach-menu'))", 1500);
+        await pause(350);
+        await shot(tag('10-attach-menu'), ['attach menu'], '.attach-menu');
         await resetState();
       }
       w.setSize(1100, 720);

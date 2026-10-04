@@ -427,11 +427,14 @@ test('every menu, popover and picker wears the shared caret', () => {
     return out;
   };
   const POP = /class="(?:[^"]*\s)?(?:[\w-]+-(?:menu|pop|popover|picker))(?![\w-])/;
+  // A new menu that names its panel another way still has to wear the caret: menu semantics mark a popover too, so a
+  // bare panel with role="menu" fails here rather than shipping without one.
+  const MENU_ROLE = /role="(?:menu|menubar)"/;
   const files = walk('core/app/components').filter((f) => CODE.test(f));
   let found = 0;
   for (const f of files) {
     for (const { tag } of openTags(read(f))) {
-      if (!POP.test(tag)) continue;
+      if (!POP.test(tag) && !(MENU_ROLE.test(tag) && /data-dismiss/.test(tag))) continue;
       found += 1;
       assert.ok(/data-popover(?:\s|>|\/)/.test(tag), f + ': a popover with no caret (no data-popover): ' + tag.slice(0, 100));
       assert.ok(/data-popover-edge/.test(tag), f + ': a popover whose caret has no side (no data-popover-edge): ' + tag.slice(0, 100));
@@ -440,8 +443,65 @@ test('every menu, popover and picker wears the shared caret', () => {
   assert.ok(found >= 6, 'the guard found the popovers: ' + found);
   const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
   assert.match(css, /\[data-popover\]::before\b/, 'the one caret is drawn from data-popover');
-  for (const f of ['core/app/components/app-root.js', 'core/app/components/app-conversation.js', 'core/app/components/app-composer.js', 'core/app/components/app-emoji-picker.js']) {
-    assert.match(read(f), /aimCarets\(/, f + ' holds a popover but never aims its caret');
+  // Every surface that opens a popover, the emoji panel and the attachment menu named with the rest, aims its caret
+  // through the kit rule. A surface added without the caret marks, or without an aimCarets() call, fails here.
+  const surfaces = [
+    ['the chats sort menu', 'core/app/components/app-root.js', 'sort-menu'],
+    ['the filter menu', 'core/app/components/app-root.js', 'filter-menu'],
+    ['the search-mode menu', 'core/app/components/app-root.js', 'search-menu'],
+    ["the conversation's message menu", 'core/app/components/app-conversation.js', 'message-pop'],
+    ['the emoji panel', 'core/app/components/app-emoji-picker.js', 'emoji-picker'],
+    ['the attachment menu', 'core/app/components/app-composer.js', 'attach-menu'],
+  ];
+  for (const [label, f, cls] of surfaces) {
+    assert.match(read(f), new RegExp('class="[^"]*' + cls + '[^"]*"[^>]*data-popover'), label + ' opens without the shared caret');
+    assert.match(read(f), /aimCarets\(/, label + ' never aims its caret');
+  }
+});
+
+// The caret is drawn from the panel's own tokens, never a literal, and sized from one token (issue 217, restyled in
+// #227): the drawn width is the whole --size-caret; the outline carries the panel's border token at the panel's own
+// one border weight and the fill the panel's surface token; and each base sits exactly --caret-overlap (one border
+// width) inside the panel, so the panel's edge becomes the triangle's two sides with no gap and no double line. A
+// caret slipped to a gap, to a 2px overlap or to a hard-coded colour fails here.
+test('the caret is sized and coloured from the panel tokens, overlapping it by exactly one border', () => {
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const size = json('core/spec/tokens.json').size.caret;
+  assert.equal(size, '14px', 'the caret is 14px, one value for desktop and the phone width: ' + size);
+  const root = /\[data-popover\]\s*\{([^}]*)\}/.exec(css);
+  assert.ok(root, 'the caret declares its geometry from data-popover');
+  assert.match(root[1], /--caret-size:\s*var\(--size-caret\)/, 'the drawn width comes from the size token');
+  assert.match(root[1], /--caret-overlap:\s*var\(--size-border\)/, 'the overlap is exactly one border width');
+  const pair = /\[data-popover\]::before,\s*\[data-popover\]::after\s*\{([^}]*)\}/.exec(css)[1];
+  assert.match(pair, /border-left:\s*calc\(var\(--caret-size\) \/ 2\) solid transparent/, 'the left half is half the size token, so the drawn width is the whole of it');
+  assert.match(pair, /border-right:\s*calc\(var\(--caret-size\) \/ 2\) solid transparent/, 'the right half is half the size token');
+  const bodies = [pair];
+  for (const edge of ['top', 'bottom']) {
+    const pos = edge === 'top' ? 'top' : 'bottom';
+    const side = edge === 'top' ? 'bottom' : 'top';
+    const outline = new RegExp('\\[data-popover\\]\\[data-popover-edge="' + edge + '"\\]::before\\s*\\{([^}]*)\\}').exec(css)[1];
+    const fill = new RegExp('\\[data-popover\\]\\[data-popover-edge="' + edge + '"\\]::after\\s*\\{([^}]*)\\}').exec(css)[1];
+    bodies.push(outline, fill);
+    assert.ok(outline.includes('border-' + side + ': var(--caret-tip) solid var(--role-menu-border)'), edge + ': the outline is the panel border token at the tip weight');
+    assert.ok(fill.includes('border-' + side + ': calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu)'), edge + ': the fill is the panel surface token');
+    assert.ok(outline.includes(pos + ': calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip))'), edge + ': the outline overlaps the panel by one border');
+    assert.ok(fill.includes(pos + ': calc(var(--caret-overlap) - var(--caret-tip))'), edge + ': the fill base reaches the panel interior');
+  }
+  for (const body of bodies) assert.doesNotMatch(body, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|color-mix\(/i, 'the caret carries a hard-coded colour: ' + body);
+});
+
+// The caret is drawn in exactly one place (issue 217): the one data-popover rule in app.css. A second caret drawn by
+// hand, as a zero-sized border triangle in the stylesheet or as a component's own element, is the drift this fails on:
+// a themed panel would keep the hand-drawn one and miss the shared size, colour and aim.
+test('the caret is drawn once, by the shared rule, and never by hand', () => {
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const zero = (body, side) => new RegExp('(?:^|[;{\\s])' + side + ':\\s*0(?:px)?\\s*;').test(body);
+  const triangles = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(([, , body]) => zero(body, 'width') && zero(body, 'height') && /\bsolid\b/.test(body))
+    .map((m) => m[1].trim().replace(/\s+/g, ' '));
+  assert.deepEqual(triangles, ['[data-popover]::before, [data-popover]::after'], 'the caret is drawn by hand beside the shared rule: ' + triangles.join(' | '));
+  for (const f of walk('core/app/components').filter((f) => CODE.test(f))) {
+    assert.doesNotMatch(read(f), /class=["'][^"']*\bcaret\b/, f + ' renders a caret of its own; the caret is data-popover\'s');
   }
 });
 
