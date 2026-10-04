@@ -206,8 +206,19 @@ class AppSettings extends KitElement {
   // root takes, so the swatches and the card's own surface are drawn exactly as the theme would draw the app. A card
   // also carries data-palette="default", so a colour the theme leaves out shows the default rather than the theme in
   // force on the root. Set with setProperty, never written into a style attribute as text.
+  //
+  // The cards are drawn by app-sheet, which renders this page's body in its own update, AFTER this page's updated()
+  // has run: painting only here found no card on a fresh open (and missed every card added since), so every card fell
+  // back to the default palette and all of them looked alike (issue 186). The cards are painted now, for the ones
+  // already on the page, and again once the sheet has drawn this render.
   updated(changed) {
     super.updated?.(changed);
+    this.paintCards();
+    const sheet = this.querySelector('app-sheet');
+    if (sheet && sheet.updateComplete) sheet.updateComplete.then(() => this.paintCards());
+  }
+
+  paintCards() {
     const choices = themeChoices(this.values || {});
     for (const card of this.querySelectorAll('.theme-card[data-theme-id]')) {
       const choice = choices.find((c) => c.id === card.dataset.themeId);
