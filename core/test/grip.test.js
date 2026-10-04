@@ -51,6 +51,16 @@ test('keyboard focus gets a visible ring (issue 217)', () => {
   assert.match(rule(css(), '.conv-divider:focus-visible'), /outline:\s*var\(--size-border\) solid var\(--color-accent\)/, 'the focus ring is drawn');
 });
 
+test('the grip strip sits below every panel, so a backdrop press still reaches it (issue 217)', () => {
+  const src = css();
+  const zIndexOf = (selector) => {
+    const m = rule(src, selector);
+    const z = /z-index:\s*(-?\d+)/.exec(m);
+    return z ? Number(z[1]) : 0;
+  };
+  assert.ok(zIndexOf('.conv-divider') < zIndexOf('.sheet-scrim'), 'the divider is below the sheet backdrop');
+});
+
 test('the phone drawer edge carries the same pill, nothing at rest and no finger capture (issue 217)', () => {
   const src = css();
   assert.match(src, /@media \(max-width: 640px\)/, 'the phone rules exist');

@@ -73,7 +73,8 @@ app-root { display: block; height: 100%; }
   bottom: 0;
   left: calc(var(--size-sidebar) - var(--size-grip-hit) / 2);
   width: var(--size-grip-hit);
-  z-index: 4;
+  /* Below every panel and backdrop, so a press that starts on a sheet's own edge still reaches it. */
+  z-index: 1;
   cursor: col-resize;
   background: none;
   -webkit-app-region: no-drag;
