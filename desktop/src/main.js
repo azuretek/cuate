@@ -18,6 +18,7 @@ import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { renderIcon } from '../../core/app/rules/icon.js';
 import { lockZoom } from './zoom-lock.js';
+import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -2780,7 +2781,7 @@ function createWindow() {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     // The sheet's event history, kept from every load so a failure can say whether a departure started (smoke-failure.js).
     win.webContents.on('did-finish-load', () => { win.webContents.executeJavaScript(smokeTraceInstaller(), true).catch(() => {}); });
-    runSmoke(win).catch(async (e) => {
+    (process.env.SMOKE_DESIGN ? runDesign(win, { nativeTheme, out: SMOKE, core: CORE, serverUrl: process.env.SMOKE_SERVER_URL, token: process.env.SMOKE_TOKEN, themeText: readFileSync(process.env.SMOKE_THEME_FIXTURE, 'utf8'), app }) : runSmoke(win)).catch(async (e) => {
       console.error('smoke failed: ' + (e && e.message));
       // Retain what the renderer held when the step failed, bounded and sanitized, so a stuck surface is
       // read from evidence rather than guessed. It runs only on the failure path and never rethrows.
