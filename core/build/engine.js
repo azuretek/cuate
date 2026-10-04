@@ -39,6 +39,7 @@ var engine = (() => {
     ICON_MASTERS: () => ICON_MASTERS,
     ICON_TOKENS: () => ICON_TOKENS,
     INSTALL: () => INSTALL,
+    LETTER_OTHER: () => LETTER_OTHER,
     LEVELS: () => LEVELS,
     MANUAL: () => MANUAL,
     MAX_THEMES: () => MAX_THEMES,
@@ -111,6 +112,7 @@ var engine = (() => {
     buildNumberOf: () => buildNumberOf,
     canTarget: () => canTarget,
     capability: () => capability,
+    caretX: () => caretX,
     channelOf: () => channelOf,
     chatPreview: () => chatPreview,
     chatTitle: () => chatTitle,
@@ -186,6 +188,7 @@ var engine = (() => {
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
+    listSections: () => listSections,
     localAttachment: () => localAttachment,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
@@ -736,6 +739,17 @@ var engine = (() => {
     if (!armed || !event || event.isTrusted !== true) return false;
     const dt = event.timeStamp - armed.at;
     return Number.isFinite(dt) && Math.abs(dt) <= SWALLOW_MS;
+  }
+
+  // core/kit/rules/popover.js
+  var INSET = 6;
+  function caretX(anchor, box, align = "center") {
+    if (!anchor || !box || !(box.width > 0)) return null;
+    if (anchor.right <= box.left || anchor.left >= box.right) return null;
+    const raw = align === "start" ? anchor.left + INSET : align === "end" ? anchor.right - INSET : anchor.left + anchor.width / 2;
+    const min = Math.min(INSET, box.width / 2);
+    const max = Math.max(box.width - INSET, box.width / 2);
+    return Math.round(Math.min(Math.max(raw - box.left, min), max));
   }
 
   // core/kit/rules/build.js
@@ -1476,6 +1490,36 @@ var engine = (() => {
     }
     return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: "Ungrouped", chats: ungrouped }];
   }
+  var LETTER_OTHER = "#";
+  var sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  function dayName(at, now) {
+    const d = new Date(at);
+    const today = new Date(now);
+    if (sameDay(d, today)) return "Today";
+    const yesterday = new Date(now);
+    yesterday.setDate(today.getDate() - 1);
+    return sameDay(d, yesterday) ? "Yesterday" : "Earlier";
+  }
+  function letterName(chat) {
+    const ch = [...chatTitle(chat).trim()][0] || "";
+    return /\p{L}/u.test(ch) ? ch.toLocaleUpperCase() : LETTER_OTHER;
+  }
+  function listSections(chats, { sort = "recent", now = 0 } = {}) {
+    const grouping = normalizeSort(sort) === "recent" ? "day" : "letter";
+    const sections = [];
+    const byName2 = /* @__PURE__ */ new Map();
+    for (const c of chats) {
+      const name = grouping === "day" ? dayName(c.lastMessageAt, now) : letterName(c);
+      let s = byName2.get(name);
+      if (!s) {
+        s = { id: "sort:" + name, name, chats: [], sortSection: true };
+        byName2.set(name, s);
+        sections.push(s);
+      }
+      s.chats.push(c);
+    }
+    return sections;
+  }
   function defaultGroupName(groups = []) {
     const taken = new Set(groups.map((g) => g.name));
     let n = 1;
@@ -2096,6 +2140,20 @@ var engine = (() => {
     destructive: ["color", "danger"],
     "destructive-foreground": ["color", "danger-fg"],
     accent: ["color", "selection"],
+    popover: ["color", "popover"],
+    "popover-foreground": ["color", "popover-fg"],
+    ring: ["color", "ring"],
+    sidebar: ["color", "sidebar"],
+    "sidebar-background": ["color", "sidebar"],
+    "sidebar-foreground": ["color", "sidebar-fg"],
+    "sidebar-accent": ["color", "sidebar-accent"],
+    "sidebar-accent-foreground": ["color", "sidebar-accent-fg"],
+    "sidebar-border": ["color", "sidebar-border"],
+    "chart-1": ["color", "chart-1"],
+    "chart-2": ["color", "chart-2"],
+    "chart-3": ["color", "chart-3"],
+    "chart-4": ["color", "chart-4"],
+    "chart-5": ["color", "chart-5"],
     radius: ["radius", "md"],
     "font-sans": ["font", "family"],
     "font-mono": ["font", "mono"],
@@ -2111,9 +2169,6 @@ var engine = (() => {
     spacing: (v) => [["2", "calc(" + v + " * 2)"], ["3", "calc(" + v + " * 3)"], ["4", "calc(" + v + " * 4)"], ["5", "calc(" + v + " * 6)"], ["6", "calc(" + v + " * 8)"]]
   };
   var REFUSE = {
-    popover: "the app draws no popover surface",
-    "popover-foreground": "the app draws no popover surface",
-    ring: "the app derives its focus ring from accent",
     "font-serif": "the app sets no serif type",
     "tracking-tighter": "the app has one letter spacing, tracking-normal",
     "tracking-tight": "the app has one letter spacing, tracking-normal",
@@ -2131,24 +2186,17 @@ var engine = (() => {
     "shadow-spread": "already composed into the shadow-* values the app takes",
     "shadow-offset-x": "already composed into the shadow-* values the app takes",
     "shadow-offset-y": "already composed into the shadow-* values the app takes",
-    sidebar: "the app draws no sidebar block",
-    "chart-1": "the app draws no charts",
-    "chart-2": "the app draws no charts",
-    "chart-3": "the app draws no charts",
-    "chart-4": "the app draws no charts",
-    "chart-5": "the app draws no charts",
-    "sidebar-background": "the app draws no sidebar block",
-    "sidebar-foreground": "the app draws no sidebar block",
-    "sidebar-primary": "the app draws no sidebar block",
-    "sidebar-primary-foreground": "the app draws no sidebar block",
-    "sidebar-accent": "the app draws no sidebar block",
-    "sidebar-accent-foreground": "the app draws no sidebar block",
-    "sidebar-border": "the app draws no sidebar block",
+    "sidebar-primary": "the app draws no sidebar primary block",
+    "sidebar-primary-foreground": "the app draws no sidebar primary block",
     "sidebar-ring": "the app draws no sidebar block"
   };
   var DERIVE = {
     primary: [["bubble-me"], ["unread"]],
-    "primary-foreground": [["bubble-me-fg"]]
+    "primary-foreground": [["bubble-me-fg"]],
+    secondary: [["secondary"]],
+    "secondary-foreground": [["secondary-fg"]],
+    accent: [["accent-soft"]],
+    "accent-foreground": [["accent-soft-fg"]]
   };
   function parseBlocks(text) {
     const css = String(text).replace(/\/\*[\s\S]*?\*\//g, "");

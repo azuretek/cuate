@@ -3,7 +3,7 @@ import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import {
-  chatTitle, chatPreview, initials, sortChats, filterChats, groupSections, emptyFilters, emptyListText,
+  chatTitle, chatPreview, initials, sortChats, filterChats, groupSections, listSections, emptyFilters, emptyListText,
   UNGROUPED, renameGroup, moveGroup, placeChat,
 } from '../rules/chats.js';
 import { formatListTime } from '../rules/time.js';
@@ -99,7 +99,7 @@ class AppChatList extends KitElement {
   setPlacement(chatId, groupId) { return this.patch({ 'chats.placement': placeChat(this.placement, chatId, groupId) }); }
 
   sectionHead(section) {
-    if (section.id === UNGROUPED) return html`<header class="section-head"><span class="section-name">${section.name}</span></header>`;
+    if (section.id === UNGROUPED || section.sortSection) return html`<header class="section-head"><span class="section-name">${section.name}</span></header>`;
     const i = (this.groups || []).findIndex((g) => g.id === section.id);
     return html`<header class="section-head">
       ${this.renaming === section.id
@@ -152,8 +152,9 @@ class AppChatList extends KitElement {
     const placement = this.placement || {};
     const sorted = sortChats(this.chats, { sort: this.sort || 'recent', locale });
     const visible = filterChats(sorted, this.f, { placement, texts: this.texts || {} });
-    const sections = groupSections(visible, { groups, placement });
-    const split = groups.length > 0;
+    // A person's own grouping wins when they have made one; otherwise the sections follow the sort in force (issue 217). A single section draws as plain rows, so a small list gets no more than the dividers.
+    const sections = groups.length ? groupSections(visible, { groups, placement }) : listSections(visible, { sort: this.sort || 'recent', now });
+    const split = groups.length > 0 ? true : sections.length > 1;
     return html`${visible.length === 0
         ? html`<p class="list-empty" role="status">${emptyListText(this.f)}</p>`
         : html`<div class="chat-sections">${sections.map((s) => this.section(s, split, now, locale))}</div>`}`;
