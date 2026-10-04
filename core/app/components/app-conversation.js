@@ -7,6 +7,7 @@ import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
 import { windowControlsHtml } from './window-controls.js';
+import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
 import './app-attachment.js';
 
@@ -265,7 +266,7 @@ class AppConversation extends KitElement {
     const locale = navigator.language;
     const items = groupMessages(thread, { gapMs: 0 });
     return html`<div class="thread-view">
-      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread">${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, 'thread')))}</div>
+      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread"><div class="thread-card-head">${closeButtonHtml({ owner: 'thread', label: 'Close thread', onClose: () => this.closeThread() })}</div>${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, 'thread')))}</div>
     </div>`;
   }
 
@@ -278,8 +279,8 @@ class AppConversation extends KitElement {
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    // An open thread keeps the contact header, with a close control in place of the way back (issue 195).
-    return html`<header class="conv-head">${thread ? nothing : html`<button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button>`}<span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${thread ? html`<button type="button" class="thread-close" aria-label="Close thread" title="Close thread" data-dismiss-keep="thread" @click=${press(() => this.closeThread())}><span class="icon" data-icon="x" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    // An open thread leaves the contact header as it is: its close control is in the thread card (issue 213).
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Conversations" @click=${press(() => this.fire('back'))}>←</button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}

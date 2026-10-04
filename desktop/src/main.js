@@ -585,7 +585,7 @@ async function runSmoke(w) {
   await waitFor("!document.querySelector('.sheet') && (document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000);
   await pause(300);
   await shot('04-tray-check-updates.png');
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   w.close();
   await visibleWithin(false);
@@ -803,7 +803,7 @@ async function runSmoke(w) {
       ids: sharp.map((r) => r.dataset.id), sharp: sharp.every((r) => { for (let e = r; e; e = e.parentElement) if (getComputedStyle(e).filter !== 'none') return false; return true; }),
       blurred: getComputedStyle(list).filter.includes('blur'), inert: list.inert, behind: list.querySelectorAll('.bubble-row').length,
       indicator: (c.querySelector('.composer-thread')?.textContent || '').trim(), repeats: c.textContent.includes('See you soon'), banner: Boolean(c.querySelector('.composer-reply')),
-      placeholder: c.querySelector('textarea')?.placeholder || '', close: Boolean(document.querySelector('.conv-head .thread-close')), back: Boolean(document.querySelector('.conv-head .conv-back')),
+      placeholder: c.querySelector('textarea')?.placeholder || '', close: Boolean(document.querySelector('.thread-view .thread-list > .thread-card-head .close-button')) && !document.querySelector('.conv-head .close-button'), back: Boolean(document.querySelector('.conv-head .conv-back')),
       separators: view ? view.querySelectorAll('.separator').length : 0,
       focused: document.activeElement === c.querySelector('textarea'), animation: view ? getComputedStyle(view).animationName : null, labels: document.querySelectorAll('.messages .reply-link').length + [...list.querySelectorAll('.bubble-row')].filter((r) => /Reply to/.test(r.textContent)).length,
     };
@@ -815,7 +815,7 @@ async function runSmoke(w) {
   await startReply();
   const focused = await focusState();
   await both('15-thread-focus');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.conv-body').dataset.thread && !document.querySelector('.thread-view')", 5000);
   await pause(400);
   const cancelled = await focusState();
@@ -828,7 +828,7 @@ async function runSmoke(w) {
   const threadChecks = {
     view: focused.thread === TARGET && focused.ids.join('|') === TARGET && focused.sharp && focused.blurred && focused.inert && focused.behind > 1,
     noBanner: !focused.indicator && focused.placeholder === 'Reply' && !focused.repeats && !focused.banner,
-    header: focused.close && !focused.back && focused.separators === focused.ids.length,
+    header: focused.close && focused.back && focused.separators === focused.ids.length,
     noLabels: focused.labels === 0,
     focused: focused.focused,
     restored: !cancelled.thread && !cancelled.blurred && !cancelled.inert && !cancelled.indicator && cancelled.ids.length === 0 && cancelled.placeholder === 'Message' && !cancelled.close,
@@ -964,7 +964,7 @@ async function runSmoke(w) {
   await pause(400);
   const fixtureThread = await focusState();
   await both('16e-fixture-thread');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
   const marksListOpen = await js("document.querySelector('app-root').listOpen");
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
@@ -980,14 +980,14 @@ async function runSmoke(w) {
   await pause(400);
   const fixturePhoneThread = await focusState();
   await both('16g-fixture-thread-phone');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
   await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
   await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(marksListOpen)}; return true; })()`);
   await pause(300);
   const fixtureIds = [FIXTURE_ROOT, FIXTURE_REPLY, 'FAKE-0015'].join('|');
   const marksOk = (m) => m.lines.join('|') === FIXTURE_REPLY && m.marked.includes(FIXTURE_REPLY) && m.marked.includes('FAKE-0015') && m.marked.includes(replied.id) && m.marked.length === 3 && m.ghostRoot === FIXTURE_ROOT && m.ghostSide === 'mine' && m.count === '2 Replies' && m.ghosts.length === 2 && m.ghostFill === 'rgba(0, 0, 0, 0)' && m.lineLeftOfBubble;
-  const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && !t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
+  const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
   const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.ghost.includes('See you soon') && replied.side === 'theirs' && replied.count === '1 Reply' && !replied.line && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
@@ -1027,7 +1027,7 @@ async function runSmoke(w) {
   await js("document.querySelector('app-composer .staged-preview').click()");
   await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image')?.naturalWidth)", 10000);
   const stagedOpens = await js("document.querySelector('app-image-viewer .viewer-image').alt === 'smoke-picture.png'");
-  await js("document.querySelector('app-image-viewer .viewer-close').click()");
+  await js("document.querySelector('app-image-viewer .close-button').click()");
   await waitFor("!document.querySelector('app-image-viewer')", 5000);
   await js("document.querySelector('app-composer .staged-remove').click()");
 
@@ -1149,7 +1149,7 @@ async function runSmoke(w) {
   await pause(200);
   const escapeCloses = !(await viewerOpen());
   await openViewer();
-  await js("document.querySelector('app-image-viewer .viewer-close').click()");
+  await js("document.querySelector('app-image-viewer .close-button').click()");
   await pause(200);
   const closeCloses = !(await viewerOpen());
   await openViewer();
@@ -1815,7 +1815,7 @@ async function runSmoke(w) {
   const floorMs = Number.parseFloat(await js("getComputedStyle(document.documentElement).getPropertyValue('--motion-min-visible')"));
   report.noticeFloor = Number.isFinite(floorMs) && floorMs > 0 && Date.now() - checkSeen >= floorMs / 2;
   smokeCalls.length = 0;
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await pause(300);
   report.updateBannerCleared = await js("!document.querySelector('.app-notice')") && smokeCalls.length === 0;
   // The same update event updates one card and its progress node, without replaying arrival.
@@ -1824,7 +1824,7 @@ async function runSmoke(w) {
   await js("window.noticeProofNode = document.querySelector('.app-notice-progress'); document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.8,canInstall:true})");
   await waitFor("document.querySelector('.app-notice-progress')?.value === 0.8");
   report.noticeInPlace = await js("window.noticeProofNode === document.querySelector('.app-notice-progress') && document.querySelectorAll('.app-notice').length === 1");
-  await js("document.querySelector('.app-notice-dismiss').click()");
+  await js("document.querySelector('.close-button').click()");
   await waitFor("!document.querySelector('.app-notice')");
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.9,canInstall:true})");
   report.noticeDismissed = await js("!document.querySelector('.app-notice')");
@@ -1901,7 +1901,7 @@ async function runSmoke(w) {
     report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     report.updates = report.updates && report.noticeReducedMotion;
-    await js("document.querySelector('.app-notice-dismiss').click()");
+    await js("document.querySelector('.close-button').click()");
     await waitFor("!document.querySelector('.app-notice')");
     w.setMinimumSize(...originalMinimum);
     w.setSize(...originalSize);
@@ -1965,7 +1965,7 @@ async function runSmoke(w) {
   // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
   // centre, so the sheet does not cover it; and the sheet starts below the notice's band, on a phone and on the
   // desktop alike, so the card covers no part of the sheet.
-  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.app-notice-dismiss'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.app-notice-dismiss') && sheet && document.querySelector('app-about') && sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom); })()";
+  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.close-button'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.close-button') && sheet && document.querySelector('app-about') && sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom); })()";
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutPhoneNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
@@ -1975,7 +1975,7 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06h-about-phone-notice-dark.png');
   nativeTheme.themeSource = 'light';
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(300);
@@ -2000,12 +2000,12 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06f-about-check-notice-dark.png');
   nativeTheme.themeSource = 'light';
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   // A second press after the notice was dismissed is a new question, so its answer shows again.
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutCheckAgain = await waitFor("(document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000).then(() => true, () => false);
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   // The client's own build and the server's, in chela's order, each value copyable, the links, and the one action that
   // copies the lot.
@@ -2077,11 +2077,11 @@ async function runSmoke(w) {
   await js(`document.querySelector(${JSON.stringify(phoneRow + ' .message-action[aria-label="Reply in thread"]')}).click()`);
   await waitFor("Boolean(document.querySelector('.conv-body')?.dataset.thread) && Boolean(document.querySelector('.thread-view .bubble-row'))", 10000);
   await pause(400);
-  const phoneThread = await js("(() => { const list = document.querySelector('.messages'); return { ids: [...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id), blurred: getComputedStyle(list).filter.includes('blur'), placeholder: document.querySelector('app-composer textarea')?.placeholder || '', close: Boolean(document.querySelector('.conv-head .thread-close')), back: Boolean(document.querySelector('.conv-head .conv-back')) }; })()");
+  const phoneThread = await js("(() => { const list = document.querySelector('.messages'); return { ids: [...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id), blurred: getComputedStyle(list).filter.includes('blur'), placeholder: document.querySelector('app-composer textarea')?.placeholder || '', close: Boolean(document.querySelector('.thread-view .thread-list > .thread-card-head .close-button')) && !document.querySelector('.conv-head .close-button'), back: Boolean(document.querySelector('.conv-head .conv-back')) }; })()");
   await phoneBoth('08c-phone-thread-focus');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
-  report.phoneMessageMenu = phoneMenu.labels.join('|') === 'Reply in thread|React' && Boolean(phoneMenu.time) && phoneMenu.inView && phoneThread.ids[0] === 'FAKE-0013' && phoneThread.ids.length === 2 && phoneThread.blurred && phoneThread.placeholder === 'Reply' && phoneThread.close && !phoneThread.back;
+  report.phoneMessageMenu = phoneMenu.labels.join('|') === 'Reply in thread|React' && Boolean(phoneMenu.time) && phoneMenu.inView && phoneThread.ids[0] === 'FAKE-0013' && phoneThread.ids.length === 2 && phoneThread.blurred && phoneThread.placeholder === 'Reply' && phoneThread.close && phoneThread.back;
   console.log('phone message menu: ' + JSON.stringify({ phoneMenu, phoneThread }));
 
   // The gesture: the drawer follows the finger from the left edge, settles by where the finger left it, and takes no
@@ -2172,8 +2172,7 @@ async function runSmoke(w) {
   // or on the modal backdrop drawn over it. Probes on it count anything that reaches it.
   const dismissTarget = (panel) => js('(() => {'
     + ' const panel = document.querySelector(' + dq(panel) + ');'
-    // An open thread puts its close control where the way back was (issue 195), so the contact's avatar beside it is
-    // the control a press outside the thread lands on there.
+    // The contact's avatar is the control a press outside an open thread lands on when no other candidate shows.
     + ' const cands = [".chat-row:not(.selected)", ".sidebar-head .gear-button", "app-conversation .conv-back", "app-conversation .conv-head .avatar"];'
     + ' for (const sel of cands) {'
     + '   for (const el of document.querySelectorAll(sel)) {'
@@ -2312,9 +2311,9 @@ async function runSmoke(w) {
   const closeSurfaces = ['viewer', 'thread', 'notice', 'noticeOverViewer'];
   const CLOSE_NOTICE = 'smoke-close-213';
   const closeSel = {
-    viewer: 'app-image-viewer .close-button, app-image-viewer .viewer-close',
-    thread: '.thread-view .close-button, .conv-head .thread-close',
-    notice: '.app-notice[data-id="' + CLOSE_NOTICE + '"] .close-button, .app-notice[data-id="' + CLOSE_NOTICE + '"] .app-notice-dismiss',
+    viewer: 'app-image-viewer .close-button',
+    thread: '.thread-view .thread-list .close-button',
+    notice: '.app-notice[data-id="' + CLOSE_NOTICE + '"] .close-button',
   };
   closeSel.noticeOverViewer = closeSel.notice;
   const closedExpr = {
