@@ -15,7 +15,12 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
   writeFileSync(docPath, pdf);
-  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length });
+  // A payload whose bytes are nothing the server reads (issue 238): an app's data, not a picture. The capture needs
+  // one so the quiet row is exercised, and the bytes carry no signature sniff() knows.
+  const blobPath = path.join(attachmentsRoot, 'fake', 'payload.blob');
+  const blob = Buffer.from('app payload bytes with no signature the server reads');
+  writeFileSync(blobPath, blob);
+  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, blobPath, blobBytes: blob.length });
   let rowid = messages.length;
   let attempts = 0;
   let liveSent = false;
