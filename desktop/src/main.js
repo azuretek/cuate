@@ -1,6 +1,6 @@
 // The desktop shell: one window hosting core's app page over app://bundle, plus the host bridge. Nothing about the
 // app lives here; the name comes from core/spec/naming.json.
-import { app, BrowserWindow, protocol, ipcMain, Menu, Tray, nativeImage, safeStorage, Notification, shell, nativeTheme } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain, Menu, Tray, nativeImage, safeStorage, Notification, shell, nativeTheme, dialog } from 'electron';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -40,6 +40,9 @@ const smokeNotices = [];
 // Every bridge command the page calls while smoking, so the smoke can prove the banner's action called the command it
 // says it does rather than trusting the button's label.
 const smokeCalls = [];
+// Every document the page asked to save while smoking, so the smoke can prove the press reached the shell under the
+// file's real name rather than opening anything (issue 219).
+const smokeSaves = [];
 
 app.setName(naming.product);
 if (SMOKE) app.setPath('userData', path.join(SMOKE, 'user-data'));
@@ -164,6 +167,16 @@ const handlers = createHandlers({
     return true;
   },
   appIcon: (icon) => setAppIcon(icon),
+  // A document is offered for saving under its real name (issue 219). While smoking, the dialog is not opened: the
+  // request is recorded and answered, so the run never blocks on a modal the way a person's press would not.
+  saveFile: async ({ name, mime, data }) => {
+    if (SMOKE) { smokeSaves.push({ name, mime, bytes: data.length }); return true; }
+    if (!win || win.isDestroyed()) return false;
+    const picked = await dialog.showSaveDialog(win, { defaultPath: name || 'Attachment' });
+    if (picked.canceled || !picked.filePath) return false;
+    writeFileSync(picked.filePath, Buffer.from(data, 'base64'));
+    return true;
+  },
   // About's Check for updates runs the tray's own check and answers the state it reported, so the page draws the same
   // notice the event carries (issue 171).
   checkUpdates: () => {

@@ -215,3 +215,21 @@ test('the thread opens over a blur that reduced motion keeps without animation, 
   assert.match(css, /\.reaction \{ background: none;/);
   assert.ok(!/\.composer-reply|\.composer-thread|\.reply-mark|\.tapback-row|\.message-actions|\.reply-link|\.faded/.test(css), 'the old banner, indicator, per-message mark, tapback row, hover buttons, reply label and fade are gone');
 });
+
+// Issue 219: a document attachment is a save control under its real name, it carries no thread mark, and its press
+// never opens the thread; a picture keeps the media viewer.
+test('a document attachment carries no thread mark and its press saves rather than opening the thread', () => {
+  const pdf = { id: 'att-pdf', name: 'booking.pdf', mime: 'application/pdf', bytes: 10, sticker: false, missing: false, local: false };
+  const png = { id: 'att-png', name: 'sunset.png', mime: 'image/png', bytes: 10, sticker: false, missing: false, local: false };
+  const doc = msg({ id: 'doc', text: '', attachments: [pdf] });
+  const h = host({ messages: [doc] });
+  const markup = words(conversation.bubble.call(h, { message: doc, first: true, last: true }, null, false, 'list'));
+  assert.ok(!/thread-reply/.test(markup), 'a document in no thread carries no thread mark');
+  assert.equal(words(conversation.links.call(h)), '', 'and draws no line');
+  const attachment = defined['app-attachment'].prototype;
+  const file = words(attachment.render.call({ attachment: pdf, client: {}, failed: false, src: '' }));
+  assert.ok(file.includes('aria-label=Save booking.pdf') && file.includes('data-icon="download"'), 'a document is a save control under its real name');
+  assert.ok(!file.includes('attachment-preview'), 'and never the media viewer');
+  const image = words(attachment.render.call({ attachment: png, client: {}, failed: false, src: '' }));
+  assert.ok(image.includes('attachment-image'), 'a picture keeps the media viewer');
+});
