@@ -2,6 +2,7 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
 import { dismissable } from '../../kit/dismiss.js';
+import { aimCarets } from '../../kit/popover.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck } from '../rules/attach.js';
 import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
@@ -90,6 +91,8 @@ class AppComposer extends KitElement {
   updated(changed) {
     if (changed.has('replyTo') && this.replyTo) this.field()?.focus();
     this.watchFit();
+    // The attach menu and the emoji panel wear the shared caret, aimed at the tool button that opened each (issue 217).
+    aimCarets(this);
   }
 
   // The field's height is set from its text, so anything that moves where its lines wrap or how tall they are sets it
@@ -292,7 +295,7 @@ class AppComposer extends KitElement {
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.grow} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}>\u2191</button>
       ${this.attachOpen
-        ? html`<div class="attach-menu" role="menu" aria-label="Attach" data-dismiss="attach">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
+        ? html`<div class="attach-menu" role="menu" aria-label="Attach" data-dismiss="attach" data-popover data-popover-edge="bottom">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
         : nothing}
       ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .frequent=${this.frequent} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)}></app-emoji-picker>` : nothing}
     </form>`;

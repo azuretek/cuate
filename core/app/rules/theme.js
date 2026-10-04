@@ -78,6 +78,20 @@ const MAP = {
   destructive: ['color', 'danger'],
   'destructive-foreground': ['color', 'danger-fg'],
   accent: ['color', 'selection'],
+  popover: ['color', 'popover'],
+  'popover-foreground': ['color', 'popover-fg'],
+  ring: ['color', 'ring'],
+  sidebar: ['color', 'sidebar'],
+  'sidebar-background': ['color', 'sidebar'],
+  'sidebar-foreground': ['color', 'sidebar-fg'],
+  'sidebar-accent': ['color', 'sidebar-accent'],
+  'sidebar-accent-foreground': ['color', 'sidebar-accent-fg'],
+  'sidebar-border': ['color', 'sidebar-border'],
+  'chart-1': ['color', 'chart-1'],
+  'chart-2': ['color', 'chart-2'],
+  'chart-3': ['color', 'chart-3'],
+  'chart-4': ['color', 'chart-4'],
+  'chart-5': ['color', 'chart-5'],
   radius: ['radius', 'md'],
   'font-sans': ['font', 'family'],
   'font-mono': ['font', 'mono'],
@@ -100,9 +114,6 @@ const SCALE = {
 
 // A name the export carries that has no app token, with the reason it is left out.
 const REFUSE = {
-  popover: 'the app draws no popover surface',
-  'popover-foreground': 'the app draws no popover surface',
-  ring: 'the app derives its focus ring from accent',
   'font-serif': 'the app sets no serif type',
   'tracking-tighter': 'the app has one letter spacing, tracking-normal',
   'tracking-tight': 'the app has one letter spacing, tracking-normal',
@@ -120,19 +131,8 @@ const REFUSE = {
   'shadow-spread': 'already composed into the shadow-* values the app takes',
   'shadow-offset-x': 'already composed into the shadow-* values the app takes',
   'shadow-offset-y': 'already composed into the shadow-* values the app takes',
-  sidebar: 'the app draws no sidebar block',
-  'chart-1': 'the app draws no charts',
-  'chart-2': 'the app draws no charts',
-  'chart-3': 'the app draws no charts',
-  'chart-4': 'the app draws no charts',
-  'chart-5': 'the app draws no charts',
-  'sidebar-background': 'the app draws no sidebar block',
-  'sidebar-foreground': 'the app draws no sidebar block',
-  'sidebar-primary': 'the app draws no sidebar block',
-  'sidebar-primary-foreground': 'the app draws no sidebar block',
-  'sidebar-accent': 'the app draws no sidebar block',
-  'sidebar-accent-foreground': 'the app draws no sidebar block',
-  'sidebar-border': 'the app draws no sidebar block',
+  'sidebar-primary': 'the app draws no sidebar primary block',
+  'sidebar-primary-foreground': 'the app draws no sidebar primary block',
   'sidebar-ring': 'the app draws no sidebar block',
 };
 
@@ -141,6 +141,10 @@ const REFUSE = {
 const DERIVE = {
   primary: [['bubble-me'], ['unread']],
   'primary-foreground': [['bubble-me-fg']],
+  secondary: [['secondary']],
+  'secondary-foreground': [['secondary-fg']],
+  accent: [['accent-soft']],
+  'accent-foreground': [['accent-soft-fg']],
 };
 
 function parseBlocks(text) {

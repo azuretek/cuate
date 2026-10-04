@@ -313,6 +313,10 @@ async function runSmoke(w) {
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
+  // Every popover wears the shared caret (issue 217). The guard reads each open panel back from the page: it must carry
+  // the popover marks and its --caret-x must be a real offset inside the panel, aimed at the control that opened it.
+  const carets = [];
+  const caretOf = async (sel) => { const r = await js("(() => { const p = document.querySelector(" + JSON.stringify(sel) + "); if (!p) return { ok: false, why: 'no panel' }; const x = getComputedStyle(p).getPropertyValue('--caret-x').trim(); const m = /^(-?[0-9.]+)px$/.exec(x); const box = p.getBoundingClientRect(); return { ok: Boolean(p.hasAttribute('data-popover')) && Boolean(p.getAttribute('data-popover-edge')) && Boolean(m) && parseFloat(m[1]) >= 0 && parseFloat(m[1]) <= box.width, why: x }; })()"); carets.push({ sel, ...r }); return r; };
   // A resync refetches the open conversation in place: every DOM change while it runs is watched, and the conversation
   // never drops to no messages on the way. Emptying it first was what let a late first-connection resync read as none.
   const resync = await js(`(async () => {
@@ -331,9 +335,16 @@ async function runSmoke(w) {
   if (!report.resyncKeeps) console.error('resync: ' + JSON.stringify(resync));
   // The chats header is a search field with its mode, a filter icon, a sort icon and a gear, and no heading text, no
   // Settings text button and no pencil Edit button (issue 137).
-  report.header = await js("(() => { const h = document.querySelector('.sidebar-head'); if (!h) return false; const gone = !h.querySelector('.title') && !h.querySelector('.text-button') && !h.querySelector('h1') && !h.querySelector('.edit-button'); return Boolean(h.querySelector('.search-box .search-mode') && h.querySelector('.search-box .chat-search') && h.querySelector('.filter-button') && h.querySelector('.sort-button') && h.querySelector('.gear-button') && gone); })()");
+  report.header = await js("(() => { const h = document.querySelector('.sidebar-head'); if (!h) return false; const gone = !h.querySelector('.title') && !h.querySelector('.text-button') && !h.querySelector('h1') && !h.querySelector('.edit-button'); return Boolean(h.querySelector('.search-box .search-mode-button') && h.querySelector('.search-box .chat-search') && h.querySelector('.filter-button') && h.querySelector('.sort-button') && h.querySelector('.gear-button') && gone); })()");
   const setSearch = (v) => js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.value = " + JSON.stringify(v) + "; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
-  const setMode = (v) => js("(() => { const s = document.querySelector('.sidebar-head .search-mode'); s.value = " + JSON.stringify(v) + "; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+  // The search field's arrow opens our own menu (issue 173); a mode is chosen from it, and the caret is read while it is open.
+  const setMode = async (v) => {
+    await js("document.querySelector('.sidebar-head .search-mode-button').click()");
+    await waitFor("Boolean(document.querySelector('.search-menu'))");
+    await caretOf('.search-menu');
+    await js("[...document.querySelectorAll('.search-menu .sort-choice')].find((b) => b.textContent.includes(" + JSON.stringify(v === 'text' ? 'Full text' : 'Contact') + ")).click()");
+    await waitFor("!document.querySelector('.search-menu')");
+  };
   const pressEnter = () => js("(() => { const i = document.querySelector('.sidebar-head .chat-search'); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()");
   const rowNames = "[...document.querySelectorAll('.chat-row .chat-name')].map((n) => n.textContent)";
   const namesAre = (list) => 'JSON.stringify(' + rowNames + ') === ' + JSON.stringify(JSON.stringify(list));
@@ -396,6 +407,7 @@ async function runSmoke(w) {
   const chooseSort = async (label, value) => {
     await js("document.querySelector('.sidebar-head .sort-button').click()");
     await waitFor("Boolean(document.querySelector('.sort-menu'))");
+    await caretOf('.sort-menu');
     const menu = await js("JSON.stringify([...document.querySelectorAll('.sort-menu .sort-choice')].map((b) => b.textContent.replace(/\\u2713/g, '').trim()))");
     if (label === 'Name A to Z') {
       nativeTheme.themeSource = 'light';
@@ -469,6 +481,7 @@ async function runSmoke(w) {
   // the chip lifts it.
   await js("document.querySelector('.sidebar-head .filter-button').click()");
   await waitFor("Boolean(document.querySelector('.filter-menu'))");
+  await caretOf('.filter-menu');
   await js("[...document.querySelectorAll('.filter-menu .chip')].find((c) => c.textContent.trim() === 'Unread').click()");
   report.headerFilter = await js("Boolean(document.querySelector('.filter-menu .chip[aria-pressed=true]')) && Boolean(document.querySelector('.active-chip'))");
   await js("document.querySelector('.active-chip .chip-clear').click()");
@@ -664,6 +677,7 @@ async function runSmoke(w) {
   // keyboard walks: the grid, then the field, then the tabs, then the recents.
   await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
   await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-grid'))");
+  await caretOf('.emoji-picker');
   await pause(250);
   const emojiBefore = await js("(() => { const picker = document.querySelector('app-emoji-picker'); const grid = picker.querySelector('.emoji-grid'); const panel = picker.querySelector('.emoji-picker'); return { composerTop: document.querySelector('app-composer').getBoundingClientRect().top, gridTop: grid.getBoundingClientRect().top, rows: picker.querySelectorAll('.emoji-grid .emoji-cell').length, tabs: picker.querySelectorAll('.emoji-tab').length, active: picker.querySelectorAll('.emoji-tab.active').length, order: [...panel.children].map((n) => n.className) }; })()");
   await js("(() => { const f = document.querySelector('app-emoji-picker .emoji-search'); f.value = 'heart'; f.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
@@ -704,6 +718,7 @@ async function runSmoke(w) {
   // The file is handed to the input the way the system picker would, since a smoke cannot drive the OS dialog.
   await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
   await waitFor("Boolean(document.querySelector('app-composer .attach-menu'))");
+  await caretOf('.attach-menu');
   const attachMenu = await js("(() => { const c = document.querySelector('app-composer'); const menu = c.querySelector('.attach-menu'); const tools = [...c.querySelectorAll('.composer-tools button.tool')].map((b) => b.getAttribute('aria-label')); return { tools, items: [...menu.querySelectorAll('[role=menuitem]')].map((b) => b.textContent.trim()), above: menu.getBoundingClientRect().bottom <= c.querySelector('form').getBoundingClientRect().top + 1, sheet: menu.getBoundingClientRect().width >= window.innerWidth }; })()");
   await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
   const ATTACH_CAPTION = 'smoke caption \u{1F44B}\u{1F3FD}';
@@ -763,6 +778,7 @@ async function runSmoke(w) {
   await rightClick(row);
   await waitFor(`Boolean(document.querySelector(${q(row + ' .message-menu')}))`, 10000);
   const theirMenu = await menuOf(row);
+  await caretOf('.message-menu');
   await both('13-message-menu');
   await escape();
   await waitFor(`!document.querySelector(${q(row + ' .message-menu')})`, 5000);
@@ -1380,7 +1396,7 @@ async function runSmoke(w) {
   const reset = await putSettings({ 'chats.hidden': [], 'chats.groups': [], 'chats.placement': {} });
   if (!reset.ok) throw new Error('the server refused the chat arrangement reset: ' + reset.status);
   try {
-    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && !document.querySelector('.chat-section')", 10000);
+    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && !document.querySelector('.section-actions')", 10000);
   } catch (e) {
     const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], groups: s['chats.groups'], placement: s['chats.placement'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
     console.error('chat arrangement reset: ' + JSON.stringify({ page, held: await held() }));
@@ -1626,7 +1642,7 @@ async function runSmoke(w) {
   report.noBlank = blank.bubbles > 0 && blank.rows > 0 && !blank.splash && blank.busy.length === 0 && connStates.includes('reconnecting');
   console.log('no blank: ' + JSON.stringify({ blank, connStates }));
   await putSettings({ 'chats.groups': keptBefore['chats.groups'] ?? [], 'chats.placement': keptBefore['chats.placement'] ?? {}, 'appearance.textScale': 100 });
-  await waitFor("document.querySelectorAll('.chat-section').length === 0", 10000);
+  await waitFor("document.querySelectorAll('.section-actions').length === 0", 10000);
 
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
@@ -1729,7 +1745,7 @@ async function runSmoke(w) {
   // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
   // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default
   // clears it at the server. Values are checked at the server and in what the page resolves, not in the page's copy.
-  const importCss = ':root { --primary: #8a3b12; --chart-1: #000000; }\n.dark { --primary: #e0a070; }';
+  const importCss = ':root { --primary: #8a3b12; --font-serif: serif; }\n.dark { --primary: #e0a070; }';
   await js(`(() => { const s = document.querySelector('app-settings'); const n = s.querySelector('.theme-import-name'); n.value = 'smoke import'; n.dispatchEvent(new Event('input', { bubbles: true })); const t = s.querySelector('.theme-import-text'); t.value = ${JSON.stringify(importCss)}; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await waitFor("!document.querySelector('app-settings .theme-import-action').disabled");
   await js("document.querySelector('app-settings .theme-import-action').click()");
@@ -1738,7 +1754,7 @@ async function runSmoke(w) {
   report.themeImportHeld = Boolean(imported) && imported.source === 'tweakcn' && imported.name === 'smoke import';
   await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#e0a070'", 10000);
   report.themeImportDrawn = true;
-  report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('chart-1'); })()");
+  report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('font-serif'); })()");
   await waitFor("!document.querySelector('app-settings [data-action=\"theme-default\"]').disabled", 10000);
   await js("document.querySelector('app-settings [data-action=\"theme-default\"]').click()");
   for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
@@ -2723,6 +2739,8 @@ async function runSmoke(w) {
   report.onboarding = springOk && reducedOk;
   if (!report.onboarding) console.error('onboarding arrival: ' + JSON.stringify({ arrival, reducedArrival, host: report.hostReducedMotion }));
   report.captures = captured.length;
+  report.carets = carets.length >= 6 && carets.every((c) => c.ok);
+  if (!report.carets) console.error('carets: ' + JSON.stringify(carets));
   writeFileSync(path.join(SMOKE, 'report.json'), JSON.stringify(report, null, 1));
   console.log('SMOKE ' + JSON.stringify(report));
   app.exit(0);

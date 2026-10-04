@@ -38,8 +38,8 @@ test('the hit strip is at least 10px across the whole seam, with the resize curs
 
 test('every grip colour is a theme role, so an imported theme restyles it (issue 217)', () => {
   const body = rule(css(), '.conv-divider::before');
-  assert.match(body, /border:\s*var\(--size-border\) solid var\(--color-border\)/, 'the outline is the border token');
-  assert.match(body, /var\(--color-fg\)/, 'the dots are the foreground role');
+  assert.match(body, /border:\s*var\(--size-border\) solid var\(--role-sidebar-edge\)/, 'the outline is the sidebar edge role');
+  assert.match(body, /var\(--role-sidebar-fg\)/, 'the dots are the sidebar foreground role');
   assert.equal(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/.test(body), false, 'no literal colour');
 });
 

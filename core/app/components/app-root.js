@@ -28,6 +28,7 @@ import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { iconToApply } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
+import { aimCarets } from '../../kit/popover.js';
 import { pageZoomAttempt } from '../rules/zoom.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
@@ -76,7 +77,7 @@ class AppRoot extends KitElement {
     // platform had a frame; maximized is the window's own state, which the shell reports.
     host: { state: true }, maximized: { state: true },
     // The chat list's filters live on the page, not on the server: they are a way of looking, not an arrangement.
-    filters: { state: true }, filterOpen: { state: true }, sortOpen: { state: true },
+    filters: { state: true }, filterOpen: { state: true }, sortOpen: { state: true }, searchOpen: { state: true },
     // The edit mode and its selection also live on the page: the list draws the checkboxes, the header selects all
     // and acts on the count, and the confirm gate names what a delete will remove before it removes anything.
     editing: { state: true }, checked: { state: true }, pendingDelete: { state: true },
@@ -125,6 +126,7 @@ class AppRoot extends KitElement {
     this.filters = emptyFilters();
     this.filterOpen = false;
     this.sortOpen = false;
+    this.searchOpen = false;
     this.editing = false;
     this.checked = [];
     this.pendingDelete = null;
@@ -139,6 +141,7 @@ class AppRoot extends KitElement {
     // is not open.
     dismissable(this, { name: 'filter', open: () => this.filterOpen, close: () => { this.filterOpen = false; } });
     dismissable(this, { name: 'sort', open: () => this.sortOpen, close: () => { this.sortOpen = false; } });
+    dismissable(this, { name: 'search', open: () => this.searchOpen, close: () => { this.searchOpen = false; } });
     dismissable(this, { name: 'group', open: () => this.naming, close: () => { this.naming = false; } });
     dismissable(this, { name: 'confirm', open: () => Boolean(this.pendingDelete), close: () => this.cancelDelete() });
     dismissable(this, { name: 'sheet', open: () => this.sheetShowing && !this.sheetLeaving, close: () => this.pageBack() });
@@ -1018,7 +1021,7 @@ class AppRoot extends KitElement {
     const f = this.filters || emptyFilters();
     const groups = this.chatGroups();
     const toggle = (key, value) => this.setFilters({ [key]: f[key] === value ? null : value });
-    return html`<div class="filter-menu" role="group" aria-label="Filter conversations" data-dismiss="filter">
+    return html`<div class="filter-menu" role="group" aria-label="Filter conversations" data-dismiss="filter" data-popover data-popover-edge="top">
       <div class="filter-menu-row">
         <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${press(() => this.setFilters({ unread: !f.unread }))}>Unread</button>
         <button type="button" class="chip" aria-pressed=${f.kind === 'direct' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'direct'))}>Direct</button>
@@ -1067,7 +1070,7 @@ class AppRoot extends KitElement {
   // the same setting the list has always read.
   sortMenu() {
     const current = normalizeSort(this.settings['chats.sort']);
-    return html`<div class="sort-menu" role="menu" aria-label="Sort conversations" data-dismiss="sort">
+    return html`<div class="sort-menu" role="menu" aria-label="Sort conversations" data-dismiss="sort" data-popover data-popover-edge="top">
       ${SORT_ORDERS.map((o) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${o === current ? 'true' : 'false'} @click=${press(() => this.chooseSort(o))}>
         <span class="sort-check" aria-hidden="true">${o === current ? html`<span class="icon" data-icon="check" aria-hidden="true"></span>` : nothing}</span>${SORT_LABELS[o]}
       </button>`)}
@@ -1077,6 +1080,18 @@ class AppRoot extends KitElement {
   chooseSort(sort) {
     this.sortOpen = false;
     return this.setSetting({ key: 'chats.sort', value: sort });
+  }
+
+  // The menu the search field's arrow opens (issues 173 and 217): our own menu, styled like the sort and filter ones,
+  // listing the two ways a term reads and marking the one in force. No mode words sit on or beside the field itself.
+  searchMenu() {
+    const f = this.filters || emptyFilters();
+    const notes = { contact: 'Names and people in a chat', text: 'Words inside messages' };
+    return html`<div class="sort-menu search-menu" role="menu" aria-label="Search by" data-dismiss="search" data-popover data-popover-edge="top">
+      ${SEARCH_MODES.map((m) => html`<button type="button" class="sort-choice" role="menuitemradio" aria-checked=${m === f.mode ? 'true' : 'false'} @click=${press(() => { this.searchOpen = false; this.setFilters({ mode: m }); })}>
+        <span class="sort-check" aria-hidden="true">${m === f.mode ? html`<span class="icon" data-icon="check" aria-hidden="true"></span>` : nothing}</span><span class="search-choice">${SEARCH_MODE_LABELS[m]} search<span class="sort-choice-note">${notes[m] || ''}</span></span>
+      </button>`)}
+    </div>`;
   }
 
   // --- Edit mode. The page owns the selection, so the header can select all and act on the count, and a delete is
@@ -1249,14 +1264,15 @@ class AppRoot extends KitElement {
     const f = this.filters || emptyFilters();
     return html`<header class="sidebar-head">
       <span class="search-box">
-        <select class="search-mode" aria-label="Search by" @change=${(e) => this.setFilters({ mode: e.currentTarget.value })}>${this.modeOptions(f.mode)}</select>
+        <button type="button" class="search-mode-button" aria-label=${'Search by ' + SEARCH_MODE_LABELS[f.mode]} aria-haspopup="true" data-dismiss-keep="search" aria-expanded=${this.searchOpen ? 'true' : 'false'} @click=${press(() => { this.searchOpen = !this.searchOpen; this.filterOpen = false; this.sortOpen = false; })}><span class="icon" data-icon="chevron-down" aria-hidden="true"></span></button>
         <input class="chat-search" type="search" placeholder="Search" aria-label="Search conversations" .value=${f.text || ''} @input=${(e) => this.setFilters({ text: e.currentTarget.value })} @keydown=${this.onSearchKey}>
       </span>
-      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" data-dismiss-keep="filter sort" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${press(() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; })}><span class="icon" data-icon="list-filter" aria-hidden="true"></span></button>
-      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" data-dismiss-keep="filter sort" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${press(() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; })}><span class="icon" data-icon="arrow-up-down" aria-hidden="true"></span></button>
+      <button type="button" class="filter-button" aria-label="Filter conversations" aria-haspopup="true" data-dismiss-keep="filter sort" aria-expanded=${this.filterOpen ? 'true' : 'false'} @click=${press(() => { this.filterOpen = !this.filterOpen; this.sortOpen = false; this.searchOpen = false; })}><span class="icon" data-icon="list-filter" aria-hidden="true"></span></button>
+      <button type="button" class="sort-button" aria-label="Sort conversations" aria-haspopup="true" data-dismiss-keep="filter sort" aria-expanded=${this.sortOpen ? 'true' : 'false'} @click=${press(() => { this.sortOpen = !this.sortOpen; this.filterOpen = false; this.searchOpen = false; })}><span class="icon" data-icon="arrow-up-down" aria-hidden="true"></span></button>
       <button type="button" class="gear-button" aria-label="Settings" @click=${press(() => this.openSettings())}><span class="icon" data-icon="settings" aria-hidden="true"></span></button>
       ${this.sortOpen ? this.sortMenu() : nothing}
       ${this.filterOpen ? this.filterMenu() : nothing}
+      ${this.searchOpen ? this.searchMenu() : nothing}
     </header>`;
   }
 
@@ -1321,6 +1337,8 @@ class AppRoot extends KitElement {
   updated() {
     document.body.classList.toggle('surface--leaving', this.sheetLeaving === true);
     this.syncIcon();
+    // Every open menu wears the shared caret, aimed at the control that opened it (issue 217).
+    aimCarets(this);
   }
 
   render() {

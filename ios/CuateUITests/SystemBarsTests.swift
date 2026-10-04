@@ -16,10 +16,11 @@ final class SystemBarsTests: XCTestCase {
         let headContentTop: Double
         let composerGap: Double
         let painted: [Int]
+        let paintedBottom: [Int]
 
         init?(_ label: String) {
             let parts = label.split(separator: ":").map(String.init)
-            guard parts.count == 8, parts[2] == "ready",
+            guard parts.count == 9, parts[2] == "ready",
                   let top = Double(parts[3]), let bottom = Double(parts[4]),
                   let head = Double(parts[5]), let gap = Double(parts[6]) else { return nil }
             envTop = top
@@ -27,6 +28,7 @@ final class SystemBarsTests: XCTestCase {
             headContentTop = head
             composerGap = gap
             painted = parts[7].split(separator: ",").compactMap { Int($0) }
+            paintedBottom = parts[8].split(separator: ",").compactMap { Int($0) }
         }
     }
 
@@ -167,7 +169,7 @@ final class SystemBarsTests: XCTestCase {
         let bottom = pixels.dominant(h - bottomRows, h)
         let aboveBottom = pixels.dominant(h - bottomRows - 2 * band, h - bottomRows - band)
         if !near(bottom, aboveBottom, 3) { out.append("the home indicator strip is \(hex(bottom)), the surface above it \(hex(aboveBottom))") }
-        if proof.painted.count == 3, !near(bottom, proof.painted, 8) { out.append("the home indicator strip is \(hex(bottom)), the page painted \(hex(proof.painted))") }
+        if proof.paintedBottom.count == 3, !near(bottom, proof.paintedBottom, 8) { out.append("the home indicator strip is \(hex(bottom)), the page painted \(hex(proof.paintedBottom))") }
 
         // The status bar's text: the pixels in the strip that stand well off its surface lie on the scheme's side.
         let base = luma(top)

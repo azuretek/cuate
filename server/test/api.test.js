@@ -605,7 +605,7 @@ async function themeHost(routes) {
 }
 
 test('a theme given as a URL lands on the server, is offered to every client, and says what it refused', async () => {
-  const item = { name: 'harbour', title: 'Harbour', cssVars: { theme: { radius: '0.5rem' }, light: { background: '#f0f4ff', primary: '#1d4ed8', 'chart-1': '#000000' }, dark: { background: '#0b1020', primary: '#93c5fd' } } };
+  const item = { name: 'harbour', title: 'Harbour', cssVars: { theme: { radius: '0.5rem' }, light: { background: '#f0f4ff', primary: '#1d4ed8', 'font-serif': 'serif' }, dark: { background: '#0b1020', primary: '#93c5fd' } } };
   const host = await themeHost({ '/harbour.json': { body: JSON.stringify(item) }, '/plain.css': { type: 'text/css', body: ':root { --primary: #8a3b12; } .dark { --primary: #e0a070; }' } });
   const a = s.store.createToken('device', 'theme url device a').token;
   const b = s.store.createToken('device', 'theme url device b').token;
@@ -623,8 +623,8 @@ test('a theme given as a URL lands on the server, is offered to every client, an
     assert.equal(out.theme.url, host.base + '/harbour.json');
     assert.equal(out.theme.color.light.accent, '#1d4ed8');
     assert.equal(out.theme.color.dark.bg, '#0b1020');
-    assert.deepEqual(out.refused, ['chart-1'], 'what the theme could not carry is named in the answer');
-    assert.match(out.summary, /Refused: chart-1/);
+    assert.deepEqual(out.refused, ['font-serif'], 'what the theme could not carry is named in the answer');
+    assert.match(out.summary, /Refused: font-serif/);
     const held = (await (await s.get('/api/v1/settings', b)).json()).values;
     assert.deepEqual(held['appearance.themes'].map((t) => t.id), ['harbour'], 'another device reads the imported theme from the server');
     assert.equal(held['appearance.theme'], null, 'an import offers the theme; it does not put it in force');
@@ -668,7 +668,7 @@ test('every theme imported by URL is held and read back, however many there are 
 });
 
 test('a bad theme URL, or a URL that is not a theme, is refused with the reason and saves nothing', async () => {
-  const host = await themeHost({ '/page.html': { type: 'text/html', body: '<html><body>A blog post about colours</body></html>' }, '/empty.json': { body: JSON.stringify({ name: 'x', cssVars: { light: { 'chart-1': '#000' } } }) }, '/huge.css': { type: 'text/css', body: ':root { --primary: #000; }' + ' '.repeat(300 * 1024) } });
+  const host = await themeHost({ '/page.html': { type: 'text/html', body: '<html><body>A blog post about colours</body></html>' }, '/empty.json': { body: JSON.stringify({ name: 'x', cssVars: { light: { 'font-serif': 'serif' } } }) }, '/huge.css': { type: 'text/css', body: ':root { --primary: #000; }' + ' '.repeat(300 * 1024) } });
   const a = s.store.createToken('device', 'theme url refusals').token;
   try {
     await s.put('/api/v1/settings', a, { values: { 'appearance.themes': [{ id: 'kept', name: 'Kept', color: { light: {}, dark: {} } }] } });

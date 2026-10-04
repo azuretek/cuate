@@ -78,7 +78,7 @@ test('pasting the Elegant Luxury editor URL imports its whole design language, l
     assert.equal(t.space['5'], 'calc(0.25rem * 6)');
     assert.match(t.shadow.md, /^1px 1px 16px -2px hsl\(0 63% 18% \/ 0\.12\)/);
     assert.equal(t.schemes, undefined, 'dark repeats light for every neutral value, so nothing is held for dark alone');
-    for (const name of ['chart-1', 'sidebar', 'font-serif', 'shadow-color', 'shadow-2xl', 'tracking-tight', 'ring']) assert.ok(out.refused.includes(name), name + ' is named as refused');
+    for (const name of ['font-serif', 'sidebar-primary', 'shadow-color', 'shadow-2xl', 'tracking-tight']) assert.ok(out.refused.includes(name), name + ' is named as refused');
     // The type: Poppins and IBM Plex Mono, latin only, written under the data folder by digest.
     assert.deepEqual(t.fonts.map((f) => [f.family, f.weight]), [['Poppins', '400'], ['Poppins', '700'], ['IBM Plex Mono', '400'], ['IBM Plex Mono', '700']]);
     assert.ok(t.fonts.every((f) => /^[a-f0-9]{64}$/.test(f.id)));
