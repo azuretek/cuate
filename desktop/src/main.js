@@ -2300,6 +2300,127 @@ async function runSmoke(w) {
   report.placeholder = Object.keys(placeholderChecks).length === 4 && Object.values(placeholderChecks).every((c) => c.ok);
   console.log('placeholder: ' + JSON.stringify(placeholderChecks));
 
+  // Every close (X) control closes on a click anywhere on its drawn circle (issue 213): the image viewer's, the thread
+  // card's, a notice's, and a notice's while the viewer is up (the notices then take their band over the backdrop), at
+  // three window sizes down to the smallest, maximised, and at phone width. A press on a frameless window that lands in a drag region moves the window and
+  // never reaches the page, whatever is drawn over that spot, so a synthetic click alone cannot see the fault. Each
+  // probe point (the centre, and near each edge at 85% of the radius, eight ways) is held to three things: the control
+  // is the topmost element there (nothing covers it); the point is outside every drag region as Chromium builds them
+  // (each element whose app-region is drag or no-drag adds or removes its box in tree order, so the last one containing
+  // the point decides, and the drawing order plays no part); and a real click at the centre and at the four edges
+  // closes the surface.
+  const closeSurfaces = ['viewer', 'thread', 'notice', 'noticeOverViewer'];
+  const CLOSE_NOTICE = 'smoke-close-213';
+  const closeSel = {
+    viewer: 'app-image-viewer .close-button, app-image-viewer .viewer-close',
+    thread: '.thread-view .close-button, .conv-head .thread-close',
+    notice: '.app-notice[data-id="' + CLOSE_NOTICE + '"] .close-button, .app-notice[data-id="' + CLOSE_NOTICE + '"] .app-notice-dismiss',
+  };
+  closeSel.noticeOverViewer = closeSel.notice;
+  const closedExpr = {
+    viewer: "!document.querySelector('app-image-viewer')",
+    thread: "!document.querySelector('.thread-view')",
+    notice: "!document.querySelector('.app-notice[data-id=\"" + CLOSE_NOTICE + "\"]')",
+  };
+  closedExpr.noticeOverViewer = closedExpr.notice + " && Boolean(document.querySelector('app-image-viewer'))";
+  const settled = "document.getAnimations().every((a) => a.playState !== 'running')";
+  const viewerSrc = await js("(document.querySelector('img.attachment-image') || {}).src || null");
+  let closeRevision = 0;
+  const putCloseNotice = () => js('(() => { const root = document.querySelector("app-root"); root.appNotices = [...root.appNotices.filter((n) => n.id !== ' + q(CLOSE_NOTICE) + '), { id: ' + q(CLOSE_NOTICE) + ', revision: ' + (++closeRevision) + ', tone: "info", message: "A notice to close", percent: null, read: false }]; return true; })()');
+  const openViewerAt = () => js('(() => { document.querySelector("app-root").viewing = { src: ' + q(viewerSrc) + ', alt: "smoke-close" }; return true; })()');
+  const openSurface = async (name) => {
+    if (name === 'viewer' || name === 'noticeOverViewer') {
+      await openViewerAt();
+      await waitFor("Boolean(document.querySelector('app-image-viewer'))", 5000);
+    }
+    if (name === 'thread') {
+      await js("(() => { const c = document.querySelector('app-conversation'); const m = c.messages.find((x) => !x.fromMe); c.openThread(m); return true; })()");
+      await waitFor("Boolean(document.querySelector('.thread-view'))", 5000);
+    }
+    if (name === 'notice' || name === 'noticeOverViewer') {
+      await putCloseNotice();
+      await waitFor("Boolean(document.querySelector('.app-notice[data-id=\"" + CLOSE_NOTICE + "\"]'))", 5000);
+    }
+    await waitFor(settled, 5000);
+    await pause(60);
+  };
+  // Whatever a failed press left open is closed by hand, so the next probe starts from the plain conversation.
+  const resetSurfaces = () => js('(() => { const root = document.querySelector("app-root"); root.viewing = null; root.appNotices = root.appNotices.filter((n) => n.id !== ' + q(CLOSE_NOTICE) + '); const c = document.querySelector("app-conversation"); if (c) c.closeThread(); return true; })()');
+  const closeGeometry = (sel) => js('(() => {'
+    + ' const b = document.querySelector(' + q(sel) + ');'
+    + ' if (!b) return null;'
+    + ' const r = b.getBoundingClientRect();'
+    + ' const regions = [];'
+    + ' for (const el of document.querySelectorAll("*")) {'
+    + '   const s = getComputedStyle(el);'
+    + '   const mode = (s.getPropertyValue("-webkit-app-region") || s.getPropertyValue("app-region") || "").trim();'
+    + '   if ((mode !== "drag" && mode !== "no-drag") || s.visibility !== "visible") continue;'
+    + '   const q = el.getBoundingClientRect();'
+    + '   if (q.width && q.height) regions.push({ drag: mode === "drag", q, name: String(el.className || el.tagName).split(" ")[0] });'
+    + ' }'
+    + ' const cx = r.left + r.width / 2; const cy = r.top + r.height / 2; const rad = Math.min(r.width, r.height) / 2 * 0.85; const d = Math.SQRT1_2;'
+    + ' const dirs = { centre: [0, 0], top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0], topRight: [d, -d], bottomRight: [d, d], bottomLeft: [-d, d], topLeft: [-d, -d] };'
+    + ' const points = {};'
+    + ' for (const [k, [dx, dy]] of Object.entries(dirs)) {'
+    + '   const x = Math.round(cx + dx * rad); const y = Math.round(cy + dy * rad);'
+    + '   const top = document.elementFromPoint(x, y);'
+    + '   let region = null;'
+    + '   for (const g of regions) if (x >= g.q.left && x < g.q.right && y >= g.q.top && y < g.q.bottom) region = g;'
+    + '   points[k] = { x, y, hit: Boolean(top) && b.contains(top), over: top && !b.contains(top) ? String(top.className || top.tagName) : null, drag: Boolean(region && region.drag), region: region ? region.name : null };'
+    + ' }'
+    + ' return { size: [Math.round(r.width), Math.round(r.height)], round: getComputedStyle(b).borderTopLeftRadius, points };'
+    + '})()');
+  const closeControlChecks = {};
+  const closePass = async (label) => {
+    for (const name of closeSurfaces) {
+      await resetSurfaces();
+      await openSurface(name);
+      const geo = await closeGeometry(closeSel[name]);
+      const clicks = {};
+      for (const k of ['centre', 'top', 'right', 'bottom', 'left']) {
+        if (k !== 'centre') { await resetSurfaces(); await openSurface(name); }
+        const g = await closeGeometry(closeSel[name]);
+        if (!g) { clicks[k] = false; continue; }
+        const { x, y } = g.points[k];
+        wc.sendInputEvent({ type: 'mouseMove', x, y });
+        wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+        await pause(40);
+        wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+        try { await waitFor(closedExpr[name], 1500); clicks[k] = true; } catch { clicks[k] = false; }
+      }
+      await resetSurfaces();
+      const points = geo ? geo.points : {};
+      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag) && Object.values(clicks).every(Boolean);
+      closeControlChecks[label + ':' + name] = ok;
+      if (!ok) console.error('close control failed: ' + label + ' ' + name + ' ' + JSON.stringify({ geo, clicks }));
+    }
+  };
+  const closeSize0 = w.getSize();
+  wc.focus();
+  for (const [width, height] of [[1100, 720], [880, 600], [720, 480]]) {
+    w.setSize(width, height);
+    await waitFor('window.innerWidth === ' + width, 5000).catch(() => {});
+    await pause(300);
+    await closePass(width + 'x' + height);
+  }
+  w.maximize();
+  await pause(800);
+  await closePass('maximized');
+  w.unmaximize();
+  await pause(300);
+  w.setSize(closeSize0[0], closeSize0[1]);
+  await pause(300);
+  // And at phone width, where a notice takes its band at the top of the window.
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 560, height: 760, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 560', 5000);
+  await js("(() => { document.querySelector('app-root').listOpen = false; return true; })()");
+  await pause(400);
+  await closePass('560x760');
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  await pause(300);
+  report.closeControls = Object.keys(closeControlChecks).length === closeSurfaces.length * 5 && Boolean(viewerSrc) && Object.values(closeControlChecks).every(Boolean);
+  console.log('close controls: ' + JSON.stringify(closeControlChecks));
+
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   await waitFor("Boolean(document.querySelector('app-settings [data-action=\"signout\"]'))");
