@@ -74,7 +74,7 @@ export default {
     const secret = readFileSync(path.join(dataDir, 'secret'), 'utf8').trim();
     const { makeTransport, attachmentsRoot } = await engineSetup(config);
     const engineLog = logger.child('engine');
-    const engine = createEngine({ kind: config.engine.kind, makeTransport: () => makeTransport(engineLog), log: engineLog, attachmentId: makeAttachmentId({ secret, store: s }) });
+    const engine = createEngine({ kind: config.engine.kind, makeTransport: () => makeTransport(engineLog), log: engineLog, attachmentId: makeAttachmentId({ secret, store: s }), typingIncoming: Boolean(config.typing && config.typing.incoming) });
     logger.emit('server.start', { port: config.port, engine: config.engine.kind, sending: config.sending.enabled });
     await engine.start();
     const mac = createMac({ log: macLog, settings: config.mac, platform: process.platform, engineNeedsScreen: Boolean(config.engine.needsScreen) });

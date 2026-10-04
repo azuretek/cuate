@@ -6,7 +6,7 @@ import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
 
-export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, capabilities = null } = {}) {
+export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, capabilities = null, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
   const imagePath = path.join(attachmentsRoot, 'fake', 'sunset.png');
   const png = gradientPng(480, 320);
@@ -26,7 +26,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // capabilities: the block the fake's status advertises, so a test can model an engine that sends an arbitrary
   // emoji (a `tapback.emoji` version of 2 or more) and one that must not (the default, an older engine with no
   // version, and version 1, the first emoji path whose sender target did not survive retainArguments).
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} } };
+  // features: the rpc_features the fake's status advertises beside the block, so a test can model an engine that
+  // sends an arbitrary emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} }, features };
   const tapbackEmojiVersion = () => {
     const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
     return Number.isInteger(v) ? v : 0;
@@ -71,11 +73,22 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       return m;
     },
     crashAll() { for (const t of [...transports]) t.crash(); },
+    // Another person starts (or stops) typing in a chat, as imsg's injected bridge reports it: the event names the
+    // chat by its GUID. Only reaches an engine that subscribed, which the adapter does only with the switch on.
+    incomingTyping(chatId, typing = true) {
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat) return null;
+      const event = { event: typing ? 'started-typing' : 'stopped-typing', ts: new Date().toISOString(), data: { chatGuid: chat.guid } };
+      for (const t of transports) t.bridgeEvent(event);
+      return event;
+    },
     transport() {
       const lines = new Set();
       const exits = new Set();
       const subs = new Map();
+      const bridgeSubs = new Set();
       let nextSub = 0;
+      let nextBridgeSub = 0;
       let closed = false;
       const out = (obj) => {
         const s = JSON.stringify(obj);
@@ -96,7 +109,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
         switch (req.method) {
           case 'initialize':
           case 'status':
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities });
+            // A ready bridge advertises its event stream, as imsg does when the non-launching bridge probe succeeds. The
+            // adapter only subscribes when the inbound-typing switch is on (issue 230).
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe'] : [] });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -134,6 +149,11 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'watch.unsubscribe':
             subs.delete(p.subscription);
             return reply(req.id, { ok: true });
+          case 'bridge.events.subscribe': {
+            nextBridgeSub += 1;
+            bridgeSubs.add(nextBridgeSub);
+            return reply(req.id, { subscription: nextBridgeSub, buffer_limit: p.buffer_limit || 256, resumable: false });
+          }
           case 'read': {
             const chat = chats.find((c) => c.id === p.chat_id);
             if (!chat) return fail(req.id, -32602, 'unknown chat_id');
@@ -171,7 +191,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (behavior.send === 'uncertain') return fail(req.id, -32001, 'The tapback may have completed.', { retry_safe: false, disposition: 'may_have_completed', transport: 'bridge', operation: 'tapback', detail: '' });
             if (behavior.send === 'fail') return fail(req.id, -32603, 'Messages refused the tapback.', { retry_safe: true, disposition: 'not_started', transport: 'bridge', operation: 'tapback', detail: '' });
             const emoji = typeof p.emoji === 'string' ? p.emoji : '';
-            if (emoji && tapbackEmojiVersion() < 2) return fail(req.id, -32602, 'unsupported tapback reaction ' + emoji);
+            if (emoji && tapbackEmojiVersion() < 2 && !behavior.features.includes('tapback.emoji')) return fail(req.id, -32602, 'unsupported tapback reaction ' + emoji);
             if (!emoji && !KINDS.has(p.kind)) return fail(req.id, -32602, 'kind must be a standard tapback.');
             const target = messages.find((m) => m.guid === p.message_guid && m.chat_id === p.chat_id && !m.is_reaction);
             if (!target) return fail(req.id, -32602, 'unknown message_guid');
@@ -190,6 +210,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
         }
       };
       const t = {
+        // A bridge event, in imsg's normalized shape, to every active bridge.events.subscribe.
+        bridgeEvent(event) {
+          for (const id of bridgeSubs) out({ jsonrpc: '2.0', method: 'bridge.event', params: { subscription: id, event } });
+        },
         notify(m) {
           for (const [id, p] of subs) {
             if (m.is_reaction && !p.include_reactions) continue;
