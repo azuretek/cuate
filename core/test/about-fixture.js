@@ -58,6 +58,12 @@
   const action = document.querySelector('.app-notice .app-notice-action');
   await until(() => button.dataset.command !== 'check', 'About\'s button to offer the update', 5000);
   if (!action || action.textContent.trim() !== button.textContent.trim()) throw new Error('About offers ' + button.textContent.trim() + ' but the notice offers ' + (action ? action.textContent.trim() : 'nothing'));
+  // The notice floats over the top of the card (issue 253), where the icon sits, so it is dismissed once its words are
+  // read: the native legs capture the page with its icon, and the notice over the sheet is still driven and held by the
+  // desktop smoke (06g/06h) and the app-notice tests.
+  const noticeText = notice().trim();
+  document.querySelector('.app-notice .close-button').click();
+  await until(() => !document.querySelector('.app-notice'), 'the notice to close');
   await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
   const marker = document.createElement('output');
@@ -75,7 +81,7 @@
   reported.textContent = reported.getAttribute('aria-label');
   Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(reported);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim(), button: button.textContent.trim(), command: button.dataset.command, channel, build };
+  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: button.textContent.trim(), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;
