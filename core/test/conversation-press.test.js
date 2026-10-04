@@ -18,17 +18,20 @@ function words(value) {
   return '';
 }
 
-test('a received reply carries one thread line and never the original body or a reply-to label, its original not loaded included', () => {
+test('a received reply is linked to its original by one thread line and never shows the original body or a reply-to label, its original not loaded included', () => {
   const parent = { id: 'parent', text: 'Unique original body', senderName: 'Avery', fromMe: true, attachments: [], reactions: [] };
   const message = { id: 'reply', replyTo: 'parent', text: 'Answer', attachments: [], reactions: [], fromMe: false };
   const host = { messages: [parent, message], chat: {}, sending: true };
   const markup = words(proto.bubble.call(host, { message }, null, false, 'list'));
   assert.ok(!markup.includes(parent.text));
   assert.ok(!markup.includes('Reply to'));
-  assert.equal((markup.match(/class="thread-line"/g) || []).length, 1);
+  const lines = words(proto.links.call(host));
+  assert.equal((lines.match(/class="thread-line"/g) || []).length, 1);
+  assert.match(lines, /data-from=parent data-to=reply/);
   const missing = { ...message, replyTo: 'missing' };
   const alone = { messages: [missing], chat: {}, sending: true };
-  assert.equal((words(proto.bubble.call(alone, { message: missing }, null, false, 'list')).match(/class="thread-line"/g) || []).length, 1, 'a thread whose original is not loaded is still marked');
+  assert.match(words(proto.bubble.call(alone, { message: missing }, null, false, 'list')), /thread-reply/, 'a thread whose original is not loaded is still marked, and opens on a tap');
+  assert.equal(words(proto.links.call(alone)), '', 'with nothing loaded to link it to, it draws no line');
 });
 
 test('reply send returns the same work and preserves the parent id', async () => {

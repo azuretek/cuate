@@ -97,6 +97,8 @@ tasks.matching { it.name.lowercase().contains("lint") }.configureEach { dependsO
 dependencies {
     // The web view host and its asset loader.
     implementation("androidx.webkit:webkit:1.12.1")
+    // FileProvider, so a saved document reaches the system's share sheet (issue 219).
+    implementation("androidx.core:core:1.13.1")
     // The embedded engine for the rules a shell needs with no page on screen.
     // docs/android.md records the measurement that chose it.
     implementation("androidx.javascriptengine:javascriptengine:1.1.1")

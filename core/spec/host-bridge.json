@@ -8,6 +8,7 @@
     "app.icon": { "args": { "icon": "string" }, "returns": "AppIconState", "note": "The app icon chosen in Settings (appearance.appIcon, issue 167), one of the ids core/spec/app-icons.json names. Each shell applies it where its platform can and answers { applied, icon }: the desktop sets its window's and Dock's icon, iOS sets the alternate icon set AppIcon-<id> (the default is the primary icon), Android enables the launcher alias .AppIcon_<id> and disables the others. An id the spec does not name is refused with applied false." },
     "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
     "open.external": { "args": { "url": "string" }, "returns": "boolean" },
+    "file.save": { "args": { "name": "string", "mime": "string", "data": "string" }, "returns": "boolean", "note": "A document pressed in a conversation (issue 219) is offered for saving under its real name: the page hands the shell the file's bytes as base64 with that name and type. The desktop opens a save dialog, and a phone opens its system share or save sheet, which includes Save to Files. A shell that cannot save answers false." },
     "updates.check": { "args": {}, "returns": "UpdateState?" },
     "updates.releases": { "args": {}, "returns": "string?" },
     "updates.configure": { "args": { "autoDownload": "boolean" }, "returns": "boolean" },

@@ -139,18 +139,26 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .message-note { font-size: var(--font-size-xs); color: var(--color-danger); margin: var(--space-1) var(--space-2) 0; }
 /* Threads as the phone draws them (issue 195). A reply keeps its place in time. Above the run of replies holding a
    thread's newest reply, the original repeats as a small outlined ghost on its own side, no fill, with the reply count
-   under it. A reply from the other side carries a thin curved line on its outer edge, from the bubble up toward the
-   ghost, with a small open circle at its top. Every other message carries nothing. */
+   under it. Every other message carries nothing. */
 .thread-ghost-row { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); margin-top: var(--space-4); }
 .thread-ghost-row.mine { align-items: flex-end; }
 .thread-ghost-row + .bubble-row { margin-top: var(--space-1); }
 .thread-ghost { max-width: calc(var(--size-bubble-max) * 0.75); padding: var(--space-1) var(--space-3); border: var(--size-border) solid var(--color-fg-muted); border-radius: var(--radius-lg); background: none; color: var(--color-fg-muted); font-size: var(--font-size-sm); text-align: start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .thread-count { padding: 0 var(--space-3); border: 0; background: none; color: var(--color-accent); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); cursor: pointer; }
 .thread-ghost:hover, .thread-ghost:focus-visible, .thread-count:hover, .thread-count:focus-visible { color: var(--color-fg); outline: none; }
-.bubble-row.theirs.thread-reply { padding-inline-start: var(--space-4); }
 .bubble-row.thread-reply .bubble { cursor: pointer; }
-.thread-line { position: absolute; inset-inline-start: calc(var(--space-3) * -1); top: calc(var(--space-3) * -1); width: var(--space-3); height: calc(50% + var(--space-3)); padding: 0; background: none; border: 0; border-inline-start: var(--size-border) solid var(--color-fg-muted); border-block-end: var(--size-border) solid var(--color-fg-muted); border-end-start-radius: var(--radius-md); cursor: pointer; }
-.thread-line::before { content: ''; position: absolute; top: calc(var(--space-2) * -1); inset-inline-start: calc(var(--space-1) * -1 - var(--size-border) / 2); width: var(--space-2); height: var(--space-2); box-sizing: border-box; border: var(--size-border) solid var(--color-fg-muted); border-radius: var(--radius-pill); background: var(--color-bg); }
+/* The lines between a thread's messages (issue 214), drawn over the list where a thread changes hands: out of the side
+   of the message a line leaves, down the list's margin on that side, and across the answer's row into its near edge,
+   so it is attached to both bubbles. The component lays each one out from where the bubbles are; only the stroke takes
+   a press, so the messages it passes stay pressable. */
+.messages { position: relative; }
+.thread-line { --thread-gap: var(--space-2); --thread-lane: var(--space-1); --thread-radius: var(--radius-md); --thread-reach: var(--space-3); position: absolute; left: 0; top: 0; width: 0; height: 0; padding: 0; margin: 0; border: 0; background: none; pointer-events: none; overflow: visible; z-index: 1; }
+.thread-line svg { display: block; overflow: visible; }
+.thread-line path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.thread-line path.stroke { stroke: var(--color-fg-muted); stroke-width: calc(var(--size-border) * 1.5); }
+.thread-line path.hit { stroke: transparent; stroke-width: var(--space-3); pointer-events: stroke; cursor: pointer; }
+.thread-line:hover path.stroke, .thread-line:focus-visible path.stroke { stroke: var(--color-accent); }
+.thread-line:focus-visible { outline: none; }
 /* An open thread is its own conversation over the rest, which blurs and dims behind it: only the thread's original and
    replies, each under its time, with the contact header kept and a close control in place of the way back. */
 .thread-close { display: inline-flex; align-items: center; justify-content: center; padding: var(--space-1); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); cursor: pointer; -webkit-app-region: no-drag; }

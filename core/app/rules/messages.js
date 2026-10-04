@@ -55,11 +55,11 @@ export function threadIds(messages, id) {
   return ids;
 }
 
-// What the conversation draws for threads, as the phone draws them (issue 195): a Map from each reply's id to { root, ghost,
-// connector }, and nothing for any other message. A reply is only a message with replyTo, which the adapter sets from
-// the engine's thread originator alone. Above the run of replies that holds a thread's newest reply, a ghost of the
-// original carries the reply count (ghost is { root, count } on the first reply of that run, null elsewhere); a reply
-// from someone else carries a connector, and one on your own side needs none. The list is in time order.
+// What the conversation draws for threads, as the phone draws them (issue 195): a Map from each reply's id to { root,
+// ghost }, and nothing for any other message. A reply is only a message with replyTo, which the adapter sets from the
+// engine's thread originator alone. Above the run of replies that holds a thread's newest reply, a ghost of the
+// original carries the reply count (ghost is { root, count } on the first reply of that run, null elsewhere). The lines
+// between a thread's messages are threadLinks. The list is in time order.
 export function threadMarks(messages) {
   const list = messages || [];
   const byId = new Map(list.map((m) => [m.id, m]));
@@ -78,9 +78,49 @@ export function threadMarks(messages) {
     let i = at.get(replies[replies.length - 1]);
     while (i > 0 && list[i - 1].replyTo && rootOf(list[i - 1].id) === root) i -= 1;
     const first = list[i].id;
-    for (const id of replies) marks.set(id, { root, ghost: id === first ? { root, count: replies.length } : null, connector: !byId.get(id).fromMe });
+    for (const id of replies) marks.set(id, { root, ghost: id === first ? { root, count: replies.length } : null });
   }
   return marks;
+}
+
+// The lines the conversation draws between a thread's messages (issue 214), as a list of { root, from, to, side, lane }
+// in time order. Within one thread (its original when loaded, then its replies), a line runs only where the side
+// changes: from the last message of a run from one side to the first message of the other side's answer, so your
+// message links to the reply it received and their latest message in the thread links to your next reply. A run of
+// messages from one side carries one line, at its end, and a message outside the thread carries nothing, however the
+// threads interleave in time. side is where the line runs, the side of the message it leaves ('mine' or 'theirs'), and
+// lane separates lines on the same side whose spans overlap, 0 nearest the bubbles.
+export function threadLinks(messages) {
+  const list = messages || [];
+  const byId = new Map(list.map((m) => [m.id, m]));
+  const at = new Map(list.map((m, i) => [m.id, i]));
+  const members = new Map();
+  for (const m of list) {
+    if (!m.replyTo) continue;
+    const root = rootIn(byId, m.id);
+    if (root === m.id) continue;
+    if (!members.has(root)) members.set(root, byId.has(root) ? [byId.get(root)] : []);
+    members.get(root).push(m);
+  }
+  const links = [];
+  for (const [root, thread] of members) {
+    for (let k = 1; k < thread.length; k += 1) {
+      const a = thread[k - 1];
+      const b = thread[k];
+      if (Boolean(a.fromMe) === Boolean(b.fromMe)) continue;
+      links.push({ root, from: a.id, to: b.id, side: a.fromMe ? 'mine' : 'theirs', start: at.get(a.id), end: at.get(b.id) });
+    }
+  }
+  links.sort((x, y) => x.start - y.start || x.end - y.end);
+  // A lane is free again once the line in it has ended above where the next one starts.
+  const lanes = { mine: [], theirs: [] };
+  return links.map(({ start, end, ...link }) => {
+    const ends = lanes[link.side];
+    let lane = ends.findIndex((e) => e < start);
+    if (lane < 0) lane = ends.length;
+    ends[lane] = end;
+    return { ...link, lane };
+  });
 }
 
 // The link under a thread's ghost original: how many replies it has.

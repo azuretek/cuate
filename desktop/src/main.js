@@ -1,6 +1,6 @@
 // The desktop shell: one window hosting core's app page over app://bundle, plus the host bridge. Nothing about the
 // app lives here; the name comes from core/spec/naming.json.
-import { app, BrowserWindow, protocol, ipcMain, Menu, Tray, nativeImage, safeStorage, Notification, shell, nativeTheme } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain, Menu, Tray, nativeImage, safeStorage, Notification, shell, nativeTheme, dialog } from 'electron';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -40,6 +40,9 @@ const smokeNotices = [];
 // Every bridge command the page calls while smoking, so the smoke can prove the banner's action called the command it
 // says it does rather than trusting the button's label.
 const smokeCalls = [];
+// Every document the page asked to save while smoking, so the smoke can prove the press reached the shell under the
+// file's real name rather than opening anything (issue 219).
+const smokeSaves = [];
 
 app.setName(naming.product);
 if (SMOKE) app.setPath('userData', path.join(SMOKE, 'user-data'));
@@ -185,6 +188,16 @@ const handlers = createHandlers({
     return true;
   },
   appIcon: (icon) => setAppIcon(icon),
+  // A document is offered for saving under its real name (issue 219). While smoking, the dialog is not opened: the
+  // request is recorded and answered, so the run never blocks on a modal the way a person's press would not.
+  saveFile: async ({ name, mime, data }) => {
+    if (SMOKE) { smokeSaves.push({ name, mime, bytes: data.length }); return true; }
+    if (!win || win.isDestroyed()) return false;
+    const picked = await dialog.showSaveDialog(win, { defaultPath: name || 'Attachment' });
+    if (picked.canceled || !picked.filePath) return false;
+    writeFileSync(picked.filePath, Buffer.from(data, 'base64'));
+    return true;
+  },
   // About's Check for updates runs the tray's own check and answers the state it reported, so the page draws the same
   // notice the event carries (issue 171).
   checkUpdates: () => {
@@ -995,21 +1008,20 @@ async function runSmoke(w) {
     const reply = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
     const ghost = reply && reply.previousElementSibling;
     if (reply) reply.scrollIntoView({ block: 'center' });
-    const line = reply && reply.querySelector('.thread-line');
-    const lr = line && line.getBoundingClientRect();
-    const br = reply && reply.querySelector('.bubble').getBoundingClientRect();
+    const lines = [...list.querySelectorAll('.thread-line')].map((l) => ({ from: l.dataset.from, to: l.dataset.to, side: l.dataset.side, lane: Number(l.dataset.lane), hidden: l.hidden }));
     return {
-      lines: rows.filter((r) => r.querySelector('.thread-line')).map((r) => r.dataset.id),
-      ghosts: [...list.querySelectorAll('.thread-ghost-row')].map((g) => g.dataset.thread),
+      pairs: lines.map((l) => l.from + '>' + l.to),
+      lanes: lines.map((l) => l.side + l.lane),
+      lines,
+      ghosts: [...list.querySelectorAll('.thread-ghost-row')].map((g) => ({ root: g.dataset.thread, side: g.classList.contains('mine') ? 'mine' : 'theirs', count: (g.querySelector('.thread-count')?.textContent || '').trim(), fill: getComputedStyle(g.querySelector('.thread-ghost')).backgroundColor })),
       marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => r.dataset.id),
-      ghostRoot: ghost && ghost.matches('.thread-ghost-row') ? ghost.dataset.thread : null, ghostSide: ghost && ghost.classList.contains('mine') ? 'mine' : 'theirs',
+      ghostRoot: ghost && ghost.matches('.thread-ghost-row') ? ghost.dataset.thread : null,
       count: ghost ? (ghost.querySelector('.thread-count')?.textContent || '').trim() : '', ghostFill: ghost && ghost.querySelector('.thread-ghost') ? getComputedStyle(ghost.querySelector('.thread-ghost')).backgroundColor : '',
-      lineLeftOfBubble: Boolean(lr && br) && lr.right <= br.left + 1 && lr.top < br.top,
     };
   })()`);
   const marks = await marksState();
   await both('16d-thread-marks');
-  await js(`document.querySelector('.messages .bubble-row[data-id="${FIXTURE_REPLY}"] .thread-line').click()`);
+  await js(`document.querySelector('.messages .thread-line[data-from="${FIXTURE_ROOT}"][data-to="${FIXTURE_REPLY}"]').click()`);
   await waitFor(`document.querySelector('.conv-body')?.dataset.thread === ${q(FIXTURE_ROOT)}`, 5000);
   await pause(400);
   const fixtureThread = await focusState();
@@ -1036,11 +1048,38 @@ async function runSmoke(w) {
   await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(marksListOpen)}; return true; })()`);
   await pause(300);
   const fixtureIds = [FIXTURE_ROOT, FIXTURE_REPLY, 'FAKE-0015'].join('|');
-  const marksOk = (m) => m.lines.join('|') === FIXTURE_REPLY && m.marked.includes(FIXTURE_REPLY) && m.marked.includes('FAKE-0015') && m.marked.includes(replied.id) && m.marked.length === 3 && m.ghostRoot === FIXTURE_ROOT && m.ghostSide === 'mine' && m.count === '2 Replies' && m.ghosts.length === 2 && m.ghostFill === 'rgba(0, 0, 0, 0)' && m.lineLeftOfBubble;
+  // Two interleaved threads (issue 214): each draws a line only where it changes hands, T2's own side sits on its own
+  // lane beside T1's, and no message outside the two threads (the document included) is marked.
+  const marksOk = (m) => {
+    const laneOf = (pair) => { const i = m.pairs.indexOf(pair); return i < 0 ? null : m.lanes[i]; };
+    const expected = ['FAKE-0009>FAKE-0014', 'FAKE-0014>FAKE-0015', 'FAKE-0016>FAKE-0017', 'FAKE-0017>FAKE-0018'];
+    const markedOk = ['FAKE-0014', 'FAKE-0015', 'FAKE-0017', 'FAKE-0018'].every((id) => m.marked.includes(id)) && m.marked.includes(replied.id) && !m.marked.includes('FAKE-0013') && !m.marked.includes('FAKE-0019');
+    return expected.every((p) => m.pairs.includes(p)) && m.lines.every((l) => !l.hidden)
+      && laneOf('FAKE-0009>FAKE-0014') !== laneOf('FAKE-0017>FAKE-0018')
+      && markedOk && m.ghostFill === 'rgba(0, 0, 0, 0)'
+      && m.ghosts.some((g) => g.root === 'FAKE-0009' && g.side === 'mine' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)')
+      && m.ghosts.some((g) => g.root === 'FAKE-0016' && g.side === 'theirs' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)');
+  };
   const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && !t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
   const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.ghost.includes('See you soon') && replied.side === 'theirs' && replied.count === '1 Reply' && !replied.line && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
+
+  // A document (issue 219): the booking PDF is a save control on a message in no thread; pressing it offers to save it
+  // under its real name and never opens a thread.
+  const docSel = '.messages .bubble-row[data-id="FAKE-0019"]';
+  await js(`(() => { const r = document.querySelector(${q(docSel)}); if (r) r.scrollIntoView({ block: 'center' }); return true; })()`);
+  await pause(300);
+  await both('16h-document');
+  const docMark = await js(`(() => { const r = document.querySelector(${q(docSel)}); if (!r) return null; const b = r.querySelector('.attachment-file'); return { marked: r.classList.contains('thread-reply'), tag: b && b.tagName, label: b && b.getAttribute('aria-label') }; })()`);
+  smokeSaves.length = 0;
+  await js(`document.querySelector(${q(docSel + ' .attachment-file')}).click()`);
+  for (let i = 0; i < 40 && !smokeSaves.length; i += 1) await pause(100);
+  const docSave = smokeSaves[0] || null;
+  const docAfter = await js(`({ thread: Boolean(document.querySelector('.thread-view')), marked: document.querySelector(${q(docSel)})?.classList.contains('thread-reply') })`);
+  const documentChecks = { found: Boolean(docMark), button: docMark?.tag === 'BUTTON', label: docMark?.label === 'Save booking.pdf', unmarked: docMark ? docMark.marked === false : false, saved: docSave?.name === 'booking.pdf' && docSave?.mime === 'application/pdf', bytes: docSave ? docSave.bytes > 0 : false, noThread: docAfter.thread === false && docAfter.marked === false };
+  report.document = Object.values(documentChecks).every(Boolean);
+  console.log('document: ' + JSON.stringify({ checks: documentChecks, docMark, docSave, docAfter }));
 
   // Pictures (issue 126): a received picture and a staged one both show an aspect-correct, dressed preview, and the
   // viewer opens over the sheet's own blurred, darkened backdrop. The desktop drives the viewer with real mouse input
