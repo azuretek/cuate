@@ -74,6 +74,9 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     react: (chatId, messageId, { emoji, remove = false }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
     upload: ({ name, mime, data }) => call('POST', '/api/v1/attachments', { name, mime, data }),
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+    // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
+    // devices; nothing is sent to anyone else and nothing is written to history (issue 230).
+    typing: (chatId, typing) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/typing`, { typing }),
     settings: () => call('GET', '/api/v1/settings'),
     settingsWrite: (values) => call('PUT', '/api/v1/settings', { values }),
     themeImport: ({ url, name }) => call('POST', '/api/v1/themes', name ? { url, name } : { url }),

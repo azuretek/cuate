@@ -7,6 +7,7 @@ import { aimCarets } from '../../kit/popover.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
+import { typingLabel } from '../rules/typing.js';
 import { windowControlsHtml } from './window-controls.js';
 import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
@@ -36,6 +37,9 @@ class AppConversation extends KitElement {
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
+    // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, or the
+    // contact when the engine can report it. Drawn in the header, cleared by the page when it goes stale.
+    typing: { attribute: false },
     // The menu open on one message ({ id, kind: 'menu', side }), the thread open over the conversation and being
     // replied to ({ id } of its first message), and the message the composer's emoji panel is choosing a reaction for
     // (issues 169 and 183).
@@ -58,6 +62,7 @@ class AppConversation extends KitElement {
     this.keepThread = keepScroll(this, { scroller: '.thread-view', items: '.bubble-row' });
     this.reacting = null;
     this.note = null;
+    this.typing = null;
     this.pop = null;
     this.replyingTo = null;
     this.reactFor = null;
@@ -283,10 +288,11 @@ class AppConversation extends KitElement {
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
+    const typing = typingLabel(this.typing, now);
     // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}

@@ -34,7 +34,7 @@ const omit = (o, keys) => {
   return c;
 };
 
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000 }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   const toModel = (raw) => mapMessage(annotatePayloads(raw, readHead), { attachmentId });
@@ -71,11 +71,33 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
   }
 
+  // The chat whose GUID a bridge typing event names, read from the engine's own chat list. Only reached with the
+  // inbound-typing switch on.
+  async function chatIdForGuid(guid) {
+    try {
+      const r = await request('chats.list', { limit: 500 }, timeoutMs);
+      const c = (r && Array.isArray(r.chats) ? r.chats : []).find((x) => String(x.guid) === guid);
+      return c ? String(c.id) : null;
+    } catch { return null; }
+  }
+
   async function subscribe() {
     await request('watch.subscribe', { since_rowid: lastRowid, attachments: true, include_reactions: true }, 15000, ['attachments', 'include_reactions']);
   }
 
   function onNotification(method, params) {
+    // Inbound typing, only when the switch is on: imsg reports it through an injected v2 bridge's event stream
+    // (bridge.events.subscribe, "started-typing"/"stopped-typing"), which the ordinary watch never carries. The event
+    // names the chat by its GUID, so it is resolved to the chat id the rest of the app uses (issue 230).
+    if (method === 'bridge.event') {
+      const ev = params.event || {};
+      const typing = ev.event === 'started-typing' ? true : ev.event === 'stopped-typing' ? false : null;
+      const guid = ev.data && ev.data.chatGuid;
+      if (typing !== null && guid) {
+        chatIdForGuid(String(guid)).then((chatId) => { if (chatId) emit('typing.incoming', { chatId, typing }); }).catch(() => {});
+      }
+      return;
+    }
     if (method === 'message' && params.message) {
       const raw = params.message;
       if (Number.isFinite(raw.id) && raw.id > lastRowid) lastRowid = raw.id;
@@ -127,6 +149,15 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       await subscribe();
     } catch (e) {
       log.emit('engine.error', { method: 'watch.subscribe', code: numCode(e), error: e.message });
+    }
+    // Present and OFF by default (issue 230): the only source of another person typing is a bridge that is already
+    // running, which this server never starts. The switch, and the engine advertising the method, must both be on.
+    if (typingIncoming && Array.isArray(st?.methods) && st.methods.includes('bridge.events.subscribe')) {
+      try {
+        await request('bridge.events.subscribe', { buffer_limit: 256 }, 10000);
+      } catch (e) {
+        log.emit('engine.error', { method: 'bridge.events.subscribe', code: numCode(e), error: e.message });
+      }
     }
   }
 

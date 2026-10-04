@@ -16,6 +16,7 @@ import { loadRoutes } from './routes/index.js';
 import { allows as scopeAllows } from './scopes.js';
 import { createExporter } from './export.js';
 import { createWebhooks } from './webhooks.js';
+import { createTyping } from './typing.js';
 import { configPath, loadConfig, saveConfig } from './config.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
@@ -79,17 +80,24 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const hookLog = log.child('webhook');
   const webhooks = createWebhooks({ endpoints: (config.webhooks && config.webhooks.endpoints) || [], log: hookLog, onDisable: disableHook, ...webhookOptions });
 
-  const publish = (name, data) => {
+  // except is a token id whose own sockets are left out of this frame, which is how a device's typing reaches the
+  // account's OTHER signed-in devices and never bounces back to the device that sent it (issue 230). The hook log
+  // still hears every event a socket hears.
+  const publish = (name, data, except = null) => {
     seq += 1;
     const ev = { seq, name, data };
     events.push(ev);
     if (events.length > 1000) events.shift();
     const frame = JSON.stringify({ type: 'event', ...ev });
-    for (const c of clients) if (c.authed && c.ws.readyState === 1) c.ws.send(frame);
+    for (const c of clients) if (c.authed && c.ws.readyState === 1 && (!except || c.id !== except)) c.ws.send(frame);
     webhooks.enqueue(name, data);
   };
+  const typing = createTyping({ publish });
   engine.on((name, data) => {
     if (name === 'message.new') noteMessage(data.message);
+    // The engine only reports inbound typing when the switch is on and a bridge is already running; with it off this
+    // never fires, so no contact indicator is invented (issue 230).
+    if (name === 'typing.incoming') { if (config.typing && config.typing.incoming) typing.incoming(data); return; }
     publish(name, data);
   });
   engine.onState((s) => {
@@ -190,7 +198,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform,
-    send, react: send.react, paging, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
+    send, react: send.react, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),
@@ -337,7 +345,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   });
 
   function onSocket(ws) {
-    const c = { ws, authed: false, alive: true };
+    const c = { ws, authed: false, alive: true, id: null };
     clients.add(c);
     const timer = setTimeout(() => {
       if (!c.authed) {
@@ -358,13 +366,20 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
         return;
       }
       c.authed = true;
+      c.id = p.id;
       const r = f.resume;
       const oldest = events.length ? events[0].seq : seq + 1;
       const resumed = Boolean(r && r.epoch === epoch && Number.isInteger(r.seq) && r.seq >= oldest - 1 && r.seq <= seq);
       ws.send(JSON.stringify({ type: 'hello', epoch, seq, apiVersion: apiSpec.version, resumed }));
       if (resumed) for (const ev of events) if (ev.seq > r.seq) ws.send(JSON.stringify({ type: 'event', ...ev }));
     });
-    ws.on('close', () => { clearTimeout(timer); clients.delete(c); });
+    ws.on('close', () => {
+      clearTimeout(timer);
+      clients.delete(c);
+      // The last socket of a device that was typing ends its typing for every conversation, so a dropped connection
+      // never leaves an indicator up (issue 230).
+      if (c.id && ![...clients].some((x) => x.id === c.id)) typing.stopFrom(c.id);
+    });
     ws.on('error', (e) => log.emit('ws.error', { error: e.message }));
   }
 
@@ -409,6 +424,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     },
     async close() {
       webhooks.close();
+      typing.stopAll();
       clearInterval(beat);
       for (const c of clients) {
         try { c.ws.close(1012, 'restarting'); } catch { /* gone */ }

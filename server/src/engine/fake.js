@@ -70,11 +70,22 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       return m;
     },
     crashAll() { for (const t of [...transports]) t.crash(); },
+    // Another person starts (or stops) typing in a chat, as imsg's injected bridge reports it: the event names the
+    // chat by its GUID. Only reaches an engine that subscribed, which the adapter does only with the switch on.
+    incomingTyping(chatId, typing = true) {
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat) return null;
+      const event = { event: typing ? 'started-typing' : 'stopped-typing', ts: new Date().toISOString(), data: { chatGuid: chat.guid } };
+      for (const t of transports) t.bridgeEvent(event);
+      return event;
+    },
     transport() {
       const lines = new Set();
       const exits = new Set();
       const subs = new Map();
+      const bridgeSubs = new Set();
       let nextSub = 0;
+      let nextBridgeSub = 0;
       let closed = false;
       const out = (obj) => {
         const s = JSON.stringify(obj);
@@ -95,7 +106,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
         switch (req.method) {
           case 'initialize':
           case 'status':
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, rpc_features: behavior.features });
+            // A ready bridge advertises its event stream, as imsg does when the non-launching bridge probe succeeds. The
+            // adapter only subscribes when the inbound-typing switch is on (issue 230).
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe'] : [] });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -133,6 +146,11 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'watch.unsubscribe':
             subs.delete(p.subscription);
             return reply(req.id, { ok: true });
+          case 'bridge.events.subscribe': {
+            nextBridgeSub += 1;
+            bridgeSubs.add(nextBridgeSub);
+            return reply(req.id, { subscription: nextBridgeSub, buffer_limit: p.buffer_limit || 256, resumable: false });
+          }
           case 'read': {
             const chat = chats.find((c) => c.id === p.chat_id);
             if (!chat) return fail(req.id, -32602, 'unknown chat_id');
@@ -193,6 +211,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
         }
       };
       const t = {
+        // A bridge event, in imsg's normalized shape, to every active bridge.events.subscribe.
+        bridgeEvent(event) {
+          for (const id of bridgeSubs) out({ jsonrpc: '2.0', method: 'bridge.event', params: { subscription: id, event } });
+        },
         notify(m) {
           for (const [id, p] of subs) {
             if (m.is_reaction && !p.include_reactions) continue;

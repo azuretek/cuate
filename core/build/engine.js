@@ -76,6 +76,7 @@ var engine = (() => {
     TRAY_BADGE: () => TRAY_BADGE,
     TRAY_CROP: () => TRAY_CROP,
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
+    TYPING_TTL_MS: () => TYPING_TTL_MS,
     UNGROUPED: () => UNGROUPED,
     UNKNOWN: () => UNKNOWN,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
@@ -105,6 +106,7 @@ var engine = (() => {
     appUpdateNotice: () => appUpdateNotice,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
+    applyTyping: () => applyTyping,
     autoDownloadEnabled: () => autoDownloadEnabled,
     availableBanner: () => availableBanner,
     badgeLabel: () => badgeLabel,
@@ -301,6 +303,8 @@ var engine = (() => {
     toggleZoom: () => toggleZoom,
     tokensCss: () => tokensCss,
     transferDetail: () => transferDetail,
+    typingActive: () => typingActive,
+    typingLabel: () => typingLabel,
     unreadTotal: () => unreadTotal,
     unsupportedBanner: () => unsupportedBanner,
     updateBanner: () => updateBanner,
@@ -399,6 +403,9 @@ var engine = (() => {
       react: (chatId, messageId, { emoji, remove = false }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+      // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
+      // devices; nothing is sent to anyone else and nothing is written to history (issue 230).
+      typing: (chatId, typing) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/typing`, { typing }),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
       themeImport: ({ url, name }) => call("POST", "/api/v1/themes", name ? { url, name } : { url }),
@@ -3259,6 +3266,22 @@ var engine = (() => {
     if (d === 1) return "Yesterday " + clock(t, locale, timeZone);
     if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t) + " " + clock(t, locale, timeZone);
     return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(t);
+  }
+
+  // core/app/rules/typing.js
+  var TYPING_TTL_MS = 8e3;
+  var ELLIPSIS = "\u2026";
+  function typingActive(state, now) {
+    return Boolean(state) && Number.isFinite(state.at) && now - state.at < TYPING_TTL_MS;
+  }
+  function applyTyping(state, event, { chatId, now }) {
+    if (!event || String(event.chatId) !== String(chatId)) return typingActive(state, now) ? state : null;
+    if (!event.typing) return null;
+    return { chatId: String(chatId), kind: event.kind === "contact" ? "contact" : "device", at: now };
+  }
+  function typingLabel(state, now) {
+    if (!typingActive(state, now)) return "";
+    return state.kind === "contact" ? "typing" + ELLIPSIS : "You're typing on another device";
   }
 
   // core/app/rules/bar-layout.js
