@@ -123,7 +123,7 @@ class AppAbout extends KitElement {
     const version = rows.find((r) => r.key === 'version');
     // The button follows the update state the notice draws (issue 192; held as release, since update is the element's
     // own render step): the button is the step the notice offers, or the check. The outcome is reported in ONE place,
-    // the notice banner, never beside the control that triggered it (issue 252), so the page draws no line and no bar
+    // the notice banner, never beside the control that triggered it (PR 257), so the page draws no line and no bar
     // of its own; the button's own states (idle, checking, the disabled beat) are the press the kit draws.
     const update = aboutUpdate(this.release);
     return html`

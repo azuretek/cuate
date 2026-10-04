@@ -204,7 +204,7 @@ class AppRoot extends KitElement {
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
       // The shell's report with the page's own running environment folded in: the runtime rows (Electron, Chromium, Node)
       // and a commit the shell did not stamp are read from the process the page actually runs in, so a phone's web view
-      // reports what it has rather than Unknown (issue 252).
+      // reports what it has rather than Unknown (PR 257).
       this.bridge('app.info').then((info) => { this.host = withRuntime(info || {}, globalThis); }, () => { this.host = withRuntime({}, globalThis); });
     }
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.on === 'function') {

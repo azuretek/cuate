@@ -107,7 +107,7 @@ test('About\'s Check for updates button offers the same next step as the notice,
   const going = aboutUpdate({ state: 'downloading', version: DEV_98, percent: 0.42, canInstall: true, via: 'apk', detail: '5.0 MB of 12 MB' });
   assert.equal(going.label, 'Check for updates', 'the button never writes its own busy label');
   assert.equal(going.command, null);
-  assert.deepEqual(Object.keys(going), ['label', 'command'], 'the outcome is the notice banner\'s, never a line beside the button (issue 252)');
+  assert.deepEqual(Object.keys(going), ['label', 'command'], 'the outcome is the notice banner\'s, never a line beside the button (PR 257)');
   const ready = aboutUpdate({ state: 'ready', version: DEV_98, canInstall: true, via: 'apk' });
   assert.equal(ready.label, 'Install');
   assert.equal(ready.command, 'updates.install');

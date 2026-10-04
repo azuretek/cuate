@@ -157,7 +157,7 @@ test('every fixed palette is the Flor de muerto masters coloured through the one
   const palette = json('core/spec/tokens.json').color.light;
   const orange = icons.icons.find((i) => i.id === 'orange');
   assert.equal(orange.scheme, 'light');
-  assert.deepEqual(orange.colors, Object.fromEntries(ICON_TOKENS.map((k) => [k, palette[k]])), 'Orange is the default theme light palette, so the picker, About and every generated asset share the one colour (issue 252)');
+  assert.deepEqual(orange.colors, Object.fromEntries(ICON_TOKENS.map((k) => [k, palette[k]])), 'Orange is the default theme light palette, so the picker, About and every generated asset share the one colour (PR 257)');
 });
 
 test('every shell answers app.icon', () => {

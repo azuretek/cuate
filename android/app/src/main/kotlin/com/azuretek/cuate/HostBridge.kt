@@ -201,7 +201,7 @@ class HostBridge(
      */
     /**
      * How this copy was obtained: the Play Store, a sideloaded APK, or a debug run from source. Android names the
-     * installer that put the app on the device, so About reports it rather than Unknown (issue 252).
+     * installer that put the app on the device, so About reports it rather than Unknown (PR 257).
      */
     @Suppress("DEPRECATION")
     private fun installSource(): String {

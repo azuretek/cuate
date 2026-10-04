@@ -291,7 +291,7 @@ test('Settings and About arrive on their own edge, and reduced motion drops the 
   assert.equal(h.pageMotion, 'up');
 });
 
-test('the copy action is the real button with the kit press, and no update line sits under the check (issue 252)', () => {
+test('the copy action is the real button with the kit press, and no update line sits under the check (PR 257)', () => {
   const about = read('core/app/components/app-about.js');
   assert.match(about, /class="button about-copy"/, 'Copy for a bug report is the app real button, not a text link');
   assert.match(about, /[?]disabled=[$][{]this[.]copying[}]/, 'the button is disabled while a copy is in flight and for the beat after');

@@ -302,7 +302,7 @@ export function apkReadyBanner({ version = null } = {}) {
 // About's Check for updates (issue 192): the button follows the same update state the notice draws, so the page that
 // was pressed offers the step the notice offers. While a step is offered (open TestFlight, download, install, try again)
 // the button is that step, labelled as the notice's action is; otherwise it checks. The outcome itself is reported in
-// ONE place, the notice banner, never beside the control (issue 252): this returns the button's label and the bridge
+// ONE place, the notice banner, never beside the control (PR 257): this returns the button's label and the bridge
 // command it runs, and nothing the page would print under it. The button never writes its own busy label either: a
 // check in progress is the kit press's pending state, and the disabled beat after it.
 export function aboutUpdate(status) {

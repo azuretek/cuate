@@ -124,7 +124,7 @@ export function aboutRows(host, info, spec = BUILD_SPEC) {
     return halves[half].find((row) => row.key === key) || { key, label: key, value: UNKNOWN };
   });
   // A value a half could not report is not shown at all: a platform whose runtime has no Electron or Node, or a build
-  // with no stamp, prints no such row rather than a row reading Unknown (issue 252). Every row that is drawn reports
+  // with no stamp, prints no such row rather than a row reading Unknown (PR 257). Every row that is drawn reports
   // something true, and core/spec/build.json stays the one owner of which fields exist.
   return rows.filter((row) => row.value !== UNKNOWN);
 }
