@@ -1,3 +1,9 @@
 * text=auto eol=lf
 *.png binary
 core/kit/vendor/** -text
+
+# Vendored third-party data: the Unicode emoji data and CLDR annotations under core/spec/emoji, and the
+# emoji catalogue generated from them. Their text is somebody else's (the robot emoji and the em dash are
+# data, not our voice), so GitHub and the publish scan treat them as vendored rather than as our prose.
+core/spec/emoji/** linguist-vendored
+core/app/rules/emoji-data.js linguist-vendored

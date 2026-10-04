@@ -29,11 +29,23 @@ test('framework code in core/kit imports only from core/kit', () => {
   }
 });
 
+// The code only: comments and string/template literals removed, so a word that is data (an emoji keyword such
+// as 'window' or 'fetch') is not read as an I/O call. A node builtin import is checked on the source itself,
+// because there the specifier is a string.
+const codeOnly = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/\/\/[^\n]*/g, ' ')
+  .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+  .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+  .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+
 test('rule modules do no I/O and read no clock', () => {
-  const impure = /\b(?:fetch|WebSocket|XMLHttpRequest|localStorage|sessionStorage|indexedDB|setTimeout|setInterval|require)\b|performance\.now|Date\.now|process\.|new Date\(\s*\)|from\s+['"]node:/;
+  const impure = /\b(?:fetch|WebSocket|XMLHttpRequest|localStorage|sessionStorage|indexedDB|setTimeout|setInterval|require)\b|performance\.now|Date\.now|process\.|new Date\(\s*\)/;
   for (const f of walk('core').filter((f) => /\/rules\/[^/]+\.js$/.test(f))) {
-    const m = impure.exec(read(f));
+    const src = read(f);
+    const m = impure.exec(codeOnly(src));
     assert.equal(m, null, f + ' uses ' + (m && m[0]));
+    assert.equal(/from\s+['"]node:/.exec(src), null, f + ' imports a node builtin');
   }
 });
 
