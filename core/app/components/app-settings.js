@@ -15,15 +15,19 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 //
 // Every section comes from settingsGroups(), so the schema is the one owner of the group list and the page keeps no
 // second one. Each group carries its own one-line description from the schema, and a group's rows sit on one surface
-// with a divider between them. The page and its chrome (the full-width back strip, the title, the description) are
-// drawn by app-sheet. The last section is one row that opens the About page (issue 171), a page of its own drawn by
-// app-about, so a phone reaches it exactly as the desktop's tray does.
+// with a divider between them. A group may name its own sections (Behavior draws Notices and then Updates, issue 244),
+// each a small block with its own heading, rather than one long list. The page and its chrome (the full-width back
+// strip, the title, the description) are drawn by app-sheet.
+//
+// The About row is not a section and not a tab: it sits at the bottom of every Settings page, under the tab in force,
+// so the About page is reachable from any tab (issue 244). It is one row, its label, the version on the right, and the
+// chevron that opens About, a page of its own drawn by app-about.
 //
 // The sections are tabs (issue 167): one tab per group, from settingsTabs(), so the schema is still the one list, and
 // the page shows one section at a time on every width, which is what lets each section fit a phone. The page is the
 // same component on the desktop and the phones, so every setting the desktop offers is on the phone too; the inventory
 // test (core/test/settings-tabs.test.js) and the smoke's walk through every tab at a phone's width hold that. The tab in
-// force is app-root's, handed down as .tab, so returning from About lands on the About tab it was opened from.
+// force is app-root's, handed down as .tab, so returning from About lands on the tab it was opened from.
 class AppSettings extends KitElement {
   static properties = {
     values: { attribute: false }, themePicture: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
@@ -117,6 +121,18 @@ class AppSettings extends KitElement {
     if (field) this.fire('setting', { key: field.key, value: coerceSetting(field, e.currentTarget.checked) });
   }
 
+  // A slider move writes the stop the thumb lands on and paints the reading beside it at once, so the size is shown as
+  // it changes (the live preview). The control's own value is an index into the schema's stops, so no move can land
+  // between two of them; the stop's percentage is what the setting carries, unchanged from the chips it replaces.
+  onSlide(e, field, stops) {
+    const at = Math.max(0, Math.min(stops.length - 1, Number(e.currentTarget.value)));
+    const value = stops[at];
+    e.currentTarget.setAttribute('aria-valuetext', value + ' percent');
+    const out = e.currentTarget.parentElement.querySelector('.scale-value');
+    if (out) { out.textContent = optionLabel(field, value); out.dataset.value = String(value); }
+    this.fire('setting', { key: field.key, value });
+  }
+
   // Every handler here is an arrow that closes over THIS page, never a bare method reference: the template this
   // method returns is drawn by app-sheet (this page's body is passed to it as .content), so lit binds a bare
   // `@change=${this.onSelect}` to app-sheet as the render host, and `this.field` would not exist there. The arrows
@@ -146,8 +162,19 @@ class AppSettings extends KitElement {
       </div>`;
     }
     if (field.type === 'scale') {
-      return html`<div class="scale-choices" role="radiogroup" aria-label=${field.label} data-key=${field.key}>
-        ${field.options.map((o) => html`<label class="scale-choice" ?data-selected=${Number(o) === Number(value)}><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${Number(o) === Number(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
+      // Text size is a slider (issue 244). Its positions are the schema's stops' indexes, so a key press or a drag can
+      // only land on an offered percentage; the value in force is written beside it, and aria-valuetext reads the
+      // percentage rather than the index, so a screen reader announces the size and not a position. The stops are drawn
+      // as ticks from the datalist, and the stored value is unchanged: still one of the schema's percentages.
+      const stops = field.options.map(Number);
+      const at = Math.max(0, stops.indexOf(Number(value)));
+      const listId = 'scale-stops-' + field.key;
+      return html`<div class="scale-slider setting-control-wide" data-key=${field.key}>
+        <input type="range" class="scale-range" min="0" max=${stops.length - 1} step="1" .value=${String(at)} list=${listId}
+          aria-label=${field.label} aria-valuetext=${stops[at] + ' percent'} ?disabled=${disabled}
+          @input=${(e) => this.onSlide(e, field, stops)}>
+        <datalist id=${listId}>${stops.map((o, i) => html`<option value=${String(i)} label=${optionLabel(field, o)}></option>`)}</datalist>
+        <output class="scale-value" data-value=${String(stops[at])}>${optionLabel(field, stops[at])}</output>
       </div>`;
     }
     if (field.type === 'icon') {
@@ -267,23 +294,21 @@ class AppSettings extends KitElement {
     return html`<label class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</label>`;
   }
 
-  // The rows a section draws: a settings group's keys, This device's server and sign out, or the row that opens About.
+  // The rows a section draws: a settings group's keys, This device's server and sign out, or, for a group that names
+  // its own sections (Behavior), one small block per section rather than one long list.
   sectionBody(group) {
-    if (group.kind === 'about') {
-      const version = (this.host && this.host.version) || '';
-      return html`<div class="sheet-rows">
-        <button type="button" class="setting-row setting-nav" data-action="about" @click=${press(() => this.fire('about'))}>
-          <span class="setting-label">About</span>
-          <span class="setting-nav-value">${version}</span>
-          <span class="icon" data-icon="chevron-right" aria-hidden="true"></span>
-        </button>
-      </div>`;
-    }
     if (group.kind === 'device') {
       return html`<div class="sheet-rows">
         <div class="setting-row"><span class="setting-label">Server</span><span class="setting-value">${this.serverUrl || 'Not connected'}</span></div>
         <div class="setting-row"><span class="setting-label">Connection</span><button class="text-button" data-action="signout" @click=${press(() => this.fire('signout'))}>Sign out</button></div>
       </div>`;
+    }
+    if (group.sections) {
+      return group.sections.map((s) => html`<div class="settings-subsection" data-subsection=${s.id}>
+        <h4 class="settings-subsection-title">${s.label}</h4>
+        ${s.description ? html`<p class="settings-subsection-desc">${s.description}</p>` : nothing}
+        <div class="sheet-rows">${s.fields.map((field) => this.row(field))}</div>
+      </div>`);
     }
     return html`<div class="sheet-rows">
       ${group.fields.map((field) => this.row(field))}
@@ -301,10 +326,24 @@ class AppSettings extends KitElement {
     </section>`;
   }
 
+  // The About row, at the bottom of every Settings page (issue 244): one row, its label, the version on the right and
+  // the chevron that opens the About page, reached from the tab in force.
+  aboutRow() {
+    const version = (this.host && this.host.version) || '';
+    return html`<div class="sheet-rows settings-about-row" data-section="about">
+      <button type="button" class="setting-row setting-nav" data-action="about" @click=${press(() => this.fire('about'))}>
+        <span class="setting-label">About</span>
+        <span class="setting-nav-value">${version}</span>
+        <span class="icon" data-icon="chevron-right" aria-hidden="true"></span>
+      </button>
+    </div>`;
+  }
+
   body() {
     return html`
       ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
-      ${settingsGroups().map((group) => this.section(group))}`;
+      ${settingsGroups().map((group) => this.section(group))}
+      ${this.aboutRow()}`;
   }
 
   render() {
