@@ -20,7 +20,7 @@ class AppNotices extends KitElement {
   onCard(e, notice) {
     if (!notice.action) return;
     const hit = e.target && typeof e.target.closest === 'function' ? e.target : null;
-    if (hit && (hit.closest('.close-button') || hit.closest('.app-notice-action'))) return;
+    if (hit && (hit.closest('.close-button') || hit.closest('.app-notice-read') || hit.closest('.app-notice-action'))) return;
     this.runAction?.(notice.action.command);
   }
 
@@ -30,7 +30,8 @@ class AppNotices extends KitElement {
       <span class="app-notice-icon icon" data-icon=${TONE_ICONS[n.tone] || TONE_ICONS.info} aria-hidden="true"></span>
       <div class="app-notice-body"><span>${n.message}</span>${n.detail ? html`<span class="muted">${n.detail}</span>` : nothing}${n.percent === null ? nothing : html`<progress class="app-notice-progress" aria-label="Download progress" max="1" value=${n.percent}></progress>`}
       ${n.action ? html`<button type="button" class="app-notice-action" data-command=${n.action.command} @click=${press(() => this.runAction?.(n.action.command))}>${n.action.label}</button>` : nothing}</div>
-      ${closeButtonHtml({ owner: 'notice', label: 'Dismiss notice', title: 'Mark read. Progress stays dismissed until the state changes.', onClose: () => this.dispatchEvent(new CustomEvent('notice-dismiss', { detail: { id: n.id }, bubbles: true, composed: true })) })}
+      <button type="button" class="app-notice-read" data-read=${n.id} aria-label="Mark as read" title="Mark read on every device" @click=${press(() => this.dispatchEvent(new CustomEvent('notice-read', { detail: { id: n.id, revision: n.revision }, bubbles: true, composed: true })))}><span class="icon" data-icon="check" aria-hidden="true"></span></button>
+      ${closeButtonHtml({ owner: 'notice', label: 'Dismiss notice', title: 'Dismiss here. Mark read clears it on every device.', onClose: () => this.dispatchEvent(new CustomEvent('notice-dismiss', { detail: { id: n.id, revision: n.revision }, bubbles: true, composed: true })) })}
     </article>`)}</section>`;
   }
 }

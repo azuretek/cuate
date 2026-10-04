@@ -593,6 +593,23 @@ test('a settings change is broadcast over the event stream', async () => {
   a.ws.close();
 });
 
+// Issue 191: marking a notice read is one setting, held on the server, so it clears on a second client through the
+// settings API and the event stream, and is read back at start, which is what surviving a reload means for it.
+test('marking a notice read is held on the server and read back by another device', async () => {
+  const a = await openSocket(s.base);
+  a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
+  await waitFor(() => a.frames.some((f) => f.type === 'hello'));
+  const read = { 'app-update': 'ready:1.2.3' };
+  assert.equal((await s.put('/api/v1/settings', s.tokens.device, { values: { 'notice.read': read } })).status, 200);
+  const b = s.store.createToken('device', 'notice read device').token;
+  assert.deepEqual((await (await s.get('/api/v1/settings', b)).json()).values['notice.read'], read, 'every device reads the read state');
+  await waitFor(() => a.frames.some((f) => f.type === 'event' && f.name === 'settings.changed' && f.data.values['notice.read']));
+  const ev = a.frames.find((f) => f.type === 'event' && f.name === 'settings.changed' && f.data.values['notice.read']);
+  conforms(ev.data, 'SettingsEvent');
+  assert.deepEqual(ev.data.values['notice.read'], read);
+  a.ws.close();
+});
+
 // Theme import by URL (issue 112). The theme is served from a loopback server this test owns, in the two shapes a
 // tweakcn URL can answer with: the registry JSON and the CSS export.
 async function themeHost(routes) {
