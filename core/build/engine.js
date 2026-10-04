@@ -46,7 +46,6 @@ var engine = (() => {
     MAX_THEMES: () => MAX_THEMES,
     MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
-    NOTICE_CLOSED_KEY: () => NOTICE_CLOSED_KEY,
     NOTICE_READ_KEY: () => NOTICE_READ_KEY,
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
@@ -1415,7 +1414,6 @@ var engine = (() => {
     };
   }
   var NOTICE_READ_KEY = "notice.read";
-  var NOTICE_CLOSED_KEY = "notice.closed";
   function noticeState(raw) {
     let value = raw;
     if (typeof value === "string") {
@@ -1438,14 +1436,14 @@ var engine = (() => {
     if (id && typeof revision === "string") out[id] = revision;
     return out;
   }
-  function noticeQuiet(notice, read = {}, closed = {}) {
+  function noticeQuiet(notice, read = {}) {
     if (!notice) return false;
-    return noticeStateOf(read, notice.id) === notice.revision || noticeStateOf(closed, notice.id) === notice.revision;
+    return noticeStateOf(read, notice.id) === notice.revision;
   }
-  function quietNotices(notices, read = {}, closed = {}) {
+  function quietNotices(notices, read = {}) {
     let changed = false;
     const out = notices.map((n) => {
-      if (n.read || !noticeQuiet(n, read, closed)) return n;
+      if (n.read || !noticeQuiet(n, read)) return n;
       changed = true;
       return { ...n, read: true };
     });

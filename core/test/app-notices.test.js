@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, noticeStateOf, withNoticeState, noticeQuiet, forgetNoticeState, NOTICE_READ_KEY, NOTICE_CLOSED_KEY } from '../app/rules/app-notices.js';
+import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, noticeStateOf, withNoticeState, noticeQuiet, forgetNoticeState, NOTICE_READ_KEY } from '../app/rules/app-notices.js';
 
 const download = (percent) => appUpdateNotice({ state: 'downloading', version: '1.2.3', percent });
 test('duplicate events are silent and progress replaces one operation', () => {
@@ -102,43 +102,38 @@ test('the notice stack draws above every other surface and starts below the head
   }
 });
 
-// Issue 191 (the close and mark-as-read half): a notice no one has acknowledged is visible; closing it remembers its
-// revision on this device and marking it read remembers its revision on the server, and either keeps it quiet until
-// the operation changes phase, so a new outcome may still announce itself.
-test('a notice closed here or read through the server stays quiet until its operation changes', () => {
+// Issue 191 (the close and mark-as-read half): a notice no one has acknowledged is visible; marking it read remembers
+// its revision on the server, which keeps it quiet on every device until the operation changes phase, so a new outcome
+// may still announce itself. Closing a notice is the page's own dismissal (the dismissal test above), never a store.
+test('a notice read through the server stays quiet until its operation changes', () => {
   const ready = appUpdateNotice({ state: 'ready', version: '1.2.3' });
-  assert.equal(noticeQuiet(ready, {}, {}), false, 'an unacknowledged notice is visible');
-  assert.equal(noticeQuiet(ready, { 'app-update': ready.revision }, {}), true, 'a revision read on the server is quiet');
-  assert.equal(noticeQuiet(ready, {}, { 'app-update': ready.revision }), true, 'a revision closed here is quiet');
-  assert.equal(noticeQuiet(ready, { 'app-update': 'downloading:1.2.3' }, {}), false, 'a different revision is not this one');
-  assert.equal(quietNotices([ready], { 'app-update': ready.revision }, {})[0].read, true);
-  assert.equal(quietNotices([ready], {}, { 'app-update': ready.revision })[0].read, true);
+  assert.equal(noticeQuiet(ready, {}), false, 'an unacknowledged notice is visible');
+  assert.equal(noticeQuiet(ready, { 'app-update': ready.revision }), true, 'a revision read on the server is quiet');
+  assert.equal(noticeQuiet(ready, { 'app-update': 'downloading:1.2.3' }), false, 'a different revision is not this one');
+  assert.equal(quietNotices([ready], { 'app-update': ready.revision })[0].read, true);
   const newer = appUpdateNotice({ state: 'ready', version: '1.2.4' });
-  assert.notEqual(quietNotices([newer], { 'app-update': ready.revision }, {})[0].read, true, 'a new release announces itself');
+  assert.notEqual(quietNotices([newer], { 'app-update': ready.revision })[0].read, true, 'a new release announces itself');
 });
 
-test('a re-ask forgets a closed or read revision so the same answer shows again', () => {
+test('a re-ask forgets a read revision so the same answer shows again', () => {
   const ready = appUpdateNotice({ state: 'ready', version: '1.2.3' });
-  // A closed or read revision stays quiet on a repeated event...
-  assert.equal(quietNotices([ready], {}, { 'app-update': ready.revision })[0].read, true);
-  assert.equal(quietNotices([ready], { 'app-update': ready.revision }, {})[0].read, true);
-  // ...but About's Check for updates forgets it, so asking again shows the same answer, here and on the server.
-  const closed = forgetNoticeState({ 'app-update': ready.revision, other: 'x' }, 'app-update');
-  assert.deepEqual(closed, { other: 'x' });
-  assert.equal(quietNotices([ready], {}, closed)[0].read, undefined);
-  const read = forgetNoticeState({ 'app-update': ready.revision }, 'app-update');
-  assert.deepEqual(read, {});
+  // A read revision stays quiet on a repeated event...
+  assert.equal(quietNotices([ready], { 'app-update': ready.revision })[0].read, true);
+  // ...but About's Check for updates forgets it on the server, so asking again shows the same answer.
+  const read = forgetNoticeState({ 'app-update': ready.revision, other: 'x' }, 'app-update');
+  assert.deepEqual(read, { other: 'x' });
+  assert.equal(quietNotices([ready], read)[0].read, undefined);
+  assert.deepEqual(forgetNoticeState({ 'app-update': ready.revision }, 'app-update'), {});
 });
 
-test('the read and closed stores keep every id and tolerate a malformed device value', () => {
+test('the read store keeps every id and tolerates a malformed value', () => {
   assert.deepEqual(withNoticeState({ a: '1' }, 'app-update', 'ready:1.2.3'), { a: '1', 'app-update': 'ready:1.2.3' });
   assert.deepEqual(withNoticeState({ a: '1' }, 'app-update', null), { a: '1' }, 'no revision writes nothing');
-  assert.deepEqual(noticeState('not json'), {}, 'a mangled device value reads as empty');
+  assert.deepEqual(noticeState('not json'), {}, 'a mangled value reads as empty');
   assert.deepEqual(noticeState(JSON.stringify({ 'app-update': 'r' })), { 'app-update': 'r' });
   assert.deepEqual(noticeState({ 'app-update': 7 }), {}, 'only string revisions count');
   assert.equal(noticeStateOf({ 'app-update': 'r' }, 'app-update'), 'r');
   assert.equal(NOTICE_READ_KEY, 'notice.read');
-  assert.equal(NOTICE_CLOSED_KEY, 'notice.closed');
 });
 
 test('every notice draws a mark-as-read control beside the shared close control', () => {
@@ -149,5 +144,5 @@ test('every notice draws a mark-as-read control beside the shared close control'
   assert.match(src, /closeButtonHtml\(\{ owner: 'notice'/, 'the close control is still the shared one');
   const rules = readFileSync(new URL('../app/rules/app-notices.js', import.meta.url), 'utf8');
   assert.match(rules, /export const NOTICE_READ_KEY = 'notice\.read'/, 'the read state is a server setting');
-  assert.match(rules, /export const NOTICE_CLOSED_KEY = 'notice\.closed'/, 'the closed state is this device\'s store');
+  assert.doesNotMatch(rules, /NOTICE_CLOSED_KEY/, 'close is the page\u2019s own dismissal, not a store');
 });

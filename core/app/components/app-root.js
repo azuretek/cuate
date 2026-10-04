@@ -15,7 +15,7 @@ import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
-import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY, NOTICE_CLOSED_KEY } from '../rules/app-notices.js';
+import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
 import './app-notices.js';
@@ -132,10 +132,9 @@ class AppRoot extends KitElement {
     this.appNotices = [];
     this.noticeShownAt = null;
     this.noticeHold = null;
-    // The notice state that outlives a render (issue 191): the revisions marked read through the server, and the
-    // revisions closed on this device. Both hide a card until its operation changes phase.
+    // The notice state that outlives a render (issue 191): the revisions marked read through the server, which hide a
+    // card on every device until its operation changes phase. Closing a notice is the page's own dismissal instead.
     this.noticeRead = {};
-    this.noticeClosed = {};
     this.pending = new Map();
     this.client = null;
     this.drag = null;
@@ -415,9 +414,8 @@ class AppRoot extends KitElement {
       // against defaults the server has already overridden.
       this.settings = await this.readSettings();
       this.settingsRead = true;
-      // A notice's read state is a setting, and its closed state is the shell's own store, so both survive a reload.
+      // A notice's read state is a server setting, so it survives a reload and is read back on every device.
       this.noticeRead = noticeState(this.settings[NOTICE_READ_KEY]);
-      this.noticeClosed = noticeState(await this.readClosedNotices());
       this.applyNoticeQuiet();
       this.applyUpdateSetting();
       this.applyTheme();
@@ -442,17 +440,6 @@ class AppRoot extends KitElement {
     try {
       const { values } = await this.client.settings();
       return values || {};
-    } catch {
-      return {};
-    }
-  }
-
-  // The revisions closed on this device (issue 191), from the shell's store, so closing a notice survives a reload here
-  // and nowhere else. A shell with no store, or a value it cannot read, simply holds nothing.
-  async readClosedNotices() {
-    if (typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function') return {};
-    try {
-      return await this.bridge('storage.get', { key: NOTICE_CLOSED_KEY });
     } catch {
       return {};
     }
@@ -495,7 +482,6 @@ class AppRoot extends KitElement {
     this.settingsRead = false;
     this.appNotices = [];
     this.noticeRead = {};
-    this.noticeClosed = {};
     this.typingChat = null;
     this.resetTyping();
     this.view = 'messages';
@@ -665,24 +651,22 @@ class AppRoot extends KitElement {
     else if (prior?.revision !== notice.revision) this.noticeShownAt = Date.now();
   }
 
-  // A notice whose revision was closed here or read on the server is hidden, and stays hidden across a reload and on
-  // every other device (issue 191). The card is left in the stack with read set, so its revision can be read back.
+  // A notice whose revision was read on the server is hidden, on every device (issue 191). The card is left in the
+  // stack with read set, so its revision can be read back.
   applyNoticeQuiet() {
-    this.appNotices = quietNotices(this.appNotices, this.noticeRead, this.noticeClosed);
+    this.appNotices = quietNotices(this.appNotices, this.noticeRead);
   }
 
   noticeRevision(id) {
     return this.appNotices.find((n) => n.id === id)?.revision ?? null;
   }
 
-  // Close: this device only (issue 191). The revision is remembered in the shell's store, so the card does not return
-  // here after a reload, and is left alone everywhere else. The server is not told.
+  // Close: this page only (issue 191). The card is dismissed here, and the dismissal is never a command to the shell,
+  // so closing a notice tells the server and the other devices nothing. A press re-shows only a new outcome.
   onNoticeDismiss(e) {
-    const { id, revision } = e.detail || {};
+    const { id } = e.detail || {};
     if (!id) return;
     this.appNotices = dismissNotice(this.appNotices, id);
-    this.noticeClosed = withNoticeState(this.noticeClosed, id, revision ?? this.noticeRevision(id));
-    this.bridge('storage.set', { key: NOTICE_CLOSED_KEY, value: JSON.stringify(this.noticeClosed) }).catch(() => {});
     this.applyNoticeQuiet();
   }
 
@@ -916,12 +900,8 @@ class AppRoot extends KitElement {
   // until the shell answers, and fails when the shell refused it.
   async checkUpdates() {
     this.appNotices = forgetRead(this.appNotices, 'app-update');
-    // A re-ask forgets the stored revision here and on the server, so the same answer shows again even though it was
-    // closed or read before (issue 191); without this the persistent state would hide the answer to a person's press.
-    if (Object.hasOwn(this.noticeClosed, 'app-update')) {
-      this.noticeClosed = forgetNoticeState(this.noticeClosed, 'app-update');
-      this.bridge('storage.set', { key: NOTICE_CLOSED_KEY, value: JSON.stringify(this.noticeClosed) }).catch(() => {});
-    }
+    // A re-ask forgets the read revision on the server too, so the same answer shows again even though the reader
+    // marked it read before (issue 191); without this the persistent state hides the answer a person just asked for.
     if (Object.hasOwn(this.noticeRead, 'app-update')) {
       this.noticeRead = forgetNoticeState(this.noticeRead, 'app-update');
       if (this.client) this.client.settingsWrite({ [NOTICE_READ_KEY]: this.noticeRead }).catch(() => {});
