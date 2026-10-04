@@ -63,6 +63,7 @@
   --size-press-spinner: 1em;
   --size-message-action: 28px;
   --size-app-icon: 72px;
+  --size-app-icon-choice: 48px;
   --motion-fast: 100ms;
   --motion-normal: 180ms;
   --motion-spin: 900ms;
@@ -282,3 +283,4 @@
 .icon[data-icon="pencil"] { --icon-glyph: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M21.174%206.812a1%201%200%200%200-3.986-3.987L3.842%2016.174a2%202%200%200%200-.5.83l-1.321%204.352a.5.5%200%200%200%20.623.622l4.353-1.32a2%202%200%200%200%20.83-.497z%22%2F%3E%3Cpath%20d%3D%22m15%205%204%204%22%2F%3E%3C%2Fsvg%3E"); }
 .icon[data-icon="reply"] { --icon-glyph: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%2018v-2a4%204%200%200%200-4-4H4%22%2F%3E%3Cpath%20d%3D%22m9%2017-5-5%205-5%22%2F%3E%3C%2Fsvg%3E"); }
 .icon[data-icon="smile-plus"] { --icon-glyph: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M22%2011v1a10%2010%200%201%201-9-10%22%2F%3E%3Cpath%20d%3D%22M8%2014s1.5%202%204%202%204-2%204-2%22%2F%3E%3Cpath%20d%3D%22M9%209h.01%22%2F%3E%3Cpath%20d%3D%22M15%209h.01%22%2F%3E%3Cpath%20d%3D%22M16%205h6%22%2F%3E%3Cpath%20d%3D%22M19%202v6%22%2F%3E%3C%2Fsvg%3E"); }
+.icon[data-icon="messages-square"] { --icon-glyph: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M14%209a2%202%200%200%201-2%202H6l-4%204V4a2%202%200%200%201%202-2h8a2%202%200%200%201%202%202z%22%2F%3E%3Cpath%20d%3D%22M18%209h2a2%202%200%200%201%202%202v11l-4-4h-6a2%202%200%200%201-2-2v-1%22%2F%3E%3C%2Fsvg%3E"); }

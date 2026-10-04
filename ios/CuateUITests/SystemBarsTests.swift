@@ -33,7 +33,7 @@ final class SystemBarsTests: XCTestCase {
     private func run(first: String, then: String) {
         let app = XCUIApplication()
         app.launchArguments = ["--system-bars-fixture"] + (first == "dark" ? ["--fixture-dark"] : [])
-        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.startInPortrait()
         app.launch()
         defer { app.terminate() }
         let marker = self.marker(app, scheme: first)

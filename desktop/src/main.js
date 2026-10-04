@@ -10,11 +10,13 @@ import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
 import { contrastRatio } from '../../core/app/rules/theme.js';
+import { settingsTabs } from '../../core/app/rules/settings.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
+import { renderIcon } from '../../core/app/rules/icon.js';
 import { lockZoom } from './zoom-lock.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
 
@@ -46,6 +48,21 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
+// The app icon chosen in Settings (issue 167): Follow theme, the default, leaves the icons to the theme (applyIcons,
+// below); a fixed palette from core/spec/app-icons.json stands in for the theme's colours in every image the shell
+// redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
+// The launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
+const appIconSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/app-icons.json'), 'utf8'));
+let appIconApplied = appIconSpec.default;
+let appIconFixed = null;
+function setAppIcon(icon) {
+  const choice = appIconSpec.icons.find((i) => i.id === icon);
+  if (!choice) return { applied: false, icon };
+  appIconFixed = choice.colors ? { scheme: choice.scheme === 'dark' ? 'dark' : 'light', colors: choice.colors } : null;
+  appIconApplied = icon;
+  applyIcons();
+  return { applied: true, icon };
+}
 // Set once the updater starts; the page calls updates.configure to apply the server's setting to it.
 let updateControl = null;
 // The last update state the shell reported. The check at start can finish before the page is listening, and a reload
@@ -69,6 +86,7 @@ const iconMasters = loadMasters(CORE);
 let iconState = { scheme: 'light', colors: {}, unread: 0 };
 let iconKey = null;
 let windowIconKey = null;
+let dockIconKey = null;
 const smokeIcons = [];
 const nativeFrom = (reps) => {
   const image = nativeImage.createEmpty();
@@ -77,7 +95,17 @@ const nativeFrom = (reps) => {
 };
 function applyIcons(next = {}) {
   iconState = { ...iconState, ...next };
-  const out = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState });
+  const out = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState, fixed: appIconFixed });
+  // macOS: the Dock wears a fixed palette while the app runs, and the bundle's icon (the default theme's) once the
+  // choice is Follow theme again.
+  if (process.platform === 'darwin' && app.dock && (appIconFixed || dockIconKey)) {
+    const dockKey = appIconFixed ? JSON.stringify(out.palette) : null;
+    if (dockKey !== dockIconKey) {
+      const palette = appIconFixed ? out.palette : shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color }).palette;
+      app.dock.setIcon(nativeFrom([{ scale: 1, image: renderIcon({ masters: iconMasters, palette, kind: 'app', size: 512 }) }]));
+      dockIconKey = dockKey;
+    }
+  }
   if (out.key === iconKey) return true;
   iconKey = out.key;
   if (tray) {
@@ -135,6 +163,7 @@ const handlers = createHandlers({
     shell.openExternal(url);
     return true;
   },
+  appIcon: (icon) => setAppIcon(icon),
   // About's Check for updates runs the tray's own check and answers the state it reported, so the page draws the same
   // notice the event carries (issue 171).
   checkUpdates: () => {
@@ -1830,7 +1859,62 @@ async function runSmoke(w) {
   report.noticeDismissed = await js("!document.querySelector('.app-notice')");
   report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared && report.noticeInPlace && report.noticeDismissed && report.noticeFloor;
 
+  // Issue 167: the sections are tabs, one per section the schema declares and in its order, and every setting is
+  // reached from one. Each tab is pressed in turn: its section alone shows, and every key it offers is drawn inside
+  // the window. The same walk runs at a phone's width below, so a setting the desktop offers and a phone does not
+  // fails here rather than ships.
+  const tabSel = (id) => "document.querySelector('app-settings .settings-tab[data-tab=\"" + id + "\"]')";
+  const showTab = async (id) => {
+    await js(tabSel(id) + '.click()');
+    await waitFor(tabSel(id) + ".getAttribute('aria-selected') === 'true'", 5000);
+    await pause(200);
+  };
+  const tabWalk = async () => {
+    const out = {};
+    for (const tab of settingsTabs()) {
+      await showTab(tab.id);
+      out[tab.id] = await js("(() => { const keys = " + JSON.stringify(tab.keys) + "; const s = document.querySelector('app-settings'); const shown = [...s.querySelectorAll('.sheet-section')].filter((x) => !x.hidden && x.getBoundingClientRect().height > 0).map((x) => x.dataset.section); const seen = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5; }; const panel = s.querySelector('.sheet-section:not([hidden])'); const missing = keys.filter((k) => !seen(panel.querySelector('[data-key=\"' + k + '\"]'))); const extra = " + JSON.stringify(tab.kind) + " === 'about' ? seen(panel.querySelector('[data-action=about]')) : " + JSON.stringify(tab.kind) + " === 'device' ? seen(panel.querySelector('[data-action=signout]')) : true; return { shown: shown.join('|'), missing, extra, doc: document.documentElement.scrollWidth <= innerWidth }; })()");
+    }
+    return out;
+  };
+  const tabsOk = (walk) => settingsTabs().every((t) => walk[t.id] && walk[t.id].shown === t.id && walk[t.id].missing.length === 0 && walk[t.id].extra && walk[t.id].doc);
+  const tabLabels = await js("[...document.querySelectorAll('app-settings [role=tablist] [role=tab]')].map((t) => t.textContent.trim()).join('|')");
+  const desktopWalk = await tabWalk();
+  report.settingsTabs = tabLabels === settingsTabs().map((t) => t.label).join('|') && tabsOk(desktopWalk);
+  if (!report.settingsTabs) console.error('settings tabs: ' + JSON.stringify({ tabLabels, desktopWalk }));
+  // The app icon: Follow theme, drawn by the page in the theme in force, then the fixed palettes; a choice is written to
+  // the server like any setting and applied by this shell to the images it draws (and the Dock on macOS). Put back to
+  // the default after.
+  await showTab('appearance');
+  const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
+  await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
+  const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconSpec.icons.length + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
+  const themePicture = await js(iconChoice(appIconSpec.default) + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
+  await waitFor('Boolean(' + iconChoice('night') + ') && !' + iconChoice('night') + '.disabled', 10000);
+  await js(iconChoice('night') + '.click()');
+  for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== 'night' || appIconApplied !== 'night'); i += 1) await pause(200);
+  const iconHeld = (await held())['appearance.appIcon'] === 'night';
+  const iconApplied = appIconApplied === 'night';
+  // A fixed palette stands in for the theme in the images the shell draws (the tray's mark is the palette's).
+  const nightMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: { scheme: appIconSpec.icons.find((i) => i.id === 'night').scheme, colors: appIconSpec.icons.find((i) => i.id === 'night').colors } }).palette.mark;
+  const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === nightMark;
+  const iconMarked = await js(iconChoice('night') + ".getAttribute('aria-checked') === 'true'");
+  await waitFor('!' + iconChoice(appIconSpec.default) + '.disabled', 10000);
+  await js(iconChoice(appIconSpec.default) + '.click()');
+  for (let i = 0; i < 50 && appIconApplied !== appIconSpec.default; i += 1) await pause(200);
+  const themeAgain = smokeIcons.at(-1).mark !== nightMark;
+  report.appIcon = iconPictures && themePicture && iconHeld && iconApplied && iconDrawn && iconMarked && themeAgain && appIconApplied === appIconSpec.default && (await held())['appearance.appIcon'] === appIconSpec.default;
+  if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, themePicture, iconHeld, iconApplied, iconDrawn, iconMarked, themeAgain, now: appIconApplied }));
+
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
+  await showTab('notifications');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('05e-settings-notifications.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('05f-settings-notifications-dark.png');
+  await showTab('appearance');
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05-settings.png');
@@ -1939,6 +2023,30 @@ async function runSmoke(w) {
   const narrowSettings = await sideways();
   report.sheetWidthSettings = narrowSettings.doc <= narrowSettings.inner && narrowSettings.body <= narrowSettings.inner;
 
+  // Issue 167: on a phone Settings is a page that fills the screen, not a card, with the same tabs and every setting the
+  // desktop offers; issue 168: its way back to the chats list is the chats icon, labelled with where it goes.
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 375', 5000);
+  await pause(400);
+  const phonePage = await js("(() => { const s = document.querySelector('.sheet').getBoundingClientRect(); const b = document.querySelector('app-settings .sheet-back'); const vis = (e) => Boolean(e) && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0; const narrow = b.querySelector('.sheet-back-narrow'); const icon = narrow && narrow.querySelector('.icon'); return { fills: Math.abs(s.left) < 1 && Math.abs(s.top) < 1 && Math.abs(s.width - innerWidth) < 1 && Math.abs(s.height - innerHeight) < 1, narrow: vis(narrow), wide: vis(b.querySelector('.sheet-back-wide')), esc: vis(b.querySelector('.sheet-esc')), label: narrow ? narrow.querySelector('.sheet-back-label').textContent.trim() : '', icon: icon ? icon.dataset.icon : '', iconDrawn: vis(icon) }; })()");
+  const phoneWalk = await tabWalk();
+  await showTab('appearance');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('05g-settings-phone.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('05h-settings-phone-dark.png');
+  await showTab('notifications');
+  await shot('05j-settings-phone-notifications-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('05i-settings-phone-notifications.png');
+  report.phoneSettings = phonePage.fills && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
+  if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
+  // About lives under Settings (issue 171): its row is on the About tab.
+  await showTab('about');
+
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
@@ -2014,7 +2122,9 @@ async function runSmoke(w) {
   // Back from About returns to Settings, the page it was pushed over.
   await js("document.querySelector('app-about .sheet-back').click()");
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
-  report.about = report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
+  // Back from About lands on the About tab it was opened from, not on the first tab.
+  report.aboutBackTab = await js(tabSel('about') + "?.getAttribute('aria-selected') === 'true'");
+  report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
   if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
@@ -2054,6 +2164,15 @@ async function runSmoke(w) {
   await pause(400); // the drawer slides on a 160ms transition; measure the settled position, not a frame of it.
   report.phone = await js("(() => { const r = document.querySelector('.shell .sidebar').getBoundingClientRect(); const scrim = document.querySelector('.scrim'); return r.right <= 0 && (!scrim || getComputedStyle(scrim).visibility === 'hidden'); })()");
   await shot('08-phone-conversation.png');
+  // Issue 168: the way back to the chats list is the chats icon from the shared set, named for where it goes, and no
+  // back arrow.
+  report.chatsBack = await js("(() => { const b = document.querySelector('app-conversation .conv-back'); const i = b && b.querySelector('.icon'); if (!i) return false; const r = i.getBoundingClientRect(); return getComputedStyle(b).display !== 'none' && b.getAttribute('aria-label') === 'Back to chats' && i.dataset.icon === 'messages-square' && r.width > 0 && r.height > 0 && b.textContent.trim() === '' && !b.querySelector('[data-icon=arrow-left]'); })()");
+  if (!report.chatsBack) console.error('chats back: ' + JSON.stringify(await js("document.querySelector('app-conversation .conv-back')?.outerHTML || null")));
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('08b-phone-conversation-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
 
   // A message's menu at phone width (issue 169): a finger held on someone else's message opens it with the time, Reply
   // in thread and React, then Reply in thread fades every message outside the thread. Light and dark of each.
@@ -2151,7 +2270,9 @@ async function runSmoke(w) {
     { name: 'thread', pane: 'conversation', open: '(async () => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); const sel = ' + dq(DISMISS_ROW + ' .message-action[aria-label="Reply in thread"]') + '; for (let i = 0; i < 50 && !document.querySelector(sel); i += 1) await new Promise((r) => setTimeout(r, 50)); document.querySelector(sel).click(); return true; })()', panel: '.thread-view .thread-list' },
     { name: 'group', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-group').click()", panel: '.group-prompt' },
     { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.group-prompt)' },
-    { name: 'sheet', pane: 'list', open: "document.querySelector('.sidebar-head .gear-button').click()", panel: '.sheet' },
+    // On a phone Settings is a page that fills the screen (issue 167), so there is no outside to press: its way back is
+    // the strip at its top, pressed there with a finger, which must close it and reach nothing underneath.
+    { name: 'sheet', pane: 'list', phonePage: true, open: "document.querySelector('.sidebar-head .gear-button').click()", panel: '.sheet' },
   ];
   const dismissState = "(() => { const r = document.querySelector('app-root'); return { chat: r.openChatId, list: r.listOpen, editing: r.editing, checked: (r.checked || []).length }; })()";
   // Each panel starts from the same page: no edit mode, no sheet up, and on the phone the pane that holds its trigger.
@@ -2224,7 +2345,9 @@ async function runSmoke(w) {
       try { await waitFor('Boolean(document.querySelector(' + dq(p.panel) + '))', 5000); } catch { opened = false; }
       await pause(300);
       await shot('20-dismiss-' + width + '-' + p.name + '-light.png');
-      const target = opened ? await dismissTarget(p.panel) : null;
+      const target = !opened ? null : phone && p.phonePage
+        ? await js("(() => { const b = document.querySelector('.sheet .sheet-back'); if (!b) return null; const r = b.getBoundingClientRect(); window.dismissHits = 0; return { sel: 'back strip', x: r.left + r.width / 2, y: r.top + r.height / 2, over: 'sheet-back' }; })()")
+        : await dismissTarget(p.panel);
       const before = await js(dismissState);
       if (target) await dismissPress(target.x, target.y, phone);
       const closed = Boolean(target) && await panelGone(p.panel);

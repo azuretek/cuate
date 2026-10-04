@@ -130,7 +130,8 @@ test('the thread view lists exactly the original and its replies, with time sepa
   assert.match(card, /class="thread-card-head"><button type="button" class="close-button" data-close="thread"[^>]*aria-label="Close thread"/, 'the shared close control');
   const head = page.slice(0, page.indexOf('</header>'));
   assert.ok(!head.includes('close-button') && !head.includes('Close thread'), 'no close control in the header');
-  assert.ok(head.includes('aria-label="Conversations"'), 'the header keeps its way back');
+  assert.match(head, /aria-label="Back to chats"/, 'the header keeps its way back, the shared chats icon');
+  assert.match(head, /data-icon="messages-square"/, 'the way back is the shared chats icon, never a close control');
   assert.ok(page.includes('Avery Quinn'), 'the contact header stays');
   const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: 'SYN-0002' }, frequent: [], preview: '', disabled: false, placeholder: 'Reply' };
   const markup = words(composer.render.call(c));
