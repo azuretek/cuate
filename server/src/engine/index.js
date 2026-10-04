@@ -191,12 +191,12 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined);
 
   // imsg names and versions its capabilities rather than advertising adjectives, so the client asks for the version
-  // it needs. `tapback.emoji` is version 2 in a build whose sender target lives for the life of the invocation;
-  // version 1 is the first emoji path, which handed a freed invocation target to -retainArguments on send and took
-  // Messages down (SIGSEGV), and a build that predates the block reports no version at all. Anything older than 2 is
-  // refused here rather than reaching the crash. A stock bridge builds only associated_message_type 2000 to 2005 and
-  // folds some emoji onto a standard kind, so it is refused any emoji that is not one of the six (issue 188). The
-  // refusal is explicit and never downgraded to a classic tapback.
+  // it needs. A capability's version tracks the shape of its API, and advertising it means the build supports that
+  // shape. `tapback.emoji` is version 2 where the engine sends an arbitrary emoji as itself; a build that advertises
+  // an older version, or predates the block and reports none, does not support that pattern. Such a build is denied
+  // here, in place, and is never asked. A stock bridge builds only associated_message_type 2000 to 2005 and folds
+  // some emoji onto a standard kind, so it is refused any emoji that is not one of the six (issue 188). The refusal
+  // is explicit and never downgraded to a classic tapback.
   const REACTION_TAPBACK_EMOJI_VERSION = EMOJI_TAPBACK_VERSION;
   const capabilityVersion = (name) => {
     const value = state.capabilities && state.capabilities.features ? state.capabilities.features[name] : null;

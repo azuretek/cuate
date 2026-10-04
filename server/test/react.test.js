@@ -1,14 +1,16 @@
 // The reaction send path as the engine advertises it (issue 188). A stock engine sends the six classic tapbacks and
 // refuses any other emoji; one whose capability block reports `tapback.emoji` at version 2 sends any emoji as
-// itself, and an engine that reports an older version is treated as one that crashes on an emoji reaction and is
-// refused before the bridge. The HTTP side is here; the route and the client are pinned in api.test.js.
+// itself. A capability's version tracks the shape of its API, so an engine that reports an older version, or none,
+// does not support that pattern and is denied in place before the bridge. The HTTP side is here; the route and the
+// client are pinned in api.test.js.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { boot } from './helpers.js';
 
 const at = (id) => '/api/v1/chats/1/messages/' + id + '/reactions';
 // A capability block in the shape imsg reports: the engine's own build identity beside the named, versioned
-// features. No version means a build that predates the block; 1 is the first emoji path, which crashed Messages.
+// features. No version means a build that predates the block; 1 is an earlier shape that does not support the
+// arbitrary-emoji pattern.
 const caps = (version) => ({
   engine: { version: 'test', commit: 'test', built_at: '2026-01-01T00:00:00Z' },
   features: version ? { 'tapback.emoji': version } : {},
@@ -56,7 +58,7 @@ test('an engine advertising an older tapback.emoji version is refused an arbitra
   const r = await s.post(at('FAKE-0013'), s.tokens.device, { emoji: PARTY });
   assert.equal(r.status, 422);
   assert.equal((await r.json()).error.code, 'reaction_unsupported');
-  assert.equal(s.world.tapbacks.length, 0, 'a build known to crash on an emoji reaction is never reached');
+  assert.equal(s.world.tapbacks.length, 0, 'a build that does not support the pattern is never asked');
   assert.equal(s.world.requests.filter((m) => m === 'tapback').length, 0);
 });
 
