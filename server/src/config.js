@@ -14,6 +14,10 @@ const macDefaults = () => ({
 export const DEFAULTS = Object.freeze({
   port: 7447,
   engine: { kind: 'imsg', bin: 'imsg', db: null, live: null },
+  // Inbound typing is present and OFF: the ordinary database watch reports none, and the only source is an injected
+  // v2 bridge (imsg bridge.events.subscribe). Turning this on needs an already-running bridge and is not something
+  // this server starts (issue 230).
+  typing: { incoming: false },
   attachmentsRoot: null,
   sending: { enabled: false, perMinute: 20 },
   previews: 40,
@@ -41,6 +45,7 @@ export function normalizeConfig(raw = {}) {
     ...DEFAULTS,
     ...given(raw),
     engine: { ...DEFAULTS.engine, ...given(raw.engine) },
+    typing: { ...DEFAULTS.typing, ...given(raw.typing) },
     sending: { ...DEFAULTS.sending, ...given(raw.sending) },
     log: { ...DEFAULTS.log, ...given(raw.log) },
     mac: {
@@ -58,6 +63,7 @@ export function normalizeConfig(raw = {}) {
   if (c.engine.db !== null && typeof c.engine.db !== 'string') problems.push('engine.db must be a path or null');
   if (c.engine.live !== null && typeof c.engine.live !== 'string') problems.push('engine.live must be text or null');
   if (c.attachmentsRoot !== null && typeof c.attachmentsRoot !== 'string') problems.push('attachmentsRoot must be a path or null');
+  if (typeof c.typing.incoming !== 'boolean') problems.push('typing.incoming must be true or false');
   if (typeof c.sending.enabled !== 'boolean') problems.push('sending.enabled must be true or false');
   if (!Number.isInteger(c.sending.perMinute) || c.sending.perMinute < 1 || c.sending.perMinute > 600) problems.push('sending.perMinute must be from 1 to 600');
   if (!Number.isInteger(c.previews) || c.previews < 0 || c.previews > 500) problems.push('previews must be from 0 to 500');

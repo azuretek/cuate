@@ -21,7 +21,9 @@ Read receipts depend on the recipient sharing them. Unknown is not unread. The e
 
 ## Typing boundary
 
-The configured ordinary database watch cannot report remote typing. The app therefore draws no typing indicator. This change does not launch or inject a bridge, disable platform protections, send our typing state, change production configuration or invent an event. Enabling a bridge-backed typing surface needs a separate authorized engine/bridge decision and non-resumable stream handling, including stop, disconnect and expiry clearing. It is not an emoji or read-poll prerequisite.
+The configured ordinary database watch cannot report another person typing. The only source that does is an injected v2 bridge's event stream (`bridge.events.subscribe`, `started-typing`/`stopped-typing`), which the server never starts or injects, and the Messages database holds no typing state. That path is present and OFF behind `typing.incoming` in the server config, with the source cited in the code; the app draws no indicator for the other person where the engine cannot report one. Enabling it still needs a separate authorized engine/bridge decision and non-resumable stream handling, including stop, disconnect and expiry clearing. It is not an emoji or read-poll prerequisite.
+
+Our own typing is a different thing and is real (issue 230): while you compose, the page tells the server and the server relays it to this account's other signed-in devices alone, over the same event stream, for that conversation only. It is held in memory with a short expiry, it clears when the draft empties, when the message sends or when you leave the conversation, and it never enters message history. The server that a device reaches is the account, so a relay never crosses accounts, and the event names one conversation, so it never shows for another.
 
 ## Emoji and attachment acceptance
 

@@ -119,6 +119,13 @@ class AppComposer extends KitElement {
     this.fit.observe(ruler);
   }
 
+  // Typing the draft is not a message: the page hears whether the field is empty so it can tell the server when we
+  // start or stop typing in this conversation (issue 230). The field still grows as it did.
+  onInput(e) {
+    this.grow(e);
+    this.dispatchEvent(new CustomEvent('draft', { bubbles: true, composed: true, detail: { empty: e.currentTarget.value.trim() === '' } }));
+  }
+
   submit(e) {
     e.preventDefault();
     const t = this.field();
@@ -131,6 +138,7 @@ class AppComposer extends KitElement {
     this.setPreview(null);
     t.value = '';
     this.grow({ currentTarget: t });
+    this.dispatchEvent(new CustomEvent('draft', { bubbles: true, composed: true, detail: { empty: true } }));
     t.focus();
     return work;
   }
@@ -292,7 +300,7 @@ class AppComposer extends KitElement {
         <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" data-dismiss-keep="attach emoji" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}>\u{1F642}</button>
       </div>
       <span class="composer-ruler" aria-hidden="true">M</span>
-      <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.grow} @paste=${this.paste}></textarea>
+      <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.onInput} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}><span class="icon" data-icon="arrow-up" aria-hidden="true"></span></button>
       ${this.attachOpen
         ? html`<div class="attach-menu" role="menu" aria-label="Attach" data-dismiss="attach" data-popover data-popover-edge="bottom">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
