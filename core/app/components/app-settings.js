@@ -178,13 +178,14 @@ class AppSettings extends KitElement {
       </div>`;
     }
     if (field.type === 'icon') {
-      // The app icon (issues 167 and 246): every colour is a family of a paper Light and a bright Dark variant, so the
-      // choices come grouped per colour (each colour's Light then Dark, from the one spec), each with its picture and
-      // its name, the one in force marked. Follow theme is last: the same drawing as the others, marked with the
-      // follow marker so it reads as the theme-following choice rather than a colour of its own. A press writes the
-      // choice to the server like any other setting; the shell applies it from there (rules/app-icons.js).
+      // The app icon (issues 167, 246 and 254): every colour is a family of a paper Light and a bright Dark variant, so
+      // the choices come grouped per colour (each colour's Light then Dark, from the one spec), each with its picture
+      // and its name alone under it, the one in force marked; which variant a tile is lives in its accessible name and
+      // in the swatch, never as extra text beside the colour's name. Follow theme is last: the same drawing as the
+      // others, marked with the follow marker so it reads as the theme-following choice rather than a colour of its
+      // own. A press writes the choice to the server like any other setting; the shell applies it from there.
       return html`<div class="app-icon-choices" role="radiogroup" aria-label=${field.label} data-key=${field.key}>
-        ${appIconChoices(this.values, { themePicture: this.themePicture }).map((c) => html`<button type="button" class="app-icon-choice" role="radio" aria-checked=${c.selected ? 'true' : 'false'} data-icon-id=${c.id} ?disabled=${disabled}
+        ${appIconChoices(this.values, { themePicture: this.themePicture }).map((c) => html`<button type="button" class="app-icon-choice" role="radio" aria-checked=${c.selected ? 'true' : 'false'} aria-label=${c.variantLabel ? c.label + ' ' + c.variantLabel : c.label} data-icon-id=${c.id} ?disabled=${disabled}
             @click=${press(() => (c.selected ? undefined : this.fire('setting', { key: field.key, value: c.id })))}>
           <span class="app-icon-tile"><img class="app-icon-picture" src=${c.src} alt="" draggable="false">${c.id === 'theme' ? html`<span class="app-icon-follow" aria-hidden="true"></span>` : nothing}</span>
           <span class="app-icon-name">${c.label}</span>

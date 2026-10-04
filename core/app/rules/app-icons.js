@@ -22,9 +22,11 @@ export function appIconVariants(spec = APP_ICONS) {
   }));
 }
 
-// The words under a variant's tile: the colour and which variant it is, "Naranja Light" (issue 246).
+// The words under a variant's tile: the colour's name alone, "Rosa" (issues 246 and 254). Which variant it is lives in
+// the tile's accessible name and in the swatch itself (a paper Light one or a bright Dark one), never as extra text
+// beside the name.
 export function appIconChoiceLabel(variant) {
-  return variant.familyLabel + ' ' + variant.label;
+  return variant.familyLabel;
 }
 
 // The icon to draw: the one the server holds, else the default. An id the spec does not hold (a choice from a newer

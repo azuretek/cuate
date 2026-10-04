@@ -1181,7 +1181,7 @@ var engine = (() => {
     }));
   }
   function appIconChoiceLabel(variant) {
-    return variant.familyLabel + " " + variant.label;
+    return variant.familyLabel;
   }
   function appIconFor(values, spec = APP_ICONS) {
     const id = values && values[APP_ICON_KEY];

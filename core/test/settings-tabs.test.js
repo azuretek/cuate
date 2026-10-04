@@ -92,9 +92,14 @@ test('the app icon is a setting the server holds, offered from the one spec: eac
   assert.equal(icons.default, 'naranja_dark', 'the original terracotta is the default (issue 246)');
   assert.equal(icons.families[0].id, 'naranja', 'the terracotta family is first (issue 246)');
   assert.equal(field.default, 'naranja_dark');
-  // Every colour's name is Spanish; the word Mexicano is gone; the dropped choices leave nothing behind (issue 254).
-  const labels = variants.map((v) => v.familyLabel + ' ' + v.label);
-  for (const name of ['Naranja Light', 'Naranja Dark', 'Azul Light', 'Azul Dark', 'Rosa Light', 'Rosa Dark', 'Jade Light', 'Jade Dark', 'Morado Light', 'Morado Dark']) assert.ok(labels.includes(name), 'the choice ' + name + ' is offered');
+  // Every colour's name is Spanish, with no extra text: the tile's label is the colour alone, and which variant it is
+  // lives in the tile's accessible name and in the swatch (issue 254).
+  const names = ['Naranja', 'Azul', 'Rosa', 'Jade', 'Morado'];
+  for (const name of names) assert.ok(variants.some((v) => v.familyLabel === name), 'the colour ' + name + ' is offered');
+  for (const v of variants) assert.equal(/light|dark|mexicano/i.test(v.familyLabel), false, v.familyLabel + ' carries no extra text beside the name');
+  const allChoices = appIconChoices({});
+  for (const c of allChoices) assert.equal(/light|dark/i.test(c.label), false, 'the tile label ' + c.label + ' is the name alone');
+  assert.deepEqual(allChoices.filter((c) => c.variantLabel).map((c) => c.label), variants.map((v) => v.familyLabel), 'each variant tile carries the colour name alone');
   assert.equal(/mexicano/i.test(JSON.stringify(icons)), false, 'the word Mexicano is gone (issue 254)');
   assert.equal(/cempas/i.test(JSON.stringify(icons)), false, 'the Cempasuchil choice is gone (issue 254)');
   const familyIds = icons.families.flatMap((f) => [f.id, ...['light', 'dark'].map((k) => f.variants[k].id)]);
@@ -182,6 +187,7 @@ test('the icon choices read as one grid with the themes, grouped per colour, wit
   const settings = read('core/app/components/app-settings.js');
   assert.match(settings, /appIconChoices\(this\.values, \{ themePicture: this\.themePicture \}\)/);
   assert.match(settings, /data-icon-id=\$\{c\.id\}/);
+  assert.ok(settings.includes("aria-label=${c.variantLabel ? c.label + ' ' + c.variantLabel : c.label}"), 'the variant is in the tile\'s accessible name');
   assert.ok(settings.includes('app-icon-follow'), 'the follow marker is drawn');
   assert.ok(settings.includes("c.id === 'theme'"), 'only Follow theme carries the marker');
   assert.match(sheetCss, /\.app-icon-choice\[data-icon-id="theme"\] \.app-icon-follow/);
