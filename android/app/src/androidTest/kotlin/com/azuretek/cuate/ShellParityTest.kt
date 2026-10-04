@@ -36,6 +36,7 @@ class ShellParityTest {
             "storage.set",
             "storage.delete",
             "app.info",
+            "app.icon",
             "notify",
             "open.external",
             "updates.check",

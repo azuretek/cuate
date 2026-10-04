@@ -5,6 +5,7 @@
     "storage.set": { "args": { "key": "string", "value": "string" }, "returns": "boolean" },
     "storage.delete": { "args": { "key": "string" }, "returns": "boolean" },
     "app.info": { "args": {}, "returns": "AppInfo" },
+    "app.icon": { "args": { "icon": "string" }, "returns": "AppIconState", "note": "The app icon chosen in Settings (appearance.appIcon, issue 167), one of the ids core/spec/app-icons.json names. Each shell applies it where its platform can and answers { applied, icon }: the desktop sets its window's and Dock's icon, iOS sets the alternate icon set AppIcon-<id> (the default is the primary icon), Android enables the launcher alias .AppIcon_<id> and disables the others. An id the spec does not name is refused with applied false." },
     "notify": { "args": { "title": "string", "body": "string" }, "returns": "boolean" },
     "open.external": { "args": { "url": "string" }, "returns": "boolean" },
     "updates.check": { "args": {}, "returns": "UpdateState?" },

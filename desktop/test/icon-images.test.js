@@ -55,6 +55,21 @@ test('Windows carries the count on a taskbar overlay and Windows and Linux redra
   assert.equal(shellIcons({ platform: 'darwin', masters, tokens }).window, null, 'macOS keeps its bundle icon in the Dock');
 });
 
+test('a fixed palette chosen in Settings draws every image whatever the theme and the scheme the page reports (issue 167)', () => {
+  const spec = JSON.parse(readFileSync(path.join(CORE, 'spec', 'app-icons.json'), 'utf8'));
+  const [first, second] = spec.icons.filter((i) => i.colors);
+  for (const platform of ['win32', 'linux']) {
+    const at = (o) => shellIcons({ platform, masters, tokens, ...o });
+    const fixed = { scheme: first.scheme, colors: first.colors };
+    const light = at({ scheme: 'light', fixed });
+    assert.deepEqual(at({ scheme: 'dark', colors: elegant.color.dark, fixed }).palette, light.palette, platform + ': the theme no longer colours it');
+    assert.deepEqual(light.palette, iconPalette(first.colors, first.scheme), platform + ': the palette is the spec\'s, through the one function');
+    assert.notDeepEqual(at({ scheme: 'light', fixed: { scheme: second.scheme, colors: second.colors } }).palette, light.palette);
+    assert.notDeepEqual(at({ scheme: 'light', fixed: null }).palette, light.palette, platform + ': no fixed palette follows the theme again');
+    assert.equal(at({ scheme: 'light', fixed, unread: 3 }).badgeCount, 3, 'the count still shows');
+  }
+});
+
 test('the PNG the shell hands to Electron decodes to exactly the pixels drawn', async () => {
   const image = renderIcon({ masters, palette: iconPalette(tokens.light, 'light'), kind: 'tray', size: 24, unread: 3 });
   const { data, info } = await sharp(encodePng(image)).raw().toBuffer({ resolveWithObject: true });

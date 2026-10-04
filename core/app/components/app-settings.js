@@ -1,7 +1,8 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
-import { settingsFields, settingsGroups, settingValue, coerceSetting, optionLabel } from '../rules/settings.js';
+import { settingsFields, settingsGroups, settingsTabs, settingValue, coerceSetting, optionLabel } from '../rules/settings.js';
+import { appIconChoices } from '../rules/app-icons.js';
 import { importTheme, importSummary, addTheme, themeChoices, swatchVars, SWATCH_TOKENS } from '../rules/theme.js';
 import './app-sheet.js';
 
@@ -17,10 +18,16 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 // with a divider between them. The page and its chrome (the full-width back strip, the title, the description) are
 // drawn by app-sheet. The last section is one row that opens the About page (issue 171), a page of its own drawn by
 // app-about, so a phone reaches it exactly as the desktop's tray does.
+//
+// The sections are tabs (issue 167): one tab per group, from settingsTabs(), so the schema is still the one list, and
+// the page shows one section at a time on every width, which is what lets each section fit a phone. The page is the
+// same component on the desktop and the phones, so every setting the desktop offers is on the phone too; the inventory
+// test (core/test/settings-tabs.test.js) and the smoke's walk through every tab at a phone's width hold that. The tab in
+// force is app-root's, handed down as .tab, so returning from About lands on the About tab it was opened from.
 class AppSettings extends KitElement {
   static properties = {
-    values: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
-    info: { attribute: false }, host: { attribute: false },
+    values: { attribute: false }, themePicture: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
+    info: { attribute: false }, host: { attribute: false }, tab: {},
     importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
   };
 
@@ -43,6 +50,47 @@ class AppSettings extends KitElement {
     // The shell's own report, whose version the About row shows beside its label.
     this.info = null;
     this.host = null;
+    // The tab on show; app-root holds it across a push to About and back. Null shows the first.
+    this.tab = null;
+  }
+
+  // The tab on show: the one app-root handed down when it is a tab the schema has, else the first.
+  current() {
+    const tabs = settingsTabs();
+    return tabs.some((t) => t.id === this.tab) ? this.tab : tabs[0].id;
+  }
+
+  // A tab press shows its section from the top. The choice is raised for app-root to hold, so it outlives this page.
+  // It is an instant action, so it returns no work and the tab never shows a pending or a success state.
+  selectTab(id) {
+    if (id === this.current()) return;
+    this.tab = id;
+    this.dispatchEvent(new CustomEvent('tab', { detail: id, bubbles: true, composed: true }));
+    this.updateComplete.then(() => {
+      const body = this.querySelector('.sheet-body');
+      if (body) body.scrollTop = 0;
+      const tab = this.querySelector('.settings-tab[aria-selected="true"]');
+      if (tab && this.contains(document.activeElement)) tab.focus();
+    });
+  }
+
+  // The tab list's own keys, as a tablist takes them: the arrows move to the neighbouring tab, Home and End to the ends.
+  onTabKey(e) {
+    const ids = settingsTabs().map((t) => t.id);
+    const at = ids.indexOf(this.current());
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: ids.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    this.selectTab(ids[(to + ids.length) % ids.length]);
+  }
+
+  nav() {
+    const current = this.current();
+    return html`<div class="settings-tabs" role="tablist" aria-label="Settings sections" @keydown=${(e) => this.onTabKey(e)}>
+      ${settingsTabs().map((t) => html`<button type="button" class="settings-tab" role="tab" id=${'settings-tab-' + t.id} data-tab=${t.id}
+          aria-controls=${'settings-panel-' + t.id} aria-selected=${t.id === current ? 'true' : 'false'} tabindex=${t.id === current ? '0' : '-1'}
+          @click=${press(() => this.selectTab(t.id))}>${t.label}</button>`)}
+    </div>`;
   }
 
   // Called by app-root when a URL import lands, so the field empties only on success and keeps a URL that failed.
@@ -100,6 +148,17 @@ class AppSettings extends KitElement {
     if (field.type === 'scale') {
       return html`<div class="scale-choices" role="radiogroup" aria-label=${field.label} data-key=${field.key}>
         ${field.options.map((o) => html`<label class="scale-choice" ?data-selected=${Number(o) === Number(value)}><input type="radio" name=${field.key} data-key=${field.key} value=${o} .checked=${Number(o) === Number(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}><span>${optionLabel(field, o)}</span></label>`)}
+      </div>`;
+    }
+    if (field.type === 'icon') {
+      // The app icon (issue 167): each choice is its own picture, the one in force marked, and a press writes the
+      // choice to the server like any other setting; the shell applies it from there (rules/app-icons.js).
+      return html`<div class="app-icon-choices" role="radiogroup" aria-label=${field.label} data-key=${field.key}>
+        ${appIconChoices(this.values, { themePicture: this.themePicture }).map((c) => html`<button type="button" class="app-icon-choice" role="radio" aria-checked=${c.selected ? 'true' : 'false'} data-icon-id=${c.id} ?disabled=${disabled}
+            @click=${press(() => (c.selected ? undefined : this.fire('setting', { key: field.key, value: c.id })))}>
+          <img class="app-icon-picture" src=${c.src} alt="" draggable="false">
+          <span class="app-icon-name">${c.label}</span>
+        </button>`)}
       </div>`;
     }
     if (field.type === 'toggle') {
@@ -193,7 +252,7 @@ class AppSettings extends KitElement {
   // field's label. The percentage choices sit under their label rather than beside it, so seven of them fit a phone.
   row(field) {
     if (field.type === 'segmented') return html`<div class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</div>`;
-    if (field.type === 'scale') return html`<div class="setting-row setting-row-stack"><span class="setting-label">${field.label}</span>${this.control(field)}</div>`;
+    if (field.type === 'scale' || field.type === 'icon') return html`<div class="setting-row setting-row-stack"><span class="setting-label">${field.label}</span>${this.control(field)}</div>`;
     return html`<label class="setting-row"><span class="setting-label">${field.label}</span>${this.control(field)}</label>`;
   }
 
@@ -221,8 +280,10 @@ class AppSettings extends KitElement {
     </div>`;
   }
 
+  // Each section is the panel of its tab. Every panel is drawn and the ones not on show are hidden, so a tab's
+  // aria-controls always names a panel that exists and a hidden section keeps what was typed into it.
   section(group) {
-    return html`<section class="sheet-section" data-section=${group.id}>
+    return html`<section class="sheet-section" data-section=${group.id} role="tabpanel" id=${'settings-panel-' + group.id} aria-labelledby=${'settings-tab-' + group.id} ?hidden=${group.id !== this.current()}>
       <h3 class="sheet-section-title">${group.label}</h3>
       ${group.description ? html`<p class="sheet-section-desc">${group.description}</p>` : nothing}
       ${this.sectionBody(group)}
@@ -236,7 +297,8 @@ class AppSettings extends KitElement {
   }
 
   render() {
-    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .content=${this.body()}></app-sheet>`;
+    // On a phone Settings is a page reached from the chats list, so its way back is the chats control (issue 168).
+    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .narrowLabel=${'Back to chats'} .narrowIcon=${'messages-square'} .nav=${this.nav()} .content=${this.body()}></app-sheet>`;
   }
 }
 customElements.define('app-settings', AppSettings);

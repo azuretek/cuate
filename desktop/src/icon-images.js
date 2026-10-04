@@ -26,11 +26,13 @@ export const WINDOW_ICON = 256;
 export const OVERLAY_ICON = 32;
 
 // Every image the shell sets for one state: the scheme the page draws, the colour tokens it resolved (any it leaves
-// out or cannot be read fall back to the default tokens) and the unread count.
-export function shellIcons({ platform, masters, tokens, scheme = 'light', colors = {}, unread = 0 }) {
-  const s = scheme === 'dark' ? 'dark' : 'light';
+// out or cannot be read fall back to the default tokens) and the unread count. A fixed palette chosen in Settings
+// (issue 167, { scheme, colors } from core/spec/app-icons.json) stands in for the theme's scheme and colours, so the
+// icons stay that palette whatever theme is in force; the count still shows.
+export function shellIcons({ platform, masters, tokens, scheme = 'light', colors = {}, unread = 0, fixed = null }) {
+  const s = (fixed ? fixed.scheme : scheme) === 'dark' ? 'dark' : 'light';
   const count = Math.max(0, Math.floor(Number(unread) || 0));
-  const palette = iconPalette(iconColours(tokens[s], colors), s);
+  const palette = iconPalette(iconColours(tokens[s], fixed ? fixed.colors : colors), s);
   const sizes = TRAY_SIZES[platform] || TRAY_SIZES.linux;
   const template = platform === 'darwin';
   const tray = sizes.map(([size, scale]) => ({ scale, image: renderIcon({ masters, palette, kind: template ? 'template' : 'tray', size, unread: count }) }));

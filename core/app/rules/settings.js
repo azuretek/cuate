@@ -16,6 +16,7 @@
 import { TEXT_SCALES } from './theme.js';
 import { reportRows, UNKNOWN } from '../../kit/rules/build.js';
 import { BUILD_SPEC } from './build-spec.js';
+import { APP_ICONS } from './app-icons-spec.js';
 
 export const SETTINGS_SCHEMA = {
   groups: [
@@ -28,6 +29,9 @@ export const SETTINGS_SCHEMA = {
   keys: {
     'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'segmented', options: ['system', 'light', 'dark'], labels: { system: 'System', light: 'Light', dark: 'Dark' }, default: 'system' },
     'appearance.textScale': { group: 'appearance', label: 'Text size', type: 'scale', options: TEXT_SCALES, default: 100 },
+    // The app icon (issue 167): one of the icons core/spec/app-icons.json names, each drawn as its own picture, held by
+    // the server like every other setting and applied by each shell where its platform can (rules/app-icons.js).
+    'appearance.appIcon': { group: 'appearance', label: 'App icon', type: 'icon', options: APP_ICONS.icons.map((i) => i.id), labels: Object.fromEntries(APP_ICONS.icons.map((i) => [i.id, i.label])), default: APP_ICONS.default },
     // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
     'notifications.newMessage': { group: 'notifications', label: 'New messages', type: 'toggle', default: true },
     'notifications.updateAvailable': { group: 'notifications', label: 'Update available', type: 'toggle', default: true },
@@ -55,6 +59,13 @@ export function settingsGroups(schema = SETTINGS_SCHEMA) {
   const groups = schema.groups || [];
   const fallback = groups.length ? groups[0].id : null;
   return groups.map((g) => ({ id: g.id, kind: g.kind || 'settings', label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+}
+
+// The page's tabs (issue 167): one per section, in the schema's order, each naming the keys it offers. The settings
+// page is one component on every width, so this list is the whole inventory: a key no tab offers is a key no device can
+// reach, and core/test/settings-tabs.test.js fails on one.
+export function settingsTabs(schema = SETTINGS_SCHEMA) {
+  return settingsGroups(schema).map((g) => ({ id: g.id, kind: g.kind, label: g.label, keys: g.fields.map((f) => f.key) }));
 }
 
 // The About section's rows, in the order chela's About reads: the app's name and version, its channel, build and
