@@ -1321,6 +1321,107 @@ async function runSmoke(w) {
   report.imageViewer = Object.values(imageViewerChecks).every(Boolean);
   console.log('image viewer: ' + JSON.stringify({ checks: imageViewerChecks, geometry, backdrop, scales: { fit, afterLeft, afterRight, wheelOne, wheelTwo, afterReset, afterPlus, afterMinus, afterPinch, afterDoubleOut, afterDoubleIn }, pan: { smallPan, panScale, panBefore, panAfter, dragScale, mouseFrom, mouseTo, dragFrom, dragTo }, ctx, electronMenus }));
 
+  // The media viewer steps through the conversation's own media (issue 181): the on-screen controls, the left and
+  // right arrow keys at fit and a finger's swipe each move one item and stop at the ends; a video item is drawn as a
+  // video; and a long press on a media item opens the one message menu with Save beside Reply in thread and React,
+  // whose Save writes the item's own bytes through the same control a document's press uses. Captured at a desktop
+  // window and a phone's width, in both schemes.
+  const viewerState = () => js("(() => { const v = document.querySelector('app-image-viewer'); if (!v) return null; const p = v.querySelector('.viewer-prev'); const n = v.querySelector('.viewer-next'); return { index: Number(v.dataset.index), count: Number(v.dataset.count), kind: v.dataset.kind, tag: (v.querySelector('.viewer-image') || {}).tagName || '', prevDisabled: p ? p.disabled : null, nextDisabled: n ? n.disabled : null, hasPrev: Boolean(p), hasNext: Boolean(n) }; })()");
+  const openFirstMedia = async () => {
+    await js("document.querySelector('.messages app-attachment .attachment-preview').click()");
+    await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image'))", 10000);
+    await pause(350);
+  };
+  await openFirstMedia();
+  const atFirst = await viewerState();
+  await shot('12d-media-first-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12e-media-first-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  await key('ArrowRight');
+  await pause(400);
+  const afterKeyNext = await viewerState();
+  const videoSeen = afterKeyNext && afterKeyNext.kind === 'video' ? await js("document.querySelector('app-image-viewer .viewer-image').tagName") : '';
+  await shot('12f-media-video-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12g-media-video-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  await js("document.querySelector('app-image-viewer .viewer-next').click()");
+  await pause(400);
+  const afterButtonNext = await viewerState();
+  await js("document.querySelector('app-image-viewer .viewer-prev').click()");
+  await pause(400);
+  const afterButtonPrev = await viewerState();
+  const swipe = (dx) => js("(() => { const v = document.querySelector('app-image-viewer .viewer'); const r = v.getBoundingClientRect(); const x = Math.round(r.left + r.width / 2); const y = Math.round(r.top + r.height / 2); const fire = (t, cx) => v.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 41, pointerType: 'touch', isPrimary: true, clientX: cx, clientY: y, button: 0, buttons: t === 'pointerup' ? 0 : 1 })); fire('pointerdown', x); fire('pointermove', x + " + dx + "); fire('pointermove', x + " + dx + "); fire('pointerup', x + " + dx + "); return true; })()");
+  await swipe(-120);
+  await pause(400);
+  const afterSwipeNext = await viewerState();
+  await swipe(120);
+  await pause(400);
+  const afterSwipeBack = await viewerState();
+  await js("document.querySelector('app-image-viewer .close-button').click()");
+  await waitFor("!document.querySelector('app-image-viewer')", 5000);
+  const videoRow = '.bubble-row[data-id="FAKE-0021"]';
+  await js("(() => { const b = document.querySelector(" + q(videoRow + ' .attachment-preview') + "); if (b) b.scrollIntoView({ block: 'center' }); return true; })()");
+  await pause(250);
+  const touchPress = (t) => js("(() => { const b = document.querySelector(" + q(videoRow + ' .attachment-preview') + "); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent(" + JSON.stringify(t) + ", { bubbles: true, cancelable: true, pointerId: 21, pointerType: 'touch', isPrimary: true, button: 0, buttons: " + (t === 'pointerdown' ? 1 : 0) + ", clientX: r.left + 8, clientY: r.top + 8 })); return true; })()");
+  await touchPress('pointerdown');
+  await pause(700);
+  await touchPress('pointerup');
+  await waitFor("Boolean(document.querySelector(" + q(videoRow + ' .message-menu') + "))", 10000);
+  const mediaMenu = await js("(() => { const m = document.querySelector(" + q(videoRow + ' .message-menu') + "); return m ? [...m.querySelectorAll('.message-action')].map((x) => x.getAttribute('aria-label')) : []; })()");
+  await shot('12h-media-menu-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12i-media-menu-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(250);
+  smokeSaves.length = 0;
+  await js("document.querySelector(" + q(videoRow + ' .message-action[aria-label="Save"]') + ").click()");
+  for (let i = 0; i < 40 && !smokeSaves.length; i += 1) await pause(100);
+  const mediaSave = smokeSaves[0] || null;
+  // The media menu and the viewer at a phone's width, in both schemes.
+  await js("(() => { const r = document.querySelector('app-root'); if (r.listOpen) r.closeDrawer(); return true; })()");
+  await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await pause(300);
+  await shot('12j-media-menu-phone-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12k-media-menu-phone-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(250);
+  await escape();
+  await pause(200);
+  await openFirstMedia();
+  await shot('12l-media-viewer-phone-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12m-media-viewer-phone-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(250);
+  await js("document.querySelector('app-image-viewer .close-button').click()");
+  await waitFor("!document.querySelector('app-image-viewer')", 5000);
+  await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
+  await pause(200);
+  const mediaViewerChecks = {
+    controls: Boolean(atFirst) && atFirst.hasPrev && atFirst.hasNext && atFirst.prevDisabled === true && atFirst.nextDisabled === false && atFirst.count > 2,
+    keyNext: Boolean(afterKeyNext) && afterKeyNext.index === atFirst.index + 1,
+    buttonNext: Boolean(afterButtonNext) && afterButtonNext.index === afterKeyNext.index + 1,
+    buttonPrev: Boolean(afterButtonPrev) && afterButtonPrev.index === afterButtonNext.index - 1,
+    swipeNext: Boolean(afterSwipeNext) && afterSwipeNext.index === afterButtonPrev.index + 1,
+    swipeBack: Boolean(afterSwipeBack) && afterSwipeBack.index === afterSwipeNext.index - 1,
+    video: videoSeen === 'VIDEO',
+    menu: mediaMenu.join('|') === 'Save|Reply in thread|React',
+    saved: Boolean(mediaSave) && mediaSave.name === 'clip.mp4' && mediaSave.mime === 'video/mp4' && mediaSave.bytes > 0,
+  };
+  report.mediaViewer = Object.values(mediaViewerChecks).every(Boolean);
+  console.log('media viewer: ' + JSON.stringify({ checks: mediaViewerChecks, atFirst, afterKeyNext, afterButtonNext, afterButtonPrev, afterSwipeNext, afterSwipeBack, videoSeen, mediaMenu, mediaSave }));
+
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
   const srv = process.env.SMOKE_SERVER_URL;

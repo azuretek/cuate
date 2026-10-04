@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
+import { clipMp4 } from './video.js';
 
 export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
@@ -15,7 +16,12 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
   writeFileSync(docPath, pdf);
-  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length });
+  // A video the viewer opens (issue 181): a small generated MP4 under a real name, so the conversation's media carries
+  // both kinds and the viewer draws a video the same way it draws a picture.
+  const videoPath = path.join(attachmentsRoot, 'fake', 'clip.mp4');
+  const video = clipMp4();
+  writeFileSync(videoPath, video);
+  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, videoPath, videoBytes: video.length });
   let rowid = messages.length;
   let attempts = 0;
   let liveSent = false;
