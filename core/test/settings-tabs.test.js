@@ -196,12 +196,13 @@ test('the icon choices read as one grid with the themes, grouped per colour, wit
 test('every consumer reads the families the icon spec holds, never the old flat icons array (issue 254)', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(icons, 'icons'), false, 'the spec holds families and followTheme, not a flat icons array');
   assert.ok(Array.isArray(icons.families) && icons.followTheme && icons.followTheme.id);
+  const android = naming.ids.android.replaceAll('.', '/');
   const readers = [
     ['desktop/src/main.js', /appIconSpec\.families/, /appIconSpec\.icons/],
-    ['android/app/src/main/kotlin/com/azuretek/cuate/HostBridge.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
-    ['android/app/src/androidTest/kotlin/com/azuretek/cuate/AppIconTest.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
-    ['android/app/src/androidTest/kotlin/com/azuretek/cuate/SettingsPageTest.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
-    ['ios/Cuate/HostBridge.swift', /object\["families"\]/, /object\["icons"\]/],
+    ['android/app/src/main/kotlin/' + android + '/HostBridge.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
+    ['android/app/src/androidTest/kotlin/' + android + '/AppIconTest.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
+    ['android/app/src/androidTest/kotlin/' + android + '/SettingsPageTest.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
+    ['ios/' + naming.product + '/HostBridge.swift', /object\["families"\]/, /object\["icons"\]/],
   ];
   for (const [file, want, old] of readers) {
     const src = read(file);
