@@ -391,14 +391,15 @@ test('a theme\'s fonts reach the FontFace API only as a family, a digest, a weig
   assert.deepEqual(themeFonts(null), []);
 });
 
-test('the System, Light, Dark switch and the text size chips read at 4.5:1 in both schemes of the default palette', () => {
-  // The pairs app.css draws them with (issue 135): on-accent words on the accent thumb or chip, muted words on the page
-  // surface that is the track and an unselected chip.
+test('the System, Light, Dark switch and the text size reading read at 4.5:1 in both schemes of the default palette', () => {
+  // The pairs app.css draws them with (issues 135, 244): on-accent words on the accent thumb, muted words on the page
+  // surface that is the track, and the text size slider's reading (the full text colour) on the raised row it sits in.
   const spec = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url), 'utf8'));
   for (const scheme of ['light', 'dark']) {
     const c = spec.color[scheme];
     assert.ok(contrastRatio(c['accent-fg'], c.accent) >= 4.5, scheme + ' selected ' + contrastRatio(c['accent-fg'], c.accent));
     assert.ok(contrastRatio(c['fg-muted'], c.bg) >= 4.5, scheme + ' unselected ' + contrastRatio(c['fg-muted'], c.bg));
+    assert.ok(contrastRatio(c.fg, c['bg-raised']) >= 4.5, scheme + ' text size reading ' + contrastRatio(c.fg, c['bg-raised']));
   }
   assert.equal(Math.round(contrastRatio('#ffffff', '#000000')), 21);
   assert.equal(contrastRatio('#777', '#777'), 1);

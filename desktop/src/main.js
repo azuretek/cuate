@@ -1671,20 +1671,23 @@ async function runSmoke(w) {
   // A refused write would leave the wait below timing out on a value that was never stored, so it fails here instead.
   const scaleWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.textScale': 150 } }) });
   if (!scaleWrite.ok) throw new Error('the server refused the text size write: ' + scaleWrite.status);
-  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"150\"]')?.checked === true", 10000);
+  await waitFor("document.querySelector('app-settings .scale-range')?.getAttribute('aria-valuetext') === '150 percent'", 10000);
   report.settingsStreamed = true;
   // Text size is a percentage of the type tokens: at 150% the page and the chat list both draw their text half as
   // large again, and back at 100% they draw exactly what the tokens say (the surface check below holds that).
   const fontPx = (sel) => js("(() => { const e = document.querySelector(" + JSON.stringify(sel) + "); return e ? parseFloat(getComputedStyle(e).fontSize) : 0; })()");
-  report.textScaleChoices = await js("[...document.querySelectorAll('app-settings .scale-choice')].map((l) => l.textContent.trim()).join('|')");
+  report.textScaleChoices = await js("[...document.querySelectorAll('app-settings .scale-slider datalist option')].map((o) => o.getAttribute('label')).join('|')");
+  // The text size is a slider (issue 244): a range that announces the percentage, reads it beside the track, and lands
+  // only on a stop. Its stops come from the schema, so this holds the control the schema draws.
+  report.textScaleSlider = await js("(() => { const r = document.querySelector('app-settings .scale-range'); const v = document.querySelector('app-settings .scale-value'); return Boolean(r) && r.getAttribute('type') === 'range' && r.getAttribute('aria-valuetext') === '150 percent' && Boolean(v) && v.textContent.trim() === '150%'; })()");
   const scaledList = await fontPx('.chat-row .chat-name');
   const scaledPage = await fontPx('app-settings .setting-label');
   await putSettings({ 'appearance.textScale': 100 });
-  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"100\"]')?.checked === true", 10000);
+  await waitFor("document.querySelector('app-settings .scale-range')?.getAttribute('aria-valuetext') === '100 percent'", 10000);
   const plainList = await fontPx('.chat-row .chat-name');
   const plainPage = await fontPx('app-settings .setting-label');
   const near = (a, b) => Math.abs(a - b) < 0.6;
-  report.textScale = report.textScaleChoices === '50%|75%|100%|125%|150%|200%|300%' && plainList > 0 && plainPage > 0 && near(scaledList, plainList * 1.5) && near(scaledPage, plainPage * 1.5)
+  report.textScale = report.textScaleChoices === '50%|75%|100%|125%|150%|200%|300%' && report.textScaleSlider && plainList > 0 && plainPage > 0 && near(scaledList, plainList * 1.5) && near(scaledPage, plainPage * 1.5)
     && await js("!document.querySelector('app-settings [data-key=\"appearance.density\"]')");
   console.log('text scale: ' + JSON.stringify({ choices: report.textScaleChoices, scaledList, plainList, scaledPage, plainPage }));
   report.settings = report.settingsRead && report.skinSwitch && report.settingsWrote && report.settingsStreamed && report.textScale;
@@ -1841,14 +1844,14 @@ async function runSmoke(w) {
         const a = l.getBoundingClientRect(); const b = thumb.getBoundingClientRect();
         out.push({ what: 'switch ' + l.textContent.trim(), on, under: on ? Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 2 : true, fg: rgb(getComputedStyle(l).color), bg: rgb(on ? fill : track) });
       }
-      for (const l of s.querySelectorAll('.scale-choice')) out.push({ what: 'size ' + l.textContent.trim(), on: l.hasAttribute('data-selected'), under: true, fg: rgb(getComputedStyle(l).color), bg: rgb(getComputedStyle(l).backgroundColor) });
+      const sv = s.querySelector('.scale-value'); const srows = sv && sv.closest('.sheet-rows'); if (sv) out.push({ what: 'text size', on: false, under: true, fg: rgb(getComputedStyle(sv).color), bg: rgb(getComputedStyle(srows || sv).backgroundColor) });
       return out;
     })()`;
     const contrastIn = async (label) => {
       await pause(400);
       const pairs = await js(choicePairs);
       const rows = pairs.map((p) => ({ what: p.what, on: p.on, under: p.under, ratio: Math.round(contrastRatio(p.fg, p.bg) * 100) / 100 }));
-      const ok = rows.length >= 10 && rows.filter((r) => r.on).length === 2 && rows.every((r) => r.under && r.ratio >= 4.5);
+      const ok = rows.length >= 4 && rows.filter((r) => r.on).length === 1 && rows.every((r) => r.under && r.ratio >= 4.5);
       console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, rows }));
       return ok;
     };
