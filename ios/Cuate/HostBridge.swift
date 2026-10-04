@@ -174,6 +174,10 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             settle(id: id, ok: true, value: notify(args))
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
+        case "file.save":
+            // A document pressed in a conversation (issue 219) is offered for saving under its real name through the
+            // system's share sheet, which includes Save to Files.
+            settle(id: id, ok: true, value: saveFile(args))
         case "updates.check":
             // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
             // its own to answer; the one bridge spec still declares the command for the desktop's tray check.
@@ -317,6 +321,26 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         center.add(request)
+        return true
+    }
+
+    /// A document pressed in a conversation (issue 219): the page hands the bytes as base64 under the file's real
+    /// name, and the system's share sheet, which includes Save to Files, is offered from the top view controller.
+    private func saveFile(_ args: [String: Any]) -> Bool {
+        guard let name = args["name"] as? String, !name.isEmpty,
+              let data = args["data"] as? String, let bytes = Data(base64Encoded: data) else { return false }
+        let safe = (name as NSString).lastPathComponent
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(safe.isEmpty ? "Attachment" : safe)
+        do { try bytes.write(to: url, options: .atomic) } catch { return false }
+        DispatchQueue.main.async { [weak self] in
+            guard let host = self?.webView?.window?.rootViewController else { return }
+            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let pop = sheet.popoverPresentationController {
+                pop.sourceView = host.view
+                pop.sourceRect = CGRect(x: host.view.bounds.midX, y: host.view.bounds.midY, width: 1, height: 1)
+            }
+            host.present(sheet, animated: true)
+        }
         return true
     }
 

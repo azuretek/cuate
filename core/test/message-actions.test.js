@@ -185,7 +185,7 @@ test('an open thread is its own conversation over the rest, which is blurred and
   const other = msg({ id: 'FAKE-0002', text: 'Unrelated message', sentAt: '2026-01-15T10:05:00.000Z' });
   const reply = msg({ id: 'FAKE-0003', replyTo: 'FAKE-0001', fromMe: true, sender: null, text: 'First reply', sentAt: '2026-01-15T10:06:00.000Z' });
   const h = host({ messages: [root, other, reply], replyingTo: { id: 'FAKE-0001' }, chat: { id: '1', name: 'Avery Quinn', participants: ['+15555550100'], isGroup: false, service: 'iMessage' }, hasMore: false, windowControls: null, uploadMaxBytes: 1 });
-  for (const k of ['bubble', 'threadView', 'menu', 'ghost', 'composerPlaceholder']) h[k] = conversation[k];
+  for (const k of ['bubble', 'threadView', 'menu', 'ghost', 'links', 'composerPlaceholder']) h[k] = conversation[k];
   const thread = words(conversation.threadView.call(h, false));
   assert.ok(thread.includes('Unique root body') && thread.includes('First reply'), 'the first message and its replies');
   assert.ok(thread.indexOf('Unique root body') < thread.indexOf('First reply'), 'in order');
@@ -214,4 +214,22 @@ test('the thread opens over a blur that reduced motion keeps without animation, 
   assert.match(css, /\.reactions \{ position: absolute; top: 0; right: 0;/);
   assert.match(css, /\.reaction \{ background: none;/);
   assert.ok(!/\.composer-reply|\.composer-thread|\.reply-mark|\.tapback-row|\.message-actions|\.reply-link|\.faded/.test(css), 'the old banner, indicator, per-message mark, tapback row, hover buttons, reply label and fade are gone');
+});
+
+// Issue 219: a document attachment is a save control under its real name, it carries no thread mark, and its press
+// never opens the thread; a picture keeps the media viewer.
+test('a document attachment carries no thread mark and its press saves rather than opening the thread', () => {
+  const pdf = { id: 'att-pdf', name: 'booking.pdf', mime: 'application/pdf', bytes: 10, sticker: false, missing: false, local: false };
+  const png = { id: 'att-png', name: 'sunset.png', mime: 'image/png', bytes: 10, sticker: false, missing: false, local: false };
+  const doc = msg({ id: 'doc', text: '', attachments: [pdf] });
+  const h = host({ messages: [doc] });
+  const markup = words(conversation.bubble.call(h, { message: doc, first: true, last: true }, null, false, 'list'));
+  assert.ok(!/thread-reply/.test(markup), 'a document in no thread carries no thread mark');
+  assert.equal(words(conversation.links.call(h)), '', 'and draws no line');
+  const attachment = defined['app-attachment'].prototype;
+  const file = words(attachment.render.call({ attachment: pdf, client: {}, failed: false, src: '' }));
+  assert.ok(file.includes('aria-label=Save booking.pdf') && file.includes('data-icon="download"'), 'a document is a save control under its real name');
+  assert.ok(!file.includes('attachment-preview'), 'and never the media viewer');
+  const image = words(attachment.render.call({ attachment: png, client: {}, failed: false, src: '' }));
+  assert.ok(image.includes('attachment-image'), 'a picture keeps the media viewer');
 });

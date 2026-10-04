@@ -285,6 +285,7 @@ var engine = (() => {
     themeName: () => themeName,
     themeVars: () => themeVars,
     threadIds: () => threadIds,
+    threadLinks: () => threadLinks,
     threadMarks: () => threadMarks,
     threadRoot: () => threadRoot,
     toBase64: () => toBase64,
@@ -1987,9 +1988,40 @@ var engine = (() => {
       let i = at.get(replies[replies.length - 1]);
       while (i > 0 && list[i - 1].replyTo && rootOf(list[i - 1].id) === root) i -= 1;
       const first = list[i].id;
-      for (const id of replies) marks.set(id, { root, ghost: id === first ? { root, count: replies.length } : null, connector: !byId.get(id).fromMe });
+      for (const id of replies) marks.set(id, { root, ghost: id === first ? { root, count: replies.length } : null });
     }
     return marks;
+  }
+  function threadLinks(messages) {
+    const list = messages || [];
+    const byId = new Map(list.map((m) => [m.id, m]));
+    const at = new Map(list.map((m, i) => [m.id, i]));
+    const members = /* @__PURE__ */ new Map();
+    for (const m of list) {
+      if (!m.replyTo) continue;
+      const root = rootIn(byId, m.id);
+      if (root === m.id) continue;
+      if (!members.has(root)) members.set(root, byId.has(root) ? [byId.get(root)] : []);
+      members.get(root).push(m);
+    }
+    const links = [];
+    for (const [root, thread] of members) {
+      for (let k = 1; k < thread.length; k += 1) {
+        const a = thread[k - 1];
+        const b = thread[k];
+        if (Boolean(a.fromMe) === Boolean(b.fromMe)) continue;
+        links.push({ root, from: a.id, to: b.id, side: a.fromMe ? "mine" : "theirs", start: at.get(a.id), end: at.get(b.id) });
+      }
+    }
+    links.sort((x, y) => x.start - y.start || x.end - y.end);
+    const lanes = { mine: [], theirs: [] };
+    return links.map(({ start, end, ...link }) => {
+      const ends = lanes[link.side];
+      let lane = ends.findIndex((e) => e < start);
+      if (lane < 0) lane = ends.length;
+      ends[lane] = end;
+      return { ...link, lane };
+    });
   }
   function replyCountLabel(count) {
     return count + (count === 1 ? " Reply" : " Replies");
