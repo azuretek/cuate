@@ -145,6 +145,11 @@ Status words: a rule with no status holds on main today. **Adopted, not yet buil
 - **Fixtures, captures and logs hold synthetic data only**: handles in 555-555-01xx or at example.com, text written in the fixture. Source: #1. Held by: `core/test/fixtures.test.js` "the fixture file holds synthetic inputs only".
 - **No em dash anywhere**, in code, docs or commit messages. Source: #1. Held by: `core/test/guards.test.js` "no em dash anywhere in the repository".
 
+## Observability and evidence
+
+- **The counters a person reads during a problem are derived from the log stream.** `server/src/diagnostics.js` counts each declared failure or lifecycle event and keeps the most recent error, so a counter cannot disagree with its log line because it is reading it; `GET /api/v1/diagnostics` exposes the build stamp, the engine link, whether the Messages database is readable, the sending switch, the counters and the last error. Source: #263. Held by: `server/test/diagnostics.test.js` "each mapped failure event moves its counter, and the successes move nothing".
+- **What is deliberately not measured is written down.** docs/observability.md records the omissions and their reason, so an omission is a decision rather than an oversight. Source: #263. Held by: `server/test/diagnostics.test.js` "docs/observability.md records what is deliberately not measured".
+
 ## Superseded
 
 Kept so an old issue or capture is not mistaken for current behaviour. Each names what replaced it.
