@@ -230,6 +230,7 @@ var engine = (() => {
     pickerSide: () => pickerSide,
     pinch: () => pinch,
     placeChat: () => placeChat,
+    placeFor: () => placeFor,
     policy: () => policy,
     pressOutside: () => pressOutside,
     progressFor: () => progressFor,
@@ -238,6 +239,7 @@ var engine = (() => {
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     releaseAssets: () => releaseAssets,
+    rememberPlace: () => rememberPlace,
     removeGroup: () => removeGroup,
     removeTerm: () => removeTerm,
     removeTheme: () => removeTheme,
@@ -1949,6 +1951,20 @@ var engine = (() => {
       counts.set(g, (counts.get(g) || 0) + 1);
     }
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
+  }
+
+  // core/app/rules/places.js
+  function rememberPlace(places, id, anchor) {
+    const key = id == null ? null : String(id);
+    const next = new Map(places || []);
+    if (key != null && anchor) next.set(key, anchor);
+    return next;
+  }
+  function placeFor(places, id, { follow = false } = {}) {
+    const key = id == null ? null : String(id);
+    const saved = key != null && places ? places.get(key) : null;
+    if (saved) return saved;
+    return follow ? { end: true } : { top: 0 };
   }
 
   // core/app/rules/theme.js

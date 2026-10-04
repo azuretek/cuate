@@ -7,6 +7,7 @@ import { aimCarets } from '../../kit/popover.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
+import { rememberPlace, placeFor } from '../rules/places.js';
 import { typingLabel } from '../rules/typing.js';
 import { windowControlsHtml } from './window-controls.js';
 import { closeButtonHtml } from './close-button.js';
@@ -58,6 +59,9 @@ class AppConversation extends KitElement {
     // The conversation follows its latest message while it is there, and otherwise stays on the message it was on,
     // through new messages, older ones loading above, a picture loading, a resize and a new text size (issue 142).
     this.keep = keepScroll(this, { scroller: '.messages', items: '.bubble-row', follow: true });
+    // The place each conversation was left at, so switching back returns to it rather than to its newest message
+    // (issue 200). Keyed by chat id, and never cleared here.
+    this.places = new Map();
     // An open thread keeps its own place the same way.
     this.keepThread = keepScroll(this, { scroller: '.thread-view', items: '.bubble-row' });
     this.reacting = null;
@@ -84,10 +88,14 @@ class AppConversation extends KitElement {
     return emit(this, name, detail);
   }
 
-  // Another conversation starts at its latest message.
+  // Another conversation starts where it was left, or at its latest message the first time it is opened (issue 200).
+  // The conversation being left keeps the place it was last at; the one being entered is put back on its own. Because
+  // this runs before the new conversation is drawn, the place read for the old one is still the old one's, never a frame
+  // of the new layout.
   willUpdate(changed) {
     if (changed.has('chat') && changed.get('chat')?.id !== this.chat?.id) {
-      this.keep.reset();
+      this.places = rememberPlace(this.places, changed.get('chat')?.id, this.keep.anchor);
+      this.keep.anchor = placeFor(this.places, this.chat?.id, { follow: this.keep.follow });
       this.pop = null;
       this.replyingTo = null;
       this.reactFor = null;
