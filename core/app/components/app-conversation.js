@@ -3,6 +3,7 @@ import { KitElement } from '../../kit/element.js';
 import { press, runPress, emit, respond } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import { dismissable } from '../../kit/dismiss.js';
+import { aimCarets } from '../../kit/popover.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
@@ -88,6 +89,8 @@ class AppConversation extends KitElement {
 
   updated(changed) {
     if (changed.has('pop')) this.placePop();
+    // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
+    aimCarets(this);
   }
 
   // A menu or panel opens above its message, and below it when the list has no room above (the first messages), so
@@ -196,7 +199,7 @@ class AppConversation extends KitElement {
   menu(m) {
     const actions = messageActions(m, { sending: this.sending });
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
-    return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side}>
+    return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side} data-popover data-popover-edge=${this.pop.side === 'below' ? 'top' : 'bottom'} data-popover-align=${m.fromMe ? 'end' : 'start'}>
       <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
       ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('react') ? html`<button type="button" class="message-action" aria-label="React" title="React" @click=${press(() => this.openReact(m))}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>` : nothing}

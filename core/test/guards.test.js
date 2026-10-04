@@ -360,6 +360,45 @@ test('every popover and modal panel dismisses through the kit', () => {
 // Placeholder and hint text is dimmed so it never reads as your own input (issue 185): one rule on every field's
 // placeholder, its colour the placeholder token, opaque so no engine's default opacity dims it twice. A component
 // that styled a placeholder of its own would be a second rule a theme could miss.
+
+// Every menu, popover and picker wears the shared caret (issue 217): the panel carries data-popover and the edge its
+// caret sits on, so the one stylesheet rule draws it, and the component aims it with aimCarets(). A new menu that opens
+// bare fails here rather than shipping without a caret, and the placement itself is held by the pure rule
+// (core/test/popover.test.js) and, at runtime, by the smoke's carets check.
+test('every menu, popover and picker wears the shared caret', () => {
+  const openTags = (src) => {
+    const out = [];
+    for (const m of src.matchAll(/<([a-z][\w-]*)[\s>]/g)) {
+      let depth = 0;
+      let j = m.index;
+      for (; j < src.length; j += 1) {
+        if (src[j] === '{') depth += 1;
+        else if (src[j] === '}') depth -= 1;
+        else if (src[j] === '>' && depth === 0) break;
+      }
+      out.push({ name: m[1], tag: src.slice(m.index, j + 1) });
+    }
+    return out;
+  };
+  const POP = /class="(?:[^"]*\s)?(?:[\w-]+-(?:menu|pop|popover|picker))(?![\w-])/;
+  const files = walk('core/app/components').filter((f) => CODE.test(f));
+  let found = 0;
+  for (const f of files) {
+    for (const { tag } of openTags(read(f))) {
+      if (!POP.test(tag)) continue;
+      found += 1;
+      assert.ok(/data-popover(?:\s|>|\/)/.test(tag), f + ': a popover with no caret (no data-popover): ' + tag.slice(0, 100));
+      assert.ok(/data-popover-edge/.test(tag), f + ': a popover whose caret has no side (no data-popover-edge): ' + tag.slice(0, 100));
+    }
+  }
+  assert.ok(found >= 6, 'the guard found the popovers: ' + found);
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.match(css, /\[data-popover\]::before\b/, 'the one caret is drawn from data-popover');
+  for (const f of ['core/app/components/app-root.js', 'core/app/components/app-conversation.js', 'core/app/components/app-composer.js', 'core/app/components/app-emoji-picker.js']) {
+    assert.match(read(f), /aimCarets\(/, f + ' holds a popover but never aims its caret');
+  }
+});
+
 test('placeholder text is dimmed from its token, on every field', () => {
   const tokens = json('core/spec/tokens.json');
   for (const scheme of ['light', 'dark']) assert.equal(typeof tokens.color[scheme].placeholder, 'string', scheme + ' has a placeholder token');

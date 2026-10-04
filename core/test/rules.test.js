@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, addGroup, renameGroup, moveGroup, placeChat, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, defaultGroupName, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, DELETE_STEPS } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, addGroup, renameGroup, moveGroup, placeChat, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, defaultGroupName, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, listSections, LETTER_OTHER, DELETE_STEPS } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES, graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
 import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions, TAPBACKS, tapbackType, myReaction, replyQuote, canTarget } from '../app/rules/messages.js';
@@ -664,6 +664,24 @@ test('groups keep their own order, draw as sections, and never lose an ungrouped
   assert.deepEqual(addGroup([], { id: 'g9', name: '   ' }), [{ id: 'g9', name: 'Group 1' }], 'an unnamed group takes a default');
   assert.deepEqual(placeChat({ '1': 'g1' }, '1', UNGROUPED), {}, 'moving a chat out drops its placement');
   assert.deepEqual(placeChat({}, '1', 'g2'), { '1': 'g2' });
+});
+
+test('the list sections follow the sort in force: by day for recent, by first letter for the name sorts (issue 217)', () => {
+  const now = new Date(2026, 0, 3, 12).getTime();
+  const at = (d) => new Date(2026, 0, d, 1).toISOString();
+  const chats = [
+    { id: '1', name: 'Avery', lastMessageAt: at(3) },
+    { id: '2', name: 'Weekend plans', lastMessageAt: at(2) },
+    { id: '3', name: '+15555550142', lastMessageAt: at(1) },
+  ];
+  const byDay = listSections(sortChats(chats, { sort: 'recent' }), { sort: 'recent', now });
+  assert.deepEqual(byDay.map((s) => s.name), ['Today', 'Yesterday', 'Earlier']);
+  assert.deepEqual(byDay.map((s) => s.chats.map((c) => c.id)), [['1'], ['2'], ['3']]);
+  assert.ok(byDay.every((s) => s.sortSection === true));
+  const byLetter = listSections(sortChats(chats, { sort: 'name' }), { sort: 'name', now });
+  assert.deepEqual(byLetter.map((s) => s.name).sort(), [LETTER_OTHER, 'A', 'W'], 'a name that is not a letter groups under the other mark');
+  assert.deepEqual(byLetter.flatMap((s) => s.chats.map((c) => c.id)).sort(), ['1', '2', '3'], 'every chat is in exactly one section');
+  assert.equal(listSections([chats[0]], { sort: 'recent', now }).length, 1, 'a list that lands in one section is drawn as rows alone');
 });
 
 test('the emoji picker searches by name, keeps categories, and inserts whole characters', () => {
