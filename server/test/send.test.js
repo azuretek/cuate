@@ -319,6 +319,28 @@ test('a reply carries its parent to the engine and arrives linked to it', async 
   assert.equal(s.world.sends.at(-1).replyTo, null);
 });
 
+// Issue 208: a threaded reply is stored as a plain threaded reply, and a send whose engine answer names an existing
+// message is not reported as that message.
+test('a reply is stored as a plain threaded reply, and an answer naming an existing message is uncertain, never that message', async (t) => {
+  const s = sender();
+  t.after(() => s.close());
+  await s.start();
+  const r = await s.send('1', { text: 'Synthetic threaded reply', replyTo: 'FAKE-0013' }, 'key-reply-00005');
+  assert.equal(r.http, 201);
+  const stored = s.world.messages.find((m) => m.guid === r.body.messageId);
+  assert.equal(stored.thread_originator_guid, 'FAKE-0013', 'the reply carries the message it answers as its thread originator');
+  assert.equal(stored.thread_originator_part, '0:0:0');
+  assert.equal(stored.associated_message_type, undefined, 'a threaded reply is a plain threaded reply, never an associated item');
+  assert.equal(stored.associated_message_guid, undefined);
+  // The bridge's reply path has answered a threaded reply with an existing message's id; the server answers uncertain
+  // rather than reporting that message as the one it created.
+  s.world.behavior.replyAnswer = 'existing';
+  const echoed = await s.send('1', { text: 'Synthetic echoed reply', replyTo: 'FAKE-0013' }, 'key-reply-00006');
+  assert.equal(echoed.http, 202);
+  assert.equal(echoed.body.status, 'uncertain');
+  assert.equal(echoed.body.messageId, null, 'an existing message is never reported as the reply that was created');
+});
+
 test('a reply the engine cannot thread is refused, not sent outside the thread', async (t) => {
   const s = sender({ perMinute: 1 });
   t.after(() => s.close());

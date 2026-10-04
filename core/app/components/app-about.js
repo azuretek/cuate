@@ -5,6 +5,7 @@ import { aboutModel, bugReportBlock } from '../../kit/rules/build.js';
 import { copyToClipboard } from '../clipboard.js';
 import { BUILD_SPEC } from '../rules/build-spec.js';
 import { aboutRows, aboutLinks } from '../rules/settings.js';
+import { appIconChoices } from '../rules/app-icons.js';
 import { aboutUpdate } from '../rules/updates.js';
 import './app-sheet.js';
 
@@ -15,6 +16,12 @@ const INTRO = 'The build this device is running and the server it talks to. Sele
 // icon pipeline (desktop/scripts/icons.mjs, checked by pnpm run build), so every shell bundles the same picture the
 // desktop's window and installers carry.
 const APP_ICON = 'assets/app-icon.png';
+
+// The icon on About is the choice in force, not one fixed drawing (issue 246): the same list Settings offers
+// (rules/app-icons.js over the generated spec mirror), so the picture matches the chosen icon. Follow theme's is the
+// live drawing app-root makes in the theme in force; until it has drawn, and where the page has no canvas, the
+// default theme's shipped picture stands in. values and themePicture are handed down by app-root and are reactive,
+// so the picture follows a change the moment the server's settings deliver it, with no reload.
 
 // The About page (issue 171): a page of its own on every platform, drawn in the same sheet chrome as Settings (a back
 // strip, a title and its one line), reached from Settings' last row and from the tray's and the app menu's About. The
@@ -31,13 +38,15 @@ const APP_ICON = 'assets/app-icon.png';
 // go to the source, the licence and the issue tracker, from the repository the server reports; a press is handed to
 // the shell (open.external) by app-root, so it opens in the browser on every platform rather than in the app.
 class AppAbout extends KitElement {
-  static properties = { info: { attribute: false }, host: { attribute: false }, release: { attribute: false }, backLabel: {}, copied: { state: true }, copiedKey: { state: true } };
+  static properties = { info: { attribute: false }, host: { attribute: false }, release: { attribute: false }, values: { attribute: false }, themePicture: { attribute: false }, backLabel: {}, copied: { state: true }, copiedKey: { state: true } };
 
   constructor() {
     super();
     this.info = null;
     this.host = null;
     this.release = null;
+    this.values = {};
+    this.themePicture = null;
     this.backLabel = 'Back to app';
     this.copied = '';
     this.copiedKey = '';
@@ -80,6 +89,13 @@ class AppAbout extends KitElement {
     </div>`;
   }
 
+  // The picture of the icon in force: the selected choice's src, Follow theme's being the live drawing app-root
+  // made (themePicture), else the default theme's shipped picture.
+  currentIcon() {
+    const chosen = appIconChoices(this.values || {}, { themePicture: this.themePicture }).find((c) => c.selected);
+    return chosen && chosen.src ? chosen.src : APP_ICON;
+  }
+
   body() {
     const { commit } = aboutModel(BUILD_SPEC, this.host || {}, this.info || {});
     const rows = aboutRows(this.host || {}, this.info || {});
@@ -92,7 +108,7 @@ class AppAbout extends KitElement {
     const update = aboutUpdate(this.release);
     return html`
       <header class="about-head" data-section="identity">
-        <img class="about-icon" src=${APP_ICON} alt="">
+        <img class="about-icon" src=${this.currentIcon()} alt="">
         <span class="about-name">${name ? name.value : ''}</span>
         <span class="about-version">${version ? version.value : ''}</span>
       </header>

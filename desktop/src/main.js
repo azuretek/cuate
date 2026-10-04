@@ -20,6 +20,7 @@ import { renderIcon } from '../../core/app/rules/icon.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
+import { runRegionProbe } from './region-probe.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
@@ -489,6 +490,42 @@ async function runSmoke(w) {
   await waitFor("!document.querySelector('.active-chip')");
   await js("document.querySelector('.sidebar-head .filter-button').click()");
   report.header = report.header && report.headerSearchName && report.headerSearchMessage && report.headerFilter;
+  // The header's four controls take a REAL pointer press (issue 240). -webkit-app-region is inherited, so a menu drawn
+  // inside the drag header computes to drag and a real press on an option moves the window and never reaches the page;
+  // the scripted .click() checks above skip the region check and cannot see the fault, and a synthetic dispatched event
+  // cannot either. Each control opens its menu on a real press, that same press does not dismiss it, a chosen option
+  // takes effect, and the open menu's own region is no-drag where the header is drag.
+  const hmAt = (sel) => js("(() => { const e = document.querySelector(" + JSON.stringify(sel) + "); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()");
+  const hmPressAt = async (p) => { if (!p) return false; wc.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y }); await pause(30); wc.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 }); await pause(30); wc.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 }); await pause(180); return true; };
+  const hmPress = async (sel) => hmPressAt(await hmAt(sel));
+  const hmRegionAt = async (sel) => js("(() => { const els = [...document.querySelectorAll('*')].filter((e) => { const m = (getComputedStyle(e).getPropertyValue('-webkit-app-region') || '').trim(); return m === 'drag' || m === 'no-drag'; }); const t = document.querySelector(" + JSON.stringify(sel) + "); if (!t) return null; const r = t.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; let region = null; for (const e of els) { const q = e.getBoundingClientRect(); if (q.width && q.height && x >= q.left && x < q.right && y >= q.top && y < q.bottom) region = (getComputedStyle(e).getPropertyValue('-webkit-app-region') || '').trim(); } return region || 'none'; })()");
+  const hmShutMenus = async () => { await js("(() => { const r = document.querySelector('app-root'); r.filterOpen = false; r.sortOpen = false; r.searchOpen = false; if (r.view === 'settings' || r.view === 'about') r.view = 'messages'; return true; })()"); await pause(150); };
+  const hmOpenOnPress = async (trigger, menu) => { await hmShutMenus(); await hmPress(trigger); return { opened: await js("Boolean(document.querySelector(" + JSON.stringify(menu) + "))"), region: await hmRegionAt(menu) }; };
+  const headerMenuChecks = {};
+  const search = await hmOpenOnPress('.sidebar-head .search-mode-button', '.search-menu');
+  search.chose = (await hmPressAt(await hmAt('.search-menu .sort-choice:nth-child(2)'))) && await js("(document.querySelector('.search-mode-button').getAttribute('aria-label') || '').includes('Full text')");
+  headerMenuChecks.search = search.opened && search.region === 'no-drag' && search.chose;
+  // Put the mode back to Contact through the same menu, so the steps after this one see the list the earlier ones left.
+  await hmOpenOnPress('.sidebar-head .search-mode-button', '.search-menu');
+  await hmPressAt(await hmAt('.search-menu .sort-choice:nth-child(1)'));
+  const filter = await hmOpenOnPress('.sidebar-head .filter-button', '.filter-menu');
+  filter.chose = (await hmPressAt(await hmAt('.filter-menu .chip'))) && await js("Boolean(document.querySelector('.active-chip'))");
+  headerMenuChecks.filter = filter.opened && filter.region === 'no-drag' && filter.chose;
+  await js("(() => { const c = document.querySelector('.active-chip .chip-clear'); if (c) c.click(); return true; })()");
+  await pause(150);
+  const sort = await hmOpenOnPress('.sidebar-head .sort-button', '.sort-menu');
+  sort.chose = (await hmPressAt(await hmAt('.sort-menu .sort-choice:nth-child(2)'))) && await js("document.querySelector('app-root').settings['chats.sort'] === 'name'");
+  headerMenuChecks.sort = sort.opened && sort.region === 'no-drag' && sort.chose;
+  // Back to Recent, which the earlier sort step left and which the phone steps below select the first row under.
+  await hmOpenOnPress('.sidebar-head .sort-button', '.sort-menu');
+  await hmPressAt(await hmAt('.sort-menu .sort-choice:nth-child(1)'));
+  await waitFor("document.querySelector('app-root').settings['chats.sort'] === 'recent'", 5000);
+  await hmShutMenus();
+  await hmPress('.sidebar-head .gear-button');
+  headerMenuChecks.gear = await js("Boolean(document.querySelector('.sheet')) && document.querySelector('app-root').view === 'settings'");
+  await hmShutMenus();
+  report.headerMenus = Object.values(headerMenuChecks).every(Boolean);
+  console.log('header menus: ' + JSON.stringify({ checks: headerMenuChecks, search, filter, sort }));
   nativeTheme.themeSource = 'light';
   await pause(400);
   await shot('01-conversation-light.png');
@@ -1001,8 +1038,12 @@ async function runSmoke(w) {
   console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.messages .bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
-  await waitFor(`Boolean(${replySel}?.previousElementSibling?.matches('.thread-ghost-row'))`, 20000);
-  const replied = await js(`(() => { const r = ${replySel}; const g = r.previousElementSibling; return { id: r.dataset.id, root: g.dataset.thread, ghost: (g.querySelector('.thread-ghost')?.textContent || '').trim(), count: (g.querySelector('.thread-count')?.textContent || '').trim(), side: g.classList.contains('theirs') ? 'theirs' : 'mine', line: Boolean(r.querySelector('.thread-line')), text: r.textContent, enabled: !g.querySelector('.thread-ghost').disabled, cleared: !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') && document.querySelector('app-composer textarea').placeholder === 'Message' }; })()`);
+  await waitFor(`Boolean(${replySel}) && Boolean(document.querySelector(${q(row)})?.nextElementSibling?.classList.contains('thread-replies'))`, 20000);
+  const replied = await js(`(() => {
+    const r = ${replySel};
+    const host = document.querySelector(${q(row)});
+    const sum = host && host.nextElementSibling && host.nextElementSibling.matches('.thread-replies') ? host.nextElementSibling : null;
+    return { id: r.dataset.id, root: r.dataset.thread, marked: r.classList.contains('thread-reply'), text: r.textContent, summary: sum ? { root: sum.dataset.thread, count: (sum.querySelector('.thread-count')?.textContent || '').trim(), side: sum.classList.contains('theirs') ? 'theirs' : 'mine', enabled: !sum.querySelector('.thread-count').disabled } : null, cleared: !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') && document.querySelector('app-composer textarea').placeholder === 'Message' }; })()`);
   await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
   await pause(300);
   await shot('16-replied-light.png');
@@ -1011,39 +1052,34 @@ async function runSmoke(w) {
   await shot('16b-replied-dark.png');
   nativeTheme.themeSource = 'light';
   // The reply count opens its thread, and the reply sent from the thread is in it, after its first message.
-  await js(`${replySel}.previousElementSibling.querySelector('.thread-count').click()`);
+  await js(`document.querySelector(${q(row)}).nextElementSibling.querySelector('.thread-count').click()`);
   await waitFor(`Boolean(document.querySelector(${q('.thread-view .bubble-row[data-id="' + TARGET + '"]')}))`, 5000);
   await pause(400);
   const landed = await js(`[...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id)`);
   await both('16c-thread-with-reply');
   await escape();
   await waitFor("!document.querySelector('.thread-view')", 5000);
-  // The fixture's own thread (issue 195): Avery's reply to your earlier message carries the line, the ghost of your
-  // message sits above the two replies with their count, and the ordinary messages, which the engine chains to the
-  // message before them, carry nothing. The thread opens from the line, and on a phone from the reply itself, with
-  // exactly its three messages, on a desktop window and at a phone's width, light and dark.
+  // The fixture's own threads (issues 195 and 208): the message each thread answers carries one quiet count line under
+  // it, each reply is marked once and links only to its own original, and the ordinary messages, which the engine chains
+  // to the message before them, carry nothing; no line is drawn between two messages. The thread opens from the count,
+  // and on a phone from the reply itself, with exactly its three messages, on a desktop window and at a phone's width,
+  // light and dark.
   const FIXTURE_ROOT = 'FAKE-0009';
   const FIXTURE_REPLY = 'FAKE-0014';
   const marksState = () => js(`(() => {
     const list = document.querySelector('.messages');
     const rows = [...list.querySelectorAll('.bubble-row')];
-    const reply = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
-    const ghost = reply && reply.previousElementSibling;
-    if (reply) reply.scrollIntoView({ block: 'center' });
-    const lines = [...list.querySelectorAll('.thread-line')].map((l) => ({ from: l.dataset.from, to: l.dataset.to, side: l.dataset.side, lane: Number(l.dataset.lane), hidden: l.hidden }));
+    const first = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
+    if (first) first.scrollIntoView({ block: 'center' });
     return {
-      pairs: lines.map((l) => l.from + '>' + l.to),
-      lanes: lines.map((l) => l.side + l.lane),
-      lines,
-      ghosts: [...list.querySelectorAll('.thread-ghost-row')].map((g) => ({ root: g.dataset.thread, side: g.classList.contains('mine') ? 'mine' : 'theirs', count: (g.querySelector('.thread-count')?.textContent || '').trim(), fill: getComputedStyle(g.querySelector('.thread-ghost')).backgroundColor })),
-      marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => r.dataset.id),
-      ghostRoot: ghost && ghost.matches('.thread-ghost-row') ? ghost.dataset.thread : null,
-      count: ghost ? (ghost.querySelector('.thread-count')?.textContent || '').trim() : '', ghostFill: ghost && ghost.querySelector('.thread-ghost') ? getComputedStyle(ghost.querySelector('.thread-ghost')).backgroundColor : '',
+      lines: list.querySelectorAll('.thread-line').length,
+      summaries: [...list.querySelectorAll('.thread-replies')].map((g) => ({ root: g.dataset.thread, side: g.classList.contains('mine') ? 'mine' : 'theirs', count: (g.querySelector('.thread-count')?.textContent || '').trim() })),
+      marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => ({ id: r.dataset.id, root: r.dataset.thread })),
     };
   })()`);
   const marks = await marksState();
   await both('16d-thread-marks');
-  await js(`document.querySelector('.messages .thread-line[data-from="${FIXTURE_ROOT}"][data-to="${FIXTURE_REPLY}"]').click()`);
+  await js(`document.querySelector('.messages .thread-replies[data-thread="${FIXTURE_ROOT}"] .thread-count').click()`);
   await waitFor(`document.querySelector('.conv-body')?.dataset.thread === ${q(FIXTURE_ROOT)}`, 5000);
   await pause(400);
   const fixtureThread = await focusState();
@@ -1070,20 +1106,22 @@ async function runSmoke(w) {
   await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(marksListOpen)}; return true; })()`);
   await pause(300);
   const fixtureIds = [FIXTURE_ROOT, FIXTURE_REPLY, 'FAKE-0015'].join('|');
-  // Two interleaved threads (issue 214): each draws a line only where it changes hands, T2's own side sits on its own
-  // lane beside T1's, and no message outside the two threads (the document included) is marked.
+  // Two interleaved threads (issues 195 and 208): each keeps its own count and its own path, every reply links only to
+  // its own original, nothing is inferred from adjacency, and no message outside a thread (the document included) is
+  // marked.
   const marksOk = (m) => {
-    const laneOf = (pair) => { const i = m.pairs.indexOf(pair); return i < 0 ? null : m.lanes[i]; };
-    const expected = ['FAKE-0009>FAKE-0014', 'FAKE-0014>FAKE-0015', 'FAKE-0016>FAKE-0017', 'FAKE-0017>FAKE-0018'];
-    const markedOk = ['FAKE-0014', 'FAKE-0015', 'FAKE-0017', 'FAKE-0018'].every((id) => m.marked.includes(id)) && m.marked.includes(replied.id) && !m.marked.includes('FAKE-0013') && !m.marked.includes('FAKE-0019');
-    return expected.every((p) => m.pairs.includes(p)) && m.lines.every((l) => !l.hidden)
-      && laneOf('FAKE-0009>FAKE-0014') !== laneOf('FAKE-0017>FAKE-0018')
-      && markedOk && m.ghostFill === 'rgba(0, 0, 0, 0)'
-      && m.ghosts.some((g) => g.root === 'FAKE-0009' && g.side === 'mine' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)')
-      && m.ghosts.some((g) => g.root === 'FAKE-0016' && g.side === 'theirs' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)');
+    const count = (root) => m.summaries.find((s) => s.root === root) || null;
+    const answers = { 'FAKE-0014': 'FAKE-0009', 'FAKE-0015': 'FAKE-0009', 'FAKE-0017': 'FAKE-0016', 'FAKE-0018': 'FAKE-0016' };
+    const markedOk = Object.entries(answers).every(([id, root]) => m.marked.some((x) => x.id === id && x.root === root))
+      && m.marked.some((x) => x.id === replied.id && x.root === TARGET)
+      && !m.marked.some((x) => x.id === 'FAKE-0013') && !m.marked.some((x) => x.id === 'FAKE-0019');
+    return m.lines === 0 && markedOk && m.summaries.length === 3
+      && count('FAKE-0009')?.count === '2 Replies' && count('FAKE-0009')?.side === 'mine'
+      && count('FAKE-0013')?.count === '1 Reply' && count('FAKE-0013')?.side === 'theirs'
+      && count('FAKE-0016')?.count === '2 Replies' && count('FAKE-0016')?.side === 'theirs';
   };
   const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
-  const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.ghost.includes('See you soon') && replied.side === 'theirs' && replied.count === '1 Reply' && !replied.line && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
+  const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.marked && Boolean(replied.summary) && replied.summary.root === TARGET && replied.summary.count === '1 Reply' && replied.summary.side === 'theirs' && !/Reply to/.test(replied.text), enabled: Boolean(replied.summary?.enabled), cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
 
@@ -1559,8 +1597,56 @@ async function runSmoke(w) {
   };
   report.resizeKeeps = Object.values(resizeChecks).every(Boolean);
   console.log('resize keeps: ' + JSON.stringify({ checks: resizeChecks, start, steps }));
+
+  // Switching conversations returns each to the place you left it, at once, without waiting on the server (issue 200).
+  // Chat A is scrolled back, we switch to B and back, and A must show the same message at the same height; then, with
+  // the server's answer held open, a switch to a conversation we already hold must still draw at once and the search
+  // field and the composer must answer while it is held.
+  w.setSize(1000, 560);
+  // The switch check clicks chats on a desktop, which closes the list drawer (open with show). Put it back as it was,
+  // since a later check reads an open drawer on a phone; the same way the marks and emoji sections above restore it.
+  const switchListWasOpen = await js("document.querySelector('app-root').listOpen");
+  await js("(() => { const root = document.querySelector('app-root'); root.listOpen = true; root.view = 'messages'; return true; })()");
+  await pause(400);
+  const SWITCH_A = 'Avery Quinn';
+  const SWITCH_B = 'Weekend plans';
+  const clickRow = (name) => js("(() => { const r = [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name').textContent === " + JSON.stringify(name) + "); if (!r) return null; r.click(); return r.dataset.chat; })()");
+  const firstRow = () => js("(() => { const m = document.querySelector('.messages'); if (!m) return null; const top = m.getBoundingClientRect().top; const r = [...m.querySelectorAll('.bubble-row')].find((x) => x.getBoundingClientRect().bottom - top > 0); return r ? { id: r.dataset.id, offset: Math.round(r.getBoundingClientRect().top - top), room: m.scrollHeight - m.clientHeight } : null; })()");
+  const showsName = (name) => "document.querySelector('.conv-head .chat-name') && document.querySelector('.conv-head .chat-name').textContent === " + JSON.stringify(name);
+  await clickRow(SWITCH_A);
+  await waitFor(showsName(SWITCH_A), 10000);
+  await pause(300);
+  // A scrolled back, a few messages down, so it sits at neither end.
+  await js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const r = rows[Math.min(3, rows.length - 1)]; m.scrollTop = r.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 6; m.dispatchEvent(new Event('scroll')); return true; })()");
+  await pause(250);
+  const placeA = await firstRow();
+  const switchT0 = Date.now();
+  await clickRow(SWITCH_B);
+  await waitFor(showsName(SWITCH_B), 10000);
+  const switchMs = Date.now() - switchT0;
+  await pause(200);
+  const placeB = await firstRow();
+  await clickRow(SWITCH_A);
+  await waitFor(showsName(SWITCH_A), 10000);
+  await pause(200);
+  const placeA2 = await firstRow();
+  report.switchPlace = Boolean(placeA && placeA2 && placeA.room > 0 && placeA.id === placeA2.id && Math.abs(placeA.offset - placeA2.offset) <= 2) && Boolean(placeB && placeB.room >= 0);
+  console.log('switch place: ' + JSON.stringify({ placeA, placeB, placeA2, switchMs }));
+  // The server's answer to a conversation we already hold is held open on purpose: the pane must still draw the other
+  // conversation at once, and the search field and the composer must take input, so a switch never waits on a fetch.
+  const heldSwitch = await js("(async () => { const root = document.querySelector('app-root'); const real = root.client.messages.bind(root.client); let release; const gate = new Promise((r) => { release = r; }); let asked = 0; root.client.messages = async (...args) => { asked += 1; await gate; return real(...args); }; const title = () => { const t = document.querySelector('.conv-head .chat-name'); return t ? t.textContent : null; }; [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name').textContent === " + JSON.stringify(SWITCH_B) + ").click(); const t0 = performance.now(); while (title() !== " + JSON.stringify(SWITCH_B) + " && performance.now() - t0 < 1000) await new Promise((r) => requestAnimationFrame(r)); const swappedMs = performance.now() - t0; const swapped = title() === " + JSON.stringify(SWITCH_B) + "; const search = document.querySelector('.sidebar-head .chat-search'); search.focus(); search.value = 'q'; search.dispatchEvent(new Event('input', { bubbles: true })); const typed = search.value === 'q'; search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); const ta = document.querySelector('app-composer textarea'); ta.focus(); ta.value = 'hi'; ta.dispatchEvent(new Event('input', { bubbles: true })); const composed = ta.value === 'hi'; ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); release(); root.client.messages = real; await new Promise((r) => setTimeout(r, 50)); return { asked, swapped, swappedMs: Math.round(swappedMs), typed, composed }; })()");
+  report.switchInstant = Boolean(heldSwitch) && heldSwitch.asked >= 1 && heldSwitch.swapped && heldSwitch.swappedMs < 900 && heldSwitch.typed && heldSwitch.composed;
+  console.log('switch instant: ' + JSON.stringify(heldSwitch));
+  await clickRow(SWITCH_A);
+  await waitFor(showsName(SWITCH_A), 10000);
   w.setSize(1100, 720);
+  await pause(300);
   await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  // Each chat click above opens with show, which closes the list drawer, and the last chat's page closes it once more
+  // as its fetch lands, after a restore placed here first would have run; so the drawer is put back after that page has
+  // settled, the way the marks and emoji sections above restore theirs.
+  await pause(400);
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(switchListWasOpen)));
 
   // The conversation header stays pinned and nothing but media zooms (issue 180). A long conversation is scrolled to
   // each end, the page itself is told to scroll and a field takes focus, then a pinch (ctrl and the wheel) and the zoom
@@ -1675,20 +1761,23 @@ async function runSmoke(w) {
   // A refused write would leave the wait below timing out on a value that was never stored, so it fails here instead.
   const scaleWrite = await fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.textScale': 150 } }) });
   if (!scaleWrite.ok) throw new Error('the server refused the text size write: ' + scaleWrite.status);
-  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"150\"]')?.checked === true", 10000);
+  await waitFor("document.querySelector('app-settings .scale-range')?.getAttribute('aria-valuetext') === '150 percent'", 10000);
   report.settingsStreamed = true;
   // Text size is a percentage of the type tokens: at 150% the page and the chat list both draw their text half as
   // large again, and back at 100% they draw exactly what the tokens say (the surface check below holds that).
   const fontPx = (sel) => js("(() => { const e = document.querySelector(" + JSON.stringify(sel) + "); return e ? parseFloat(getComputedStyle(e).fontSize) : 0; })()");
-  report.textScaleChoices = await js("[...document.querySelectorAll('app-settings .scale-choice')].map((l) => l.textContent.trim()).join('|')");
+  report.textScaleChoices = await js("[...document.querySelectorAll('app-settings .scale-slider datalist option')].map((o) => o.getAttribute('label')).join('|')");
+  // The text size is a slider (issue 244): a range that announces the percentage, reads it beside the track, and lands
+  // only on a stop. Its stops come from the schema, so this holds the control the schema draws.
+  report.textScaleSlider = await js("(() => { const r = document.querySelector('app-settings .scale-range'); const v = document.querySelector('app-settings .scale-value'); return Boolean(r) && r.getAttribute('type') === 'range' && r.getAttribute('aria-valuetext') === '150 percent' && Boolean(v) && v.textContent.trim() === '150%'; })()");
   const scaledList = await fontPx('.chat-row .chat-name');
   const scaledPage = await fontPx('app-settings .setting-label');
   await putSettings({ 'appearance.textScale': 100 });
-  await waitFor("document.querySelector('app-settings input[data-key=\"appearance.textScale\"][value=\"100\"]')?.checked === true", 10000);
+  await waitFor("document.querySelector('app-settings .scale-range')?.getAttribute('aria-valuetext') === '100 percent'", 10000);
   const plainList = await fontPx('.chat-row .chat-name');
   const plainPage = await fontPx('app-settings .setting-label');
   const near = (a, b) => Math.abs(a - b) < 0.6;
-  report.textScale = report.textScaleChoices === '50%|75%|100%|125%|150%|200%|300%' && plainList > 0 && plainPage > 0 && near(scaledList, plainList * 1.5) && near(scaledPage, plainPage * 1.5)
+  report.textScale = report.textScaleChoices === '50%|75%|100%|125%|150%|200%|300%' && report.textScaleSlider && plainList > 0 && plainPage > 0 && near(scaledList, plainList * 1.5) && near(scaledPage, plainPage * 1.5)
     && await js("!document.querySelector('app-settings [data-key=\"appearance.density\"]')");
   console.log('text scale: ' + JSON.stringify({ choices: report.textScaleChoices, scaledList, plainList, scaledPage, plainPage }));
   report.settings = report.settingsRead && report.skinSwitch && report.settingsWrote && report.settingsStreamed && report.textScale;
@@ -1725,7 +1814,9 @@ async function runSmoke(w) {
   // A theme the server holds reaches the page without a rebuild, and both schemes render it: the accent the theme
   // sets is what the page resolves, whether the skin in force is the explicit light or the explicit dark one.
   const pickSkin = (skin) => clickSkin(skin);
-  await putSettings({ 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
+  // Follow theme is put in force: the tray follows the active theme only while the icon choice does (issue 246), since a
+  // fixed choice (Orange, the default) stands in for the theme in every image the shell draws.
+  await putSettings({ 'appearance.appIcon': 'theme', 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
   await pickSkin('light');
   await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
   report.themeLight = true;
@@ -1845,14 +1936,14 @@ async function runSmoke(w) {
         const a = l.getBoundingClientRect(); const b = thumb.getBoundingClientRect();
         out.push({ what: 'switch ' + l.textContent.trim(), on, under: on ? Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 2 : true, fg: rgb(getComputedStyle(l).color), bg: rgb(on ? fill : track) });
       }
-      for (const l of s.querySelectorAll('.scale-choice')) out.push({ what: 'size ' + l.textContent.trim(), on: l.hasAttribute('data-selected'), under: true, fg: rgb(getComputedStyle(l).color), bg: rgb(getComputedStyle(l).backgroundColor) });
+      const sv = s.querySelector('.scale-value'); const srows = sv && sv.closest('.sheet-rows'); if (sv) out.push({ what: 'text size', on: false, under: true, fg: rgb(getComputedStyle(sv).color), bg: rgb(getComputedStyle(srows || sv).backgroundColor) });
       return out;
     })()`;
     const contrastIn = async (label) => {
       await pause(400);
       const pairs = await js(choicePairs);
       const rows = pairs.map((p) => ({ what: p.what, on: p.on, under: p.under, ratio: Math.round(contrastRatio(p.fg, p.bg) * 100) / 100 }));
-      const ok = rows.length >= 10 && rows.filter((r) => r.on).length === 2 && rows.every((r) => r.under && r.ratio >= 4.5);
+      const ok = rows.length >= 4 && rows.filter((r) => r.on).length === 1 && rows.every((r) => r.under && r.ratio >= 4.5);
       console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, rows }));
       return ok;
     };
@@ -2047,31 +2138,34 @@ async function runSmoke(w) {
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
   const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconSpec.icons.length + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
-  const themePicture = await js(iconChoice(appIconSpec.default) + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
-  await waitFor('Boolean(' + iconChoice('night') + ') && !' + iconChoice('night') + '.disabled', 10000);
-  await js(iconChoice('night') + '.click()');
-  for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== 'night' || appIconApplied !== 'night'); i += 1) await pause(200);
-  const iconHeld = (await held())['appearance.appIcon'] === 'night';
-  const iconApplied = appIconApplied === 'night';
+  // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
+  const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
+  const iconPick = 'rosa';
+  const fixedOf = (id) => ({ scheme: appIconSpec.icons.find((i) => i.id === id).scheme, colors: appIconSpec.icons.find((i) => i.id === id).colors });
+  await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
+  await js(iconChoice(iconPick) + '.click()');
+  for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== iconPick || appIconApplied !== iconPick); i += 1) await pause(200);
+  const iconHeld = (await held())['appearance.appIcon'] === iconPick;
+  const iconApplied = appIconApplied === iconPick;
   // A fixed palette stands in for the theme in the images the shell draws (the tray's mark is the palette's).
-  const nightMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: { scheme: appIconSpec.icons.find((i) => i.id === 'night').scheme, colors: appIconSpec.icons.find((i) => i.id === 'night').colors } }).palette.mark;
-  const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === nightMark;
-  const iconMarked = await js(iconChoice('night') + ".getAttribute('aria-checked') === 'true'");
+  const fixedMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedOf(iconPick) }).palette.mark;
+  const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === fixedMark;
+  const iconMarked = await js(iconChoice(iconPick) + ".getAttribute('aria-checked') === 'true'");
   await waitFor('!' + iconChoice(appIconSpec.default) + '.disabled', 10000);
   await js(iconChoice(appIconSpec.default) + '.click()');
   for (let i = 0; i < 50 && appIconApplied !== appIconSpec.default; i += 1) await pause(200);
-  const themeAgain = smokeIcons.at(-1).mark !== nightMark;
+  const themeAgain = smokeIcons.at(-1).mark !== fixedMark;
   report.appIcon = iconPictures && themePicture && iconHeld && iconApplied && iconDrawn && iconMarked && themeAgain && appIconApplied === appIconSpec.default && (await held())['appearance.appIcon'] === appIconSpec.default;
   if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, themePicture, iconHeld, iconApplied, iconDrawn, iconMarked, themeAgain, now: appIconApplied }));
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
-  await showTab('notifications');
+  await showTab('behavior');
   nativeTheme.themeSource = 'light';
   await pause(300);
-  await shot('05e-settings-notifications.png');
+  await shot('05e-settings-behavior.png');
   nativeTheme.themeSource = 'dark';
   await pause(300);
-  await shot('05f-settings-notifications-dark.png');
+  await shot('05f-settings-behavior-dark.png');
   await showTab('appearance');
   nativeTheme.themeSource = 'light';
   await pause(300);
@@ -2195,21 +2289,22 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'dark';
   await pause(300);
   await shot('05h-settings-phone-dark.png');
-  await showTab('notifications');
-  await shot('05j-settings-phone-notifications-dark.png');
+  await showTab('behavior');
+  await shot('05j-settings-phone-behavior-dark.png');
   nativeTheme.themeSource = 'light';
   await pause(300);
-  await shot('05i-settings-phone-notifications.png');
+  await shot('05i-settings-phone-behavior.png');
   report.phoneSettings = phonePage.fills && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
   if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
-  // About lives under Settings (issue 171): its row is on the About tab.
-  await showTab('about');
+  // About is reached from the About row, which sits at the bottom of every Settings page rather than on a tab
+  // (issue 244): open it with the last tab in force, so the way back can be checked to land there.
+  await showTab('device');
 
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
   const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back-label') || {}).textContent || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
-  const aboutRow = await js("(() => { const s = [...document.querySelectorAll('app-settings .sheet-section')]; return s.length > 1 && s.at(-1).dataset.section === 'about' && Boolean(s.at(-1).querySelector('button[data-action=about]')) && !document.querySelector('app-settings app-about'); })()");
+  const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const body = s && s.querySelector('.sheet-body'); const row = body && body.querySelector('.settings-about-row'); const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.querySelector('button[data-action=about]') && row === body.lastElementChild && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
   await js("document.querySelector('app-settings [data-action=about]').click()");
   await waitFor(aboutShown);
   await pause(1000);
@@ -2281,7 +2376,8 @@ async function runSmoke(w) {
   await js("document.querySelector('app-about .sheet-back').click()");
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
-  report.aboutBackTab = await js(tabSel('about') + "?.getAttribute('aria-selected') === 'true'");
+  // Back from About returns to the tab the row was on (issue 244), here the last tab.
+  report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
   report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
@@ -2786,7 +2882,8 @@ function createWindow() {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     // The sheet's event history, kept from every load so a failure can say whether a departure started (smoke-failure.js).
     win.webContents.on('did-finish-load', () => { win.webContents.executeJavaScript(smokeTraceInstaller(), true).catch(() => {}); });
-    (process.env.SMOKE_DESIGN ? runDesign(win, { nativeTheme, out: SMOKE, core: CORE, serverUrl: process.env.SMOKE_SERVER_URL, token: process.env.SMOKE_TOKEN, themeText: readFileSync(process.env.SMOKE_THEME_FIXTURE, 'utf8'), app }) : runSmoke(win)).catch(async (e) => {
+    const smokeRun = process.env.SMOKE_PROBE ? runRegionProbe(win, { out: SMOKE }) : process.env.SMOKE_DESIGN ? runDesign(win, { nativeTheme, out: SMOKE, core: CORE, serverUrl: process.env.SMOKE_SERVER_URL, token: process.env.SMOKE_TOKEN, themeText: readFileSync(process.env.SMOKE_THEME_FIXTURE, 'utf8'), app }) : runSmoke(win);
+    smokeRun.then((result) => { if (process.env.SMOKE_PROBE) app.exit(result ? 0 : 1); }).catch(async (e) => {
       console.error('smoke failed: ' + (e && e.message));
       // Retain what the renderer held when the step failed, bounded and sanitized, so a stuck surface is
       // read from evidence rather than guessed. It runs only on the failure path and never rethrows.

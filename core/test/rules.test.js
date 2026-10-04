@@ -287,9 +287,12 @@ test('the settings page draws the schema and writes the value a control gives', 
   for (const g of settingsGroups().filter((g) => g.kind === 'settings')) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
   for (const g of settingsGroups().filter((g) => g.kind !== 'settings')) assert.deepEqual(g.fields, [], g.id + ' draws its own rows, and no setting lands in it');
   for (const g of settingsGroups()) assert.ok(typeof g.description === 'string' && g.description.length > 0, g.id + ' carries a one-line description for its section');
-  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates', 'device', 'about'], 'the page draws one section per group');
-  assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
-  assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload', 'updates.serverAuto'], 'the updates section holds the client and server preferences');
+  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'behavior', 'device'], 'the page draws one section per group; About is not a group but the row at the bottom of every page (issue 244)');
+  const behavior = settingsGroups().find((g) => g.id === 'behavior');
+  assert.deepEqual(behavior.fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'Behavior holds every notice type and both update preferences');
+  assert.deepEqual(behavior.sections.map((s) => s.id), ['notices', 'updates'], 'Behavior draws its own small sections, Notices then Updates');
+  assert.deepEqual(behavior.sections[0].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'the Notices section holds every notice type');
+  assert.deepEqual(behavior.sections[1].fields.map((f) => f.key), ['updates.autoDownload', 'updates.serverAuto'], 'the Updates section holds the client and server preferences');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.autoDownload'), {}), false, 'automatic download is off until the server says otherwise');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.serverAuto'), {}), true);
   const skin = fields.find((f) => f.key === 'appearance.skin');
@@ -299,7 +302,7 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(settingValue(skin, { 'appearance.skin': 'dark' }), 'dark', 'the server value wins');
   assert.equal(coerceSetting(size, '150'), 150, 'a percentage control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
-  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'appearance.appIcon': 'theme', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
+  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'appearance.appIcon': 'orange', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
 });
 
 test('there is no density setting, and the skin and the text size are a switch and percentage choices (issue 112)', () => {
@@ -388,14 +391,15 @@ test('a theme\'s fonts reach the FontFace API only as a family, a digest, a weig
   assert.deepEqual(themeFonts(null), []);
 });
 
-test('the System, Light, Dark switch and the text size chips read at 4.5:1 in both schemes of the default palette', () => {
-  // The pairs app.css draws them with (issue 135): on-accent words on the accent thumb or chip, muted words on the page
-  // surface that is the track and an unselected chip.
+test('the System, Light, Dark switch and the text size reading read at 4.5:1 in both schemes of the default palette', () => {
+  // The pairs app.css draws them with (issues 135, 244): on-accent words on the accent thumb, muted words on the page
+  // surface that is the track, and the text size slider's reading (the full text colour) on the raised row it sits in.
   const spec = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url), 'utf8'));
   for (const scheme of ['light', 'dark']) {
     const c = spec.color[scheme];
     assert.ok(contrastRatio(c['accent-fg'], c.accent) >= 4.5, scheme + ' selected ' + contrastRatio(c['accent-fg'], c.accent));
     assert.ok(contrastRatio(c['fg-muted'], c.bg) >= 4.5, scheme + ' unselected ' + contrastRatio(c['fg-muted'], c.bg));
+    assert.ok(contrastRatio(c.fg, c['bg-raised']) >= 4.5, scheme + ' text size reading ' + contrastRatio(c.fg, c['bg-raised']));
   }
   assert.equal(Math.round(contrastRatio('#ffffff', '#000000')), 21);
   assert.equal(contrastRatio('#777', '#777'), 1);
@@ -902,11 +906,11 @@ test('a refused write rolls back only the keys it named', () => {
 
 // Issue 134 put About at the bottom of Settings with chela's full details in chela's order; issue 171 made it a page
 // of its own, opened from that last row (core/test/about-page.test.js holds the page).
-test('About is the last section of Settings, and This device sits just above it', () => {
+test('About is not a section of Settings: This device is the last tab, and no setting lands in an About group', () => {
   const groups = settingsGroups();
-  assert.equal(groups.at(-1).id, 'about', 'About is the last section');
-  assert.equal(groups.at(-1).kind, 'about');
-  assert.equal(groups.at(-2).id, 'device');
+  assert.equal(groups.at(-1).id, 'device', 'This device is the last tab');
+  assert.equal(groups.some((g) => g.kind === 'about'), false, 'no group draws About');
+  assert.equal(settingsFields().some((f) => f.group === 'about'), false, 'no setting lands in an About group');
 });
 
 test('the About section shows every field in chela\'s order, each from its own half', () => {

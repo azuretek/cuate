@@ -218,10 +218,17 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // engine cannot vouch for is uncertain, and the sender above never retries it. `unsupported` names the codes that
   // mean the engine cannot do this at all (a method it lacks, or a bridge method with no bridge running), which the
   // sender refuses cleanly rather than reporting as a failed send.
-  async function sendOut(params, method = 'send', unsupported = [-32601, -32003]) {
+  // existing is the guid of the message a reply answers, when this send is a reply. A send is answered with the guid
+  // of the row the engine created and never with an existing message's id, but the bridge's reply path has answered a
+  // threaded reply with the id of an existing message in the chat (issue 208). An answer that names the very message
+  // the reply answers is therefore not trusted: the sender reports it uncertain rather than reporting that message as
+  // the one it created, and never guesses.
+  async function sendOut(params, method = 'send', unsupported = [-32601, -32003], existing = null) {
     try {
       const r = await request(method, params, sendTimeoutMs);
-      return { ok: true, messageId: r && r.guid ? String(r.guid) : null };
+      const guid = r && r.guid ? String(r.guid) : null;
+      if (guid && existing && guid === existing) return { ok: false, uncertain: true, code: 'reply_id_echoed' };
+      return { ok: true, messageId: guid };
     } catch (e) {
       const disposition = e.data && e.data.disposition;
       if (e.code === -32001 || e.code === 'timeout' || e.code === 'engine_exit' || disposition === 'may_have_completed' || disposition === 'still_in_flight') {
@@ -244,11 +251,11 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // unsupported rather than sent outside the thread. reply_to is never an optional extra the adapter may drop.
   const replyCodes = [-32601, -32602, -32003];
   const withReply = (params, replyTo) => (replyTo ? { ...params, reply_to: replyTo } : params);
-  const sendText = (chatId, text, { replyTo = null } = {}) => sendOut(withReply({ chat_id: Number(chatId), text }, replyTo), 'send', replyTo ? replyCodes : undefined);
+  const sendText = (chatId, text, { replyTo = null } = {}) => sendOut(withReply({ chat_id: Number(chatId), text }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo);
 
   // imsg stages one file per send under the Messages attachments folder before dispatch. An empty caption is left
   // out, so a file on its own is not a text send carrying nothing.
-  const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined);
+  const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo);
 
   // imsg names and versions its capabilities rather than advertising adjectives, so the client asks for the version
   // it needs. A capability's version tracks the shape of its API, and advertising it means the build supports that

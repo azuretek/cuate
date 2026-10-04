@@ -24,11 +24,14 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
   // bridge: 'ready', or 'down' to answer the bridge-only calls (a tapback, a reply) the way imsg does with no bridge.
   // capabilities: the block the fake's status advertises, so a test can model an engine that sends an arbitrary
-  // emoji (a `tapback.emoji` version of 2 or more) and one that must not (the default, an older engine with no
+  // emoji (a tapback.emoji version of 2 or more) and one that must not (the default, an older engine with no
   // version, and version 1, the first emoji path whose sender target did not survive retainArguments).
   // features: the rpc_features the fake's status advertises beside the block, so a test can model an engine that
   // sends an arbitrary emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} }, features };
+  // replyAnswer: 'own' answers a send with the guid of the row it created (what Messages does); 'existing' models the
+  // bridge's reply path, which has answered a threaded reply with the id of an existing message in the chat (issue 208),
+  // so a test can prove the server does not report that message as the one it created.
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} }, features, replyAnswer: 'own' };
   const tapbackEmojiVersion = () => {
     const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
     return Number.isInteger(v) ? v : 0;
@@ -51,6 +54,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     sends,
     tapbacks,
     behavior,
+    messages,
     requests: [],
     get attempts() { return attempts; },
     incoming(chatId, text, sender) {
@@ -171,13 +175,17 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (!p.text && !p.file) return fail(req.id, -32602, 'send needs text or a file.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
             if (p.reply_to && behavior.bridge !== 'ready') return noBridge(req.id);
             const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
-            // As Messages records it: reply_to_guid names the chat's previous message on every row, and only a reply
-            // carries thread_originator_guid, the message it was sent to (issue 195).
+            // As Messages records it: reply_to_guid names the chat's previous message on every row, and a reply carries
+            // thread_originator_guid with the part of the original it answers and no associated type at all, which is the
+            // shape Messages itself writes for a threaded reply (issues 195 and 208).
             const prev = [...messages].reverse().find((x) => x.chat_id === p.chat_id && !x.is_reaction);
             const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(prev ? { reply_to_guid: prev.guid } : {}), ...(p.reply_to ? { thread_originator_guid: p.reply_to, thread_originator_part: '0:0:0' } : {}) });
             sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null, replyTo: p.reply_to || null });
-            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: m.guid }), behavior.sendDelayMs).unref();
-            else reply(req.id, { ok: true, id: m.id, guid: m.guid });
+            // The answer names the row the engine created, unless the test asks it to model the bridge's reply path and
+            // hand back an existing message's id instead (issue 208).
+            const answerGuid = p.reply_to && behavior.replyAnswer === 'existing' ? String(p.reply_to) : m.guid;
+            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: answerGuid }), behavior.sendDelayMs).unref();
+            else reply(req.id, { ok: true, id: m.id, guid: answerGuid });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }

@@ -51,14 +51,14 @@ test('with no check wired, updates.check answers null rather than throwing', asy
 test('app.icon calls through with the chosen icon and answers what the shell applied', async () => {
   const asked = [];
   const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true, appIcon: (icon) => { asked.push(icon); return { applied: true, icon }; } });
-  assert.deepEqual(await h['app.icon']({ icon: 'night' }), { applied: true, icon: 'night' });
-  assert.deepEqual(asked, ['night']);
+  assert.deepEqual(await h['app.icon']({ icon: 'rosa' }), { applied: true, icon: 'rosa' });
+  assert.deepEqual(asked, ['rosa']);
   assert.deepEqual(await h['app.icon']({}), { applied: true, icon: '' }, 'a missing id is passed on as empty, for the shell to refuse');
 });
 
 test('with no icon wired, app.icon answers that nothing was applied', async () => {
   const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true });
-  assert.deepEqual(await h['app.icon']({ icon: 'night' }), { applied: false, icon: 'night' });
+  assert.deepEqual(await h['app.icon']({ icon: 'rosa' }), { applied: false, icon: 'rosa' });
 });
 
 // Issue 219: a document pressed in a conversation is offered for saving under its real name.
