@@ -435,10 +435,9 @@ test('the themes the server holds: added by id, bounded, and offered in the pick
   const first = addTheme(undefined, a);
   assert.equal(first.ok, true);
   assert.equal(first.theme.id, 'amethyst-haze');
-  const again = addTheme(first.themes, { ...a, color: { light: { accent: '#333333' }, dark: {} } });
+  const again = addTheme(first.themes, { ...a });
   assert.equal(again.themes.length, 1, 'importing the same theme again replaces it');
   assert.equal(again.replaced, true);
-  assert.equal(again.themes[0].color.light.accent, '#333333');
   const full = Array.from({ length: MAX_THEMES }, (_, i) => ({ id: 't' + i, name: 't' + i }));
   const over = addTheme(full, { name: 'one more' });
   assert.equal(over.ok, false, 'the list is bounded');
@@ -452,6 +451,47 @@ test('the themes the server holds: added by id, bounded, and offered in the pick
   assert.deepEqual(legacy.map((c) => [c.name, c.selected]), [['Default', false], ['pasted before the list', true]], 'a theme in force that is not in the list is still offered, and marked');
   assert.deepEqual(swatchVars(a, 'dark'), [['--color-accent', '#222222']], 'a card shows the colours of the scheme in force');
   assert.deepEqual(swatchVars(null, 'light'), [], 'the default card sets nothing, so the default palette shows');
+});
+
+// Issue 186: every imported theme is kept and previewed in its own colours. Two themes that share a name (a paste left
+// as "Imported theme", or two shared tweakcn themes whose registry names agree) are two themes, not one replacing the
+// other; the same URL again, or the very same theme again, is still one entry.
+test('every imported theme is held under its own id, so an import never silently replaces a different theme', () => {
+  const pasted = (accent) => ({ name: 'Imported theme', source: 'tweakcn', color: { light: { accent, bg: '#fafafa' }, dark: { accent, bg: '#101010' } } });
+  let list;
+  for (const accent of ['#111111', '#222222', '#333333', '#444444', '#555555']) {
+    const out = addTheme(list, pasted(accent));
+    assert.equal(out.ok, true);
+    assert.equal(out.replaced, false, accent + ' is a new theme, not a new version of another');
+    list = out.themes;
+  }
+  assert.equal(list.length, 5, 'five different imports are five held themes');
+  assert.equal(new Set(list.map((t) => t.id)).size, 5, 'each under its own id');
+  assert.deepEqual(list.map((t) => t.color.light.accent), ['#111111', '#222222', '#333333', '#444444', '#555555'], 'each keeps its own colours');
+  const same = addTheme(list, pasted('#333333'));
+  assert.equal(same.themes.length, 5, 'the very same theme again is not a twin');
+  assert.equal(same.replaced, true);
+  const viaUrl = (url, accent) => ({ name: 'Shared', source: 'tweakcn', url, color: { light: { accent }, dark: { accent } } });
+  let held = addTheme(list, viaUrl('https://example.com/r/themes/one.json', '#a00000')).themes;
+  held = addTheme(held, viaUrl('https://example.com/r/themes/two.json', '#00a000')).themes;
+  assert.equal(held.length, 7, 'two URLs whose themes share a name are two themes');
+  const updated = addTheme(held, viaUrl('https://example.com/r/themes/one.json', '#0000a0'));
+  assert.equal(updated.themes.length, 7, 'the same URL again replaces its own entry');
+  assert.equal(updated.replaced, true);
+  assert.equal(updated.themes.find((t) => t.url?.endsWith('/one.json')).color.light.accent, '#0000a0');
+  assert.equal(updated.themes.find((t) => t.url?.endsWith('/two.json')).color.light.accent, '#00a000', 'and leaves the other alone');
+  const cards = themeChoices({ 'appearance.themes': updated.themes });
+  assert.equal(cards.length, 8, 'the picker offers the default and every held theme');
+  assert.equal(new Set(cards.map((c) => c.id)).size, 8, 'each card is its own theme');
+});
+
+test('two different themes never preview with the same swatches', () => {
+  const one = { name: 'One', color: { light: { bg: '#ffffff', accent: '#1d4ed8' }, dark: { bg: '#000000', accent: '#93c5fd' } } };
+  const two = { name: 'Two', color: { light: { bg: '#fff7ed', accent: '#8a3b12' }, dark: { bg: '#1c0f05', accent: '#e0a070' } } };
+  for (const scheme of ['light', 'dark']) {
+    assert.notDeepEqual(swatchVars(one, scheme), swatchVars(two, scheme), scheme + ': each card draws its own theme');
+    assert.deepEqual(swatchVars(one, scheme), [['--color-bg', one.color[scheme].bg], ['--color-accent', one.color[scheme].accent]]);
+  }
 });
 
 test('the default palette is offered on any element that asks for it, in both schemes', () => {

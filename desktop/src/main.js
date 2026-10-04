@@ -1836,6 +1836,77 @@ async function runSmoke(w) {
     themeHost.close();
   }
 
+  // The picker lists EVERY held theme and previews each in its own colours (issue 186). Two more themes are pasted
+  // with no name, so both arrive as "Imported theme": with the earlier three that is five held themes, and the two
+  // that share a name must be two cards, not one replacing the other. Each card is read against the server's own list,
+  // in light and dark, before and after leaving Settings and coming back (a fresh page, which drew every card in the
+  // default palette before), at desktop width and at a phone's.
+  const pasteUnnamed = async (light, dark) => {
+    const count = ((await held())['appearance.themes'] || []).length;
+    await waitFor("!document.querySelector('app-settings').busy", 10000);
+    const css = ':root { --primary: ' + light[0] + '; --background: ' + light[1] + '; --card: ' + light[1] + '; } .dark { --primary: ' + dark[0] + '; --background: ' + dark[1] + '; --card: ' + dark[1] + '; }';
+    await js(`(() => { const s = document.querySelector('app-settings'); const n = s.querySelector('.theme-import-name'); n.value = ''; n.dispatchEvent(new Event('input', { bubbles: true })); const t = s.querySelector('.theme-import-text'); t.value = ${JSON.stringify(css)}; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await waitFor("!document.querySelector('app-settings .theme-import-action').disabled");
+    await js("document.querySelector('app-settings .theme-import-action').click()");
+    for (let i = 0; i < 50 && ((await held())['appearance.themes'] || []).length === count; i += 1) await pause(200);
+  };
+  await pasteUnnamed(['#0f766e', '#ecfdf5'], ['#5eead4', '#04201c']);
+  await pasteUnnamed(['#9d174d', '#fdf2f8'], ['#f9a8d4', '#2a0a18']);
+  const pickerThemes = (await held())['appearance.themes'] || [];
+  // What the page draws, read against what the server holds: the cards in order, and each card's background and
+  // accent swatches as the page resolves them, next to the theme's own colour resolved the same way.
+  const pickerRead = (scheme) => js(`(() => {
+    const themes = ${JSON.stringify(pickerThemes)};
+    const probe = document.createElement('span');
+    document.body.append(probe);
+    const resolve = (v) => { probe.style.backgroundColor = ''; probe.style.backgroundColor = v; return getComputedStyle(probe).backgroundColor; };
+    const cards = [...document.querySelectorAll('app-settings .theme-card')].map((c) => {
+      const t = themes.find((x) => x.id === c.dataset.themeId);
+      const sw = (token) => getComputedStyle(c.querySelector('.theme-swatch[data-token="' + token + '"]')).backgroundColor;
+      const own = t && t.color && t.color[${JSON.stringify(scheme)}];
+      return { id: c.dataset.themeId, name: c.querySelector('.theme-card-name').textContent.trim(), bg: sw('bg'), accent: sw('accent'), wantBg: own && own.bg ? resolve(own.bg) : null, wantAccent: own && own.accent ? resolve(own.accent) : null };
+    });
+    probe.remove();
+    return cards;
+  })()`);
+  const pickerOk = (cards) => cards.map((c) => c.id).join('|') === ['default', ...pickerThemes.map((t) => t.id)].join('|')
+    && cards.every((c) => c.id === 'default' || ((c.wantAccent === null || c.accent === c.wantAccent) && (c.wantBg === null || c.bg === c.wantBg)))
+    && new Set(cards.map((c) => c.bg + ' ' + c.accent)).size === cards.length;
+  const reopenSettings = async () => {
+    await js("document.querySelector('app-settings .sheet-back').click()");
+    await waitFor("!document.querySelector('.sheet')", 10000);
+    await js("document.querySelector('.sidebar-head .gear-button').click()");
+    await waitFor("document.querySelectorAll('app-settings .theme-card').length > 0 && !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running')", 10000);
+    await pause(300);
+  };
+  const showPicker = () => js("(() => { document.querySelector('app-settings .theme-grid').scrollIntoView({ block: 'start' }); return true; })()");
+  const picker = {};
+  for (const skin of ['light', 'dark']) {
+    await clickSkin(skin);
+    await waitFor(`document.documentElement.dataset.scheme === ${JSON.stringify(skin)}`, 10000);
+    await pause(300);
+    const before = await pickerRead(skin);
+    await reopenSettings();
+    const after = await pickerRead(skin);
+    await showPicker();
+    await pause(200);
+    await shot('05e-theme-picker-' + skin + '.png');
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    await waitFor('window.innerWidth === 390', 5000);
+    await pause(300);
+    const phone = await pickerRead(skin);
+    await showPicker();
+    await pause(200);
+    await shot('05f-theme-picker-phone-' + skin + '.png');
+    await cdp('Emulation.clearDeviceMetricsOverride', {});
+    await waitFor('window.innerWidth > 390', 5000);
+    picker[skin] = { before: pickerOk(before), after: pickerOk(after), phone: pickerOk(phone), cards: after };
+  }
+  report.themePicker = pickerThemes.length >= 5 && new Set(pickerThemes.map((t) => t.id)).size === pickerThemes.length && Object.values(picker).every((p) => p.before && p.after && p.phone);
+  console.log('theme picker: ' + JSON.stringify({ held: pickerThemes.map((t) => t.id), picker }));
+  await putSettings({ 'appearance.theme': null });
+  await waitFor("document.querySelector('app-settings .theme-card[data-theme-id=\"default\"]')?.getAttribute('aria-checked') === 'true'", 10000);
+
   // Notices: an update state raises a native notice over the same bridge the message notices use, and a type the
   // server has switched off raises none. The shell records every notice it is asked to show.
   smokeNotices.length = 0;
