@@ -22,6 +22,7 @@ var engine = (() => {
   var engine_exports = {};
   __export(engine_exports, {
     ABOUT_ORDER: () => ABOUT_ORDER,
+    ACTION_STATES: () => ACTION_STATES,
     APP_ICONS: () => APP_ICONS,
     APP_ICON_KEY: () => APP_ICON_KEY,
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
@@ -91,6 +92,9 @@ var engine = (() => {
     aboutModel: () => aboutModel,
     aboutRows: () => aboutRows,
     aboutUpdate: () => aboutUpdate,
+    actionLabel: () => actionLabel,
+    actionLabels: () => actionLabels,
+    actionStateOf: () => actionStateOf,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
     addTerm: () => addTerm,
@@ -863,6 +867,20 @@ var engine = (() => {
     section("Server", reportRows(spec, "server", serverReport || {}));
     lines.push("", "Compare", "  " + commitState(report, serverReport).text);
     return lines.join("\n") + "\n";
+  }
+
+  // core/kit/rules/button.js
+  var ACTION_STATES = ["idle", "pending", "success", "failure"];
+  function actionLabel(labels = {}, state) {
+    const idle = labels.idle || "";
+    if (state === "idle") return idle;
+    return labels[state] || idle;
+  }
+  function actionLabels(labels = {}) {
+    return ACTION_STATES.map((state) => ({ state, text: actionLabel(labels, state) }));
+  }
+  function actionStateOf(press) {
+    return ACTION_STATES.includes(press) ? press : "idle";
   }
 
   // core/app/rules/build-spec.js
