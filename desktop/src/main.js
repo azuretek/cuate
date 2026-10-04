@@ -20,6 +20,7 @@ import { renderIcon } from '../../core/app/rules/icon.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
+import { runRegionProbe } from './region-probe.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
@@ -2823,7 +2824,8 @@ function createWindow() {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     // The sheet's event history, kept from every load so a failure can say whether a departure started (smoke-failure.js).
     win.webContents.on('did-finish-load', () => { win.webContents.executeJavaScript(smokeTraceInstaller(), true).catch(() => {}); });
-    (process.env.SMOKE_DESIGN ? runDesign(win, { nativeTheme, out: SMOKE, core: CORE, serverUrl: process.env.SMOKE_SERVER_URL, token: process.env.SMOKE_TOKEN, themeText: readFileSync(process.env.SMOKE_THEME_FIXTURE, 'utf8'), app }) : runSmoke(win)).catch(async (e) => {
+    const smokeRun = process.env.SMOKE_PROBE ? runRegionProbe(win, { out: SMOKE }) : process.env.SMOKE_DESIGN ? runDesign(win, { nativeTheme, out: SMOKE, core: CORE, serverUrl: process.env.SMOKE_SERVER_URL, token: process.env.SMOKE_TOKEN, themeText: readFileSync(process.env.SMOKE_THEME_FIXTURE, 'utf8'), app }) : runSmoke(win);
+    smokeRun.then((result) => { if (process.env.SMOKE_PROBE) app.exit(result ? 0 : 1); }).catch(async (e) => {
       console.error('smoke failed: ' + (e && e.message));
       // Retain what the renderer held when the step failed, bounded and sanitized, so a stuck surface is
       // read from evidence rather than guessed. It runs only on the failure path and never rethrows.
