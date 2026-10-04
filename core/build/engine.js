@@ -39,6 +39,7 @@ var engine = (() => {
     ICON_MASTERS: () => ICON_MASTERS,
     ICON_TOKENS: () => ICON_TOKENS,
     INSTALL: () => INSTALL,
+    LETTER_OTHER: () => LETTER_OTHER,
     LEVELS: () => LEVELS,
     MANUAL: () => MANUAL,
     MAX_THEMES: () => MAX_THEMES,
@@ -111,6 +112,7 @@ var engine = (() => {
     buildNumberOf: () => buildNumberOf,
     canTarget: () => canTarget,
     capability: () => capability,
+    caretX: () => caretX,
     channelOf: () => channelOf,
     chatPreview: () => chatPreview,
     chatTitle: () => chatTitle,
@@ -186,6 +188,7 @@ var engine = (() => {
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
+    listSections: () => listSections,
     localAttachment: () => localAttachment,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
@@ -736,6 +739,17 @@ var engine = (() => {
     if (!armed || !event || event.isTrusted !== true) return false;
     const dt = event.timeStamp - armed.at;
     return Number.isFinite(dt) && Math.abs(dt) <= SWALLOW_MS;
+  }
+
+  // core/kit/rules/popover.js
+  var INSET = 6;
+  function caretX(anchor, box, align = "center") {
+    if (!anchor || !box || !(box.width > 0)) return null;
+    if (anchor.right <= box.left || anchor.left >= box.right) return null;
+    const raw = align === "start" ? anchor.left + INSET : align === "end" ? anchor.right - INSET : anchor.left + anchor.width / 2;
+    const min = Math.min(INSET, box.width / 2);
+    const max = Math.max(box.width - INSET, box.width / 2);
+    return Math.round(Math.min(Math.max(raw - box.left, min), max));
   }
 
   // core/kit/rules/build.js
@@ -1475,6 +1489,36 @@ var engine = (() => {
       (g && byGroup.has(g) ? byGroup.get(g) : ungrouped).push(c);
     }
     return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: "Ungrouped", chats: ungrouped }];
+  }
+  var LETTER_OTHER = "#";
+  var sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  function dayName(at, now) {
+    const d = new Date(at);
+    const today = new Date(now);
+    if (sameDay(d, today)) return "Today";
+    const yesterday = new Date(now);
+    yesterday.setDate(today.getDate() - 1);
+    return sameDay(d, yesterday) ? "Yesterday" : "Earlier";
+  }
+  function letterName(chat) {
+    const ch = [...chatTitle(chat).trim()][0] || "";
+    return /\p{L}/u.test(ch) ? ch.toLocaleUpperCase() : LETTER_OTHER;
+  }
+  function listSections(chats, { sort = "recent", now = 0 } = {}) {
+    const grouping = normalizeSort(sort) === "recent" ? "day" : "letter";
+    const sections = [];
+    const byName2 = /* @__PURE__ */ new Map();
+    for (const c of chats) {
+      const name = grouping === "day" ? dayName(c.lastMessageAt, now) : letterName(c);
+      let s = byName2.get(name);
+      if (!s) {
+        s = { id: "sort:" + name, name, chats: [], sortSection: true };
+        byName2.set(name, s);
+        sections.push(s);
+      }
+      s.chats.push(c);
+    }
+    return sections;
   }
   function defaultGroupName(groups = []) {
     const taken = new Set(groups.map((g) => g.name));

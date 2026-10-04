@@ -133,6 +133,41 @@ export function groupSections(chats, { groups = [], placement = {} } = {}) {
   return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: 'Ungrouped', chats: ungrouped }];
 }
 
+// The list's sections follow the sort in force (issue 217): newest first by day (Today, Yesterday, Earlier), or by
+// the first letter of the name for the name sorts, both read off the order the sort already produced, so the sections
+// come out in that order and changing the sort regroups the list rather than only reordering it.
+export const LETTER_OTHER = '#';
+
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+function dayName(at, now) {
+  const d = new Date(at);
+  const today = new Date(now);
+  if (sameDay(d, today)) return 'Today';
+  const yesterday = new Date(now);
+  yesterday.setDate(today.getDate() - 1);
+  return sameDay(d, yesterday) ? 'Yesterday' : 'Earlier';
+}
+
+function letterName(chat) {
+  const ch = [...chatTitle(chat).trim()][0] || '';
+  return /\p{L}/u.test(ch) ? ch.toLocaleUpperCase() : LETTER_OTHER;
+}
+
+// A list that lands in one section draws as plain rows, so a small list gets no more than the dividers between them.
+export function listSections(chats, { sort = 'recent', now = 0 } = {}) {
+  const grouping = normalizeSort(sort) === 'recent' ? 'day' : 'letter';
+  const sections = [];
+  const byName = new Map();
+  for (const c of chats) {
+    const name = grouping === 'day' ? dayName(c.lastMessageAt, now) : letterName(c);
+    let s = byName.get(name);
+    if (!s) { s = { id: 'sort:' + name, name, chats: [], sortSection: true }; byName.set(name, s); sections.push(s); }
+    s.chats.push(c);
+  }
+  return sections;
+}
+
 // A group made without a name takes the first "Group N" not already in use, so two unnamed groups never read alike.
 export function defaultGroupName(groups = []) {
   const taken = new Set(groups.map((g) => g.name));

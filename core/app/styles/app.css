@@ -83,10 +83,9 @@ app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 .chat-row:hover { background: var(--role-row-hover); color: var(--role-row-hover-fg); }
 .chat-row:hover .chat-time, .chat-row:hover .chat-preview { color: var(--role-row-hover-fg); }
 .chat-row:active { background: var(--role-row-press); }
-.chat-row:not(:last-child)::after { content: ''; position: absolute; inset-inline: calc(var(--space-3) * 2 + var(--size-avatar)) var(--space-3); bottom: 0; height: var(--size-border); background: var(--role-row-divider); pointer-events: none; }
-.chat-row:hover::after, .chat-row.selected::after, .chat-row:has(+ .chat-row:hover)::after, .chat-row:has(+ .chat-row.selected)::after { opacity: 0; }
+.chat-row:not(:last-child)::after { content: ''; position: absolute; inset-inline: 0; bottom: 0; height: var(--size-border); background: var(--role-row-divider); pointer-events: none; }
 .chat-row:focus-visible { box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
-.chat-row.selected { background: var(--role-row-selected); color: var(--role-row-selected-fg); box-shadow: inset var(--space-1) 0 0 var(--role-row-selected-bar); }
+.chat-row.selected { background: var(--role-row-selected); color: var(--role-row-selected-fg); }
 .chat-row.selected .chat-time, .chat-row.selected .chat-preview { color: var(--role-row-selected-muted); }
 .avatar { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); display: grid; place-items: center; background: var(--role-avatar); color: var(--role-avatar-fg); font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); }
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -448,9 +447,12 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
    field takes the rest, and the box takes the accent while either has focus. */
 .search-box { flex: 1; display: flex; align-items: stretch; min-width: 0; background: var(--role-search); color: var(--role-search-fg); border: var(--size-border) solid var(--role-search-border); border-radius: var(--radius-sm); overflow: hidden; }
 .search-box:focus-within { border-color: var(--color-accent); }
-.search-mode { flex: none; border: 0; border-right: var(--size-border) solid var(--role-search-border); background: var(--color-bg-sunken); color: var(--role-search-fg); font: inherit; font-size: var(--font-size-xs); padding: 0 var(--space-1); cursor: pointer; }
+.search-mode-button { flex: none; display: inline-flex; align-items: center; justify-content: center; border: 0; border-right: var(--size-border) solid var(--role-search-border); background: none; color: var(--role-head-icon); padding: 0 var(--space-1); cursor: pointer; -webkit-app-region: no-drag; }
+.search-mode-button:hover { background: var(--role-head-icon-hover); color: var(--role-head-icon-hover-fg); }
+.search-mode-button[aria-expanded="true"] { background: var(--role-head-icon-open); color: var(--role-head-icon-open-fg); }
+.search-mode-button:focus-visible { outline: var(--size-border) solid var(--role-focus); outline-offset: calc(-1 * var(--size-border)); }
 .chat-search { flex: 1; min-width: 0; border: 0; background: none; color: var(--role-search-fg); padding: var(--space-1) var(--space-2); }
-.chat-search:focus, .search-mode:focus { outline: none; }
+.chat-search:focus { outline: none; }
 /* Each committed term is a chip: its own mode, its text and its own remove control, padded from the tokens and
    wrapping onto as many lines as the terms need. */
 .search-terms { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-3); flex: none; }
@@ -489,7 +491,7 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    them out of the drag region so a click still acts. */
 .sidebar-head, .conv-head { -webkit-app-region: drag; }
 .chat-search, .filter-button, .gear-button, .conv-back, .window-controls, .window-control { -webkit-app-region: no-drag; }
-.search-box, .search-mode, .sort-button { -webkit-app-region: no-drag; }
+.search-box, .search-mode-button, .sort-button { -webkit-app-region: no-drag; }
 /* macOS pushes the header content below the traffic lights, keeping the surface to the top edge. */
 .app-window[data-platform="darwin"] .sidebar-head,
 .app-window[data-platform="darwin"] .conv-head { height: calc(var(--size-header) + var(--size-window-strip)); padding-block-start: var(--size-window-strip); }
@@ -559,8 +561,21 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
 .sort-choice[aria-checked="true"] { color: var(--role-menu-checked); font-weight: var(--font-weight-bold); }
 .sort-choice:hover[aria-checked="true"] { color: var(--role-menu-hover-fg); }
 .sort-choice-note { color: var(--role-menu-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); }
+.search-choice { display: flex; flex-direction: column; }
 .sort-check { display: inline-block; width: var(--space-3); }
 .sort-check .icon { width: var(--space-3); height: var(--space-3); }
+/* The one caret a popover wears (issue 217): a small triangle on the edge facing the control that opened it, so the
+   menu reads as belonging to that control. Every popover carries data-popover and the edge it sits on
+   (data-popover-edge); the kit's aimCarets() reads the control from the same dismiss pair the popover already uses and
+   sets --caret-x, so a new menu gets its caret for free. Two triangles layer, the outer the menu's border colour and
+   the inner the menu's own fill, so the caret carries the menu's border. */
+[data-popover]::before,
+[data-popover]::after { content: ''; position: absolute; left: var(--caret-x, 50%); width: 0; height: 0; transform: translateX(-50%); pointer-events: none; border-left: calc(var(--size-caret) / 2) solid transparent; border-right: calc(var(--size-caret) / 2) solid transparent; }
+[data-popover][data-popover-edge="top"]::before { top: calc(var(--size-caret) * -0.7); border-bottom: calc(var(--size-caret) * 0.7) solid var(--role-menu-border); }
+[data-popover][data-popover-edge="top"]::after { top: calc(var(--size-caret) * -0.7 + var(--size-border)); border-bottom: calc(var(--size-caret) * 0.7 - var(--size-border) * 2) solid var(--role-menu); border-left-width: calc(var(--size-caret) / 2 - var(--size-border)); border-right-width: calc(var(--size-caret) / 2 - var(--size-border)); }
+[data-popover][data-popover-edge="bottom"]::before { bottom: calc(var(--size-caret) * -0.7); border-top: calc(var(--size-caret) * 0.7) solid var(--role-menu-border); }
+[data-popover][data-popover-edge="bottom"]::after { bottom: calc(var(--size-caret) * -0.7 + var(--size-border)); border-top: calc(var(--size-caret) * 0.7 - var(--size-border) * 2) solid var(--role-menu); border-left-width: calc(var(--size-caret) / 2 - var(--size-border)); border-right-width: calc(var(--size-caret) / 2 - var(--size-border)); }
+
 
 /* Edit is a small text control, not an icon (issue 137): a rounded highlight on hover and, while edit mode is on, a
    steady one, so it reads as pressed. In edit mode each row carries a checkbox and the row holds the actions. */

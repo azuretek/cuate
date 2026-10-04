@@ -37,6 +37,7 @@
   --size-spinner: 28px;
   --size-dot: 10px;
   --size-border: 1px;
+  --size-caret: 10px;
   --size-onboarding: 420px;
   --size-sheet-max: 90vh;
   --size-drawer: min(86vw, 320px);
