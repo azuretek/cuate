@@ -118,14 +118,14 @@ test('every fixed palette is the Flor de muerto masters coloured through the one
   assert.ok(alternates, 'the iOS project ships the alternate icons');
   assert.match(read('ios/project.yml'), /ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS:\s*YES/);
   const named = alternates[1].split(/\s+/).filter(Boolean).sort();
-  assert.deepEqual(named, icons.icons.filter((i) => i.id !== FOLLOW_THEME).map((i) => 'AppIcon-' + i.id).sort());
+  assert.deepEqual(named, icons.icons.filter((i) => i.colors).map((i) => 'AppIcon-' + i.id).sort(), 'every fixed choice ships an iOS alternate set');
   const launcherColours = read(res + 'values/app_icons.xml');
   for (const icon of icons.icons) {
     const alias = aliases.find((a) => a.includes('android:name=".AppIcon_' + icon.id + '"'));
     assert.ok(alias, icon.id + ' has its Android launcher alias');
     assert.match(alias, /android:targetActivity="\.MainActivity"/);
     assert.match(alias, /category\.LAUNCHER/);
-    assert.ok(alias.includes('android:enabled="' + (icon.id === FOLLOW_THEME) + '"'), icon.id + ': only Follow theme launches a fresh install');
+    assert.ok(alias.includes('android:enabled="' + (icon.id === icons.default) + '"'), icon.id + ': only the default choice launches a fresh install');
     if (icon.id === FOLLOW_THEME) {
       // A phone cannot recolour an installed icon, so Follow theme there is the store icon, drawn in the default theme.
       assert.equal(icon.colors, undefined, 'Follow theme carries no colours of its own');
