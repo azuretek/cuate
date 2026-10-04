@@ -5,7 +5,7 @@ import { keepScroll } from '../../kit/scroll.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
 import { chatTitle, initials } from '../rules/chats.js';
-import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, replyQuote, messageActions, threadIds, threadRoot, threadMarks, threadLinks, replyCountLabel } from '../rules/messages.js';
+import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { formatSeparator } from '../rules/time.js';
 import { typingLabel } from '../rules/typing.js';
 import { windowControlsHtml } from './window-controls.js';
@@ -30,24 +30,6 @@ function marksOf(messages) {
   }
   return marks;
 }
-
-// The lines between a thread's messages (issue 214), worked out once per list the same way.
-const linkCache = new WeakMap();
-function linksOf(messages) {
-  const list = messages || [];
-  let links = linkCache.get(list);
-  if (!links) {
-    links = threadLinks(list);
-    linkCache.set(list, links);
-  }
-  return links;
-}
-
-const SVG = 'http://www.w3.org/2000/svg';
-const px = (value, fallback) => {
-  const n = parseFloat(value);
-  return Number.isFinite(n) ? n : fallback;
-};
 
 class AppConversation extends KitElement {
   static properties = {
@@ -95,8 +77,6 @@ class AppConversation extends KitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     clearTimeout(this.pressTimer);
-    this.linkSizes?.disconnect();
-    this.linkSizes = null;
   }
 
   // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
@@ -116,80 +96,8 @@ class AppConversation extends KitElement {
 
   updated(changed) {
     if (changed.has('pop')) this.placePop();
-    this.placeLinks();
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
     aimCarets(this);
-  }
-
-  // Each thread line runs between the two bubbles it links and is attached to both (issue 214): out of the side of the
-  // message it leaves, down the list's margin on that side (in its lane, so overlapping lines stay apart), and across
-  // the answer's own row into the answer's near edge. Laid out from where the bubbles are drawn, so it is placed after
-  // every render and again whenever a linked row changes size (a picture loading, a resize, a new text size).
-  placeLinks() {
-    const list = this.querySelector('.messages');
-    const lines = list ? [...list.querySelectorAll(':scope > .thread-line')] : [];
-    if (typeof ResizeObserver === 'function' && !this.linkSizes && lines.length) this.linkSizes = new ResizeObserver(() => this.placeLinks());
-    if (!lines.length) return;
-    const box = list.getBoundingClientRect();
-    const style = getComputedStyle(list);
-    const padStart = px(style.paddingLeft, 16);
-    const padEnd = px(style.paddingRight, 16);
-    const width = list.clientWidth;
-    const rows = new Map([...list.querySelectorAll(':scope > .bubble-row')].map((r) => [r.dataset.id, r]));
-    for (const line of lines) {
-      const a = rows.get(line.dataset.from);
-      const b = rows.get(line.dataset.to);
-      const ab = a && a.querySelector('.bubble-body');
-      const bb = b && b.querySelector('.bubble-body');
-      if (!ab || !bb) { line.hidden = true; continue; }
-      line.hidden = false;
-      this.linkSizes?.observe(a);
-      this.linkSizes?.observe(b);
-      const look = getComputedStyle(line);
-      const gap = px(look.getPropertyValue('--thread-gap'), 6);
-      const step = px(look.getPropertyValue('--thread-lane'), 4);
-      const radius = px(look.getPropertyValue('--thread-radius'), 6);
-      const reach = px(look.getPropertyValue('--thread-reach'), 12);
-      const ra = ab.getBoundingClientRect();
-      const rb = bb.getBoundingClientRect();
-      const top = (r) => r.top - box.top + list.scrollTop;
-      const start = line.dataset.side === 'theirs';
-      const lane = Number(line.dataset.lane) || 0;
-      // Your side is the end of the row and theirs the start, so a line on their side runs down the start margin.
-      const ax = start ? ra.left - box.left : ra.right - box.left;
-      const gx = start ? Math.max(1, padStart - gap - lane * step) : Math.min(width - 1, width - padEnd + gap + lane * step);
-      const bx = start ? rb.left - box.left : rb.right - box.left;
-      const ay = top(ra) + ra.height - Math.min(ra.height / 2, reach);
-      const by = top(rb) + Math.min(rb.height / 2, reach);
-      const r = Math.max(0, Math.min(radius, (by - ay) / 2, Math.abs(ax - gx), Math.abs(bx - gx)));
-      const dir = start ? 1 : -1;
-      const x0 = Math.min(ax, gx, bx) - 2;
-      const y0 = ay - 2;
-      const w = Math.max(ax, gx, bx) - x0 + 2;
-      const h = by - ay + 4;
-      const d = ['M', ax - x0, ay - y0, 'H', gx + dir * r - x0, 'Q', gx - x0, ay - y0, gx - x0, ay + r - y0, 'V', by - r - y0, 'Q', gx - x0, by - y0, gx + dir * r - x0, by - y0, 'H', bx - x0].join(' ');
-      Object.assign(line.style, { left: x0 + 'px', top: y0 + 'px', width: w + 'px', height: h + 'px' });
-      let svg = line.firstElementChild;
-      if (!svg) {
-        svg = document.createElementNS(SVG, 'svg');
-        svg.setAttribute('aria-hidden', 'true');
-        for (const kind of ['hit', 'stroke']) {
-          const path = document.createElementNS(SVG, 'path');
-          path.setAttribute('class', kind);
-          svg.append(path);
-        }
-        line.append(svg);
-      }
-      svg.setAttribute('width', String(w));
-      svg.setAttribute('height', String(h));
-      svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-      for (const path of svg.children) path.setAttribute('d', d);
-    }
-  }
-
-  // The lines between the messages of every thread in the list, each one opening its thread (issue 214).
-  links() {
-    return linksOf(this.messages).map((l) => html`<button type="button" class="thread-line" data-from=${l.from} data-to=${l.to} data-side=${l.side} data-lane=${l.lane} data-thread=${l.root} aria-label="Open the thread" title="Open the thread" @click=${press(() => this.openThread({ id: l.to }))}></button>`);
   }
 
   // A menu or panel opens above its message, and below it when the list has no room above (the first messages), so
@@ -311,31 +219,30 @@ class AppConversation extends KitElement {
     return this.replyingTo ? 'Reply' : 'Message';
   }
 
-  // Above the run of replies that holds a thread's newest reply, the thread's original as a small outlined ghost on its
-  // own side, with the reply count under it; either opens the thread (issue 195). Nothing for any other message.
-  ghost(m) {
+  // A message that has replies is marked once and clearly (issue 208): one quiet line under it reading the reply count,
+  // which opens the thread. The count is the replies present in the conversation, worked out from the stored pointer
+  // alone; a message with no replies, and every reply itself, draws nothing here.
+  threadSummary(m) {
     const mark = marksOf(this.messages).get(m.id);
-    if (!mark || !mark.ghost) return nothing;
-    const original = (this.messages || []).find((x) => x.id === mark.root) || null;
-    const q = replyQuote(this.messages, { replyTo: mark.root });
-    const side = original && original.fromMe ? 'mine' : 'theirs';
+    if (!mark || !mark.replies) return nothing;
     const open = () => this.openThread(m);
-    return html`<div class=${'thread-ghost-row ' + side} data-thread=${mark.root}>
-      <button type="button" class="thread-ghost" aria-label=${'Original message' + (q.who ? ' from ' + q.who : '') + ': ' + q.text + '. Open the thread'} @click=${press(open)}>${q.text}</button>
-      <button type="button" class="thread-count" @click=${press(open)}>${replyCountLabel(mark.ghost.count)}</button>
+    return html`<div class=${'thread-replies ' + (m.fromMe ? 'mine' : 'theirs')} data-thread=${m.id}>
+      <button type="button" class="thread-count" aria-label=${replyCountLabel(mark.replies) + '. Open the thread'} @click=${press(open)}><span class="icon" data-icon="reply" aria-hidden="true"></span>${replyCountLabel(mark.replies)}</button>
     </div>`;
   }
 
   // where is 'list' for the conversation and 'thread' for the open thread. Only the surface in front draws a menu. In the
-  // conversation tapping a reply opens its thread, and every other message carries nothing (issue 195); the lines
-  // between a thread's messages are drawn over the list by links() (issue 214).
+  // conversation a reply opens its thread when pressed, the message it answers carries the reply count (threadSummary),
+  // and every other message carries nothing: no line is drawn between two messages, so no pairing is implied that the
+  // stored pointer does not support (issue 208).
   bubble(it, lastMine, sms, where = 'list') {
     const m = it.message;
     const mine = m.fromMe;
     const front = where === 'thread' || !this.replyingTo;
     const targeted = this.reactFor === m.id;
     const mark = where === 'list' ? marksOf(this.messages).get(m.id) || null : null;
-    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', mark ? 'thread-reply' : ''].filter(Boolean).join(' ');
+    const isReply = Boolean(mark && mark.root);
+    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', isReply ? 'thread-reply' : ''].filter(Boolean).join(' ');
     const kind = mine ? (sms ? 'sms' : 'me') : 'them';
     const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
     const own = myReaction(m);
@@ -343,12 +250,12 @@ class AppConversation extends KitElement {
     const busy = this.reacting === m.id;
     const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
     const note = this.note && this.note.id === m.id ? this.note.text : '';
-    return html`<div class=${row} data-id=${m.id} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
+    return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
-        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${mark ? () => this.openThread(m) : nothing}>${m.text}</div>` : nothing}
+        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${m.text}</div>` : nothing}
         ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
@@ -389,8 +296,7 @@ class AppConversation extends KitElement {
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
-          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.ghost(it.message), this.bubble(it, lastMine, sms, 'list')]))}
-          ${this.links()}
+          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, sms, 'list'), this.threadSummary(it.message)]))}
         </div>
         ${thread ? this.threadView(sms) : nothing}
       </div>

@@ -293,8 +293,8 @@ var engine = (() => {
     themeName: () => themeName,
     themeVars: () => themeVars,
     threadIds: () => threadIds,
-    threadLinks: () => threadLinks,
     threadMarks: () => threadMarks,
+    threadPath: () => threadPath,
     threadRoot: () => threadRoot,
     toBase64: () => toBase64,
     toHex: () => toHex,
@@ -1860,55 +1860,29 @@ var engine = (() => {
   function threadMarks(messages) {
     const list = messages || [];
     const byId = new Map(list.map((m) => [m.id, m]));
-    const rootOf = (id) => rootIn(byId, id);
-    const threads = /* @__PURE__ */ new Map();
-    for (const m of list) {
-      if (!m.replyTo) continue;
-      const root = rootOf(m.id);
-      if (root === m.id) continue;
-      if (!threads.has(root)) threads.set(root, []);
-      threads.get(root).push(m.id);
-    }
     const marks = /* @__PURE__ */ new Map();
-    const at = new Map(list.map((m, i) => [m.id, i]));
-    for (const [root, replies] of threads) {
-      let i = at.get(replies[replies.length - 1]);
-      while (i > 0 && list[i - 1].replyTo && rootOf(list[i - 1].id) === root) i -= 1;
-      const first = list[i].id;
-      for (const id of replies) marks.set(id, { root, ghost: id === first ? { root, count: replies.length } : null });
-    }
-    return marks;
-  }
-  function threadLinks(messages) {
-    const list = messages || [];
-    const byId = new Map(list.map((m) => [m.id, m]));
-    const at = new Map(list.map((m, i) => [m.id, i]));
-    const members = /* @__PURE__ */ new Map();
+    const replies = /* @__PURE__ */ new Map();
     for (const m of list) {
       if (!m.replyTo) continue;
       const root = rootIn(byId, m.id);
       if (root === m.id) continue;
-      if (!members.has(root)) members.set(root, byId.has(root) ? [byId.get(root)] : []);
-      members.get(root).push(m);
+      marks.set(m.id, { root });
+      replies.set(root, (replies.get(root) || 0) + 1);
     }
-    const links = [];
-    for (const [root, thread] of members) {
-      for (let k = 1; k < thread.length; k += 1) {
-        const a = thread[k - 1];
-        const b = thread[k];
-        if (Boolean(a.fromMe) === Boolean(b.fromMe)) continue;
-        links.push({ root, from: a.id, to: b.id, side: a.fromMe ? "mine" : "theirs", start: at.get(a.id), end: at.get(b.id) });
-      }
+    for (const [root, count] of replies) if (byId.has(root)) marks.set(root, { ...marks.get(root) || {}, replies: count });
+    return marks;
+  }
+  function threadPath(messages, id) {
+    const byId = new Map((messages || []).map((m) => [m.id, m]));
+    const path = [];
+    const seen = /* @__PURE__ */ new Set();
+    let at = id;
+    while (at && !seen.has(at)) {
+      seen.add(at);
+      path.push(at);
+      at = byId.has(at) ? byId.get(at).replyTo : null;
     }
-    links.sort((x, y) => x.start - y.start || x.end - y.end);
-    const lanes = { mine: [], theirs: [] };
-    return links.map(({ start, end, ...link }) => {
-      const ends = lanes[link.side];
-      let lane = ends.findIndex((e) => e < start);
-      if (lane < 0) lane = ends.length;
-      ends[lane] = end;
-      return { ...link, lane };
-    });
+    return path;
   }
   function replyCountLabel(count) {
     return count + (count === 1 ? " Reply" : " Replies");
