@@ -2349,6 +2349,9 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   await pause(200);
   // Check for updates runs the tray's own check, and its answer is the app notice; a run with no updater says why.
+  // The width differs from the phone check above, so the sheet's resting place is read again here: noticeSeen holds the
+  // sheet to where it was just before the notice appeared.
+  await js("window.__sheetTop = document.querySelector('.sheet') && document.querySelector('.sheet').getBoundingClientRect().top");
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutCheckNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
