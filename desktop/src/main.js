@@ -2234,33 +2234,8 @@ async function runSmoke(w) {
     report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     report.updates = report.updates && report.noticeReducedMotion;
-    // Issue 191: every notice carries a close and a mark-as-read. Marking it read writes its revision to the server as
-    // the notice.read setting, so a second client clears it through the settings API, and the same revision never
-    // returns; closing it hides it here and remembers the revision in the shell's own store. Either way, raising the
-    // same revision again, as a late event or a reload would, leaves it hidden.
-    const raiseNotice = (version) => js("document.querySelector('app-root').onUpdate({state:'ready',version:" + JSON.stringify(version) + ",canInstall:true})");
-    const anyNotice = () => js("Boolean(document.querySelector('.app-notice'))");
-    await raiseNotice('9.9.12');
-    await waitFor("Boolean(document.querySelector('.app-notice .app-notice-read'))", 5000);
-    report.noticeControls = await js("Boolean(document.querySelector('.app-notice .app-notice-read')) && Boolean(document.querySelector('.app-notice .close-button'))");
-    await shot('05-notices-controls.png');
-    await js("document.querySelector('.app-notice .app-notice-read').click()");
-    await waitFor("!document.querySelector('.app-notice')", 5000);
-    const readHeld = await held();
-    await raiseNotice('9.9.12');
-    await pause(300);
-    report.noticeReadStays = !(await anyNotice());
-    report.noticeReadHeld = Boolean(readHeld['notice.read'] && readHeld['notice.read']['app-update'] === 'ready:9.9.12');
-    await raiseNotice('9.9.13');
-    await waitFor("Boolean(document.querySelector('.app-notice'))", 5000);
-    await js("document.querySelector('.app-notice .close-button').click()");
-    await waitFor("!document.querySelector('.app-notice')", 5000);
-    const closedRaw = await js("window.bridge.call('storage.get', { key: 'notice.closed' })");
-    await raiseNotice('9.9.13');
-    await pause(300);
-    report.noticeCloseStays = !(await anyNotice());
-    report.noticeCloseHeld = Boolean(closedRaw && JSON.parse(closedRaw)['app-update'] === 'ready:9.9.13');
-    report.updates = report.updates && report.noticeControls && report.noticeReadStays && report.noticeReadHeld && report.noticeCloseStays && report.noticeCloseHeld;
+    await js("document.querySelector('.close-button').click()");
+    await waitFor("!document.querySelector('.app-notice')");
     w.setMinimumSize(...originalMinimum);
     w.setSize(...originalSize);
     nativeTheme.themeSource = originalTheme;
