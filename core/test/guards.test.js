@@ -299,7 +299,35 @@ test('every icon a component draws is one the icon set holds, and no control dra
     for (const m of src.matchAll(/data-icon="([^"]+)"/g)) { used.add(m[1]); assert.ok(glyphs[m[1]], f + ' draws ' + m[1] + ', which the set does not hold'); }
     assert.equal(/>[\u2190\u2191\u2193\u270e\u2715\u2261\u21c5\u2699\u2713]</.exec(src.replace(/class="send"[^>]*>\\u2191/, '')), null, f + ' draws an icon as a text glyph');
   }
-  for (const name of ['list-filter', 'arrow-up-down', 'settings', 'check', 'arrow-left', 'x', 'chevron-up', 'chevron-down', 'pencil']) assert.ok(used.has(name), name + ' is drawn');
+  for (const name of ['list-filter', 'arrow-up-down', 'settings', 'check', 'arrow-left', 'x', 'chevron-up', 'chevron-down', 'pencil', 'paperclip', 'smile-plus']) assert.ok(used.has(name), name + ' is drawn');
+});
+
+// The composer's attach and emoji controls are compact icon buttons, and the attach control opens the shell's own
+// picker with no menu of ours (issue 187). The filter it hands the picker is the attach rule's token, empty, so the
+// platform's own picker decides (a phone asks for a photo, a video, the camera or a document; a desktop opens its file
+// dialog) and we keep no type menu. The emoji control still opens the app's own panel, which a system picker cannot
+// serve, and it draws the icon set's smiley, never an emoji character.
+test('the composer is compact icon buttons, and attach opens the system picker with no menu of ours (issue 187)', () => {
+  const tokens = json('core/spec/tokens.json');
+  assert.equal(typeof tokens.size.tool, 'string', 'the tool buttons are sized from a token');
+  assert.ok(tokens.icons.glyphs.paperclip, 'the attach control draws the icon set paperclip');
+  assert.ok(tokens.icons.glyphs['smile-plus'], 'the emoji control draws the icon set smile-plus');
+  const src = read('core/app/components/app-composer.js');
+  assert.ok(/data-icon="paperclip"/.test(src), 'the attach control draws the paperclip glyph');
+  assert.ok(/data-icon="smile-plus"/.test(src), 'the emoji control draws the smiley glyph, not an emoji character');
+  assert.equal(/attach-menu|ATTACH_ACTIONS|toggleAttach/.test(src), false, 'the type menu and the code behind it are gone');
+  assert.match(src, /aria-label="Attach"[^>]*@click=\$\{press\(\(\) => this\.openAttach\(\)\)\}/, 'the attach control opens the picker on one press');
+  assert.match(src, /input\.accept = ATTACH_ACCEPT;/, 'the control hands the picker the attach rule filter');
+  assert.match(src, /input\.click\(\);/, 'the control opens the picker itself');
+  assert.equal(/aria-haspopup="menu"/.test(src), false, 'the attach control opens no menu of ours');
+  assert.equal(/\u{1F642}/.test(src), false, 'no emoji character is drawn as the emoji icon');
+  assert.match(src, /aria-label="Emoji" aria-haspopup="dialog"/, 'the emoji control still opens the app panel');
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = /\.tool\s*\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the tool rule exists');
+  assert.match(rule[1], /width:\s*var\(--size-tool\)/, 'the control width comes from the token');
+  assert.match(rule[1], /height:\s*var\(--size-tool\)/, 'the control height comes from the token');
+  assert.equal(/\.attach-menu/.test(css), false, 'the menu styles are gone');
 });
 
 // Every close (X) control is the one shared control (issue 213). Only core/app/components/close-button.js draws a
@@ -455,18 +483,17 @@ test('every menu, popover and picker wears the shared caret', () => {
       assert.ok(/data-popover-edge/.test(tag), f + ': a popover whose caret has no side (no data-popover-edge): ' + tag.slice(0, 100));
     }
   }
-  assert.ok(found >= 6, 'the guard found the popovers: ' + found);
+  assert.ok(found >= 5, 'the guard found the popovers: ' + found);
   const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
   assert.match(css, /\[data-popover\]::before\b/, 'the one caret is drawn from data-popover');
-  // Every surface that opens a popover, the emoji panel and the attachment menu named with the rest, aims its caret
-  // through the kit rule. A surface added without the caret marks, or without an aimCarets() call, fails here.
+  // Every surface that opens a popover, the emoji panel named with the rest, aims its caret through the kit rule. A
+  // surface added without the caret marks, or without an aimCarets() call, fails here.
   const surfaces = [
     ['the chats sort menu', 'core/app/components/app-root.js', 'sort-menu'],
     ['the filter menu', 'core/app/components/app-root.js', 'filter-menu'],
     ['the search-mode menu', 'core/app/components/app-root.js', 'search-menu'],
     ["the conversation's message menu", 'core/app/components/app-conversation.js', 'message-pop'],
     ['the emoji panel', 'core/app/components/app-emoji-picker.js', 'emoji-picker'],
-    ['the attachment menu', 'core/app/components/app-composer.js', 'attach-menu'],
   ];
   for (const [label, f, cls] of surfaces) {
     assert.match(read(f), new RegExp('class="[^"]*' + cls + '[^"]*"[^>]*data-popover'), label + ' opens without the shared caret');

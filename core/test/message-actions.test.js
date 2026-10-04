@@ -134,10 +134,9 @@ test('React opens the composer\'s own emoji panel, and the emoji picked there is
   assert.equal(h.pop, null, 'the menu closes');
   assert.equal(h.reactFor, m.id);
   // The composer opens its panel for the reaction, the one it draws for typing.
-  const c = { emojiOpen: false, attachOpen: true, reactFor: m.id, staged: null, stageProblem: '', replyTo: null, frequent: [], preview: '', disabled: false, placeholder: '' };
+  const c = { emojiOpen: false, reactFor: m.id, staged: null, stageProblem: '', replyTo: null, frequent: [], preview: '', disabled: false, placeholder: '' };
   composer.willUpdate.call(c, new Map([['reactFor', null]]));
   assert.equal(c.emojiOpen, true);
-  assert.equal(c.attachOpen, false);
   const markup = words(composer.render.call(c));
   assert.equal((markup.match(/<app-emoji-picker/g) || []).length, 1, 'the one emoji panel');
   // A pick in that panel is the reaction, not text in the field.
@@ -160,7 +159,7 @@ test('React opens the composer\'s own emoji panel, and the emoji picked there is
 
 test('closing the panel without a pick ends the reaction, and the panel opened from the composer still types', () => {
   const sent = [];
-  const c = { emojiOpen: true, attachOpen: false, reactFor: 'FAKE-0001', field: () => null, closeEmoji: composer.closeEmoji, dispatchEvent: (ev) => sent.push(ev.type) };
+  const c = { emojiOpen: true, reactFor: 'FAKE-0001', field: () => null, closeEmoji: composer.closeEmoji, dispatchEvent: (ev) => sent.push(ev.type) };
   composer.toggleEmoji.call(c);
   assert.equal(c.emojiOpen, false);
   assert.deepEqual(sent, ['react-cancel']);

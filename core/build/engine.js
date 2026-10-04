@@ -24,7 +24,7 @@ var engine = (() => {
     ABOUT_ORDER: () => ABOUT_ORDER,
     APP_ICONS: () => APP_ICONS,
     APP_ICON_KEY: () => APP_ICON_KEY,
-    ATTACH_ACTIONS: () => ATTACH_ACTIONS,
+    ATTACH_ACCEPT: () => ATTACH_ACCEPT,
     BADGE_APART: () => BADGE_APART,
     BADGE_TEXT_FLOOR: () => BADGE_TEXT_FLOOR,
     BUILD_SPEC: () => BUILD_SPEC,
@@ -1120,10 +1120,7 @@ var engine = (() => {
   }
 
   // core/app/rules/attach.js
-  var ATTACH_ACTIONS = [
-    { id: "media", label: "Photo or video", accept: "image/*,video/*" },
-    { id: "file", label: "File", accept: "" }
-  ];
+  var ATTACH_ACCEPT = "";
   var UNITS = ["B", "KB", "MB", "GB"];
   function sizeLabel(bytes) {
     let n = Math.max(0, Number(bytes) || 0);
