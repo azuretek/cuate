@@ -25,7 +25,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // bridge: 'ready', or 'down' to answer the bridge-only calls (a tapback, a reply) the way imsg does with no bridge.
   // features: the rpc_features the fake's status advertises, so a test can model an engine that sends an arbitrary
   // emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', features };
+  // replyAnswer: 'own' answers a send with the guid of the row it created (what Messages does); 'existing' models the
+  // bridge's reply path, which has answered a threaded reply with the id of an existing message in the chat (issue 208),
+  // so a test can prove the server does not report that message as the one it created.
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', features, replyAnswer: 'own' };
   const tapbacks = [];
   const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
@@ -44,6 +47,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     sends,
     tapbacks,
     behavior,
+    messages,
     requests: [],
     get attempts() { return attempts; },
     incoming(chatId, text, sender) {
@@ -146,13 +150,17 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (!p.text && !p.file) return fail(req.id, -32602, 'send needs text or a file.', { retry_safe: true, disposition: 'not_started', transport: 'applescript', operation: 'send', detail: '' });
             if (p.reply_to && behavior.bridge !== 'ready') return noBridge(req.id);
             const file = p.file ? [{ filename: path.basename(p.file), transfer_name: path.basename(p.file), mime_type: 'application/octet-stream', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] : [];
-            // As Messages records it: reply_to_guid names the chat's previous message on every row, and only a reply
-            // carries thread_originator_guid, the message it was sent to (issue 195).
+            // As Messages records it: reply_to_guid names the chat's previous message on every row, and a reply carries
+            // thread_originator_guid with the part of the original it answers and no associated type at all, which is the
+            // shape Messages itself writes for a threaded reply (issues 195 and 208).
             const prev = [...messages].reverse().find((x) => x.chat_id === p.chat_id && !x.is_reaction);
             const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(prev ? { reply_to_guid: prev.guid } : {}), ...(p.reply_to ? { thread_originator_guid: p.reply_to, thread_originator_part: '0:0:0' } : {}) });
             sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null, replyTo: p.reply_to || null });
-            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: m.guid }), behavior.sendDelayMs).unref();
-            else reply(req.id, { ok: true, id: m.id, guid: m.guid });
+            // The answer names the row the engine created, unless the test asks it to model the bridge's reply path and
+            // hand back an existing message's id instead (issue 208).
+            const answerGuid = p.reply_to && behavior.replyAnswer === 'existing' ? String(p.reply_to) : m.guid;
+            if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: answerGuid }), behavior.sendDelayMs).unref();
+            else reply(req.id, { ok: true, id: m.id, guid: answerGuid });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }
