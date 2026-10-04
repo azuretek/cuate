@@ -2246,8 +2246,7 @@ async function runSmoke(w) {
     await shot('05-notices-controls.png');
     await js("document.querySelector('.app-notice .app-notice-read').click()");
     await waitFor("!document.querySelector('.app-notice')", 5000);
-    let readHeld = {};
-    for (let i = 0; i < 50 && !(readHeld['notice.read'] && readHeld['notice.read']['app-update'] === 'ready:9.9.12'); i += 1) { await pause(100); readHeld = await held(); }
+    const readHeld = await held();
     await raiseNotice('9.9.12');
     await pause(300);
     report.noticeReadStays = !(await anyNotice());
@@ -2256,13 +2255,11 @@ async function runSmoke(w) {
     await waitFor("Boolean(document.querySelector('.app-notice'))", 5000);
     await js("document.querySelector('.app-notice .close-button').click()");
     await waitFor("!document.querySelector('.app-notice')", 5000);
-    const closedHolds = (raw) => { try { return Boolean(raw) && JSON.parse(raw)['app-update'] === 'ready:9.9.13'; } catch { return false; } };
-    let closedRaw = null;
-    for (let i = 0; i < 50 && !closedHolds(closedRaw); i += 1) { await pause(100); closedRaw = await js("window.bridge.call('storage.get', { key: 'notice.closed' })"); }
+    const closedRaw = await js("window.bridge.call('storage.get', { key: 'notice.closed' })");
     await raiseNotice('9.9.13');
     await pause(300);
     report.noticeCloseStays = !(await anyNotice());
-    report.noticeCloseHeld = closedHolds(closedRaw);
+    report.noticeCloseHeld = Boolean(closedRaw && JSON.parse(closedRaw)['app-update'] === 'ready:9.9.13');
     report.updates = report.updates && report.noticeControls && report.noticeReadStays && report.noticeReadHeld && report.noticeCloseStays && report.noticeCloseHeld;
     w.setMinimumSize(...originalMinimum);
     w.setSize(...originalSize);
