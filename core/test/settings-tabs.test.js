@@ -270,12 +270,35 @@ test('text size is a slider that lands only on the schema stops and announces th
   assert.match(slider[0], /aria-label=\$\{field\.label\}/, 'it is named for its setting');
   assert.match(slider[0], /aria-valuetext=\$\{[^}]*percent[^}]*\}/, 'a screen reader hears the percentage, not the index');
   assert.match(slider[0], /<output class="scale-value"/, 'the percentage in force is written beside it');
-  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSlide\(e, field, stops\)\}/, 'a move writes the setting as it is made, the live preview');
+  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSliderMove\(e, field, stops\)\}/, 'a move paints the reading (the commit is on release, issue 253)');
   const size = settingsFields().find((f) => f.key === 'appearance.textScale');
   assert.deepEqual(size.options, TEXT_SCALES, 'the stops are the schema\'s percentages');
   assert.match(read('core/app/styles/app.css'), /\.scale-range \{[^}]*accent-color: var\(--color-accent\)/, 'the track takes the theme accent');
 });
 
+// Issue 253: the text size is committed on RELEASE. While the handle is dragged the slider only paints the reading;
+// the setting is written once, on the control's change (a pointer release, a key release) or on Enter, so nothing
+// behind the sheet re-lays-out mid-drag and the app resizes once. The commit is smoothed where motion is allowed.
+test('the text size slider commits on release, so the app resizes once', () => {
+  const settings = read('core/app/components/app-settings.js');
+  const slider = /<div class="scale-slider[\s\S]*?<\/div>`/.exec(settings);
+  assert.ok(slider, 'the page draws the text size slider');
+  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSliderMove\(e, field, stops\)\}/, 'a drag paints the reading only');
+  assert.match(slider[0], /@change=\$\{\(e\) => this\.onSliderCommit\(e, field, stops\)\}/, 'a release commits the size');
+  assert.match(slider[0], /@keydown=\$\{\(e\) => this\.onSliderKey\(e, field, stops\)\}/, 'Enter commits too');
+  const move = /onSliderMove\(e, field, stops\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(move, 'the move handler is drawn');
+  assert.doesNotMatch(move[0], /this\.fire\(/, 'the move never writes the setting, so nothing re-lays-out mid-drag');
+  const commit = /onSliderCommit\(e, field, stops\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(commit, 'the commit handler is drawn');
+  assert.match(commit[0], /this\.fire\('setting', \{ key: field\.key, value: stops\[at\] \}\)/, 'the commit writes the stop exactly once');
+  assert.match(settings, /onSliderKey\(e, field, stops\) \{[\s\S]*?e\.key !== 'Enter'[\s\S]*?this\.onSliderCommit\(e, field, stops\)/, 'Enter is the keyboard release');
+  // The commit is smoothed where the design allows it; reduced motion keeps the hard cut.
+  const css = read('core/app/styles/app.css');
+  assert.match(css, /@property --font-size-md \{ syntax: '<length>'; inherits: true; initial-value: 0; \}/, 'the type sizes are registered so they can transition');
+  assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{\n {2}:root \{\n {4}transition: --font-size-xs/, 'the sizes fade only where motion is allowed');
+  assert.equal((css.match(/transition: --font-size-xs/g) || []).length, 1, 'one place smooths the sizes, under the motion query');
+});
 // Issue 244: the tabs read as a strip on the body they open, not loose pills floating above it.
 test('Settings tabs read as a strip on the panel they open', () => {
   const css = read('core/app/styles/app.css');

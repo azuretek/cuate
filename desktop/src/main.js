@@ -10,7 +10,7 @@ import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
 import { contrastRatio } from '../../core/app/rules/theme.js';
-import { settingsTabs } from '../../core/app/rules/settings.js';
+import { settingsTabs, settingsFields } from '../../core/app/rules/settings.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
@@ -2830,6 +2830,56 @@ async function runSmoke(w) {
   await pause(300);
   report.closeControls = Object.keys(closeControlChecks).length === closeSurfaces.length * 5 && Boolean(viewerSrc) && Object.values(closeControlChecks).every(Boolean);
   console.log('close controls: ' + JSON.stringify(closeControlChecks));
+
+  // Issue 253: the text size is committed on RELEASE, so nothing behind the sheet re-lays-out mid-drag, and EVERY stop
+  // the schema offers has to hold the design. Walk every stop at desktop width and at 390, in light and dark, in the
+  // default theme and the imported one, capturing each and probing the conversation for the ways a large size breaks
+  // it: anything running past the window, a control whose target is under 36px, a header that has grown taller, and a
+  // scroll area with content behind it. The findings are RECORDED per stop, never hidden by a smaller ceiling: 300 is
+  // under test and the ceiling is Abi's to choose.
+  await js("(() => { const r = document.querySelector('app-root'); if (r.sheetShowing) r.closeView(); if (r.listOpen && r.openChatId) r.listOpen = false; return true; })()");
+  await waitFor("!document.querySelector('.sheet')", 8000).catch(() => {});
+  await pause(300);
+  const textStops = settingsFields().find((f) => f.key === 'appearance.textScale').options.map(Number);
+  const setScale = async (percent) => {
+    await js("document.querySelector('app-root').setSetting({ key: 'appearance.textScale', value: " + percent + " })");
+    await waitFor("Number(document.querySelector('app-root').settings['appearance.textScale']) === " + percent, 8000);
+    await pause(300);
+  };
+  const setTheme = async (value) => {
+    await js("document.querySelector('app-root').setSetting({ key: 'appearance.theme', value: " + JSON.stringify(value) + " })");
+    await pause(350);
+  };
+  const textProbe = "(() => { const vw = innerWidth; const doc = document.documentElement; const seen = (el) => { const r = el.getBoundingClientRect(); return r.width > 1 && r.height > 1; }; const over = []; const small = []; const cut = []; for (const el of document.querySelectorAll('.app-body *')) { if (!seen(el)) continue; const r = el.getBoundingClientRect(); if (r.right > vw + 1 || r.left < -1) { const c = String(el.className || el.tagName).slice(0, 50); if (!over.includes(c)) over.push(c); } } for (const el of document.querySelectorAll('.app-body button, .app-body select, .app-body a[href]')) { if (!seen(el)) continue; const r = el.getBoundingClientRect(); if (r.width < 36 || r.height < 36) { const c = ((el.getAttribute('aria-label') || String(el.className || el.tagName)).slice(0, 40)) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height); if (!small.includes(c)) small.push(c); } } for (const el of document.querySelectorAll('.app-body *')) { if (el.clientHeight > 0 && el.scrollHeight - el.clientHeight > 2 && getComputedStyle(el).overflowY !== 'visible') { const c = String(el.className || el.tagName).slice(0, 40); if (!cut.includes(c)) cut.push(c); } } const head = document.querySelector('.conv-head, .sidebar-head'); return JSON.stringify({ overflowX: doc.scrollWidth - vw, over: over.slice(0, 8), small: small.slice(0, 8), scrollAreas: cut.slice(0, 8), headH: head ? Math.round(head.getBoundingClientRect().height) : 0 }); })()";
+  report.textStops = {};
+  for (const percent of textStops) {
+    await setScale(percent);
+    const row = {};
+    for (const theme of ['default', 'imported']) {
+      await setTheme(theme === 'imported' ? imported : null);
+      for (const scheme of ['light', 'dark']) {
+        nativeTheme.themeSource = scheme;
+        await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+        await pause(320);
+        row[theme + '-' + scheme + '-desktop'] = JSON.parse(await js(textProbe));
+        await shot('text-' + percent + '-' + theme + '-desktop-' + scheme + '.png');
+        await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+        await waitFor('window.innerWidth === 390', 5000);
+        await pause(320);
+        row[theme + '-' + scheme + '-phone'] = JSON.parse(await js(textProbe));
+        await shot('text-' + percent + '-' + theme + '-phone-' + scheme + '.png');
+      }
+    }
+    report.textStops[percent] = row;
+  }
+  // Put the app back where the rest of the smoke found it: the default theme, 100%, light.
+  await setTheme(null);
+  await setScale(100);
+  nativeTheme.themeSource = 'light';
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  await pause(300);
+  report.textSizeFindings = textStops.map((p) => p + ':' + (Object.values(report.textStops[p]).some((v) => v.overflowX > 1) ? 'overflow' : 'ok') + (Object.values(report.textStops[p]).some((v) => v.over.length) ? '+past' : '') + (Object.values(report.textStops[p]).some((v) => v.small.length) ? '+small' : '')).join('|');
+  console.log('text size findings: ' + report.textSizeFindings);
 
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");

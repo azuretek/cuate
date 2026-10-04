@@ -421,6 +421,20 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .scale-slider { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .scale-range { flex: 1 1 auto; min-width: 0; accent-color: var(--color-accent); }
 .scale-value { flex: none; text-align: right; color: var(--color-fg); font-variant-numeric: tabular-nums; }
+/* The text size is committed on release (issue 253), so the app resizes ONCE. Where the design allows it the five
+   type sizes the scale drives fade to the new size rather than jumping; registering them as lengths is what lets a
+   custom property transition at all, and prefers-reduced-motion keeps the hard cut, as does a browser without
+   @property. Nothing here changes what a size IS, only how it arrives. */
+@property --font-size-xs { syntax: '<length>'; inherits: true; initial-value: 0; }
+@property --font-size-sm { syntax: '<length>'; inherits: true; initial-value: 0; }
+@property --font-size-md { syntax: '<length>'; inherits: true; initial-value: 0; }
+@property --font-size-lg { syntax: '<length>'; inherits: true; initial-value: 0; }
+@property --font-size-xl { syntax: '<length>'; inherits: true; initial-value: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    transition: --font-size-xs var(--motion-normal) var(--motion-ease), --font-size-sm var(--motion-normal) var(--motion-ease), --font-size-md var(--motion-normal) var(--motion-ease), --font-size-lg var(--motion-normal) var(--motion-ease), --font-size-xl var(--motion-normal) var(--motion-ease);
+  }
+}
 /* The theme picker: a grid of cards, each drawn in its own theme's colours (set on the card by the component). */
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--size-avatar) * 3), 1fr)); gap: var(--space-2); }
 .theme-card { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); cursor: pointer; font: inherit; text-align: left; min-width: 0; }

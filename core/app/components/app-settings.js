@@ -121,16 +121,35 @@ class AppSettings extends KitElement {
     if (field) this.fire('setting', { key: field.key, value: coerceSetting(field, e.currentTarget.checked) });
   }
 
-  // A slider move writes the stop the thumb lands on and paints the reading beside it at once, so the size is shown as
-  // it changes (the live preview). The control's own value is an index into the schema's stops, so no move can land
-  // between two of them; the stop's percentage is what the setting carries, unchanged from the chips it replaces.
-  onSlide(e, field, stops) {
+  // A slider MOVE (input) only paints the reading and the snap position while the handle is dragged: it does NOT write
+  // the setting, so nothing behind the sheet re-lays-out mid-drag (issue 253). The control's own value is an index
+  // into the schema's stops, so no move can land between two of them; the stop's percentage is what the setting
+  // carries, unchanged from the chips it replaces.
+  onSliderMove(e, field, stops) {
     const at = Math.max(0, Math.min(stops.length - 1, Number(e.currentTarget.value)));
-    const value = stops[at];
-    e.currentTarget.setAttribute('aria-valuetext', value + ' percent');
-    const out = e.currentTarget.parentElement.querySelector('.scale-value');
+    this.paintSlider(e.currentTarget, field, stops[at]);
+  }
+
+  // The COMMIT: a pointer release and a key release both land as the control's change event, and Enter commits too, so
+  // the value is applied once on release and the app resizes once. Only here is the setting written.
+  onSliderCommit(e, field, stops) {
+    const at = Math.max(0, Math.min(stops.length - 1, Number(e.currentTarget.value)));
+    this.paintSlider(e.currentTarget, field, stops[at]);
+    this.fire('setting', { key: field.key, value: stops[at] });
+  }
+
+  onSliderKey(e, field, stops) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    this.onSliderCommit(e, field, stops);
+  }
+
+  // The reading beside the slider and the percentage a screen reader announces, drawn from the position the thumb is
+  // at. Shared by the move and the commit, so what the drag shows and what it lands on always agree.
+  paintSlider(input, field, value) {
+    input.setAttribute('aria-valuetext', value + ' percent');
+    const out = input.parentElement.querySelector('.scale-value');
     if (out) { out.textContent = optionLabel(field, value); out.dataset.value = String(value); }
-    this.fire('setting', { key: field.key, value });
   }
 
   // Every handler here is an arrow that closes over THIS page, never a bare method reference: the template this
@@ -172,7 +191,9 @@ class AppSettings extends KitElement {
       return html`<div class="scale-slider setting-control-wide" data-key=${field.key}>
         <input type="range" class="scale-range" min="0" max=${stops.length - 1} step="1" .value=${String(at)} list=${listId}
           aria-label=${field.label} aria-valuetext=${stops[at] + ' percent'} ?disabled=${disabled}
-          @input=${(e) => this.onSlide(e, field, stops)}>
+          @input=${(e) => this.onSliderMove(e, field, stops)}
+          @change=${(e) => this.onSliderCommit(e, field, stops)}
+          @keydown=${(e) => this.onSliderKey(e, field, stops)}>
         <datalist id=${listId}>${stops.map((o, i) => html`<option value=${String(i)} label=${optionLabel(field, o)}></option>`)}</datalist>
         <output class="scale-value" data-value=${String(stops[at])}>${optionLabel(field, stops[at])}</output>
       </div>`;
