@@ -145,6 +145,10 @@ Status words: a rule with no status holds on main today. **Adopted, not yet buil
 - **Fixtures, captures and logs hold synthetic data only**: handles in 555-555-01xx or at example.com, text written in the fixture. Source: #1. Held by: `core/test/fixtures.test.js` "the fixture file holds synthetic inputs only".
 - **No em dash anywhere**, in code, docs or commit messages. Source: #1. Held by: `core/test/guards.test.js` "no em dash anywhere in the repository".
 
+## Instrumentation and evidence
+
+- **Every desktop smoke check states the bound it enforces and the value it measured.** The smoke evaluates the report against a table in `desktop/scripts/smoke.mjs`, one entry per check, and a failing run prints `check <key>: measured <value>, required <bound>` for each check that failed, beside its captures, so a red run says what it read and not only that it failed. A run that passes writes the values it measured to `checks.json` beside the captures. Source: #263. Held by: `desktop/test/smoke-checks.test.js` "a count below its bound fails and reports the number and the bound".
+
 ## Observability and evidence
 
 - **The counters a person reads during a problem are derived from the log stream.** `server/src/diagnostics.js` counts each declared failure or lifecycle event and keeps the most recent error, so a counter cannot disagree with its log line because it is reading it; `GET /api/v1/diagnostics` exposes the build stamp, the engine link, whether the Messages database is readable, the sending switch, the counters and the last error. Source: #263. Held by: `server/test/diagnostics.test.js` "each mapped failure event moves its counter, and the successes move nothing".
