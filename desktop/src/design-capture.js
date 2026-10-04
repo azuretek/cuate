@@ -161,6 +161,17 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         await convPane();
         await js(typed);
         await shot(tag('2-conversation'), []);
+        // The plugin payload cases (issue 238), from the fake engine's synthetic fixtures: a payload carrying a title
+        // and a still drawn as a link card, a link-only payload, a payload nothing can parse (which must show no
+        // filename at all), a payload that is media drawn as an attachment, and an ordinary link in the message text
+        // left exactly as it was. Each is scrolled into view and cropped on its own message.
+        for (const [suffix, guid] of [['238a-link-card', 'FAKE-0020'], ['238b-link-only', 'FAKE-0021'], ['238c-unparseable', 'FAKE-0022'], ['238d-payload-media', 'FAKE-0023'], ['238e-ordinary-link', 'FAKE-0024']]) {
+          const sel = '.bubble-row[data-id="' + guid + '"]';
+          if (!(await js('Boolean(document.querySelector(' + JSON.stringify(sel) + '))'))) throw new Error('no payload row ' + guid);
+          await js('(() => { document.querySelector(' + JSON.stringify(sel) + ').scrollIntoView({ block: \'center\' }); return true; })()');
+          await pause(300);
+          await shot(tag(suffix), [], sel);
+        }
         await listPane();
         await js("document.querySelector('.sidebar-head .sort-button').click()");
         await waitFor("Boolean(document.querySelector('.sort-menu:not(.search-menu)'))", 5000);
