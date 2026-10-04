@@ -193,6 +193,23 @@ test('the icon choices read as one grid with the themes, grouped per colour, wit
   assert.match(sheetCss, /\.app-icon-choice\[data-icon-id="theme"\] \.app-icon-follow/);
 });
 
+test('every consumer reads the families the icon spec holds, never the old flat icons array (issue 254)', () => {
+  assert.equal(Object.prototype.hasOwnProperty.call(icons, 'icons'), false, 'the spec holds families and followTheme, not a flat icons array');
+  assert.ok(Array.isArray(icons.families) && icons.followTheme && icons.followTheme.id);
+  const readers = [
+    ['desktop/src/main.js', /appIconSpec\.families/, /appIconSpec\.icons/],
+    ['android/app/src/main/kotlin/com/azuretek/cuate/HostBridge.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
+    ['android/app/src/androidTest/kotlin/com/azuretek/cuate/AppIconTest.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
+    ['android/app/src/androidTest/kotlin/com/azuretek/cuate/SettingsPageTest.kt', /getJSONArray\("families"\)/, /getJSONArray\("icons"\)/],
+    ['ios/Cuate/HostBridge.swift', /object\["families"\]/, /object\["icons"\]/],
+  ];
+  for (const [file, want, old] of readers) {
+    const src = read(file);
+    assert.match(src, want, file + ' reads the spec through families');
+    assert.equal(old.test(src), false, file + ' reads no old flat icons array');
+  }
+});
+
 test('every shell answers app.icon', () => {
   const spec = json('core/spec/host-bridge.json');
   assert.ok(spec.commands['app.icon'], 'the bridge declares app.icon');
