@@ -158,6 +158,10 @@ test('every fixed palette is the Flor de muerto masters coloured through the one
   const orange = icons.icons.find((i) => i.id === 'orange');
   assert.equal(orange.scheme, 'light');
   assert.deepEqual(orange.colors, Object.fromEntries(ICON_TOKENS.map((k) => [k, palette[k]])), 'Orange is the default theme light palette, so the picker, About and every generated asset share the one colour (PR 257)');
+  const drawn = iconPalette(orange.colors, orange.scheme);
+  assert.equal(drawn.glyph, '#ffffff', 'Orange draws the About icon: a white glyph on the terracotta tile (PR 257)');
+  assert.equal(drawn.tile.behind, palette.accent, 'the Orange tile is the terracotta accent, not the picker near-black tile');
+  assert.ok(drawn.tile.top !== drawn.tile.bottom, 'the Orange tile keeps its gradient, lighter at the top');
 });
 
 test('every shell answers app.icon', () => {
