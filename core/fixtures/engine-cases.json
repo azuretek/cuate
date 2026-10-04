@@ -171,6 +171,51 @@
       "expect": "\"AE\""
     },
     {
+      "id": "payload.site",
+      "call": "linkSite",
+      "args": [
+        "https://www.instagram.com/reel/EXAMPLE/?x=1"
+      ],
+      "expect": "\"instagram.com\""
+    },
+    {
+      "id": "payload.summary-link",
+      "call": "messageSummary",
+      "args": [
+        {
+          "text": "",
+          "attachments": [],
+          "link": {
+            "url": "https://www.instagram.com/reel/EXAMPLE/",
+            "site": "instagram.com"
+          },
+          "payloads": 0
+        }
+      ],
+      "expect": "\"instagram.com\""
+    },
+    {
+      "id": "payload.summary-quiet",
+      "call": "messageSummary",
+      "args": [
+        {
+          "text": "",
+          "attachments": [],
+          "link": null,
+          "payloads": 1
+        }
+      ],
+      "expect": "\"Attachment\""
+    },
+    {
+      "id": "payload.is-payload",
+      "call": "isPayloadName",
+      "args": [
+        "ABCD-1234.pluginPayloadAttachment"
+      ],
+      "expect": "true"
+    },
+    {
       "id": "connection.closed",
       "call": "connectionSentence",
       "args": [

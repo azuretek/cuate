@@ -1,6 +1,7 @@
 // The notices the client can raise, and the rule that decides whether each may fire. Pure: the server-held settings
 // decide, and the page draws. One name per type, so a settings key and the code that raises that notice cannot drift.
 import { SETTINGS_SCHEMA, settingValue } from './settings.js';
+import { messageSummary } from './payload.js';
 
 export const NOTICE_TYPES = {
   newMessage: 'notifications.newMessage',
@@ -66,8 +67,9 @@ export function serverUpdateNotice(outcome) {
 }
 
 // The native notice for an incoming message: the chat's title, and the message's own text exactly as it arrived, so
-// an emoji reads in the notice as it does in the conversation. A message with no text names its attachment instead.
+// an emoji reads in the notice as it does in the conversation. A message with no text reads as the link it is, or its
+// attachment, never as a payload's raw name (issue 238).
 export function messageNotice(title, m) {
   const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
-  return { title, body: m.text || (count > 1 ? count + ' attachments' : 'Attachment') };
+  return { title, body: messageSummary(m) || (count > 1 ? count + ' attachments' : 'Attachment') };
 }
