@@ -1,6 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
+import { actionButtonLabels } from '../../kit/button.js';
 import { aboutModel, bugReportBlock } from '../../kit/rules/build.js';
 import { copyToClipboard } from '../clipboard.js';
 import { BUILD_SPEC } from '../rules/build-spec.js';
@@ -115,7 +116,7 @@ class AppAbout extends KitElement {
       <section class="sheet-section" data-section="updates">
         <h3 class="sheet-section-title">Updates</h3>
         <p class="sheet-section-desc">Look for a newer version now. The answer appears as a notice.</p>
-        <button type="button" class="button primary about-check" data-action="check-updates" data-command=${update.command || 'check'} @click=${press(() => this.fire('check-updates', { command: update.command }))}>${update.label}</button>
+        <button type="button" class="button primary action-button about-check" data-action="check-updates" data-command=${update.command || 'check'} @click=${press(() => this.fire('check-updates', { command: update.command }))}>${actionButtonLabels({ idle: update.label, pending: 'Checking\u2026', success: 'Checked', failure: 'Could not check' })}</button>
         ${update.line ? html`<p class="about-update-line" role="status" data-update=${this.release.state}>${update.line}</p>` : nothing}
         ${update.percent !== null ? html`<progress class="about-update-progress" max="1" .value=${update.percent}></progress>` : nothing}
       </section>
