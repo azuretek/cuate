@@ -280,12 +280,13 @@ test('Settings and About arrive on their own edge, and reduced motion drops the 
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ app-settings\[data-motion\], app-about\[data-motion\] \{ animation: none; \} \}/, 'reduced motion is a straight cut');
   assert.match(css, /\.sheet\[data-arrive="down"\]/, 'the Settings sheet arrives from the top');
   assert.match(css, /\.sheet\[data-arrive="up"\]/, 'the About sheet arrives from the bottom');
+  assert.match(css, /app-settings\[data-motion="up"\], app-about\[data-motion="up"\] \{ animation: page-up var\(--motion-sheet-in\) var\(--motion-sheet-ease\)/, 'a page move runs on the sheet arrival duration and curve (issue 253)');
   // The two are distinct surfaces: About has its own header and its own way back to Settings.
   assert.match(read('core/app/components/app-about.js'), /app-sheet \.title=\$\{'About'\}/, 'About draws its own header, not Settings');
   assert.match(read('core/app/components/app-root.js'), /\.backLabel=\$\{this\.aboutFrom === 'settings' \? 'Back to settings' : 'Back to app'\}/, 'About keeps its own way back to Settings');
   const h = host();
   h.openSettings();
-  assert.equal(h.sheetMotion, 'down', 'a fresh Settings sheet arrives sliding down');
+  assert.equal(h.sheetMotion, 'up', 'a fresh Settings sheet rises from the bottom edge (issue 253)');
   h.openAbout();
   assert.equal(h.sheetMotion, null, 'the page switch does not re-slide the sheet');
   assert.equal(h.pageMotion, 'up');

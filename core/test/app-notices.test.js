@@ -67,6 +67,21 @@ test('notice geometry clears safe areas, controls and composer with directional 
   assert.doesNotMatch(css, /.banner.update/);
 });
 
+test('a notice floats above every surface and takes its own press (issue 253)', () => {
+  const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  // The notice is never placed in the flow, so appearing moves nothing under it.
+  assert.doesNotMatch(css, /order:\s*-1/, 'the notices are never placed in the flow as a band');
+  assert.doesNotMatch(css, /app-notices[^}]*position:\s*relative/, 'the stack stays a floating overlay');
+  assert.match(css, /\.app-notice \{[^}]*pointer-events: auto;/, 'the card takes its own press');
+  // A press on a notice is not an outside press for the sheet, so it never dismisses it.
+  const root = readFileSync(new URL('../app/components/app-root.js', import.meta.url), 'utf8');
+  assert.match(root, /<app-notices data-dismiss-keep="sheet"/, 'a press on a notice never dismisses the sheet');
+  // The card body runs its action and nothing else; the close control keeps its own press.
+  const src = readFileSync(new URL('../app/components/app-notices.js', import.meta.url), 'utf8');
+  assert.match(src, /@click=\$\{\(e\) => this\.onCard\(e, n\)\}/, 'the card body is a press');
+  assert.match(src, /closest\('\.close-button'\)/, 'the close control is not the body press');
+});
+
 // Issue 191 (the layering half): a notice draws above every surface (sheets, About, Settings, the thread view, a
 // confirm and the media viewer), so an update notice is always seen, and it never covers the desktop window controls.
 test('the notice stack draws above every other surface and starts below the header and its window controls', () => {

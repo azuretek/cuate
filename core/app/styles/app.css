@@ -320,12 +320,13 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 /* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
 .about-update-line { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .about-update-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
-/* Each page is its own surface with its own motion (issue 244): Settings slides down into place and About slides up
-   into its place, on the screen token and the sheet's curve. Reduced motion keeps the page and drops the travel. */
+/* Each page is its own surface with its own motion (issue 244): About rises from below into its place and Settings
+   returns from above as About's back, both on the sheet's arrival duration and curve so a page move reads as movement
+   rather than an instant swap (issue 253). Reduced motion keeps the page and drops the travel. */
 @keyframes page-down { from { transform: translateY(-100%); } to { transform: translateY(0); } }
 @keyframes page-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
-app-settings[data-motion="down"], app-about[data-motion="down"] { animation: page-down var(--motion-screen) var(--motion-sheet-ease) both; }
-app-settings[data-motion="up"], app-about[data-motion="up"] { animation: page-up var(--motion-screen) var(--motion-sheet-ease) both; }
+app-settings[data-motion="down"], app-about[data-motion="down"] { animation: page-down var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+app-settings[data-motion="up"], app-about[data-motion="up"] { animation: page-up var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 @media (prefers-reduced-motion: reduce) { app-settings[data-motion], app-about[data-motion] { animation: none; } }
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--role-back-border); border-radius: 0; background: var(--role-back); color: var(--role-back-fg); cursor: pointer; text-align: left; flex: none; }
@@ -344,16 +345,18 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .sheet-body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .sheet-section { display: flex; flex-direction: column; min-width: 0; }
 .sheet-section[hidden] { display: none; }
-/* Settings' tabs (issue 167), drawn as a tab strip that belongs to the panel it opens (issue 244). The strip sits on
-   a baseline and wears the sunken surface, the tab in force is filled with the panel's own surface and its bottom edge
-   covered, so it reads as joined to the body below rather than a pill floating over it. The tabs still wrap rather than
-   scroll sideways, so every tab is on screen at a phone's width, and the card keeps the sheet's width as the tabs
-   change, so the card does not jump from one section to the next. */
+/* Settings' tabs (issue 167), drawn as a tab strip that belongs to the panel it opens (issue 244). The strip's band and
+   the tab in force are the PANEL's own surface, so the strip and the body it opens are one colour rather than two greys
+   side by side (issue 253); a tab is told from the band by the edge (the tab in force wears the border and its bottom
+   edge is covered, so it joins the body) and by the fill (an unselected tab is transparent, so it shows the band, while
+   the tab in force is filled). The tabs still wrap rather than scroll sideways, so every tab is on screen at a phone's
+   width, and the card keeps the sheet's width as the tabs change, so the card does not jump from one section to the
+   next. */
 app-settings { width: var(--size-sheet); max-width: 100%; }
-.sheet-nav { flex: none; padding: var(--space-3) var(--space-4) 0; border-bottom: var(--size-border) solid var(--color-border); background: var(--color-bg-sunken); }
+.sheet-nav { flex: none; padding: var(--space-3) var(--space-4) 0; border-bottom: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
 .settings-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: flex-end; }
 .settings-tab { flex: none; margin-bottom: calc(-1 * var(--size-border)); padding: var(--space-2) var(--space-3); border: var(--size-border) solid transparent; border-bottom: 0; border-top-left-radius: var(--radius-md); border-top-right-radius: var(--radius-md); background: none; color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); cursor: pointer; }
-.settings-tab:hover { background: var(--color-bg-raised); color: var(--color-fg); }
+.settings-tab:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
 .settings-tab[aria-selected="true"] { background: var(--color-bg-raised); color: var(--color-fg); border-color: var(--color-border); }
 .settings-tab:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
 /* A group with its own sections (Behavior, issue 244): each is a small block inside the tab's panel, so the notice
@@ -621,14 +624,17 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 /* The card arrives from the edge its page names: Settings from the top (down), About from the bottom (up). */
 .sheet[data-arrive="down"] { animation: sheet-down-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 .sheet[data-arrive="up"] { animation: sheet-up-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
-/* On a phone Settings and About are pages that fill the screen (issue 167), not a card over the app: no backdrop
-   margin, no rounded edge, and the safe areas kept clear of the strip and the last row. The strip at the top is the
-   way back, and a phone has no Escape key to name on it. This block follows the card's own rules, so it wins over them. */
+/* On a phone the sheet keeps the card's own treatment (issue 253): the backdrop's blur and dim over the conversation,
+   the card's edge, rounded top corners and shadow, anchored to the bottom edge, with the safe areas kept clear of the
+   strip and the last row. The strip at the top is the way back, and a phone has no Escape key to name on it. This block
+   follows the card's own rules, so it wins over them. */
 @media (max-width: 640px) {
-  /* The page sits between the system bars, which wear the page's own surface (issue 175), and a focused field scrolls
-     into sight with room to spare above the keyboard. */
-  .sheet-scrim { padding: var(--inset-top) var(--inset-right) var(--inset-bottom) var(--inset-left); background: var(--color-bg-raised); -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .sheet { width: 100%; height: 100%; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+  /* On a phone the sheet is the same floating card the desktop draws (issue 253), not a page that replaces the view: the
+     card is anchored to the bottom edge and rises over the conversation, whose blurred, dimmed backdrop is the sheet's
+     own (.sheet-scrim). Only the system bars keep the card clear, and a focused field scrolls into sight with room to
+     spare above the keyboard. */
+  .sheet-scrim { align-items: flex-end; padding: var(--inset-top) var(--inset-right) calc(var(--inset-bottom) + var(--space-3)) var(--inset-left); }
+  .sheet { width: 100%; max-width: none; max-height: var(--size-sheet-max); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
   .sheet-body { scroll-padding-block: var(--space-4); }
   app-settings { width: auto; }
   .sheet-esc { display: none; }
@@ -637,16 +643,14 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
   .sheet-back[data-narrow] .sheet-back-wide { display: none; }
   .sheet-back[data-narrow] .sheet-back-narrow { display: inline-flex; }
 }
-/* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. Each page
-   leaves back the way it came (issue 244): Settings up, About down. */
+/* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. The sheet leaves
+   back the way it came (issue 253): it rises from the bottom edge whichever page it holds, so it returns to the bottom
+   edge. */
 body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
-body.surface--leaving .sheet[data-view="settings"] { animation: sheet-up-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
-body.surface--leaving .sheet[data-view="about"] { animation: sheet-down-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
-/* Reduced motion keeps the change and drops the travel: the same plain fade Chela uses, arriving over the normal
-   duration and leaving over the fast one, so leaving stays quicker than arriving. */
+body.surface--leaving .sheet { animation: sheet-down-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+/* Reduced motion keeps the change and drops the travel: a straight cut, with no animation at all. */
 @media (prefers-reduced-motion: reduce) {
-  .sheet[data-arrive], .sheet-scrim { animation: surface-scrim-in var(--motion-normal) ease-out both; }
-  body.surface--leaving .sheet[data-view="settings"], body.surface--leaving .sheet[data-view="about"], body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-fast) ease-out both; }
+  .sheet[data-arrive], .sheet-scrim, body.surface--leaving .sheet-scrim, body.surface--leaving .sheet { animation: none; }
 }
 
 /* The sort choices open under the sort icon, drawn as the filter menu is. */
@@ -783,7 +787,7 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 .app-window { position: relative; }
 .app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
-.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-notice); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: inset var(--space-1) 0 0 var(--role-notice-stripe), var(--shadow-md); font-size: var(--font-size-sm); animation: notice-in var(--motion-normal) var(--motion-ease); }
+.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-notice); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: inset var(--space-1) 0 0 var(--role-notice-stripe), var(--shadow-md); font-size: var(--font-size-sm); pointer-events: auto; animation: notice-in var(--motion-normal) var(--motion-ease); }
 .app-notice-body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .app-notice-icon { color: var(--role-notice-icon); flex: none; }
 .app-notice .muted { color: var(--role-notice-muted); }
@@ -798,32 +802,12 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 @keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
-/* While a sheet is up (Settings, About, a confirm, the image viewer) and a notice is showing, the notices take a band of
-   their own above the sheet on every width, as a phone always does: the sheet's backdrop is placed in the body, so it
-   starts below the band, and a card answering a press on the sheet (About's Check for updates, issue 171) never covers
-   the sheet. The band is the backdrop's own dim. With no notice nothing here applies, so the backdrop stays fixed over
-   the whole window. The stack's rule is :where()-wrapped so the phone's own padding below, which holds the safe-area
-   insets, still wins on a phone. */
-.app-window:has(.sheet-scrim):has(.app-notice) .app-body { position: relative; }
-.app-window:has(.sheet-scrim):has(.app-notice) .sheet-scrim { position: absolute; }
-.app-window:has(.sheet-scrim):has(.app-notice) app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-scrim); }
-:where(.app-window:has(.sheet-scrim):has(.app-notice)) .app-notice-stack { margin: 0; padding: var(--space-3) var(--space-4); }
-/* On a phone there is no free corner: a floating card lands on the open drawer's Edit control and its first rows, or on
-   the conversation's header and messages. There the notices take a band of their own at the top of the window and the
-   surfaces start below it, the drawer included (it is placed in the body, not the viewport), so a notice never covers a
-   control with the drawer open or closed. The band holds the card's shadow, and takes no room while it holds no card. */
+/* A notice is a floating card above EVERY surface at every width (issues 191, 253): it is never placed in the flow, so
+   its arrival moves nothing under it, and its stack sits above the sheet's own layer, so a card answering a press on the
+   sheet (About's Check for updates) is always seen and always takes its own press first. Only a card takes a press; the
+   stack around it does not, so the surface behind keeps its gestures everywhere but on a card. */
 @media (max-width: 640px) {
-  .app-body { position: relative; }
-  app-notices, .app-window[data-platform="darwin"] app-notices { position: relative; order: -1; flex: none; top: auto; right: auto; left: auto; background: var(--color-bg); }
-  .app-notice-stack { align-items: stretch; margin: 0; padding: calc(var(--inset-top) + var(--space-3)) calc(var(--inset-right) + var(--space-4)) var(--space-5) calc(var(--inset-left) + var(--space-4)); }
-  /* While the band holds a card it holds the status bar's inset too, so the headers below it drop theirs. */
-  .app-window:has(.app-notice) .sidebar-head,
-  .app-window:has(.app-notice) .conv-head { height: var(--size-header); padding-block-start: calc(var(--space-1) * 0); }
-  .app-window[data-platform="darwin"] .app-notice-stack { padding-top: calc(var(--size-window-strip) + var(--space-3)); }
-  /* On macOS the band then holds the traffic-light strip, so the headers below it drop their own and no gap opens. */
-  .app-window[data-platform="darwin"]:has(.app-notice) .sidebar-head,
-  .app-window[data-platform="darwin"]:has(.app-notice) .conv-head { height: var(--size-header); padding-block-start: calc(var(--space-1) * 0); }
-  .app-notice-stack:not(:has(.app-notice)) { display: none; }
+  .app-notice-stack { align-items: stretch; }
   .app-notice { width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }

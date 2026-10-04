@@ -61,7 +61,8 @@ class AppRoot extends KitElement {
     // showing. view says which page the sheet draws, if any (the conversation, settings or about). aboutFrom says what
     // About was opened from ('settings' when it was pushed over Settings, so its back returns there), and pageMotion
     // how the page on screen arrived inside the sheet ('down' when Settings returns, 'up' when About arrives; null when
-    // the sheet itself arrived). sheetMotion is how the sheet itself arrived ('down' for Settings, 'up' for About).
+    // the sheet itself arrived). sheetMotion is how the sheet itself arrived: 'up' from the bottom edge on every width,
+    // whichever page it holds (issue 253).
     view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true }, sheetMotion: { state: true },
     // The Settings tab on show (issue 167), held here so a push to About and back returns to the tab it left.
     settingsTab: { state: true },
@@ -897,9 +898,10 @@ class AppRoot extends KitElement {
 
   // The sheet runs one page at a time: asking for another while one is up runs the first down and only then brings
   // the next up. The motion and the dim are Chela's own conventions, so a reader who uses both apps sees one design
-  // rather than two; this only sequences.
+  // rather than two; this only sequences. The sheet rises from the bottom edge whichever page it holds (issue 253), and
+  // About's own step above Settings is the page motion inside the sheet (showPage).
   openSheet(next) {
-    if (!this.sheetShowing) { this.view = next; this.sheetMotion = next === 'about' ? 'up' : 'down'; }
+    if (!this.sheetShowing) { this.view = next; this.sheetMotion = 'up'; }
     else if (this.view !== next) { this.pendingSheet = next; this.leaveSheet(); }
   }
 
@@ -1461,7 +1463,7 @@ class AppRoot extends KitElement {
     // controls in the contact header instead (see mainView).
     return html`<div class="app-window" data-platform=${platform}>
       <div class="app-body">${this.body()}</div>
-      <app-notices .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-dismiss=${(e) => { this.appNotices = dismissNotice(this.appNotices, e.detail.id); }}></app-notices>
+      <app-notices data-dismiss-keep="sheet" .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-dismiss=${(e) => { this.appNotices = dismissNotice(this.appNotices, e.detail.id); }}></app-notices>
     </div>`;
   }
 
