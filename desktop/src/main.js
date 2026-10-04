@@ -649,7 +649,7 @@ async function runSmoke(w) {
   await waitFor("!document.querySelector('.sheet') && (document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000);
   await pause(300);
   await shot('04-tray-check-updates.png');
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   w.close();
   await visibleWithin(false);
@@ -867,7 +867,7 @@ async function runSmoke(w) {
       ids: sharp.map((r) => r.dataset.id), sharp: sharp.every((r) => { for (let e = r; e; e = e.parentElement) if (getComputedStyle(e).filter !== 'none') return false; return true; }),
       blurred: getComputedStyle(list).filter.includes('blur'), inert: list.inert, behind: list.querySelectorAll('.bubble-row').length,
       indicator: (c.querySelector('.composer-thread')?.textContent || '').trim(), repeats: c.textContent.includes('See you soon'), banner: Boolean(c.querySelector('.composer-reply')),
-      placeholder: c.querySelector('textarea')?.placeholder || '', close: Boolean(document.querySelector('.conv-head .thread-close')), back: Boolean(document.querySelector('.conv-head .conv-back')),
+      placeholder: c.querySelector('textarea')?.placeholder || '', close: Boolean(document.querySelector('.thread-view .thread-list > .thread-card-head .close-button')) && !document.querySelector('.conv-head .close-button'), back: Boolean(document.querySelector('.conv-head .conv-back')),
       separators: view ? view.querySelectorAll('.separator').length : 0,
       focused: document.activeElement === c.querySelector('textarea'), animation: view ? getComputedStyle(view).animationName : null, labels: document.querySelectorAll('.messages .reply-link').length + [...list.querySelectorAll('.bubble-row')].filter((r) => /Reply to/.test(r.textContent)).length,
     };
@@ -879,7 +879,7 @@ async function runSmoke(w) {
   await startReply();
   const focused = await focusState();
   await both('15-thread-focus');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.conv-body').dataset.thread && !document.querySelector('.thread-view')", 5000);
   await pause(400);
   const cancelled = await focusState();
@@ -892,7 +892,7 @@ async function runSmoke(w) {
   const threadChecks = {
     view: focused.thread === TARGET && focused.ids.join('|') === TARGET && focused.sharp && focused.blurred && focused.inert && focused.behind > 1,
     noBanner: !focused.indicator && focused.placeholder === 'Reply' && !focused.repeats && !focused.banner,
-    header: focused.close && !focused.back && focused.separators === focused.ids.length,
+    header: focused.close && focused.back && focused.separators === focused.ids.length,
     noLabels: focused.labels === 0,
     focused: focused.focused,
     restored: !cancelled.thread && !cancelled.blurred && !cancelled.inert && !cancelled.indicator && cancelled.ids.length === 0 && cancelled.placeholder === 'Message' && !cancelled.close,
@@ -1027,7 +1027,7 @@ async function runSmoke(w) {
   await pause(400);
   const fixtureThread = await focusState();
   await both('16e-fixture-thread');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
   const marksListOpen = await js("document.querySelector('app-root').listOpen");
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
@@ -1043,7 +1043,7 @@ async function runSmoke(w) {
   await pause(400);
   const fixturePhoneThread = await focusState();
   await both('16g-fixture-thread-phone');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
   await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
   await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(marksListOpen)}; return true; })()`);
@@ -1061,7 +1061,7 @@ async function runSmoke(w) {
       && m.ghosts.some((g) => g.root === 'FAKE-0009' && g.side === 'mine' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)')
       && m.ghosts.some((g) => g.root === 'FAKE-0016' && g.side === 'theirs' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)');
   };
-  const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && !t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
+  const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
   const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.ghost.includes('See you soon') && replied.side === 'theirs' && replied.count === '1 Reply' && !replied.line && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
@@ -1117,7 +1117,7 @@ async function runSmoke(w) {
   await js("document.querySelector('app-composer .staged-preview').click()");
   await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image')?.naturalWidth)", 10000);
   const stagedOpens = await js("document.querySelector('app-image-viewer .viewer-image').alt === 'smoke-picture.png'");
-  await js("document.querySelector('app-image-viewer .viewer-close').click()");
+  await js("document.querySelector('app-image-viewer .close-button').click()");
   await waitFor("!document.querySelector('app-image-viewer')", 5000);
   await js("document.querySelector('app-composer .staged-remove').click()");
 
@@ -1239,7 +1239,7 @@ async function runSmoke(w) {
   await pause(200);
   const escapeCloses = !(await viewerOpen());
   await openViewer();
-  await js("document.querySelector('app-image-viewer .viewer-close').click()");
+  await js("document.querySelector('app-image-viewer .close-button').click()");
   await pause(200);
   const closeCloses = !(await viewerOpen());
   await openViewer();
@@ -1981,7 +1981,7 @@ async function runSmoke(w) {
   const floorMs = Number.parseFloat(await js("getComputedStyle(document.documentElement).getPropertyValue('--motion-min-visible')"));
   report.noticeFloor = Number.isFinite(floorMs) && floorMs > 0 && Date.now() - checkSeen >= floorMs / 2;
   smokeCalls.length = 0;
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await pause(300);
   report.updateBannerCleared = await js("!document.querySelector('.app-notice')") && smokeCalls.length === 0;
   // The same update event updates one card and its progress node, without replaying arrival.
@@ -1990,7 +1990,7 @@ async function runSmoke(w) {
   await js("window.noticeProofNode = document.querySelector('.app-notice-progress'); document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.8,canInstall:true})");
   await waitFor("document.querySelector('.app-notice-progress')?.value === 0.8");
   report.noticeInPlace = await js("window.noticeProofNode === document.querySelector('.app-notice-progress') && document.querySelectorAll('.app-notice').length === 1");
-  await js("document.querySelector('.app-notice-dismiss').click()");
+  await js("document.querySelector('.close-button').click()");
   await waitFor("!document.querySelector('.app-notice')");
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.9,canInstall:true})");
   report.noticeDismissed = await js("!document.querySelector('.app-notice')");
@@ -2122,7 +2122,7 @@ async function runSmoke(w) {
     report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     report.updates = report.updates && report.noticeReducedMotion;
-    await js("document.querySelector('.app-notice-dismiss').click()");
+    await js("document.querySelector('.close-button').click()");
     await waitFor("!document.querySelector('.app-notice')");
     w.setMinimumSize(...originalMinimum);
     w.setSize(...originalSize);
@@ -2210,7 +2210,7 @@ async function runSmoke(w) {
   // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
   // centre, so the sheet does not cover it; and the sheet starts below the notice's band, on a phone and on the
   // desktop alike, so the card covers no part of the sheet.
-  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.app-notice-dismiss'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.app-notice-dismiss') && sheet && document.querySelector('app-about') && sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom); })()";
+  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.close-button'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.close-button') && sheet && document.querySelector('app-about') && sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom); })()";
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutPhoneNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
@@ -2220,7 +2220,7 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06h-about-phone-notice-dark.png');
   nativeTheme.themeSource = 'light';
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(300);
@@ -2245,12 +2245,12 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06f-about-check-notice-dark.png');
   nativeTheme.themeSource = 'light';
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   // A second press after the notice was dismissed is a new question, so its answer shows again.
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutCheckAgain = await waitFor("(document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000).then(() => true, () => false);
-  await js("document.querySelector('.app-notice .app-notice-dismiss').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')", 5000);
   // The client's own build and the server's, in chela's order, each value copyable, the links, and the one action that
   // copies the lot.
@@ -2333,11 +2333,11 @@ async function runSmoke(w) {
   await js(`document.querySelector(${JSON.stringify(phoneRow + ' .message-action[aria-label="Reply in thread"]')}).click()`);
   await waitFor("Boolean(document.querySelector('.conv-body')?.dataset.thread) && Boolean(document.querySelector('.thread-view .bubble-row'))", 10000);
   await pause(400);
-  const phoneThread = await js("(() => { const list = document.querySelector('.messages'); return { ids: [...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id), blurred: getComputedStyle(list).filter.includes('blur'), placeholder: document.querySelector('app-composer textarea')?.placeholder || '', close: Boolean(document.querySelector('.conv-head .thread-close')), back: Boolean(document.querySelector('.conv-head .conv-back')) }; })()");
+  const phoneThread = await js("(() => { const list = document.querySelector('.messages'); return { ids: [...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id), blurred: getComputedStyle(list).filter.includes('blur'), placeholder: document.querySelector('app-composer textarea')?.placeholder || '', close: Boolean(document.querySelector('.thread-view .thread-list > .thread-card-head .close-button')) && !document.querySelector('.conv-head .close-button'), back: Boolean(document.querySelector('.conv-head .conv-back')) }; })()");
   await phoneBoth('08c-phone-thread-focus');
-  await js("document.querySelector('.conv-head .thread-close').click()");
+  await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
-  report.phoneMessageMenu = phoneMenu.labels.join('|') === 'Reply in thread|React' && Boolean(phoneMenu.time) && phoneMenu.inView && phoneThread.ids[0] === 'FAKE-0013' && phoneThread.ids.length === 2 && phoneThread.blurred && phoneThread.placeholder === 'Reply' && phoneThread.close && !phoneThread.back;
+  report.phoneMessageMenu = phoneMenu.labels.join('|') === 'Reply in thread|React' && Boolean(phoneMenu.time) && phoneMenu.inView && phoneThread.ids[0] === 'FAKE-0013' && phoneThread.ids.length === 2 && phoneThread.blurred && phoneThread.placeholder === 'Reply' && phoneThread.close && phoneThread.back;
   console.log('phone message menu: ' + JSON.stringify({ phoneMenu, phoneThread }));
 
   // The gesture: the drawer follows the finger from the left edge, settles by where the finger left it, and takes no
@@ -2430,8 +2430,7 @@ async function runSmoke(w) {
   // or on the modal backdrop drawn over it. Probes on it count anything that reaches it.
   const dismissTarget = (panel) => js('(() => {'
     + ' const panel = document.querySelector(' + dq(panel) + ');'
-    // An open thread puts its close control where the way back was (issue 195), so the contact's avatar beside it is
-    // the control a press outside the thread lands on there.
+    // The contact's avatar is the control a press outside an open thread lands on when no other candidate shows.
     + ' const cands = [".chat-row:not(.selected)", ".sidebar-head .gear-button", "app-conversation .conv-back", "app-conversation .conv-head .avatar"];'
     + ' for (const sel of cands) {'
     + '   for (const el of document.querySelectorAll(sel)) {'
@@ -2559,6 +2558,138 @@ async function runSmoke(w) {
   await pause(300);
   report.placeholder = Object.keys(placeholderChecks).length === 4 && Object.values(placeholderChecks).every((c) => c.ok);
   console.log('placeholder: ' + JSON.stringify(placeholderChecks));
+
+  // Every close (X) control closes on a click anywhere on its drawn circle (issue 213): the image viewer's, the thread
+  // card's, a notice's, and a notice's while the viewer is up (the notices then take their band over the backdrop), at
+  // three window sizes down to the smallest, maximised, and at phone width. A press on a frameless window that lands in a drag region moves the window and
+  // never reaches the page, whatever is drawn over that spot, so a synthetic click alone cannot see the fault. Each
+  // probe point (the centre, and near each edge at 85% of the radius, eight ways) is held to four things: the control
+  // is the topmost element there (nothing covers it); the point is outside every drag region as Chromium builds them
+  // (each element whose app-region is drag or no-drag adds or removes its box in tree order, so the last one containing
+  // the point decides, and the drawing order plays no part); the point is not over a drag strip at all, even one a
+  // no-drag box cancels, so the control never depends on the window picking up a region that changed under it; and a
+  // real click at the centre and at the four edges closes the surface.
+  const closeSurfaces = ['viewer', 'thread', 'notice', 'noticeOverViewer'];
+  const CLOSE_NOTICE = 'smoke-close-213';
+  const closeSel = {
+    viewer: 'app-image-viewer .close-button',
+    thread: '.thread-view .thread-list .close-button',
+    notice: '.app-notice[data-id="' + CLOSE_NOTICE + '"] .close-button',
+  };
+  closeSel.noticeOverViewer = closeSel.notice;
+  const closedExpr = {
+    viewer: "!document.querySelector('app-image-viewer')",
+    thread: "!document.querySelector('.thread-view')",
+    notice: "!document.querySelector('.app-notice[data-id=\"" + CLOSE_NOTICE + "\"]')",
+  };
+  closedExpr.noticeOverViewer = closedExpr.notice + " && Boolean(document.querySelector('app-image-viewer'))";
+  const settled = "document.getAnimations().every((a) => a.playState !== 'running')";
+  const viewerSrc = await js("(document.querySelector('img.attachment-image') || {}).src || null");
+  let closeRevision = 0;
+  const putCloseNotice = () => js('(() => { const root = document.querySelector("app-root"); root.appNotices = [...root.appNotices.filter((n) => n.id !== ' + q(CLOSE_NOTICE) + '), { id: ' + q(CLOSE_NOTICE) + ', revision: ' + (++closeRevision) + ', tone: "info", message: "A notice to close", percent: null, read: false }]; return true; })()');
+  const openViewerAt = () => js('(() => { document.querySelector("app-root").viewing = { src: ' + q(viewerSrc) + ', alt: "smoke-close" }; return true; })()');
+  const openSurface = async (name) => {
+    if (name === 'viewer' || name === 'noticeOverViewer') {
+      await openViewerAt();
+      await waitFor("Boolean(document.querySelector('app-image-viewer'))", 5000);
+    }
+    if (name === 'thread') {
+      await js("(() => { const c = document.querySelector('app-conversation'); const m = c.messages.find((x) => !x.fromMe); c.openThread(m); return true; })()");
+      await waitFor("Boolean(document.querySelector('.thread-view'))", 5000);
+    }
+    if (name === 'notice' || name === 'noticeOverViewer') {
+      await putCloseNotice();
+      await waitFor("Boolean(document.querySelector('.app-notice[data-id=\"" + CLOSE_NOTICE + "\"]'))", 5000);
+    }
+    await waitFor(settled, 5000);
+    await pause(60);
+  };
+  // Whatever a failed press left open is closed by hand, so the next probe starts from the plain conversation.
+  const resetSurfaces = () => js('(() => { const root = document.querySelector("app-root"); root.viewing = null; root.appNotices = root.appNotices.filter((n) => n.id !== ' + q(CLOSE_NOTICE) + '); const c = document.querySelector("app-conversation"); if (c) c.closeThread(); return true; })()');
+  const closeGeometry = (sel) => js('(() => {'
+    + ' const b = document.querySelector(' + q(sel) + ');'
+    + ' if (!b) return null;'
+    + ' const r = b.getBoundingClientRect();'
+    + ' const regions = [];'
+    + ' for (const el of document.querySelectorAll("*")) {'
+    + '   const s = getComputedStyle(el);'
+    + '   const mode = (s.getPropertyValue("-webkit-app-region") || s.getPropertyValue("app-region") || "").trim();'
+    + '   if ((mode !== "drag" && mode !== "no-drag") || s.visibility !== "visible") continue;'
+    + '   const q = el.getBoundingClientRect();'
+    + '   if (q.width && q.height) regions.push({ drag: mode === "drag", q, name: String(el.getAttribute("class") || el.tagName).split(" ")[0] });'
+    + ' }'
+    + ' const cx = r.left + r.width / 2; const cy = r.top + r.height / 2; const rad = Math.min(r.width, r.height) / 2 * 0.85; const d = Math.SQRT1_2;'
+    + ' const dirs = { centre: [0, 0], top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0], topRight: [d, -d], bottomRight: [d, d], bottomLeft: [-d, d], topLeft: [-d, -d] };'
+    + ' const points = {};'
+    + ' for (const [k, [dx, dy]] of Object.entries(dirs)) {'
+    + '   const x = Math.round(cx + dx * rad); const y = Math.round(cy + dy * rad);'
+    + '   const top = document.elementFromPoint(x, y);'
+    + '   let region = null; let strip = null;'
+    + '   for (const g of regions) if (x >= g.q.left && x < g.q.right && y >= g.q.top && y < g.q.bottom) { region = g; if (g.drag) strip = g.name; }'
+    + '   points[k] = { x, y, hit: Boolean(top) && b.contains(top), over: top && !b.contains(top) ? String(top.getAttribute("class") || top.tagName) : null, drag: Boolean(region && region.drag), region: region ? region.name : null, strip };'
+    + ' }'
+    + ' return { size: [Math.round(r.width), Math.round(r.height)], round: getComputedStyle(b).borderTopLeftRadius, points };'
+    + '})()');
+  const closeControlChecks = {};
+  const closePass = async (label) => {
+    for (const name of closeSurfaces) {
+      await resetSurfaces();
+      await openSurface(name);
+      const geo = await closeGeometry(closeSel[name]);
+      if (label === '1100x720' && (name === 'thread' || name === 'viewer')) {
+        await shot('22-close-' + name + '-light.png');
+        nativeTheme.themeSource = 'dark';
+        await waitFor("document.documentElement.dataset.scheme === 'dark'", 5000);
+        await pause(300);
+        await shot('22b-close-' + name + '-dark.png');
+        nativeTheme.themeSource = 'light';
+        await waitFor("document.documentElement.dataset.scheme === 'light'", 5000);
+        await pause(200);
+      }
+      const clicks = {};
+      for (const k of ['centre', 'top', 'right', 'bottom', 'left']) {
+        if (k !== 'centre') { await resetSurfaces(); await openSurface(name); }
+        const g = await closeGeometry(closeSel[name]);
+        if (!g) { clicks[k] = false; continue; }
+        const { x, y } = g.points[k];
+        wc.sendInputEvent({ type: 'mouseMove', x, y });
+        wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+        await pause(40);
+        wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+        try { await waitFor(closedExpr[name], 1500); clicks[k] = true; } catch { clicks[k] = false; }
+      }
+      await resetSurfaces();
+      const points = geo ? geo.points : {};
+      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag && !p.strip) && Object.values(clicks).every(Boolean);
+      closeControlChecks[label + ':' + name] = ok;
+      if (!ok) console.error('close control failed: ' + label + ' ' + name + ' ' + JSON.stringify({ geo, clicks }));
+    }
+  };
+  const closeSize0 = w.getSize();
+  wc.focus();
+  for (const [width, height] of [[1100, 720], [880, 600], [720, 480]]) {
+    w.setSize(width, height);
+    await waitFor('window.innerWidth === ' + width, 5000).catch(() => {});
+    await pause(300);
+    await closePass(width + 'x' + height);
+  }
+  w.maximize();
+  await pause(800);
+  await closePass('maximized');
+  w.unmaximize();
+  await pause(300);
+  w.setSize(closeSize0[0], closeSize0[1]);
+  await pause(300);
+  // And at phone width, where a notice takes its band at the top of the window.
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 560, height: 760, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 560', 5000);
+  await js("(() => { document.querySelector('app-root').listOpen = false; return true; })()");
+  await pause(400);
+  await closePass('560x760');
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  await pause(300);
+  report.closeControls = Object.keys(closeControlChecks).length === closeSurfaces.length * 5 && Boolean(viewerSrc) && Object.values(closeControlChecks).every(Boolean);
+  console.log('close controls: ' + JSON.stringify(closeControlChecks));
 
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
