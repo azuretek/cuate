@@ -157,6 +157,7 @@ var engine = (() => {
     feedVersions: () => feedVersions,
     fillTemplate: () => fillTemplate,
     filterChats: () => filterChats,
+    firstUrl: () => firstUrl,
     fixedPalette: () => fixedPalette,
     forgetChats: () => forgetChats,
     forgetRead: () => forgetRead,
@@ -188,6 +189,8 @@ var engine = (() => {
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
+    isPayloadName: () => isPayloadName,
+    linkSite: () => linkSite,
     listSections: () => listSections,
     localAttachment: () => localAttachment,
     mapChat: () => mapChat,
@@ -199,6 +202,7 @@ var engine = (() => {
     messageActions: () => messageActions,
     messageNotice: () => messageNotice,
     messageSearchText: () => messageSearchText,
+    messageSummary: () => messageSummary,
     moveGroup: () => moveGroup,
     myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
@@ -218,6 +222,7 @@ var engine = (() => {
     parseColour: () => parseColour,
     parseGlyph: () => parseGlyph,
     parseTraceparent: () => parseTraceparent,
+    payloadMedia: () => payloadMedia,
     phoneUpdate: () => phoneUpdate,
     pick: () => pick,
     pickerSide: () => pickerSide,
@@ -227,6 +232,7 @@ var engine = (() => {
     pressOutside: () => pressOutside,
     progressFor: () => progressFor,
     putNotice: () => putNotice,
+    quietCount: () => quietCount,
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     releaseAssets: () => releaseAssets,
@@ -1329,6 +1335,47 @@ var engine = (() => {
     };
   }
 
+  // core/app/rules/payload.js
+  var PAYLOAD_SUFFIX = /\.pluginpayloadattachment$/i;
+  function isPayloadName(name) {
+    return PAYLOAD_SUFFIX.test(String(name || ""));
+  }
+  function firstUrl(text) {
+    const m = /https?:\/\/[^\s<>"'`]+/i.exec(String(text || ""));
+    if (!m) return "";
+    return m[0].replace(/[.,;:!?)\]]+$/, "");
+  }
+  function linkSite(url) {
+    const m = /^https?:\/\/([^/?#]+)/i.exec(String(url || ""));
+    if (!m) return "";
+    const host = m[1].replace(/^.*@/, "").replace(/:[0-9]+$/, "").toLowerCase();
+    return host.replace(/^www\./, "");
+  }
+  function payloadMedia(mime) {
+    return /^(?:image|video)\//i.test(String(mime || ""));
+  }
+  function quietCount(payloads) {
+    return (Array.isArray(payloads) ? payloads : []).length;
+  }
+  function messageSummary(m) {
+    const text = String(m && m.text || "").replace(/\s+/g, " ").trim();
+    if (text) return text;
+    const link = m && m.link;
+    if (link) return String(link.title || link.site || link.url || "").trim();
+    const list = Array.isArray(m && m.attachments) ? m.attachments : null;
+    const count = list ? list.length : typeof (m && m.attachments) === "number" ? m.attachments : 0;
+    if (list) {
+      const names = list.map((a) => String(a && a.name || "").trim()).filter(Boolean);
+      if (names.length === 1) return names[0];
+      if (count > 1) return count + " attachments";
+    } else {
+      if (count === 1) return "1 attachment";
+      if (count > 1) return count + " attachments";
+    }
+    if (m && Number(m.payloads) > 0) return "Attachment";
+    return "";
+  }
+
   // core/app/rules/engine-imsg.js
   var TAPBACKS = /* @__PURE__ */ new Set(["love", "like", "dislike", "laugh", "emphasis", "question"]);
   var NO_CHAT_ID = "0";
@@ -1350,16 +1397,22 @@ var engine = (() => {
       lastMessage: null
     };
   }
-  function mapAttachment(a, attachmentId) {
+  function attachmentView(a, attachmentId) {
+    const name = String(a.transfer_name || a.filename || "attachment");
     return {
       id: attachmentId(a),
-      name: String(a.transfer_name || a.filename || "attachment"),
+      name,
       mime: String(a.mime_type || "application/octet-stream"),
       bytes: Number.isFinite(a.total_bytes) ? a.total_bytes : 0,
       sticker: Boolean(a.is_sticker),
-      missing: Boolean(a.missing) || !a.original_path
+      missing: Boolean(a.missing) || !a.original_path,
+      payload: isPayloadName(name)
     };
   }
+  function modelAttachment(v, name) {
+    return { id: v.id, name: name === void 0 ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing };
+  }
+  var payloadTitle = (m) => typeof m.payload_title === "string" && m.payload_title.trim() ? m.payload_title.trim() : null;
   function mapInlineReaction(r) {
     const type = r.reaction_type || r.type;
     if (!type) return null;
@@ -1369,6 +1422,21 @@ var engine = (() => {
   var INLINE_OBJECT = /\uFFFC/g;
   function stripInlineObjects(text) {
     return typeof text === "string" ? text.replace(INLINE_OBJECT, "") : "";
+  }
+  function payloadParts(m, { attachmentId }) {
+    const views = (Array.isArray(m.attachments) ? m.attachments : []).map((a) => attachmentView(a, attachmentId));
+    const files = views.filter((v) => !v.payload).map((v) => modelAttachment(v));
+    const payloads = views.filter((v) => v.payload);
+    if (!payloads.length) return { attachments: files, link: null, payloads: 0 };
+    const url = firstUrl(stripInlineObjects(m.text)) || firstUrl(m.payload_url);
+    const image = payloads.find((v) => !v.missing && /^image\//i.test(v.mime)) || null;
+    const link = url ? { url, site: linkSite(url), title: payloadTitle(m), image: image ? modelAttachment(image, "Link preview") : null } : null;
+    const carried = link ? [] : payloads.filter((v) => !v.missing && payloadMedia(v.mime));
+    return {
+      attachments: [...files, ...carried.map((v) => modelAttachment(v, /^video\//i.test(v.mime) ? "Video" : "Photo"))],
+      link,
+      payloads: link ? 0 : payloads.length - carried.length
+    };
   }
   function mapMessage(m, { attachmentId }) {
     const fromMe = Boolean(m.is_from_me);
@@ -1385,7 +1453,7 @@ var engine = (() => {
       // to the one above (issue 195).
       replyTo: m.thread_originator_guid ? String(m.thread_originator_guid) : null,
       read: fromMe || typeof m.is_read !== "boolean" ? null : m.is_read,
-      attachments: (Array.isArray(m.attachments) ? m.attachments : []).map((a) => mapAttachment(a, attachmentId)),
+      ...payloadParts(m, { attachmentId }),
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean)
     };
   }
@@ -1560,10 +1628,7 @@ var engine = (() => {
   function chatPreview(chat) {
     const m = chat.lastMessage;
     if (!m) return "";
-    const count = m.attachments || 0;
-    const text = stripInlineObjects(m.text).trim();
-    const body = text || (count === 1 ? "1 attachment" : count > 1 ? count + " attachments" : "");
-    return (m.fromMe ? "You: " : "") + body;
+    return (m.fromMe ? "You: " : "") + messageSummary({ ...m, text: stripInlineObjects(m.text) });
   }
   function initials(name) {
     const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
@@ -1577,7 +1642,7 @@ var engine = (() => {
     const c = chats[i];
     if (c.lastMessageAt && c.lastMessageAt > message.sentAt) return { chats, known: true };
     const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
-    const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length };
+    const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
     const out = chats.slice();
     out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
     return { chats: orderChats(out), known: true };
@@ -2575,7 +2640,7 @@ var engine = (() => {
   }
   function messageNotice(title, m) {
     const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
-    return { title, body: m.text || (count > 1 ? count + " attachments" : "Attachment") };
+    return { title, body: messageSummary(m) || (count > 1 ? count + " attachments" : "Attachment") };
   }
 
   // core/app/rules/sheet.js
