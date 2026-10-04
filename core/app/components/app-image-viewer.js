@@ -1,7 +1,7 @@
 import { html } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
-import { press } from '../../kit/press.js';
 import { dismissable } from '../../kit/dismiss.js';
+import { closeButtonHtml } from './close-button.js';
 import { pressOutside } from '../../kit/rules/dismiss.js';
 import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey } from '../rules/zoom.js';
 
@@ -57,7 +57,7 @@ class AppImageViewer extends KitElement {
   }
 
   firstUpdated() {
-    this.querySelector('.viewer-close')?.focus();
+    this.querySelector('.close-button')?.focus();
   }
 
   updated() {
@@ -106,7 +106,7 @@ class AppImageViewer extends KitElement {
     if (e.key === 'Tab') {
       // The close control is the dialog's one stop; the page behind it is out of reach while the viewer is open.
       e.preventDefault();
-      this.querySelector('.viewer-close')?.focus();
+      this.querySelector('.close-button')?.focus();
       return;
     }
     const action = zoomKey(e.key);
@@ -122,7 +122,7 @@ class AppImageViewer extends KitElement {
   onDown = (e) => {
     // The page's own drag (the phone's drawer, from the left edge) must not start under the viewer.
     e.stopPropagation();
-    if (e.target.closest && e.target.closest('.viewer-close')) return;
+    if (e.target.closest && e.target.closest('.close-button')) return;
     try { this.stage().setPointerCapture(e.pointerId); } catch { /* a synthetic pointer has nothing to capture */ }
     const p = this.point(e);
     this.pointers.set(e.pointerId, p);
@@ -218,7 +218,7 @@ class AppImageViewer extends KitElement {
         @pointerdown=${this.onDown} @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${this.onCancel}
         @contextmenu=${this.onContext} @wheel=${this.onWheel}>
       <img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>
-      <button type="button" class="viewer-close" aria-label="Close" @click=${press(() => this.close())}><span class="icon" data-icon="x" aria-hidden="true"></span></button>
+      ${closeButtonHtml({ owner: 'viewer', label: 'Close', size: 'lg', onClose: () => this.close() })}
       <p class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</p>
     </div>`;
   }
