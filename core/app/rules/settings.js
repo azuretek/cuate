@@ -21,10 +21,14 @@ import { APP_ICONS } from './app-icons-spec.js';
 export const SETTINGS_SCHEMA = {
   groups: [
     { id: 'appearance', label: 'Appearance', description: 'How the app looks and how much text it shows.' },
-    { id: 'notifications', label: 'Notifications', description: 'Which events raise a notice on this device.' },
-    { id: 'updates', label: 'Updates', description: 'How a release this app finds is fetched.' },
+    // Notices and updates are one tab, Behavior (issue 244). The notice toggles and the update controls share it, each
+    // under its own small section, so nothing a person can set is lost and the schema is still the one list: a group
+    // may carry its own sections and each key names the one it belongs to.
+    { id: 'behavior', label: 'Behavior', description: 'Which events raise a notice on this device, and how a release this app finds is fetched.', sections: [
+      { id: 'notices', label: 'Notices', description: 'Which events raise a notice on this device.' },
+      { id: 'updates', label: 'Updates', description: 'How a release this app finds is fetched.' },
+    ] },
     { id: 'device', kind: 'device', label: 'This device', description: 'The server this app talks to, and the way out of it.' },
-    { id: 'about', kind: 'about', label: 'About', description: 'The build this device is running, the server it talks to, and a check for updates.' },
   ],
   keys: {
     'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'segmented', options: ['system', 'light', 'dark'], labels: { system: 'System', light: 'Light', dark: 'Dark' }, default: 'system' },
@@ -32,19 +36,20 @@ export const SETTINGS_SCHEMA = {
     // The app icon (issue 167): one of the icons core/spec/app-icons.json names, each drawn as its own picture, held by
     // the server like every other setting and applied by each shell where its platform can (rules/app-icons.js).
     'appearance.appIcon': { group: 'appearance', label: 'App icon', type: 'icon', options: APP_ICONS.icons.map((i) => i.id), labels: Object.fromEntries(APP_ICONS.icons.map((i) => [i.id, i.label])), default: APP_ICONS.default },
-    // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
-    'notifications.newMessage': { group: 'notifications', label: 'New messages', type: 'toggle', default: true },
-    'notifications.updateAvailable': { group: 'notifications', label: 'Update available', type: 'toggle', default: true },
-    'notifications.updateReady': { group: 'notifications', label: 'Update ready to install', type: 'toggle', default: true },
-    'notifications.errors': { group: 'notifications', label: 'Update errors', type: 'toggle', default: true },
+    // Every notice the client can raise, each on its own switch, in Behavior's Notices section. Turning one off
+    // silences only that notice.
+    'notifications.newMessage': { group: 'behavior', section: 'notices', label: 'New messages', type: 'toggle', default: true },
+    'notifications.updateAvailable': { group: 'behavior', section: 'notices', label: 'Update available', type: 'toggle', default: true },
+    'notifications.updateReady': { group: 'behavior', section: 'notices', label: 'Update ready to install', type: 'toggle', default: true },
+    'notifications.errors': { group: 'behavior', section: 'notices', label: 'Update errors', type: 'toggle', default: true },
     // Whether a release a check finds is fetched and applied with no further prompt. Off until someone turns it on: a
     // download nobody asked for spends someone's bandwidth, and the setting is how they asked. The check still runs
     // with it off, because knowing a release exists is what makes installing by hand possible.
-    'updates.autoDownload': { group: 'updates', label: 'Download updates automatically', type: 'toggle', default: false },
+    'updates.autoDownload': { group: 'behavior', section: 'updates', label: 'Download updates automatically', type: 'toggle', default: false },
     // Whether the installed server installs a verified release by itself. On by default for now (issue 117): every
     // install is verified, backed up, health checked and rolled back on failure. Off, the server still checks and
     // installs nothing; service update --pause on the Mac does the same from there.
-    'updates.serverAuto': { group: 'updates', label: 'Update the server automatically', type: 'toggle', default: true },
+    'updates.serverAuto': { group: 'behavior', section: 'updates', label: 'Update the server automatically', type: 'toggle', default: true },
   },
 };
 
@@ -58,7 +63,13 @@ export function settingsGroups(schema = SETTINGS_SCHEMA) {
   const fields = settingsFields(schema);
   const groups = schema.groups || [];
   const fallback = groups.length ? groups[0].id : null;
-  return groups.map((g) => ({ id: g.id, kind: g.kind || 'settings', label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+  return groups.map((g) => {
+    const mine = fields.filter((f) => (f.group || fallback) === g.id);
+    // A group may name its own sections (Behavior: Notices, then Updates); each section carries the keys that name it,
+    // so the page draws the small sections the schema declares and no second list is kept.
+    const sections = (g.sections || []).map((s) => ({ id: s.id, label: s.label, description: s.description, fields: mine.filter((f) => f.section === s.id) }));
+    return { id: g.id, kind: g.kind || 'settings', label: g.label, description: g.description, fields: mine, sections: sections.length ? sections : null };
+  });
 }
 
 // The page's tabs (issue 167): one per section, in the schema's order, each naming the keys it offers. The settings

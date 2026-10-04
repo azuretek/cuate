@@ -287,9 +287,12 @@ test('the settings page draws the schema and writes the value a control gives', 
   for (const g of settingsGroups().filter((g) => g.kind === 'settings')) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
   for (const g of settingsGroups().filter((g) => g.kind !== 'settings')) assert.deepEqual(g.fields, [], g.id + ' draws its own rows, and no setting lands in it');
   for (const g of settingsGroups()) assert.ok(typeof g.description === 'string' && g.description.length > 0, g.id + ' carries a one-line description for its section');
-  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'notifications', 'updates', 'device', 'about'], 'the page draws one section per group');
-  assert.deepEqual(settingsGroups()[1].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'every notice type has its own row');
-  assert.deepEqual(settingsGroups()[2].fields.map((f) => f.key), ['updates.autoDownload', 'updates.serverAuto'], 'the updates section holds the client and server preferences');
+  assert.deepEqual(settingsGroups().map((g) => g.id), ['appearance', 'behavior', 'device'], 'the page draws one section per group; About is not a group but the row at the bottom of every page (issue 244)');
+  const behavior = settingsGroups().find((g) => g.id === 'behavior');
+  assert.deepEqual(behavior.fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'Behavior holds every notice type and both update preferences');
+  assert.deepEqual(behavior.sections.map((s) => s.id), ['notices', 'updates'], 'Behavior draws its own small sections, Notices then Updates');
+  assert.deepEqual(behavior.sections[0].fields.map((f) => f.key), ['notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors'], 'the Notices section holds every notice type');
+  assert.deepEqual(behavior.sections[1].fields.map((f) => f.key), ['updates.autoDownload', 'updates.serverAuto'], 'the Updates section holds the client and server preferences');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.autoDownload'), {}), false, 'automatic download is off until the server says otherwise');
   assert.equal(settingValue(fields.find((f) => f.key === 'updates.serverAuto'), {}), true);
   const skin = fields.find((f) => f.key === 'appearance.skin');
@@ -902,11 +905,11 @@ test('a refused write rolls back only the keys it named', () => {
 
 // Issue 134 put About at the bottom of Settings with chela's full details in chela's order; issue 171 made it a page
 // of its own, opened from that last row (core/test/about-page.test.js holds the page).
-test('About is the last section of Settings, and This device sits just above it', () => {
+test('About is not a section of Settings: This device is the last tab, and no setting lands in an About group', () => {
   const groups = settingsGroups();
-  assert.equal(groups.at(-1).id, 'about', 'About is the last section');
-  assert.equal(groups.at(-1).kind, 'about');
-  assert.equal(groups.at(-2).id, 'device');
+  assert.equal(groups.at(-1).id, 'device', 'This device is the last tab');
+  assert.equal(groups.some((g) => g.kind === 'about'), false, 'no group draws About');
+  assert.equal(settingsFields().some((f) => f.group === 'about'), false, 'no setting lands in an About group');
 });
 
 test('the About section shows every field in chela\'s order, each from its own half', () => {

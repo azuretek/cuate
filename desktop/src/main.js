@@ -2061,13 +2061,13 @@ async function runSmoke(w) {
   if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, themePicture, iconHeld, iconApplied, iconDrawn, iconMarked, themeAgain, now: appIconApplied }));
 
   await putSettings({ 'appearance.theme': null, 'appearance.skin': 'system' });
-  await showTab('notifications');
+  await showTab('behavior');
   nativeTheme.themeSource = 'light';
   await pause(300);
-  await shot('05e-settings-notifications.png');
+  await shot('05e-settings-behavior.png');
   nativeTheme.themeSource = 'dark';
   await pause(300);
-  await shot('05f-settings-notifications-dark.png');
+  await shot('05f-settings-behavior-dark.png');
   await showTab('appearance');
   nativeTheme.themeSource = 'light';
   await pause(300);
@@ -2191,21 +2191,22 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'dark';
   await pause(300);
   await shot('05h-settings-phone-dark.png');
-  await showTab('notifications');
-  await shot('05j-settings-phone-notifications-dark.png');
+  await showTab('behavior');
+  await shot('05j-settings-phone-behavior-dark.png');
   nativeTheme.themeSource = 'light';
   await pause(300);
-  await shot('05i-settings-phone-notifications.png');
+  await shot('05i-settings-phone-behavior.png');
   report.phoneSettings = phonePage.fills && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
   if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
-  // About lives under Settings (issue 171): its row is on the About tab.
-  await showTab('about');
+  // About is reached from the About row, which sits at the bottom of every Settings page rather than on a tab
+  // (issue 244): open it with the last tab in force, so the way back can be checked to land there.
+  await showTab('device');
 
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
   const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back-label') || {}).textContent || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
-  const aboutRow = await js("(() => { const s = [...document.querySelectorAll('app-settings .sheet-section')]; return s.length > 1 && s.at(-1).dataset.section === 'about' && Boolean(s.at(-1).querySelector('button[data-action=about]')) && !document.querySelector('app-settings app-about'); })()");
+  const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const body = s && s.querySelector('.sheet-body'); const row = body && body.querySelector('.settings-about-row'); const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.querySelector('button[data-action=about]') && row === body.lastElementChild && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
   await js("document.querySelector('app-settings [data-action=about]').click()");
   await waitFor(aboutShown);
   await pause(1000);
@@ -2277,7 +2278,8 @@ async function runSmoke(w) {
   await js("document.querySelector('app-about .sheet-back').click()");
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
-  report.aboutBackTab = await js(tabSel('about') + "?.getAttribute('aria-selected') === 'true'");
+  // Back from About returns to the tab the row was on (issue 244), here the last tab.
+  report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
   report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
