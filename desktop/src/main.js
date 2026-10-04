@@ -828,6 +828,11 @@ async function runSmoke(w) {
   const customPicked = await pick('\u{1F389}');
   await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('six classic reactions, not arbitrary emoji')`, 10000);
   const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
+  // The refusal is also told in the app's own notice style (issue 241). Assert that notice appeared, then dismiss it
+  // so the notice area is clear for the update flow further down, which is the only other notice source.
+  report.reactionRefusalNotice = await js("Boolean(document.querySelector('.app-notice[data-id^=\"reaction:\"]'))");
+  await js("(() => { const b = document.querySelector('.app-notice[data-id^=\"reaction:\"] .close-button'); if (b) b.click(); return true; })()");
+  await waitFor("!document.querySelector('.app-notice[data-id^=\"reaction:\"]')", 5000);
   // Any emoji someone else reacted with arrives as a reaction on the message it names (issue 188): the fixture's raised
   // hands on your own message, drawn at the bubble's corner like a tapback and not marked as yours, on a desktop window
   // and at a phone's width, light and dark.
