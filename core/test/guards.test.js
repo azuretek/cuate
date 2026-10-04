@@ -445,6 +445,37 @@ test('every menu, popover and picker wears the shared caret', () => {
   }
 });
 
+// The caret is drawn from the panel's own tokens, never a literal, and sized from one token (issue 217, restyled in
+// #227): the drawn width is the whole --size-caret; the outline carries the panel's border token at the panel's own
+// one border weight and the fill the panel's surface token; and each base sits exactly --caret-overlap (one border
+// width) inside the panel, so the panel's edge becomes the triangle's two sides with no gap and no double line. A
+// caret slipped to a gap, to a 2px overlap or to a hard-coded colour fails here.
+test('the caret is sized and coloured from the panel tokens, overlapping it by exactly one border', () => {
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const size = json('core/spec/tokens.json').size.caret;
+  assert.ok(Number.parseFloat(size) >= 12, 'the caret is at least 12px, one value for desktop and the phone width: ' + size);
+  const root = /\[data-popover\]\s*\{([^}]*)\}/.exec(css);
+  assert.ok(root, 'the caret declares its geometry from data-popover');
+  assert.match(root[1], /--caret-size:\s*var\(--size-caret\)/, 'the drawn width comes from the size token');
+  assert.match(root[1], /--caret-overlap:\s*var\(--size-border\)/, 'the overlap is exactly one border width');
+  const pair = /\[data-popover\]::before,\s*\[data-popover\]::after\s*\{([^}]*)\}/.exec(css)[1];
+  assert.match(pair, /border-left:\s*calc\(var\(--caret-size\) \/ 2\) solid transparent/, 'the left half is half the size token, so the drawn width is the whole of it');
+  assert.match(pair, /border-right:\s*calc\(var\(--caret-size\) \/ 2\) solid transparent/, 'the right half is half the size token');
+  const bodies = [pair];
+  for (const edge of ['top', 'bottom']) {
+    const pos = edge === 'top' ? 'top' : 'bottom';
+    const side = edge === 'top' ? 'bottom' : 'top';
+    const outline = new RegExp('\\[data-popover\\]\\[data-popover-edge="' + edge + '"\\]::before\\s*\\{([^}]*)\\}').exec(css)[1];
+    const fill = new RegExp('\\[data-popover\\]\\[data-popover-edge="' + edge + '"\\]::after\\s*\\{([^}]*)\\}').exec(css)[1];
+    bodies.push(outline, fill);
+    assert.ok(outline.includes('border-' + side + ': var(--caret-tip) solid var(--role-menu-border)'), edge + ': the outline is the panel border token at the tip weight');
+    assert.ok(fill.includes('border-' + side + ': calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu)'), edge + ': the fill is the panel surface token');
+    assert.ok(outline.includes(pos + ': calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip))'), edge + ': the outline overlaps the panel by one border');
+    assert.ok(fill.includes(pos + ': calc(var(--caret-overlap) - var(--caret-tip))'), edge + ': the fill base reaches the panel interior');
+  }
+  for (const body of bodies) assert.doesNotMatch(body, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|color-mix\(/i, 'the caret carries a hard-coded colour: ' + body);
+});
+
 test('placeholder text is dimmed from its token, on every field', () => {
   const tokens = json('core/spec/tokens.json');
   for (const scheme of ['light', 'dark']) assert.equal(typeof tokens.color[scheme].placeholder, 'string', scheme + ' has a placeholder token');

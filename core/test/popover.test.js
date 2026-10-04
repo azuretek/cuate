@@ -30,3 +30,9 @@ test('the caret never overhangs the popover, however the control sits', () => {
     if (x !== null) assert.ok(x >= 0 && x <= bw, al + ',' + aw + ' in ' + bl + ',' + bw + ' -> ' + x);
   }
 });
+
+test('the caret is kept whole by half its drawn width, so a corner or a screen edge never overhangs it', () => {
+  // The caret is 12px (tokens size.caret), so its clamp is exactly half of it: 6.
+  assert.equal(caretX(anchor(0, 4), box(0, 160), 'center'), 6, 'a control at the popover left edge');
+  assert.equal(caretX(anchor(156, 4), box(0, 160), 'center'), 154, 'a control at the popover right edge');
+});
