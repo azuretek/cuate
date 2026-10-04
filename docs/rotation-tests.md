@@ -37,6 +37,12 @@ landscape screen by the app's portrait frame, which Xcode saved on its side and
 cut in half, and which read as a clipped layout that is not there. The screen as
 the simulator returned it is kept beside it as `landscape-as-returned`.
 
+Every iOS UI test starts in portrait through `XCUIDevice.startInPortrait()`
+(`ios/CuateUITests/Orientation.swift`), which asks for the turn only when the
+device is not already in portrait: setting an orientation the device already has
+still waits for SpringBoard's confirmation, and on a runner still busy starting
+up that confirmation arrived after XCTest stopped waiting (issue 220).
+
 The iOS CI test command runs once through `ios/scripts/test-with-diagnostics.mjs`.
 It preserves the test exit status and keeps stdout, stderr, timestamped process
 snapshots, unprivileged one-second launch-process samples and filtered system logs
