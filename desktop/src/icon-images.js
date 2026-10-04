@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { parseGlyph, iconPalette, iconColours, renderIcon } from '../../core/app/rules/icon.js';
+import { parseGlyph, iconPalette, iconColours, renderIcon, badgeLabel, OVERLAY_SIZES } from '../../core/app/rules/icon.js';
 
 // The two masters, from the one spec every platform's generator reads.
 export function loadMasters(coreDir) {
@@ -21,9 +21,8 @@ export const TRAY_SIZES = {
   win32: [[16, 1], [20, 1.25], [24, 1.5], [32, 2], [40, 2.5], [48, 3]],
   linux: [[32, 1]],
 };
-// The window icon Windows and Linux draw in the taskbar and the switcher, and the overlay's size.
+// The window icon Windows and Linux draw in the taskbar and the switcher.
 export const WINDOW_ICON = 256;
-export const OVERLAY_ICON = 32;
 
 // Every image the shell sets for one state: the scheme the page draws, the colour tokens it resolved (any it leaves
 // out or cannot be read fall back to the default tokens) and the unread count. A fixed palette chosen in Settings
@@ -37,12 +36,17 @@ export function shellIcons({ platform, masters, tokens, scheme = 'light', colors
   const template = platform === 'darwin';
   const tray = sizes.map(([size, scale]) => ({ scale, image: renderIcon({ masters, palette, kind: template ? 'template' : 'tray', size, unread: count }) }));
   const windowIcon = platform === 'darwin' ? null : renderIcon({ masters, palette, kind: 'app', size: WINDOW_ICON });
-  const overlay = platform === 'win32' && count > 0 ? renderIcon({ masters, palette, kind: 'overlay', size: OVERLAY_ICON, unread: count }) : null;
+  // The Windows taskbar overlay: one image per size the taskbar asks for, so the count is never resampled.
+  const overlay = platform === 'win32' && count > 0
+    ? OVERLAY_SIZES.map(([size, scale]) => ({ scale, image: renderIcon({ masters, palette, kind: 'overlay', size, unread: count }) }))
+    : null;
   return {
     palette,
     tray: { template, reps: tray },
     window: windowIcon,
     overlay,
+    // The label macOS's Dock and a Linux launcher draw themselves: the same the overlay draws, exact to 9 then 9+.
+    badgeText: badgeLabel(count, OVERLAY_SIZES[0][0]) || '',
     description: count === 0 ? '' : count === 1 ? '1 unread message' : count + ' unread messages',
     badgeCount: count,
     // What decides every image, so the shell redraws only when one of them would change.

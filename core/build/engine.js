@@ -25,7 +25,8 @@ var engine = (() => {
     APP_ICONS: () => APP_ICONS,
     APP_ICON_KEY: () => APP_ICON_KEY,
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
-    BADGE_HUE_GAP: () => BADGE_HUE_GAP,
+    BADGE_APART: () => BADGE_APART,
+    BADGE_TEXT_FLOOR: () => BADGE_TEXT_FLOOR,
     BUILD_SPEC: () => BUILD_SPEC,
     DELETE_STEPS: () => DELETE_STEPS,
     DISMISS: () => DISMISS,
@@ -48,6 +49,7 @@ var engine = (() => {
     NOTIFY: () => NOTIFY,
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
+    OVERLAY_SIZES: () => OVERLAY_SIZES,
     PRESS_STATES: () => PRESS_STATES,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
@@ -123,6 +125,7 @@ var engine = (() => {
     closedByEscape: () => closedByEscape,
     closedByPress: () => closedByPress,
     coerceSetting: () => coerceSetting,
+    colourDistance: () => colourDistance,
     commitState: () => commitState,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
@@ -942,7 +945,7 @@ var engine = (() => {
 
   // core/app/rules/app-icons-spec.js
   var APP_ICONS = {
-    "description": "The app icon choices Settings offers (appearance.appIcon, issues 167 and 189). Follow theme, the default, is the icon issue 189 draws: the Flor de muerto masters coloured from the active theme's tokens, redrawn by the desktop shell whenever the theme changes, and on the phones the store icon in the default theme, since neither can recolour an installed icon. Every other choice is a fixed palette: the seven tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+    "description": "The app icon choices Settings offers (appearance.appIcon, issues 167 and 189). Follow theme, the default, is the icon issue 189 draws: the Flor de muerto masters coloured from the active theme's tokens, redrawn by the desktop shell whenever the theme changes, and on the phones the store icon in the default theme, since neither can recolour an installed icon. Every other choice is a fixed palette: the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
     "default": "theme",
     "icons": [
       {
@@ -960,7 +963,8 @@ var engine = (() => {
           "bg": "#f7faf9",
           "bg-raised": "#ffffff",
           "danger": "#b91c1c",
-          "danger-fg": "#ffffff"
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
         }
       },
       {
@@ -974,7 +978,8 @@ var engine = (() => {
           "bg": "#0b1615",
           "bg-raised": "#13221f",
           "danger": "#f87171",
-          "danger-fg": "#0b1615"
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
         }
       },
       {
@@ -988,7 +993,8 @@ var engine = (() => {
           "bg": "#fbf8f2",
           "bg-raised": "#ffffff",
           "danger": "#b91c1c",
-          "danger-fg": "#ffffff"
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
         }
       }
     ]
@@ -2622,9 +2628,11 @@ var engine = (() => {
   }
 
   // core/app/rules/icon.js
-  var ICON_TOKENS = ["accent", "accent-fg", "fg", "bg", "bg-raised", "danger", "danger-fg"];
+  var ICON_TOKENS = ["accent", "accent-fg", "fg", "bg", "bg-raised", "danger", "badge", "badge-fg"];
   var GLYPH_FLOOR = { light: 2.6, dark: 4 };
-  var BADGE_HUE_GAP = 40;
+  var BADGE_TEXT_FLOOR = 4.5;
+  var BADGE_APART = 0.15;
+  var OVERLAY_SIZES = [[32, 2], [40, 2.5], [48, 3]];
   var SATURATED = 0.06;
   var NAMED = { black: [0, 0, 0], white: [1, 1, 1], red: [1, 0, 0], green: [0, 128 / 255, 0], blue: [0, 0, 1], gray: [128 / 255, 128 / 255, 128 / 255], grey: [128 / 255, 128 / 255, 128 / 255] };
   var clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -2718,6 +2726,12 @@ var engine = (() => {
     return d > 180 ? 360 - d : d;
   }
   var chroma = (x) => toOklch(x)[1];
+  function colourDistance(x, y) {
+    const [L1, C1, h1] = toOklch(x);
+    const [L2, C2, h2] = toOklch(y);
+    const rad = (h) => h * Math.PI / 180;
+    return Math.hypot(L1 - L2, C1 * Math.cos(rad(h1)) - C2 * Math.cos(rad(h2)), C1 * Math.sin(rad(h1)) - C2 * Math.sin(rad(h2)));
+  }
   function iconColours(defaults = {}, given = {}) {
     const out = {};
     for (const key of ICON_TOKENS) out[key] = given && cssColour(given[key]) ? String(given[key]).trim() : defaults[key];
@@ -2745,16 +2759,15 @@ var engine = (() => {
       tileBottom = fromOklch([L - 0.07, C, h + 4]);
       glyph = contrast(c["accent-fg"], c.accent) >= GLYPH_FLOOR.light ? c["accent-fg"] : c.fg;
     }
-    const clash = C >= SATURATED && hueDistance(c.accent, c.danger) < BADGE_HUE_GAP;
-    const badgeFill = clash ? c.fg : c.danger;
-    const badgeText = clash ? contrast(c.bg, badgeFill) >= contrast(c.fg, badgeFill) ? c.bg : c.fg : c["danger-fg"];
+    const tileColours = [tileTop, tileBottom, dark ? c["bg-raised"] : c.accent];
+    const own = contrast(c.danger, c["badge-fg"]) >= BADGE_TEXT_FLOOR && tileColours.every((t) => colourDistance(c.danger, t) >= BADGE_APART);
     return {
       scheme: dark ? "dark" : "light",
       tile: { top: toHex(tileTop), bottom: toHex(tileBottom), behind: toHex(dark ? c["bg-raised"] : c.accent) },
       glyph: toHex(glyph),
       back: dark ? 0.45 : 0.5,
       mark: toHex(dark ? glyph : c.accent),
-      badge: { fill: toHex(badgeFill), text: toHex(badgeText), ring: toHex(c.bg), neutral: clash }
+      badge: { fill: toHex(own ? c.danger : c.badge), text: toHex(c["badge-fg"]) }
     };
   }
   var attrsOf = (s) => Object.fromEntries([...s.matchAll(/([\w:-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
@@ -2969,7 +2982,6 @@ var engine = (() => {
   var BADGE = 8;
   var DIGIT = 16;
   var GAP = 32;
-  var RING = 64;
   var CUT = 128;
   var HINT_MAX = 16;
   function layout(kind, S) {
@@ -3002,17 +3014,17 @@ var engine = (() => {
     const empty = { width: S, height: S, data: new Uint8ClampedArray(S * S * 4) };
     let badge = null;
     if (kind === "overlay") {
-      const label = badgeLabel(unread, 32);
+      const label = badgeLabel(unread, OVERLAY_SIZES[0][0]);
       if (label === null) return empty;
-      const ring = Math.max(1, S * 0.09);
-      badge = { disk: circle(S / 2, S / 2, S / 2 - ring), ring: circle(S / 2, S / 2, S / 2), digit: label ? labelStroke(label, S / 2, S / 2, (S - 2 * ring) * (label.length > 1 ? 0.46 : 0.56)) : null };
+      badge = { disk: circle(S / 2, S / 2, S / 2), digit: label ? labelStroke(label, S / 2, S / 2, S * (label.length > 1 ? 0.44 : 0.54)) : null };
     } else if (kind === "tray" || kind === "template") {
       const label = badgeLabel(unread, S);
       if (label !== null) {
         const at = label ? TRAY_BADGE.text : TRAY_BADGE.dot;
         const [px, py, k] = place;
         const [cx, cy, r] = [px + at.cx * k, py + at.cy * k, at.r * k];
-        badge = { disk: circle(cx, cy, r), gap: circle(cx, cy, r + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
+        const grow = kind === "tray" ? 1 : 0;
+        badge = { disk: circle(cx, cy, r + grow), gap: circle(cx, cy, r + grow + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
       }
     }
     const tileShape = tile ? { kind: "rect", x: tile.x, y: tile.y, w: tile.w, h: tile.h, rx: tile.r, box: [tile.x, tile.y, tile.x + tile.w, tile.y + tile.h] } : null;
@@ -3020,7 +3032,6 @@ var engine = (() => {
       let f = 0;
       if (tileShape && contains(tileShape, x, y)) f |= TILE;
       if (badge) {
-        if (badge.ring && contains(badge.ring, x, y)) f |= RING;
         if (contains(badge.disk, x, y)) return f | BADGE | (badge.digit && contains(badge.digit, x, y) ? DIGIT : 0);
         if (badge.gap && contains(badge.gap, x, y)) return f | GAP;
       }
@@ -3045,12 +3056,15 @@ var engine = (() => {
       if (kind === "overlay") {
         if (f & DIGIT) return [...hexRgb(p.badge.text), 1];
         if (f & BADGE) return [...hexRgb(p.badge.fill), 1];
-        return f & RING ? [...hexRgb(p.badge.ring), 1] : none;
+        return none;
       }
       if (kind === "tray" || kind === "template") {
         const ink2 = kind === "template" ? [0, 0, 0] : markRgb;
-        if (f & DIGIT || f & GAP) return none;
-        if (f & BADGE) return kind === "template" ? [0, 0, 0, 1] : [...hexRgb(p.badge.fill), 1];
+        if (f & GAP) return none;
+        if (f & BADGE) {
+          if (kind === "template") return f & DIGIT ? none : [0, 0, 0, 1];
+          return f & DIGIT ? [...hexRgb(p.badge.text), 1] : [...hexRgb(p.badge.fill), 1];
+        }
         if (f & FRONT) return [...ink2, 1];
         return f & BACK ? [...ink2, kind === "template" ? 1 : p.back] : none;
       }

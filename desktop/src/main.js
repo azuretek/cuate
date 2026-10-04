@@ -88,6 +88,8 @@ let iconKey = null;
 let windowIconKey = null;
 let dockIconKey = null;
 const smokeIcons = [];
+// The badge the smoke draws at a count, whatever the page's own unread is, so the proof always has a counted image.
+let smokeBadge = null;
 const nativeFrom = (reps) => {
   const image = nativeImage.createEmpty();
   for (const r of reps) image.addRepresentation({ scaleFactor: r.scale, width: r.image.width, height: r.image.height, buffer: encodePng(r.image) });
@@ -118,11 +120,30 @@ function applyIcons(next = {}) {
     // The window icon depends on the palette alone, so a new count leaves it as it is.
     const paletteKey = JSON.stringify(out.palette);
     if (out.window && paletteKey !== windowIconKey) { win.setIcon(nativeFrom([{ scale: 1, image: out.window }])); windowIconKey = paletteKey; }
-    if (process.platform === 'win32') win.setOverlayIcon(out.overlay ? nativeFrom([{ scale: 1, image: out.overlay }]) : null, out.description);
+    if (process.platform === 'win32') win.setOverlayIcon(out.overlay ? nativeFrom(out.overlay) : null, out.description);
   }
-  // macOS's Dock and a Linux launcher draw their own badge over the app icon; the shell only gives them the count.
-  if (process.platform !== 'win32') app.setBadgeCount(out.badgeCount);
-  if (SMOKE) smokeIcons.push({ scheme: iconState.scheme, accent: iconState.colors.accent || null, unread: out.badgeCount, mark: out.palette.mark, tray: out.tray.reps.map((r) => r.image.data.reduce((s, v, i) => (s + v * ((i % 251) + 1)) % 1000003, 0)).join(',') });
+  // macOS's Dock and a Linux launcher draw their own badge over the app icon; the shell gives them the same label
+  // the overlay draws, so all three read alike: exact to 9, then 9+.
+  if (process.platform === 'darwin' && app.dock) app.dock.setBadge(out.badgeText);
+  else if (process.platform === 'linux') app.setBadgeCount(out.badgeCount);
+  if (SMOKE) {
+    // The badge at a count the taskbar shows, drawn whatever the page's own unread happens to be, so the proof always
+    // has a counted image: the Windows overlay, or the tray macOS and the Linux panel draw.
+    if (!smokeBadge) {
+      const counted = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState, unread: 12, fixed: appIconFixed });
+      const shot = counted.overlay ? counted.overlay[counted.overlay.length - 1] : counted.tray.reps[counted.tray.reps.length - 1];
+      try { writeFileSync(path.join(SMOKE, 'icon-badge-12.png'), encodePng(shot.image)); } catch { /* a capture never fails the smoke */ }
+      smokeBadge = { badgeText: counted.badgeText, overlay: Boolean(counted.overlay), unread: 12 };
+    }
+    smokeIcons.push({
+      scheme: iconState.scheme,
+      accent: iconState.colors.accent || null,
+      unread: out.badgeCount,
+      badge: out.badgeText,
+      mark: out.palette.mark,
+      tray: out.tray.reps.map((r) => r.image.data.reduce((s, v, i) => (s + v * ((i % 251) + 1)) % 1000003, 0)).join(','),
+    });
+  }
   return true;
 }
 const lifecycle = createLifecycle({
@@ -1660,6 +1681,11 @@ async function runSmoke(w) {
   const darkIcon = iconFor('dark', '#7fd6a8');
   report.trayIcon = Boolean(lightIcon && darkIcon) && lightIcon.mark === '#2a6f4b' && lightIcon.mark !== darkIcon.mark && (process.platform === 'darwin' || lightIcon.tray !== darkIcon.tray);
   console.log('tray icon: ' + JSON.stringify({ lightIcon, darkIcon, redraws: smokeIcons.length }));
+  // The unread count on the icon (issue 218): the shell drew the badge at a count, exact to 9 then 9+, and kept it
+  // beside the report; on Windows that is the taskbar overlay, on macOS and Linux the tray's own badge.
+  report.overlayIcon = Boolean(smokeBadge && smokeBadge.badgeText === '9+' && smokeBadge.unread === 12 && (process.platform !== 'win32' || smokeBadge.overlay));
+  console.log('overlay icon: ' + JSON.stringify({ smokeBadge, redraws: smokeIcons.length }));
+  if (!report.overlayIcon) console.error('overlay icon: no counted badge');
 
   // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
   // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default

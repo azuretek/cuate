@@ -130,6 +130,8 @@
   --color-chart-3: #b45309;
   --color-chart-4: #6d28d9;
   --color-chart-5: #166534;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) {
@@ -177,6 +179,8 @@
     --color-chart-3: #fbbf24;
     --color-chart-4: #a78bfa;
     --color-chart-5: #22c55e;
+    --color-badge: #dc2626;
+    --color-badge-fg: #ffffff;
   }
 }
 :root[data-scheme="dark"] {
@@ -225,6 +229,8 @@
   --color-chart-3: #fbbf24;
   --color-chart-4: #a78bfa;
   --color-chart-5: #22c55e;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
 }
 :root[data-scheme="light"] {
   color-scheme: light;
@@ -274,6 +280,8 @@
   --color-chart-3: #b45309;
   --color-chart-4: #6d28d9;
   --color-chart-5: #166534;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme="light"]) [data-palette="default"] {
@@ -321,6 +329,8 @@
     --color-chart-3: #fbbf24;
     --color-chart-4: #a78bfa;
     --color-chart-5: #22c55e;
+    --color-badge: #dc2626;
+    --color-badge-fg: #ffffff;
   }
 }
 :root[data-scheme="dark"] [data-palette="default"] {
@@ -368,6 +378,8 @@
   --color-chart-3: #fbbf24;
   --color-chart-4: #a78bfa;
   --color-chart-5: #22c55e;
+  --color-badge: #dc2626;
+  --color-badge-fg: #ffffff;
 }
 .icon[data-icon="x"] { --icon-glyph: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M18%206%206%2018%22%2F%3E%3Cpath%20d%3D%22m6%206%2012%2012%22%2F%3E%3C%2Fsvg%3E"); }
 .icon[data-icon="check"] { --icon-glyph: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%206%209%2017l-5-5%22%2F%3E%3C%2Fsvg%3E"); }
