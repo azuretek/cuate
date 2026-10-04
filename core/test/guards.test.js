@@ -83,23 +83,47 @@ test('the scrollbars are one set, on the containers that scroll', () => {
   for (const f of walk('core/app/components')) assert.equal(/scrollbar/i.test(read(f)), false, f + ' styles a scrollbar');
 });
 
-test('the send arrow takes its size and weight from tokens', () => {
-  // The arrow fills its circle by scaling with the button rather than by a size
-  // written into the markup: its font size is derived from the button's own size
-  // token and its weight is the bold token, so both follow a change to the button.
-  // The glyph itself stays an arrow in the template and carries no style of its own.
+test('the send arrow takes its size and weight from the tokens, and its circle is the row\'s own', () => {
+  // The arrow is the shared icon set's stroked glyph rather than a text arrow: its size is the button's own fraction,
+  // so it fills the circle and scales with it, and its weight is the glyph's own stroke width in the token set, so it
+  // reads as a real arrow. The circle carries no ring of its own, and both its fill and the arrow's colour come from
+  // the button's role tokens, so an imported theme restyles it (issue 216).
   const tokens = json('core/spec/tokens.json');
-  const size = tokens.font['size-send'];
-  assert.equal(typeof size, 'string', 'the send glyph has a size token');
-  assert.match(size, /var\(--size-avatar\)/, 'the glyph scales with the button');
+  const glyph = tokens.icons.glyphs['arrow-up'];
+  assert.ok(glyph, 'the arrow-up glyph is in the token set');
+  assert.ok(Number(glyph['stroke-width'] || tokens.icon.stroke) >= 2, 'the arrow carries a real stroke weight');
+  const size = tokens.size['send-icon'];
+  assert.equal(typeof size, 'string', 'the send arrow has a size token');
+  assert.match(size, /var\(--size-avatar\)/, 'the arrow scales with the button');
   const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
   const rule = /\.send\s*\{([^}]*)\}/.exec(css);
   assert.ok(rule, 'the .send rule exists');
-  assert.match(rule[1], /font-size:\s*var\(--font-size-send\)/, 'the glyph size comes from its token');
-  assert.match(rule[1], /font-weight:\s*var\(--font-weight-bold\)/, 'the glyph weight comes from the bold token');
+  assert.match(rule[1], /width:\s*var\(--size-avatar\)/, 'the circle is the row-control size');
+  assert.match(rule[1], /height:\s*var\(--size-avatar\)/, 'the circle is the row-control size');
+  assert.match(rule[1], /border:\s*0\s*;/, 'the button carries no border');
+  assert.equal(/box-shadow|outline/.test(rule[1]), false, 'the button carries no ring');
+  assert.match(rule[1], /background:\s*var\(--role-button\)/, 'the fill comes from the role token');
+  assert.match(rule[1], /color:\s*var\(--role-button-fg\)/, 'the arrow colour comes from the role token');
+  const arrow = /\.send\s+\.icon\s*\{([^}]*)\}/.exec(css);
+  assert.ok(arrow, 'the send arrow is styled from the button');
+  assert.match(arrow[1], /width:\s*var\(--size-send-icon\)/, 'the arrow size comes from its token');
   const markup = read('core/app/components/app-composer.js');
-  assert.ok(markup.includes('class="send"') && markup.includes('u2191'), 'the button still carries the arrow glyph');
+  assert.ok(markup.includes('class="send"') && markup.includes('data-icon="arrow-up"'), 'the button carries the arrow glyph');
+  assert.ok(/class="send"[^>]*aria-label="Send"/.test(markup), 'the button keeps its accessible name');
   assert.equal(/style=/.test(markup), false, 'the glyph carries no inline style');
+});
+
+test('the send button is no larger than the composer row it sits in', () => {
+  // The field is one line tall at its smallest: its font's line box, its own padding and its border. The send button
+  // sits flush at the end of that row, so a button taller than it reads heavier than the row it belongs to, and the
+  // arrow inside it is the button's own fraction again (issue 216).
+  const tokens = json('core/spec/tokens.json');
+  const px = (v) => parseFloat(v);
+  const row = px(tokens.font.line) * px(tokens.font['size-md']) + 2 * px(tokens.space['2']) + 2 * px(tokens.size.border);
+  assert.ok(px(tokens.size.avatar) <= row, 'the send button (' + tokens.size.avatar + ') outgrows the composer row (' + row.toFixed(1) + 'px)');
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const tool = /\.tool\s*\{([^}]*)\}/.exec(css);
+  assert.ok(tool && /width:\s*var\(--size-avatar\)/.test(tool[1]), 'the send button matches the row\'s other controls');
 });
 
 test('the product name lives only where naming.json says', () => {
