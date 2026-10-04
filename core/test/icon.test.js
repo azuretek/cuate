@@ -205,17 +205,15 @@ function cssHex(v) {
   return '#' + cssColour(v).map((c) => Math.round(c * 255).toString(16).padStart(2, '0')).join('');
 }
 
-test('the Android About test draws the chosen icon\'s own colour, read from the spec (issue 246)', () => {
+test('the Android About test looks for the chosen icon\'s tile as the palette draws it (issue 246)', () => {
   const spec = JSON.parse(read('core/spec/app-icons.json'));
   const chosen = spec.icons.find((i) => i.id === 'rosa');
-  assert.ok(chosen && chosen.colors && /^#[0-9a-f]{6}$/i.test(chosen.colors.accent), 'the spec holds the rosa accent');
+  assert.ok(chosen && chosen.colors, 'the spec holds the rosa icon');
   assert.match(read('core/test/about-fixture.js'), /'appearance\.appIcon': 'rosa'/, 'the About fixture picks the rosa icon');
+  const top = iconPalette(iconColours(tokens.color[chosen.scheme], chosen.colors), chosen.scheme).tile.top;
+  const want = 'Color.rgb(' + [1, 3, 5].map((i) => '0x' + top.slice(i, i + 2)).join(', ') + ')';
   const file = readdirSync(new URL('../../android/app/src/androidTest', import.meta.url), { recursive: true }).find((f) => String(f).endsWith('AboutPageTest.kt'));
-  const src = read('android/app/src/androidTest/' + file);
-  assert.match(src, /spec\/app-icons\.json/, 'AboutPageTest.kt reads the spec');
-  assert.match(src, /getString\("id"\) == "rosa"/, 'AboutPageTest.kt looks for the chosen icon');
-  assert.match(src, /getJSONObject\("colors"\)\.getString\("accent"\)/, 'AboutPageTest.kt reads its accent from the spec');
-  assert.match(src, /Color\.parseColor\(accent\)/, 'AboutPageTest.kt draws that accent as the tile');
+  assert.ok(read('android/app/src/androidTest/' + file).includes(want), 'AboutPageTest.kt looks for ' + want + ', the rosa tile top');
 });
 
 test('the old chat bubble is gone: no fixed teal, and no hand-drawn per-size file', () => {
