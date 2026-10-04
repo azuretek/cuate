@@ -468,7 +468,7 @@ test('the caret is sized and coloured from the panel tokens, overlapping it by e
   const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
   const size = json('core/spec/tokens.json').size.caret;
   assert.equal(size, '14px', 'the caret is 14px, one value for desktop and the phone width: ' + size);
-  const root = /\[data-popover\]\s*\{([^}]*)\}/.exec(css);
+  const root = /\[data-popover\]\s*\{([^}]*--caret-size:[^}]*)\}/.exec(css);
   assert.ok(root, 'the caret declares its geometry from data-popover');
   assert.match(root[1], /--caret-size:\s*var\(--size-caret\)/, 'the drawn width comes from the size token');
   assert.match(root[1], /--caret-overlap:\s*var\(--size-border\)/, 'the overlap is exactly one border width');
@@ -486,8 +486,21 @@ test('the caret is sized and coloured from the panel tokens, overlapping it by e
     assert.ok(fill.includes('border-' + side + ': calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu)'), edge + ': the fill is the panel surface token');
     assert.ok(outline.includes(pos + ': calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip))'), edge + ': the outline overlaps the panel by one border');
     assert.ok(fill.includes(pos + ': calc(var(--caret-overlap) - var(--caret-tip))'), edge + ': the fill base reaches the panel interior');
+    assert.ok(fill.includes('border-left-width: calc(var(--caret-size) / 2)'), edge + ': the fill spans the whole caret, so the panel border is never drawn across it');
+    assert.ok(fill.includes('border-right-width: calc(var(--caret-size) / 2)'), edge + ': the fill spans the whole caret on the right too');
   }
   for (const body of bodies) assert.doesNotMatch(body, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|color-mix\(/i, 'the caret carries a hard-coded colour: ' + body);
+});
+
+// A popover drawn inside a drag strip takes its own presses (issues 217 and 240). -webkit-app-region is INHERITED, so
+// a menu inside the chats or the conversation header computes to drag and a real press on an option starts a window
+// drag and never reaches the page; a scripted click skips the region check, so only this rule and the smoke's own
+// real-press checks see it at all. Every popover is no-drag, which punches a hole in the strip for the panel and its
+// options; the header's own controls keep their no-drag (bar-layout.test.js).
+test('a popover is no-drag, so a menu inside a drag header takes its own presses', () => {
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.match(css, /\[data-popover\]\s*\{\s*-webkit-app-region:\s*no-drag;?\s*\}/, 'a popover inside a drag strip would inherit drag and swallow every press');
+  assert.match(css, /\.sidebar-head,\s*\.conv-head\s*\{\s*-webkit-app-region:\s*drag;?\s*\}/, 'the two headers stay the drag strip');
 });
 
 // The caret is drawn in exactly one place (issue 217): the one data-popover rule in app.css. A second caret drawn by

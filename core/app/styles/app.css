@@ -639,23 +639,29 @@ body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-o
 .search-choice { display: flex; flex-direction: column; }
 .sort-check { display: inline-block; width: var(--space-3); }
 .sort-check .icon { width: var(--space-3); height: var(--space-3); }
-/* The one caret a popover wears (issue 217; restyled in #227): the panel's own edge raised into a triangle that points
-   at the control that opened it, so the menu reads as belonging to that control and not stuck on top of it. Every
-   popover carries data-popover and the edge it sits on (data-popover-edge); the kit's aimCarets() reads the control
-   from the same dismiss pair the popover already uses and sets --caret-x, so a new menu gets its caret for free. One
-   --size-caret token sizes the drawn width for desktop and the phone width alike, and the triangle is drawn the whole
-   of it. Two triangles layer in the popover's own stacking context, so no shadow or translucent surface shows
-   through: the outer carries the panel's border token at the panel's own one border weight, the inner the panel's
-   surface token. Each base sits --caret-overlap (exactly one border width) inside the panel, so the panel's border is
-   covered at the opening and its edge rises into the triangle's two sides with no seam, no gap and no double line
-   where they meet. */
+/* A popover that opens inside a drag strip takes its own presses (issues 217 and 240). -webkit-app-region is
+   INHERITED: the chats header and the conversation header are drag (bar-layout), and every panel drawn inside one
+   computes to drag too, so a real press on an option starts a window drag and never reaches the page while a scripted
+   click (which skips the region check) still works. Every popover is no-drag, which punches a hole in the strip for the
+   panel and its options; the trigger controls already carry no-drag themselves. */
+[data-popover] { -webkit-app-region: no-drag; }
+/* The one caret a popover wears (issue 217; restyled in #227; the seam cut in #241): the panel's own edge raised into a
+   triangle that points at the control that opened it, so the menu reads as belonging to that control and not stuck on
+   top of it. Every popover carries data-popover and the edge it sits on (data-popover-edge); the kit's aimCarets() reads
+   the control from the same dismiss pair the popover already uses and sets --caret-x, so a new menu gets its caret for
+   free. One --size-caret token sizes the drawn width for desktop and the phone width alike, and the triangle is drawn
+   the whole of it. Two triangles layer in the popover's own stacking context: the outer carries the panel's border
+   token at the panel's own one border weight, the inner the panel's surface token. Each base sits --caret-overlap
+   (exactly one border width) inside the panel, and the inner spans the WHOLE --size-caret at its base, so the panel's
+   border is not drawn across the span the caret occupies: its edge breaks to become the triangle's two sides, with no
+   seam, no gap and no double line where they meet, the same on both edges and in every theme. */
 [data-popover] { --caret-size: var(--size-caret); --caret-tip: calc(var(--size-caret) * 0.8); --caret-overlap: var(--size-border); }
 [data-popover]::before,
 [data-popover]::after { content: ''; position: absolute; left: var(--caret-x, 50%); width: 0; height: 0; transform: translateX(-50%); pointer-events: none; border-left: calc(var(--caret-size) / 2) solid transparent; border-right: calc(var(--caret-size) / 2) solid transparent; }
 [data-popover][data-popover-edge="top"]::before { top: calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip)); border-bottom: var(--caret-tip) solid var(--role-menu-border); }
-[data-popover][data-popover-edge="top"]::after { top: calc(var(--caret-overlap) - var(--caret-tip)); border-bottom: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2 - var(--size-border)); border-right-width: calc(var(--caret-size) / 2 - var(--size-border)); }
+[data-popover][data-popover-edge="top"]::after { top: calc(var(--caret-overlap) - var(--caret-tip)); border-bottom: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2); border-right-width: calc(var(--caret-size) / 2); }
 [data-popover][data-popover-edge="bottom"]::before { bottom: calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip)); border-top: var(--caret-tip) solid var(--role-menu-border); }
-[data-popover][data-popover-edge="bottom"]::after { bottom: calc(var(--caret-overlap) - var(--caret-tip)); border-top: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2 - var(--size-border)); border-right-width: calc(var(--caret-size) / 2 - var(--size-border)); }
+[data-popover][data-popover-edge="bottom"]::after { bottom: calc(var(--caret-overlap) - var(--caret-tip)); border-top: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2); border-right-width: calc(var(--caret-size) / 2); }
 
 
 /* Edit is a small text control, not an icon (issue 137): a rounded highlight on hover and, while edit mode is on, a
