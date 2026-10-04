@@ -1592,8 +1592,56 @@ async function runSmoke(w) {
   };
   report.resizeKeeps = Object.values(resizeChecks).every(Boolean);
   console.log('resize keeps: ' + JSON.stringify({ checks: resizeChecks, start, steps }));
+
+  // Switching conversations returns each to the place you left it, at once, without waiting on the server (issue 200).
+  // Chat A is scrolled back, we switch to B and back, and A must show the same message at the same height; then, with
+  // the server's answer held open, a switch to a conversation we already hold must still draw at once and the search
+  // field and the composer must answer while it is held.
+  w.setSize(1000, 560);
+  // The switch check clicks chats on a desktop, which closes the list drawer (open with show). Put it back as it was,
+  // since a later check reads an open drawer on a phone; the same way the marks and emoji sections above restore it.
+  const switchListWasOpen = await js("document.querySelector('app-root').listOpen");
+  await js("(() => { const root = document.querySelector('app-root'); root.listOpen = true; root.view = 'messages'; return true; })()");
+  await pause(400);
+  const SWITCH_A = 'Avery Quinn';
+  const SWITCH_B = 'Weekend plans';
+  const clickRow = (name) => js("(() => { const r = [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name').textContent === " + JSON.stringify(name) + "); if (!r) return null; r.click(); return r.dataset.chat; })()");
+  const firstRow = () => js("(() => { const m = document.querySelector('.messages'); if (!m) return null; const top = m.getBoundingClientRect().top; const r = [...m.querySelectorAll('.bubble-row')].find((x) => x.getBoundingClientRect().bottom - top > 0); return r ? { id: r.dataset.id, offset: Math.round(r.getBoundingClientRect().top - top), room: m.scrollHeight - m.clientHeight } : null; })()");
+  const showsName = (name) => "document.querySelector('.conv-head .chat-name') && document.querySelector('.conv-head .chat-name').textContent === " + JSON.stringify(name);
+  await clickRow(SWITCH_A);
+  await waitFor(showsName(SWITCH_A), 10000);
+  await pause(300);
+  // A scrolled back, a few messages down, so it sits at neither end.
+  await js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const r = rows[Math.min(3, rows.length - 1)]; m.scrollTop = r.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 6; m.dispatchEvent(new Event('scroll')); return true; })()");
+  await pause(250);
+  const placeA = await firstRow();
+  const switchT0 = Date.now();
+  await clickRow(SWITCH_B);
+  await waitFor(showsName(SWITCH_B), 10000);
+  const switchMs = Date.now() - switchT0;
+  await pause(200);
+  const placeB = await firstRow();
+  await clickRow(SWITCH_A);
+  await waitFor(showsName(SWITCH_A), 10000);
+  await pause(200);
+  const placeA2 = await firstRow();
+  report.switchPlace = Boolean(placeA && placeA2 && placeA.room > 0 && placeA.id === placeA2.id && Math.abs(placeA.offset - placeA2.offset) <= 2) && Boolean(placeB && placeB.room >= 0);
+  console.log('switch place: ' + JSON.stringify({ placeA, placeB, placeA2, switchMs }));
+  // The server's answer to a conversation we already hold is held open on purpose: the pane must still draw the other
+  // conversation at once, and the search field and the composer must take input, so a switch never waits on a fetch.
+  const heldSwitch = await js("(async () => { const root = document.querySelector('app-root'); const real = root.client.messages.bind(root.client); let release; const gate = new Promise((r) => { release = r; }); let asked = 0; root.client.messages = async (...args) => { asked += 1; await gate; return real(...args); }; const title = () => { const t = document.querySelector('.conv-head .chat-name'); return t ? t.textContent : null; }; [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name').textContent === " + JSON.stringify(SWITCH_B) + ").click(); const t0 = performance.now(); while (title() !== " + JSON.stringify(SWITCH_B) + " && performance.now() - t0 < 1000) await new Promise((r) => requestAnimationFrame(r)); const swappedMs = performance.now() - t0; const swapped = title() === " + JSON.stringify(SWITCH_B) + "; const search = document.querySelector('.sidebar-head .chat-search'); search.focus(); search.value = 'q'; search.dispatchEvent(new Event('input', { bubbles: true })); const typed = search.value === 'q'; search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); const ta = document.querySelector('app-composer textarea'); ta.focus(); ta.value = 'hi'; ta.dispatchEvent(new Event('input', { bubbles: true })); const composed = ta.value === 'hi'; ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); release(); root.client.messages = real; await new Promise((r) => setTimeout(r, 50)); return { asked, swapped, swappedMs: Math.round(swappedMs), typed, composed }; })()");
+  report.switchInstant = Boolean(heldSwitch) && heldSwitch.asked >= 1 && heldSwitch.swapped && heldSwitch.swappedMs < 900 && heldSwitch.typed && heldSwitch.composed;
+  console.log('switch instant: ' + JSON.stringify(heldSwitch));
+  await clickRow(SWITCH_A);
+  await waitFor(showsName(SWITCH_A), 10000);
   w.setSize(1100, 720);
+  await pause(300);
   await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  // Each chat click above opens with show, which closes the list drawer, and the last chat's page closes it once more
+  // as its fetch lands, after a restore placed here first would have run; so the drawer is put back after that page has
+  // settled, the way the marks and emoji sections above restore theirs.
+  await pause(400);
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(switchListWasOpen)));
 
   // The conversation header stays pinned and nothing but media zooms (issue 180). A long conversation is scrolled to
   // each end, the page itself is told to scroll and a field takes focus, then a pinch (ctrl and the wheel) and the zoom
