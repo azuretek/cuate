@@ -77,6 +77,16 @@
   --role-button-fg: var(--color-accent-fg);
   --role-button-hover: oklch(from var(--color-accent) calc(l - 0.04) c h);
   --role-button-press: oklch(from var(--color-accent) calc(l - 0.06) c h);
+
+  /* The sheet's way back, Settings' and About's top strip (issue 246): today it wore the muted text colour on the card
+     and the plain border token, so under some themes it barely changed and under others it did not change at all and
+     stopped reading as a control. It gets its own role off the accent, so it shifts with every theme, and its label,
+     glyph, key and rule are held at 4.5:1 against what is behind them (core/test/roles.test.js). */
+  --role-back: color-mix(in oklab, var(--color-accent) 12%, var(--color-bg-raised));
+  --role-back-fg: var(--color-bg-raised-fg);
+  --role-back-muted: color-mix(in oklab, var(--color-fg-muted) 70%, var(--color-bg-raised-fg));
+  --role-back-border: color-mix(in oklab, var(--color-fg-muted) 70%, var(--color-bg-raised-fg));
+  --role-back-hover: color-mix(in oklab, var(--color-accent) 22%, var(--color-bg-raised));
 }
 :root[data-scheme="dark"] {
   --role-search: oklch(from var(--color-sidebar) calc(l + 0.05) c h);

@@ -328,8 +328,8 @@ app-settings[data-motion="down"], app-about[data-motion="down"] { animation: pag
 app-settings[data-motion="up"], app-about[data-motion="up"] { animation: page-up var(--motion-screen) var(--motion-sheet-ease) both; }
 @media (prefers-reduced-motion: reduce) { app-settings[data-motion], app-about[data-motion] { animation: none; } }
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
-.sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
-.sheet-back:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
+.sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--role-back-border); border-radius: 0; background: var(--role-back); color: var(--role-back-fg); cursor: pointer; text-align: left; flex: none; }
+.sheet-back:hover { background: var(--role-back-hover); color: var(--role-back-fg); }
 .sheet-back:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
 /* The strip draws one of two ways back: the arrow and the page's own label, or below the phone breakpoint, on a page
    that returns to the chats list, the chats icon and "Back to chats" (issue 168). The phone block picks between them. */
@@ -337,7 +337,7 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .sheet-back-narrow { display: none; }
 .sheet-back-icon { display: inline-flex; width: var(--size-back-icon); height: var(--size-back-icon); }
 .sheet-back-icon .icon { width: 100%; height: 100%; }
-.sheet-esc { margin-left: auto; padding: var(--space-1) var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-sunken); color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); text-transform: uppercase; }
+.sheet-esc { margin-left: auto; padding: var(--space-1) var(--space-2); border: var(--size-border) solid var(--role-back-border); border-radius: var(--radius-sm); background: var(--role-back); color: var(--role-back-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); text-transform: uppercase; }
 .sheet-head { flex: none; padding: var(--space-4) var(--space-4) var(--space-2); }
 .sheet-title { margin: 0; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); }
 .sheet-desc { margin: var(--space-1) 0 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
