@@ -69,3 +69,44 @@ test('a message that carries a real picture or video offers Save beside Reply an
   assert.deepEqual(messageActions(msg({ id: 'FAKE-0003' }), { sending: true }), ['reply', 'react'], 'a message with no file offers no save');
   assert.deepEqual(messageActions(msg({ id: 'FAKE-0004', attachments: [png('att-4')] }), { sending: false }), [], 'with sending off there is nothing to save either');
 });
+
+// The viewer and the attachment draw a video as a video, not a picture (issue 181): the case the smoke's synthetic
+// fixture does not carry, held at the component so the rendering rule cannot regress.
+const components = {};
+globalThis.HTMLElement = class { addEventListener() {} removeAttribute() {} setAttribute() {} hasAttribute() { return false; } getAttribute() { return null; } dispatchEvent() {} };
+globalThis.customElements = { define(name, cls) { components[name] = cls; }, get() { return undefined; } };
+globalThis.document = { createTreeWalker() { return {}; }, createComment() { return {}; }, importNode() { return {}; }, createElement() { return { content: {} }; } };
+await import('../app/components/app-attachment.js');
+await import('../app/components/app-image-viewer.js');
+
+// The Lit template as the text it would draw, nested templates included, without a browser.
+function words(value) {
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(words).join('');
+  if (value?.strings) return value.strings.map((s, i) => s + words(value.values[i])).join('');
+  return '';
+}
+
+test('the viewer draws a video as a video, with the step controls between the conversation media', () => {
+  const items = [
+    { id: 'att-p', kind: 'image', src: 'blob:p', name: 'sunset.png' },
+    { id: 'att-v', kind: 'video', src: 'blob:v', name: 'clip.mp4', mime: 'video/mp4' },
+  ];
+  const host = (i) => ({ items, index: i, kind: items[i].kind, alt: items[i].name, src: items[i].src, view: { scale: 1, x: 0, y: 0 }, moving: false, client: null });
+  const viewer = components['app-image-viewer'].prototype;
+  const image = words(viewer.render.call(host(0)));
+  const video = words(viewer.render.call(host(1)));
+  assert.ok(image.includes('<img class="viewer-image"') && image.includes('sunset.png'), 'a picture is an image element');
+  assert.ok(video.includes('<video class="viewer-image"') && video.includes('clip.mp4'), 'a video is a video element');
+  assert.ok(video.includes('data-kind=video') && video.includes('data-count=2'), 'the item on screen and the count are named');
+  assert.ok(image.includes('viewer-prev') && image.includes('viewer-next') && image.includes('aria-label="Previous item"') && image.includes('aria-label="Next item"'), 'the step controls are drawn when there is more than one item');
+});
+
+test('a video attachment is a media preview that opens the viewer, never a save button', () => {
+  const attachment = components['app-attachment'].prototype;
+  const video = words(attachment.render.call({ attachment: { id: 'att-v', name: 'clip.mp4', mime: 'video/mp4', missing: false }, client: {}, failed: false, src: 'blob:v' }));
+  assert.ok(video.includes('attachment-preview') && video.includes('Open clip.mp4'), 'a video opens the viewer');
+  assert.ok(video.includes('<video class="attachment-image"'), 'drawn as a video');
+  const file = words(attachment.render.call({ attachment: { id: 'att-d', name: 'booking.pdf', mime: 'application/pdf', missing: false }, client: {}, failed: false, src: '' }));
+  assert.ok(file.includes('attachment-file') && file.includes('Save booking.pdf') && !file.includes('attachment-preview'), 'a document is still saved, not shown');
+});
