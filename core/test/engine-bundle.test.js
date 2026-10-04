@@ -55,7 +55,17 @@ test('every rule module is named by the engine entry, so none is left out of a s
   }
 });
 
+// Only the code: comments and string/template literals removed, so a word that is data (an emoji name or
+// keyword such as 'window' or 'fetch') is not read as a reference to the DOM or the network. The node-builtin
+// check reads the source itself, because there the specifier is a string.
+const codeOnly = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/\/\/[^\n]*/g, ' ')
+  .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+  .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+  .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+
 test('the bundle runs with no page, so it needs no DOM and no node builtin', () => {
-  assert.ok(!/\b(document|window|localStorage|indexedDB|require\()/.test(code));
+  assert.ok(!/\b(document|window|localStorage|indexedDB|require\()/.test(codeOnly(code)));
   assert.ok(!/from\s*['"]node:/.test(code));
 });
