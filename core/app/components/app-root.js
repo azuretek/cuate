@@ -10,7 +10,7 @@ import {
   groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats,
   requestDelete, requestDeleteGroup, resolveDelete,
 } from '../rules/chats.js';
-import { mergeMessages, applyReaction } from '../rules/messages.js';
+import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
@@ -799,11 +799,25 @@ class AppRoot extends KitElement {
       else this.messages = applyReaction(this.messages, { targetId: messageId, type: r.type, emoji: r.emoji ?? null, add: r.add, fromMe: true, sender: null });
       return r.status !== 'uncertain';
     } catch (e) {
-      if (chatId === this.openChatId) this.messageNote = { id: messageId, text: e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e) };
+      if (chatId === this.openChatId) this.refuseReaction(messageId, e);
       return false;
     } finally {
       this.reacting = null;
     }
+  }
+
+  // A reaction the engine cannot send is said in place, in the app's own notice style: the honest limit under the
+  // message, and a dismissible app notice naming the engine that answered. Never a raw error, never a log line, and
+  // never a silent downgrade to a classic tapback; the emoji panel stays usable and the draft is untouched, so the
+  // same attempt succeeds after an engine upgrade without restarting the app (issue 241).
+  refuseReaction(messageId, e) {
+    if (e.code === 'reaction_unsupported') {
+      const { message, detail } = reactionUnsupported(this.info?.engine);
+      this.messageNote = { id: messageId, text: message };
+      this.appNotices = putNotice(this.appNotices, { id: 'reaction:' + messageId, revision: messageId + ':' + message, message, detail, tone: 'warn' });
+      return;
+    }
+    this.messageNote = { id: messageId, text: e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e) };
   }
 
   // --- Our own typing, relayed between this account's devices (issue 230) ---
