@@ -19,7 +19,7 @@ const sheetOut = Number.parseFloat(tokens.motion['sheet-out']);
 // A host carrying the state the departure reads, with the token the stylesheet resolves.
 function host() {
   const h = new AppRoot();
-  Object.assign(h, { view: 'settings', sheetLeaving: false, pendingSheet: null, aboutFrom: 'settings', pageMotion: 'pop' });
+  Object.assign(h, { view: 'settings', sheetLeaving: false, pendingSheet: null, aboutFrom: 'settings', pageMotion: 'fade' });
   globalThis.getComputedStyle = () => ({ getPropertyValue: (name) => (name === '--motion-sheet-out' ? tokens.motion['sheet-out'] : '') });
   return h;
 }

@@ -59,10 +59,10 @@ class AppRoot extends KitElement {
     selecting: { state: true },
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
     // showing. view says which page the sheet draws, if any (the conversation, settings or about). aboutFrom says what
-    // About was opened from ('settings' when it was pushed over Settings, so its back returns there), and pageMotion
-    // how the page on screen arrived inside the sheet ('down' when Settings returns, 'up' when About arrives; null when
-    // the sheet itself arrived). sheetMotion is how the sheet itself arrived: 'up' from the bottom edge on every width,
-    // whichever page it holds (issue 253).
+    // About was opened from ('settings' when it replaced Settings, so its back returns there), and pageMotion how the
+    // page on screen replaced the one before it inside the SAME sheet (issue 253: a fade in place, never a rise, so
+    // About never reads as a second sheet above Settings; null when the sheet itself arrived). sheetMotion is how the
+    // sheet itself arrived: 'up' from the bottom edge on every width, whichever page it holds (issue 253).
     view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true }, sheetMotion: { state: true },
     // The Settings tab on show (issue 167), held here so a push to About and back returns to the tab it left.
     settingsTab: { state: true },
@@ -182,8 +182,8 @@ class AppRoot extends KitElement {
     this.heldScreen = null;
     this.aboutFrom = null;
     this.pageMotion = null;
-    // How the sheet itself arrives when it opens (issue 244): Settings slides down into place, About slides up into
-    // its place. It is set only on a fresh open, so switching pages inside the sheet does not slide the card twice.
+    // How the ONE sheet itself arrives when it opens: up from the bottom edge whichever page it holds (issue 253). It
+    // is set only on a fresh open, so replacing the page inside the sheet does not slide the card twice.
     this.sheetMotion = null;
     this.settingsTab = null;
     // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
@@ -799,30 +799,34 @@ class AppRoot extends KitElement {
     this.typing = null;
   }
 
-  // Settings asked for while About is up goes back to Settings inside the same sheet, the way About's back does.
+  // Settings asked for while About is up goes back to Settings inside the same sheet, the way About's back does: the
+  // Settings page is put back in place, not raised as a sheet of its own.
   openSettings() {
     this.settingsProblem = '';
-    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'down'); return; }
+    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings'); return; }
     // Settings arriving afresh opens on its first tab; only a return from About keeps the tab it left.
     if (!this.sheetShowing) this.settingsTab = null;
     this.openSheet('settings');
   }
 
-  // About is a page of its own on every platform (issue 171). From Settings it is pushed inside the sheet that is
-  // already up, so its back returns to Settings; asked for on its own (the tray, the app menu) the sheet arrives with
-  // About as its page, and back closes it. Asking for it while it is up changes nothing.
+  // About is a page of its own on every platform (issue 171). From Settings it REPLACES the Settings page inside the
+  // sheet that is already up (issue 253: one sheet, never a second above it), so its back returns to Settings; asked
+  // for on its own (the tray, the app menu) the sheet arrives with About as its page, and back closes it. Asking for
+  // it while it is up changes nothing.
   openAbout() {
     if (this.view === 'about' && !this.sheetLeaving) return;
-    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'up'); return; }
+    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about'); return; }
     this.aboutFrom = null;
     this.pageMotion = null;
     this.openSheet('about');
   }
 
-  // A page moved inside the sheet that is up: no departure and no arrival of the sheet, only the page.
-  showPage(view, motion) {
+  // A page replaced inside the sheet that is up: no departure and no arrival of the sheet, only the page. The change is
+  // a fade in place (issue 253), so About REPLACES Settings inside the one sheet rather than rising above it as a
+  // second sheet, and the two widths behave the same.
+  showPage(view) {
     if (view !== 'about') this.aboutFrom = null;
-    this.pageMotion = motion;
+    this.pageMotion = 'fade';
     // A page moved inside the sheet that is up does not re-trigger the sheet's own arrival.
     this.sheetMotion = null;
     this.view = view;
@@ -831,7 +835,7 @@ class AppRoot extends KitElement {
   // A page's back strip (and Escape): the page under it when there is one (rules/screens.js), else the sheet closes.
   pageBack() {
     const under = pageAfterBack(this.view, this.aboutFrom);
-    if (under) this.showPage(under, 'down');
+    if (under) this.showPage(under);
     else this.closeView();
   }
 
@@ -899,7 +903,7 @@ class AppRoot extends KitElement {
   // The sheet runs one page at a time: asking for another while one is up runs the first down and only then brings
   // the next up. The motion and the dim are Chela's own conventions, so a reader who uses both apps sees one design
   // rather than two; this only sequences. The sheet rises from the bottom edge whichever page it holds (issue 253), and
-  // About's own step above Settings is the page motion inside the sheet (showPage).
+  // About REPLACES Settings inside that one sheet (showPage), never as a second sheet above it.
   openSheet(next) {
     if (!this.sheetShowing) { this.view = next; this.sheetMotion = 'up'; }
     else if (this.view !== next) { this.pendingSheet = next; this.leaveSheet(); }
@@ -1393,8 +1397,8 @@ class AppRoot extends KitElement {
     return this.listOpen || !this.openChatId ? 'list' : 'conversation';
   }
 
-  // Settings and About are pages of the one sheet, so they are drawn by sheetBody and never in the main pane. Each
-  // carries how it arrived (data-motion), which the stylesheet turns into the screen push or pop.
+  // Settings and About are pages of the ONE sheet, so they are drawn by sheetBody and never in the main pane. Each
+  // carries how it was replaced (data-motion), which the stylesheet turns into the fade in place (issue 253).
   sheetBody() {
     if (this.view === 'about') {
       return html`<app-about data-motion=${this.pageMotion || 'none'} .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : 'Back to app'}

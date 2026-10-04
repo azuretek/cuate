@@ -32,7 +32,10 @@
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
   await until(() => about() && about().querySelector('.about-row') && !document.querySelector('app-settings'), 'the About page');
-  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page slide to finish');
+  // Issue 253: About REPLACES the Settings page inside the ONE sheet, so there is never a second card or a second
+  // backdrop stacked above it.
+  if (document.querySelectorAll('.sheet').length !== 1 || document.querySelectorAll('.sheet-scrim').length !== 1) throw new Error('About is stacked as a second sheet');
+  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page replacement to finish');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
   if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');

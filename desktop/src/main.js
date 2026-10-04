@@ -679,7 +679,7 @@ async function runSmoke(w) {
   const trayItem = (id) => trayMenu.getMenuItemById(id);
   // The About page is the sheet's page (issue 171): the sheet is named About, it draws app-about with its rows and no
   // settings page, and any push that brought it has finished.
-  const aboutShown = "(() => { const s = document.querySelector('.sheet'); const a = document.querySelector('app-about'); return Boolean(s && s.getAttribute('aria-label') === 'About' && a && a.querySelector('.about-row') && !document.querySelector('app-settings') && !a.getAnimations().some((x) => x.playState === 'running')); })()";
+  const aboutShown = "(() => { const s = document.querySelector('.sheet'); const a = document.querySelector('app-about'); return Boolean(s && s.getAttribute('aria-label') === 'About' && a && a.querySelector('.about-row') && !document.querySelector('app-settings') && document.querySelectorAll('.sheet').length === 1 && document.querySelectorAll('.sheet-scrim').length === 1 && !a.getAnimations().some((x) => x.playState === 'running')); })()";
   const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
   trayItem('settings').click();
   const settingsRaised = await visibleWithin(true);
