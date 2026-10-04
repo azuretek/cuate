@@ -16,7 +16,9 @@
   await until(() => root.phase !== 'boot', 'the app to boot');
   if (root.phase !== 'onboarding') throw new Error('about fixture requires empty test storage');
   const scheme = window.fixtureScheme === 'dark' ? 'dark' : 'light';
-  root.settings = { ...root.settings, 'appearance.skin': scheme };
+  // The chosen icon (issue 246): About draws the choice in force, not one fixed drawing, so the fixture picks one
+  // and the native legs hold the page to its picture.
+  root.settings = { ...root.settings, 'appearance.skin': scheme, 'appearance.appIcon': 'rosa' };
   root.info = { product: (root.host && root.host.product) || 'App', serverVersion: '1.0.0', serverChannel: 'dev', apiVersion: 1, engine: { kind: 'fake', version: '1.0.0' }, repository: 'https://example.invalid/owner/app' };
   root.chats = [];
   root.phase = 'ready';
@@ -26,16 +28,14 @@
   root.openSettings();
   await until(() => document.querySelector('app-settings [data-action=about]'), 'the About row in Settings');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the sheet to arrive');
-  // About lives under Settings, on its own tab (issue 167).
-  document.querySelector('app-settings .settings-tab[data-tab=about]').click();
-  await until(() => document.querySelector('app-settings .settings-tab[data-tab=about]').getAttribute('aria-selected') === 'true', 'the About tab');
-  await root.updateComplete;
+  // The About row is on every Settings page (issue 244), so no tab has to be picked first.
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
   await until(() => about() && about().querySelector('.about-row') && !document.querySelector('app-settings'), 'the About page');
-  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page push to finish');
+  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page slide to finish');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
+  if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
   const parts = [...about().querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section).join('|');
   if (parts !== 'identity|updates|build') throw new Error('About draws ' + parts);
   about().querySelector('[data-action=check-updates]').click();

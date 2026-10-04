@@ -86,12 +86,14 @@ class AboutPageTest {
         throw AssertionError("The About page never showed its notice: $result")
     }
 
-    // The page as painted, not a frame the WebView drew before it: the top of the app icon's tile, the default theme's
-    // accent lightened (core/app/rules/icon.js iconPalette, held to it by core/test/icon.test.js), is on screen, which
-    // it only is once the About page has drawn its icon. The tile is a vertical gradient, so its top colour covers only
-    // a thin band of the 72 px icon: every pixel is sampled, not every fourth, or a low-density emulator finds too few.
+    // The page as painted, not a frame the WebView drew before it: the top of the chosen icon's tile (issue 246), the
+    // colour core/app/rules/icon.js iconPalette derives from that palette and core/test/icon.test.js holds this literal
+    // to, is on screen, which it only is once the About page has drawn its icon. The fixture chooses the rosa icon, so
+    // the colour is rosa's light tile top, not the default theme's terracotta. The tile is a vertical gradient, so its
+    // top covers only a thin band of the 72 px icon: every pixel is sampled, not every fourth, or a low-density
+    // emulator finds too few.
     private fun iconShown(capture: android.graphics.Bitmap): Boolean {
-        val tile = android.graphics.Color.rgb(0xd6, 0x5a, 0x4e)
+        val tile = android.graphics.Color.rgb(0xfb, 0x36, 0x9c)
         var hits = 0
         for (y in 0 until capture.height) {
             for (x in 0 until capture.width) {

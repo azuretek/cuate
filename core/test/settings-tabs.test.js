@@ -14,6 +14,7 @@ await import('../app/components/app-root.js');
 const AppRoot = defined['app-root'];
 const { settingsFields, settingsGroups, settingsTabs } = await import('../app/rules/settings.js');
 const { appIconFor, appIconChoices, iconToApply, fixedPalette, FOLLOW_THEME } = await import('../app/rules/app-icons.js');
+const { TEXT_SCALES } = await import('../app/rules/theme.js');
 const { ICON_TOKENS, cssColour, iconPalette, contrast } = await import('../app/rules/icon.js');
 
 const read = (rel) => readFileSync(new URL('../../' + rel, import.meta.url), 'utf8');
@@ -41,7 +42,12 @@ function phoneBlock() {
 test('inventory: every setting the desktop page offers is reached from a tab, and the phone hides none of them', () => {
   const tabs = settingsTabs();
   assert.deepEqual(tabs.map((t) => t.id), settingsGroups().map((g) => g.id), 'one tab per section, in the schema\'s order');
-  assert.equal(tabs.at(-1).id, 'about', 'About is the last tab, so it stays reachable under Settings (issue 171)');
+  assert.deepEqual(tabs.map((t) => t.id), ['appearance', 'behavior', 'device'], 'with the notices and updates tabs merged into Behavior and no About tab (issue 244)');
+  assert.equal(tabs.some((t) => t.id === 'notifications' || t.id === 'updates' || t.id === 'about'), false, 'the Notifications, Updates and About tabs are gone (issue 244)');
+  const settings = read('core/app/components/app-settings.js');
+  assert.match(settings, /settings-about-row/, 'the About row is drawn on the page');
+  assert.match(settings, /data-action="about"/, 'the About row opens the About page');
+  assert.match(settings, /this\.aboutRow\(\)/, 'the About row is part of the body, so it sits under every tab');
   const seen = new Map();
   for (const tab of tabs) for (const key of tab.keys) { assert.ok(!seen.has(key), key + ' is in two tabs'); seen.set(key, tab.id); }
   for (const field of settingsFields()) assert.ok(seen.has(field.key), field.key + ' is reached from no tab');
@@ -69,27 +75,32 @@ test('on a phone Settings and About are pages that fill the screen, not a card o
   assert.match(phone, /\.sheet-scrim\s*\{[^}]*background:\s*var\(--color-bg-raised\)/, 'the bars wear the page\'s own surface');
 });
 
-test('the app icon is a setting the server holds, offered from the one spec: Follow theme first and the default', () => {
+test('the app icon is a setting the server holds, offered from the one spec: the original Orange first and the default (issue 246)', () => {
   const field = settingsFields().find((f) => f.key === 'appearance.appIcon');
   assert.ok(field, 'Settings offers the app icon');
   assert.equal(field.group, 'appearance');
   assert.equal(field.type, 'icon');
   assert.deepEqual(field.options, icons.icons.map((i) => i.id));
-  assert.equal(icons.default, FOLLOW_THEME, 'the icon follows the theme unless a fixed palette is chosen (issue 189)');
-  assert.equal(icons.icons[0].id, FOLLOW_THEME, 'Follow theme is the first choice');
-  assert.equal(icons.icons[0].label, 'Follow theme');
-  assert.equal(field.default, FOLLOW_THEME);
+  assert.equal(icons.default, 'orange', 'the original orange icon is the default (issue 246)');
+  assert.equal(icons.icons[0].id, 'orange', 'the original orange icon is the first choice (issue 246)');
+  assert.equal(icons.icons[0].label, 'Orange');
+  assert.equal(field.default, 'orange');
+  // The Night choice is gone, and the coloured alternatives carry the Mexican names Abi's palette sheet gave them.
+  assert.equal(icons.icons.some((i) => i.id === 'night'), false, 'the Night choice is dropped (issue 246)');
+  const labels = icons.icons.map((i) => i.label);
+  for (const name of ['Azul', 'Rosa mexicano', 'Jade', 'Cempas\u00fachil', 'Morado']) assert.ok(labels.includes(name), 'the coloured choice ' + name + ' is offered');
+  assert.ok(icons.icons.some((i) => i.id === FOLLOW_THEME), 'Follow theme is still a choice');
   const [fixed, other] = icons.icons.filter((i) => i.id !== FOLLOW_THEME).map((i) => i.id);
-  assert.equal(appIconFor({}), FOLLOW_THEME);
+  assert.equal(appIconFor({}), icons.default);
   assert.equal(appIconFor({ 'appearance.appIcon': fixed }), fixed);
-  assert.equal(appIconFor({ 'appearance.appIcon': 'nope' }), FOLLOW_THEME, 'an id the spec does not hold follows the theme');
+  assert.equal(appIconFor({ 'appearance.appIcon': 'nope' }), icons.default, 'an id the spec does not hold draws the default');
   const choices = appIconChoices({ 'appearance.appIcon': other });
   assert.deepEqual(choices.map((c) => c.id), icons.icons.map((i) => i.id));
   assert.deepEqual(choices.filter((c) => c.selected).map((c) => c.id), [other]);
   for (const c of choices) assert.equal(c.src, c.id === FOLLOW_THEME ? 'assets/app-icon.png' : 'assets/app-icons/' + c.id + '.png');
   // Follow theme's picture is the icon in the theme in force, drawn by the page; until it is, the default theme's.
-  assert.equal(appIconChoices({}, { themePicture: 'data:image/png;base64,AAAA' })[0].src, 'data:image/png;base64,AAAA');
-  assert.equal(iconToApply(null, {}), FOLLOW_THEME, 'the first settings read applies the icon');
+  assert.equal(appIconChoices({}, { themePicture: 'data:image/png;base64,AAAA' }).find((c) => c.id === FOLLOW_THEME).src, 'data:image/png;base64,AAAA');
+  assert.equal(iconToApply(null, {}), icons.default, 'the first settings read applies the icon');
   assert.equal(iconToApply(fixed, { 'appearance.appIcon': fixed }), null, 'an icon already applied is not asked for again');
   assert.equal(iconToApply(fixed, { 'appearance.appIcon': other }), other);
   assert.equal(fixedPalette(FOLLOW_THEME), null, 'Follow theme has no palette of its own');
@@ -113,14 +124,14 @@ test('every fixed palette is the Flor de muerto masters coloured through the one
   assert.ok(alternates, 'the iOS project ships the alternate icons');
   assert.match(read('ios/project.yml'), /ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS:\s*YES/);
   const named = alternates[1].split(/\s+/).filter(Boolean).sort();
-  assert.deepEqual(named, icons.icons.filter((i) => i.id !== FOLLOW_THEME).map((i) => 'AppIcon-' + i.id).sort());
+  assert.deepEqual(named, icons.icons.filter((i) => i.colors).map((i) => 'AppIcon-' + i.id).sort(), 'every fixed choice ships an iOS alternate set');
   const launcherColours = read(res + 'values/app_icons.xml');
   for (const icon of icons.icons) {
     const alias = aliases.find((a) => a.includes('android:name=".AppIcon_' + icon.id + '"'));
     assert.ok(alias, icon.id + ' has its Android launcher alias');
     assert.match(alias, /android:targetActivity="\.MainActivity"/);
     assert.match(alias, /category\.LAUNCHER/);
-    assert.ok(alias.includes('android:enabled="' + (icon.id === FOLLOW_THEME) + '"'), icon.id + ': only Follow theme launches a fresh install');
+    assert.ok(alias.includes('android:enabled="' + (icon.id === icons.default) + '"'), icon.id + ': only the default choice launches a fresh install');
     if (icon.id === FOLLOW_THEME) {
       // A phone cannot recolour an installed icon, so Follow theme there is the store icon, drawn in the default theme.
       assert.equal(icon.colors, undefined, 'Follow theme carries no colours of its own');
@@ -172,14 +183,14 @@ test('the page asks its shell for the chosen icon once the settings are read, an
   const h = new AppRoot();
   const calls = [];
   h.bridge = async (name, args) => { calls.push([name, args]); return { applied: true, icon: args.icon }; };
-  h.settings = { 'appearance.appIcon': 'night' };
+  h.settings = { 'appearance.appIcon': 'rosa' };
   h.settingsRead = false;
   await h.applyAppIcon();
   assert.deepEqual(calls, [], 'nothing is applied before the server\'s settings are read');
   h.settingsRead = true;
   await h.applyAppIcon();
   await h.applyAppIcon();
-  assert.deepEqual(calls, [['app.icon', { icon: 'night' }]], 'one change, one ask');
+  assert.deepEqual(calls, [['app.icon', { icon: 'rosa' }]], 'one change, one ask');
   h.settings = { 'appearance.appIcon': 'paper' };
   await h.applyAppIcon();
   assert.deepEqual(calls.at(-1), ['app.icon', { icon: 'paper' }]);
@@ -213,4 +224,39 @@ test('issue 168: the way back to the chats list is the chats icon, labelled with
   const phone = phoneBlock();
   assert.match(phone, /\.sheet-back-wide\s*\{[^}]*display:\s*none/, 'the phone hides the desktop\'s arrow and label');
   assert.match(css, /\.sheet-back-narrow\s*\{[^}]*display:\s*none/, 'the desktop hides the phone\'s chats control');
+});
+
+// Issue 244: the text size is a slider whose positions are the schema's stops, so a key or a drag lands only on an
+// offered percentage; it is keyboard-operable (a range is), names itself, announces the percentage rather than the
+// index, writes the value as it moves (the live preview), and shows the value in force beside it. The stops are the
+// schema's own, so the slider and the schema cannot drift.
+test('text size is a slider that lands only on the schema stops and announces the percentage', () => {
+  const settings = read('core/app/components/app-settings.js');
+  const slider = /<div class="scale-slider[\s\S]*?<\/div>`/.exec(settings);
+  assert.ok(slider, 'the page draws the text size slider');
+  assert.match(slider[0], /type="range"/, 'it is a range control, so it is keyboard-operable');
+  assert.match(slider[0], /min="0" max=\$\{[^}]+\} step="1"/, 'its positions are the stops, so a move lands only on one');
+  assert.match(slider[0], /aria-label=\$\{field\.label\}/, 'it is named for its setting');
+  assert.match(slider[0], /aria-valuetext=\$\{[^}]*percent[^}]*\}/, 'a screen reader hears the percentage, not the index');
+  assert.match(slider[0], /<output class="scale-value"/, 'the percentage in force is written beside it');
+  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSlide\(e, field, stops\)\}/, 'a move writes the setting as it is made, the live preview');
+  const size = settingsFields().find((f) => f.key === 'appearance.textScale');
+  assert.deepEqual(size.options, TEXT_SCALES, 'the stops are the schema\'s percentages');
+  assert.match(read('core/app/styles/app.css'), /\.scale-range \{[^}]*accent-color: var\(--color-accent\)/, 'the track takes the theme accent');
+});
+
+// Issue 244: the tabs read as a strip on the body they open, not loose pills floating above it.
+test('Settings tabs read as a strip on the panel they open', () => {
+  const css = read('core/app/styles/app.css');
+  const nav = /\.sheet-nav \{[^}]*\}/.exec(css);
+  assert.ok(nav, 'the strip is styled');
+  assert.match(nav[0], /border-bottom: var\(--size-border\) solid var\(--color-border\)/, 'the strip sits on a baseline');
+  assert.match(nav[0], /background: var\(--color-bg-sunken\)/, 'the strip wears the sunken surface');
+  const tab = /\.settings-tab \{[^}]*\}/.exec(css);
+  assert.ok(tab, 'the tab is styled');
+  assert.match(tab[0], /margin-bottom: calc\(-1 \* var\(--size-border\)\)/, 'the tab overlaps the baseline');
+  assert.match(tab[0], /border-bottom: 0/, 'the tab has no bottom edge of its own');
+  const on = /\.settings-tab\[aria-selected="true"\] \{[^}]*\}/.exec(css);
+  assert.ok(on, 'the tab in force is styled');
+  assert.match(on[0], /background: var\(--color-bg-raised\)/, 'the tab in force is filled with the panel surface, so it joins the body');
 });

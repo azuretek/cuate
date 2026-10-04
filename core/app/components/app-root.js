@@ -60,8 +60,9 @@ class AppRoot extends KitElement {
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
     // showing. view says which page the sheet draws, if any (the conversation, settings or about). aboutFrom says what
     // About was opened from ('settings' when it was pushed over Settings, so its back returns there), and pageMotion
-    // how the page on screen arrived inside the sheet ('push' or 'pop'; null when the sheet itself arrived).
-    view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true },
+    // how the page on screen arrived inside the sheet ('down' when Settings returns, 'up' when About arrives; null when
+    // the sheet itself arrived). sheetMotion is how the sheet itself arrived ('down' for Settings, 'up' for About).
+    view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true }, sheetMotion: { state: true },
     // The Settings tab on show (issue 167), held here so a push to About and back returns to the tab it left.
     settingsTab: { state: true },
     // Follow theme's picture in Settings (issue 167): the app icon in the theme in force, drawn here as a PNG data URL.
@@ -99,6 +100,12 @@ class AppRoot extends KitElement {
     this.chats = [];
     this.openChatId = null;
     this.messages = [];
+    // The conversation each chat was last left showing, so switching back draws it at once from what we hold rather
+    // than waiting on the server (issue 200). The conversation's own scroll place lives with the conversation.
+    this.convos = new Map();
+    // Which open(request) is current; a page that arrives after a newer open was asked for is dropped, so a slow one
+    // never overwrites the conversation the person has since chosen.
+    this.openSeq = 0;
     this.conn = 'connecting';
     this.problem = '';
     this.hasMore = false;
@@ -174,6 +181,9 @@ class AppRoot extends KitElement {
     this.heldScreen = null;
     this.aboutFrom = null;
     this.pageMotion = null;
+    // How the sheet itself arrives when it opens (issue 244): Settings slides down into place, About slides up into
+    // its place. It is set only on a fresh open, so switching pages inside the sheet does not slide the card twice.
+    this.sheetMotion = null;
     this.settingsTab = null;
     // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
     this.iconApplied = null;
@@ -458,6 +468,7 @@ class AppRoot extends KitElement {
     await this.bridge('storage.delete', { key: 'server.token' });
     this.chats = [];
     this.messages = [];
+    this.convos = new Map();
     this.openChatId = null;
     this.selecting = null;
     this.settings = {};
@@ -483,8 +494,22 @@ class AppRoot extends KitElement {
     if (this.typingChat && this.typingChat !== chatId) this.clearTyping();
     this.resetTyping();
     const refresh = this.openChatId === chatId;
-    this.selecting = refresh ? null : chatId;
-    if (refresh && show) this.listOpen = false;
+    // The conversation we already hold draws at once, before the server answers, so switching back never leaves the
+    // pane on the last conversation while a page is fetched and never blanks it (issue 200). A chat never opened has
+    // nothing to draw yet, so the list marks it and the pane keeps the conversation it has until the page arrives.
+    const convos = this.convos || (this.convos = new Map());
+    const cached = refresh ? null : convos.get(String(chatId));
+    if (cached) {
+      this.openChatId = chatId;
+      this.selecting = null;
+      this.messages = cached.messages;
+      this.hasMore = cached.hasMore;
+      this.problem = '';
+      if (show) this.listOpen = false;
+    } else {
+      this.selecting = refresh ? null : chatId;
+      if (refresh && show) this.listOpen = false;
+    }
     const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
     // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
@@ -493,19 +518,24 @@ class AppRoot extends KitElement {
     const watch = (m) => { if (m.chatId === chatId) arrived.push(m); };
     if (!this.arrivals) this.arrivals = new Set();
     this.arrivals.add(watch);
+    const seq = (this.openSeq = (this.openSeq || 0) + 1);
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50 });
-      if (refresh ? this.openChatId !== chatId : this.selecting !== chatId) return;
+      if (this.openSeq !== seq) return;
       if (!refresh) this.messageNote = null;
       this.openChatId = chatId;
       this.selecting = null;
-      this.messages = mergeMessages(arrived, messages);
+      // A page merged over the conversation we held keeps any older messages already loaded, and keeps a message that
+      // arrived live while the page was in flight (issue 66).
+      this.messages = mergeMessages(cached ? [...cached.messages, ...arrived] : arrived, messages);
       this.hasMore = hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
     } catch (e) {
-      if (this.selecting === chatId) this.selecting = null;
-      this.problem = this.describe(e);
+      if (this.openSeq === seq) {
+        if (this.selecting === chatId) this.selecting = null;
+        if (!cached) this.problem = this.describe(e);
+      }
     } finally {
       this.arrivals.delete(watch);
     }
@@ -771,7 +801,7 @@ class AppRoot extends KitElement {
   // Settings asked for while About is up goes back to Settings inside the same sheet, the way About's back does.
   openSettings() {
     this.settingsProblem = '';
-    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'pop'); return; }
+    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'down'); return; }
     // Settings arriving afresh opens on its first tab; only a return from About keeps the tab it left.
     if (!this.sheetShowing) this.settingsTab = null;
     this.openSheet('settings');
@@ -782,7 +812,7 @@ class AppRoot extends KitElement {
   // About as its page, and back closes it. Asking for it while it is up changes nothing.
   openAbout() {
     if (this.view === 'about' && !this.sheetLeaving) return;
-    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'push'); return; }
+    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'up'); return; }
     this.aboutFrom = null;
     this.pageMotion = null;
     this.openSheet('about');
@@ -792,13 +822,15 @@ class AppRoot extends KitElement {
   showPage(view, motion) {
     if (view !== 'about') this.aboutFrom = null;
     this.pageMotion = motion;
+    // A page moved inside the sheet that is up does not re-trigger the sheet's own arrival.
+    this.sheetMotion = null;
     this.view = view;
   }
 
   // A page's back strip (and Escape): the page under it when there is one (rules/screens.js), else the sheet closes.
   pageBack() {
     const under = pageAfterBack(this.view, this.aboutFrom);
-    if (under) this.showPage(under, 'pop');
+    if (under) this.showPage(under, 'down');
     else this.closeView();
   }
 
@@ -867,7 +899,7 @@ class AppRoot extends KitElement {
   // the next up. The motion and the dim are Chela's own conventions, so a reader who uses both apps sees one design
   // rather than two; this only sequences.
   openSheet(next) {
-    if (!this.sheetShowing) this.view = next;
+    if (!this.sheetShowing) { this.view = next; this.sheetMotion = next === 'about' ? 'up' : 'down'; }
     else if (this.view !== next) { this.pendingSheet = next; this.leaveSheet(); }
   }
 
@@ -920,6 +952,7 @@ class AppRoot extends KitElement {
     this.pendingSheet = null;
     this.view = next || 'messages';
     this.pageMotion = null;
+    this.sheetMotion = null;
     if (this.view !== 'about') this.aboutFrom = null;
   }
 
@@ -1363,7 +1396,7 @@ class AppRoot extends KitElement {
   sheetBody() {
     if (this.view === 'about') {
       return html`<app-about data-motion=${this.pageMotion || 'none'} .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : 'Back to app'}
-        .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
+        .values=${this.settings} .themePicture=${this.themePicture} .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
     }
     return html`<app-settings data-motion=${this.pageMotion || 'none'} .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
       @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}
@@ -1414,6 +1447,9 @@ class AppRoot extends KitElement {
   updated() {
     document.body.classList.toggle('surface--leaving', this.sheetLeaving === true);
     this.syncIcon();
+    // The conversation on screen is what a switch back to it draws (issue 200), kept after every render. Its pair of
+    // fields is always written together, so the cache never holds one conversation's messages under another's id.
+    if (this.openChatId && this.client) (this.convos = this.convos || new Map()).set(String(this.openChatId), { messages: this.messages, hasMore: this.hasMore });
     // Every open menu wears the shared caret, aimed at the control that opened it (issue 217).
     aimCarets(this);
   }
@@ -1454,7 +1490,7 @@ class AppRoot extends KitElement {
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0"></div>
       <main class="main">${this.mainView(chat)}</main>
-      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
+      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-view=${this.view} data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}

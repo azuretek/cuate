@@ -230,6 +230,7 @@ var engine = (() => {
     pickerSide: () => pickerSide,
     pinch: () => pinch,
     placeChat: () => placeChat,
+    placeFor: () => placeFor,
     policy: () => policy,
     pressOutside: () => pressOutside,
     progressFor: () => progressFor,
@@ -238,6 +239,7 @@ var engine = (() => {
     reactionGlyph: () => reactionGlyph,
     readyBanner: () => readyBanner,
     releaseAssets: () => releaseAssets,
+    rememberPlace: () => rememberPlace,
     removeGroup: () => removeGroup,
     removeTerm: () => removeTerm,
     removeTheme: () => removeTheme,
@@ -973,38 +975,19 @@ var engine = (() => {
 
   // core/app/rules/app-icons-spec.js
   var APP_ICONS = {
-    "description": "The app icon choices Settings offers (appearance.appIcon, issues 167 and 189). Follow theme, the default, is the icon issue 189 draws: the Flor de muerto masters coloured from the active theme's tokens, redrawn by the desktop shell whenever the theme changes, and on the phones the store icon in the default theme, since neither can recolour an installed icon. Every other choice is a fixed palette: the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
-    "default": "theme",
+    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto in its dark rendering; Paper is the light one. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+    "default": "orange",
     "icons": [
       {
-        "id": "theme",
-        "label": "Follow theme"
-      },
-      {
-        "id": "teal",
-        "label": "Teal",
-        "scheme": "light",
-        "colors": {
-          "accent": "#156c68",
-          "accent-fg": "#ffffff",
-          "fg": "#13201f",
-          "bg": "#f7faf9",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
-        }
-      },
-      {
-        "id": "night",
-        "label": "Night",
+        "id": "orange",
+        "label": "Orange",
         "scheme": "dark",
         "colors": {
-          "accent": "#4fd1c5",
-          "accent-fg": "#0b1615",
-          "fg": "#e8f3f1",
-          "bg": "#0b1615",
-          "bg-raised": "#13221f",
+          "accent": "#ff5c5c",
+          "accent-fg": "#0e1015",
+          "fg": "#f4f4f5",
+          "bg": "#0e1015",
+          "bg-raised": "#161920",
           "danger": "#f87171",
           "badge": "#dc2626",
           "badge-fg": "#ffffff"
@@ -1024,6 +1007,85 @@ var engine = (() => {
           "badge": "#dc2626",
           "badge-fg": "#ffffff"
         }
+      },
+      {
+        "id": "azul",
+        "label": "Azul",
+        "scheme": "light",
+        "colors": {
+          "accent": "#0a84ff",
+          "accent-fg": "#ffffff",
+          "fg": "#0b2545",
+          "bg": "#f5f9ff",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "rosa",
+        "label": "Rosa mexicano",
+        "scheme": "light",
+        "colors": {
+          "accent": "#e4007c",
+          "accent-fg": "#ffffff",
+          "fg": "#3a0b28",
+          "bg": "#fdf4f9",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "jade",
+        "label": "Jade",
+        "scheme": "light",
+        "colors": {
+          "accent": "#00a36c",
+          "accent-fg": "#ffffff",
+          "fg": "#062b1f",
+          "bg": "#f3fbf8",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "cempasuchil",
+        "label": "Cempas\xFAchil",
+        "scheme": "light",
+        "colors": {
+          "accent": "#ff9f0a",
+          "accent-fg": "#ffffff",
+          "fg": "#3a2400",
+          "bg": "#fdf9f0",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "morado",
+        "label": "Morado",
+        "scheme": "light",
+        "colors": {
+          "accent": "#7c3aed",
+          "accent-fg": "#ffffff",
+          "fg": "#22103f",
+          "bg": "#faf7ff",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "theme",
+        "label": "Follow theme"
       }
     ]
   };
@@ -1951,6 +2013,20 @@ var engine = (() => {
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
   }
 
+  // core/app/rules/places.js
+  function rememberPlace(places, id, anchor) {
+    const key = id == null ? null : String(id);
+    const next = new Map(places || []);
+    if (key != null && anchor) next.set(key, anchor);
+    return next;
+  }
+  function placeFor(places, id, { follow = false } = {}) {
+    const key = id == null ? null : String(id);
+    const saved = key != null && places ? places.get(key) : null;
+    if (saved) return saved;
+    return follow ? { end: true } : { top: 0 };
+  }
+
   // core/app/rules/theme.js
   var SCHEMES = ["light", "dark"];
   var THEME_GROUPS = ["space", "radius", "font", "size", "motion", "shadow"];
@@ -2280,10 +2356,14 @@ var engine = (() => {
   var SETTINGS_SCHEMA = {
     groups: [
       { id: "appearance", label: "Appearance", description: "How the app looks and how much text it shows." },
-      { id: "notifications", label: "Notifications", description: "Which events raise a notice on this device." },
-      { id: "updates", label: "Updates", description: "How a release this app finds is fetched." },
-      { id: "device", kind: "device", label: "This device", description: "The server this app talks to, and the way out of it." },
-      { id: "about", kind: "about", label: "About", description: "The build this device is running, the server it talks to, and a check for updates." }
+      // Notices and updates are one tab, Behavior (issue 244). The notice toggles and the update controls share it, each
+      // under its own small section, so nothing a person can set is lost and the schema is still the one list: a group
+      // may carry its own sections and each key names the one it belongs to.
+      { id: "behavior", label: "Behavior", description: "Which events raise a notice on this device, and how a release this app finds is fetched.", sections: [
+        { id: "notices", label: "Notices", description: "Which events raise a notice on this device." },
+        { id: "updates", label: "Updates", description: "How a release this app finds is fetched." }
+      ] },
+      { id: "device", kind: "device", label: "This device", description: "The server this app talks to, and the way out of it." }
     ],
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
@@ -2291,19 +2371,20 @@ var engine = (() => {
       // The app icon (issue 167): one of the icons core/spec/app-icons.json names, each drawn as its own picture, held by
       // the server like every other setting and applied by each shell where its platform can (rules/app-icons.js).
       "appearance.appIcon": { group: "appearance", label: "App icon", type: "icon", options: APP_ICONS.icons.map((i) => i.id), labels: Object.fromEntries(APP_ICONS.icons.map((i) => [i.id, i.label])), default: APP_ICONS.default },
-      // Every notice the client can raise, each on its own switch. Turning one off silences only that notice.
-      "notifications.newMessage": { group: "notifications", label: "New messages", type: "toggle", default: true },
-      "notifications.updateAvailable": { group: "notifications", label: "Update available", type: "toggle", default: true },
-      "notifications.updateReady": { group: "notifications", label: "Update ready to install", type: "toggle", default: true },
-      "notifications.errors": { group: "notifications", label: "Update errors", type: "toggle", default: true },
+      // Every notice the client can raise, each on its own switch, in Behavior's Notices section. Turning one off
+      // silences only that notice.
+      "notifications.newMessage": { group: "behavior", section: "notices", label: "New messages", type: "toggle", default: true },
+      "notifications.updateAvailable": { group: "behavior", section: "notices", label: "Update available", type: "toggle", default: true },
+      "notifications.updateReady": { group: "behavior", section: "notices", label: "Update ready to install", type: "toggle", default: true },
+      "notifications.errors": { group: "behavior", section: "notices", label: "Update errors", type: "toggle", default: true },
       // Whether a release a check finds is fetched and applied with no further prompt. Off until someone turns it on: a
       // download nobody asked for spends someone's bandwidth, and the setting is how they asked. The check still runs
       // with it off, because knowing a release exists is what makes installing by hand possible.
-      "updates.autoDownload": { group: "updates", label: "Download updates automatically", type: "toggle", default: false },
+      "updates.autoDownload": { group: "behavior", section: "updates", label: "Download updates automatically", type: "toggle", default: false },
       // Whether the installed server installs a verified release by itself. On by default for now (issue 117): every
       // install is verified, backed up, health checked and rolled back on failure. Off, the server still checks and
       // installs nothing; service update --pause on the Mac does the same from there.
-      "updates.serverAuto": { group: "updates", label: "Update the server automatically", type: "toggle", default: true }
+      "updates.serverAuto": { group: "behavior", section: "updates", label: "Update the server automatically", type: "toggle", default: true }
     }
   };
   function settingsFields(schema = SETTINGS_SCHEMA) {
@@ -2313,7 +2394,11 @@ var engine = (() => {
     const fields = settingsFields(schema);
     const groups = schema.groups || [];
     const fallback = groups.length ? groups[0].id : null;
-    return groups.map((g) => ({ id: g.id, kind: g.kind || "settings", label: g.label, description: g.description, fields: fields.filter((f) => (f.group || fallback) === g.id) }));
+    return groups.map((g) => {
+      const mine = fields.filter((f) => (f.group || fallback) === g.id);
+      const sections = (g.sections || []).map((s) => ({ id: s.id, label: s.label, description: s.description, fields: mine.filter((f) => f.section === s.id) }));
+      return { id: g.id, kind: g.kind || "settings", label: g.label, description: g.description, fields: mine, sections: sections.length ? sections : null };
+    });
   }
   function settingsTabs(schema = SETTINGS_SCHEMA) {
     return settingsGroups(schema).map((g) => ({ id: g.id, kind: g.kind, label: g.label, keys: g.fields.map((f) => f.key) }));
