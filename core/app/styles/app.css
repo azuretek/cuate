@@ -226,6 +226,17 @@ app-attachment { display: block; max-width: var(--size-bubble-max); margin-botto
 .attachment-image.placeholder { width: var(--size-image-placeholder); aspect-ratio: 4 / 3; height: auto; background: var(--color-bg-sunken); border: var(--size-border) solid var(--color-image-edge); box-shadow: var(--shadow-image); }
 .attachment-image.sticker { border-radius: 0; }
 .attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
+app-link-card { display: block; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); }
+.link-card { display: flex; flex-direction: column; overflow: hidden; text-decoration: none; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-raised); box-shadow: var(--shadow-sm); transition: box-shadow var(--motion-fast) var(--motion-ease); }
+.link-card:hover { box-shadow: var(--shadow-md); }
+.link-card:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
+.link-card-image { display: block; }
+.link-card-image app-attachment { margin-bottom: 0; }
+.link-card-image .attachment-image, .link-card-image .attachment-preview { border-radius: 0; box-shadow: none; }
+.link-card-body { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); color: var(--color-bg-raised-fg); }
+.link-card-site { font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: var(--font-tracking); color: var(--color-accent); }
+.link-card-title { font-weight: var(--font-weight-medium); }
+.link-card-url { font-size: var(--font-size-sm); color: var(--color-fg-muted); overflow-wrap: anywhere; }
 
 app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--role-divider); background: var(--role-composer-bar); padding-block-end: var(--inset-bottom); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }

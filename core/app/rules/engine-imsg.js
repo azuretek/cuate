@@ -1,5 +1,7 @@
 // Pure: the mapping from the imsg engine's JSON (docs/json.md in openclaw/imsg) to the model core/spec/api.json
 // declares. The server imports it; its fake engine speaks the same JSON, so tests exercise this path end to end.
+import { isPayloadName, firstUrl, linkSite, payloadMedia } from './payload.js';
+
 const TAPBACKS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
 
 // A message that belongs to no chat. The engine reports it with chat id 0, and a Messages database keys its chats from
@@ -30,16 +32,29 @@ export function mapChat(c) {
   };
 }
 
-function mapAttachment(a, attachmentId) {
+// One attachment as the raw engine gives it, plus whether it is the message's own payload. A payload's raw name is
+// kept only long enough to decide that, never as the name the model carries.
+function attachmentView(a, attachmentId) {
+  const name = String(a.transfer_name || a.filename || 'attachment');
   return {
     id: attachmentId(a),
-    name: String(a.transfer_name || a.filename || 'attachment'),
+    name,
     mime: String(a.mime_type || 'application/octet-stream'),
     bytes: Number.isFinite(a.total_bytes) ? a.total_bytes : 0,
     sticker: Boolean(a.is_sticker),
     missing: Boolean(a.missing) || !a.original_path,
+    payload: isPayloadName(name),
   };
 }
+
+// One attachment in the model. The caller names a payload that is media we show (a Photo, a Video), so a raw payload
+// filename can never reach the screen.
+function modelAttachment(v, name) {
+  return { id: v.id, name: name === undefined ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing };
+}
+
+// The title a payload carried, when one did, else null.
+const payloadTitle = (m) => (typeof m.payload_title === 'string' && m.payload_title.trim() ? m.payload_title.trim() : null);
 
 function mapInlineReaction(r) {
   const type = r.reaction_type || r.type;
@@ -57,6 +72,26 @@ export function stripInlineObjects(text) {
   return typeof text === 'string' ? text.replace(INLINE_OBJECT, '') : '';
 }
 
+// The attachments and link a message carries, split so a payload is never a file. A real attachment keeps its name; a
+// payload becomes the link card (the site, the URL, the title and the still it carried), or media shown under an honest
+// name, or a quiet count when it is neither. A link is built only when the message actually carried a payload and names
+// a URL, so ordinary text that happens to hold a link is left exactly as it was.
+function payloadParts(m, { attachmentId }) {
+  const views = (Array.isArray(m.attachments) ? m.attachments : []).map((a) => attachmentView(a, attachmentId));
+  const files = views.filter((v) => !v.payload).map((v) => modelAttachment(v));
+  const payloads = views.filter((v) => v.payload);
+  if (!payloads.length) return { attachments: files, link: null, payloads: 0 };
+  const url = firstUrl(stripInlineObjects(m.text)) || firstUrl(m.payload_url);
+  const image = payloads.find((v) => !v.missing && /^image\//i.test(v.mime)) || null;
+  const link = url ? { url, site: linkSite(url), title: payloadTitle(m), image: image ? modelAttachment(image, 'Link preview') : null } : null;
+  const carried = link ? [] : payloads.filter((v) => !v.missing && payloadMedia(v.mime));
+  return {
+    attachments: [...files, ...carried.map((v) => modelAttachment(v, /^video\//i.test(v.mime) ? 'Video' : 'Photo'))],
+    link,
+    payloads: link ? 0 : payloads.length - carried.length,
+  };
+}
+
 export function mapMessage(m, { attachmentId }) {
   const fromMe = Boolean(m.is_from_me);
   return {
@@ -72,7 +107,7 @@ export function mapMessage(m, { attachmentId }) {
     // to the one above (issue 195).
     replyTo: m.thread_originator_guid ? String(m.thread_originator_guid) : null,
     read: fromMe || typeof m.is_read !== 'boolean' ? null : m.is_read,
-    attachments: (Array.isArray(m.attachments) ? m.attachments : []).map((a) => mapAttachment(a, attachmentId)),
+    ...payloadParts(m, { attachmentId }),
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
   };
 }
