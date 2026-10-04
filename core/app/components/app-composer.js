@@ -301,7 +301,7 @@ class AppComposer extends KitElement {
       </div>
       <span class="composer-ruler" aria-hidden="true">M</span>
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.onInput} @paste=${this.paste}></textarea>
-      <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}>\u2191</button>
+      <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}><span class="icon" data-icon="arrow-up" aria-hidden="true"></span></button>
       ${this.attachOpen
         ? html`<div class="attach-menu" role="menu" aria-label="Attach" data-dismiss="attach" data-popover data-popover-edge="bottom">${ATTACH_ACTIONS.map((a) => html`<button type="button" role="menuitem" class="attach-item" @click=${press(() => this.choose(a))}>${a.label}</button>`)}</div>`
         : nothing}

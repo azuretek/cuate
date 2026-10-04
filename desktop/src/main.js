@@ -2401,7 +2401,30 @@ async function runSmoke(w) {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
   await waitFor('window.innerWidth === 375', 5000);
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
-  report.phoneSend = await js("(() => { const b = document.querySelector('app-composer button.send'); if (!b) return false; const s = getComputedStyle(b); const box = b.getBoundingClientRect(); const size = Math.min(box.width, box.height); const glyph = parseFloat(s.fontSize); return glyph >= 20 && glyph < size && parseInt(s.fontWeight, 10) >= 600 && size >= 36; })()");
+  // The send control is the shared icon set's stroked glyph, not a text arrow (issue 216): --size-send-icon draws it,
+  // the circle keeps the composer row's size with no border or ring of its own, the fill and the glyph's colour are
+  // the role tokens, and no text character stands in for the arrow. The same properties are read at desktop and at
+  // phone width, in light and dark, so a shrunken glyph, a returning border or a text arrow fails at any of them. The
+  // retired text arrow was read at >= 20px and the circle is 36px, so those stay the floors.
+  const sendArrow = "(() => { const b = document.querySelector('app-composer button.send'); if (!b) return { ok: false, why: 'no send button' }; const bs = getComputedStyle(b); const box = b.getBoundingClientRect(); const glyph = [...b.querySelectorAll('.icon')].find((i) => i.dataset.icon === 'arrow-up'); const gs = glyph ? getComputedStyle(glyph) : null; const gbox = glyph ? glyph.getBoundingClientRect() : null; const size = Math.min(box.width, box.height); const drawn = gbox ? Math.min(gbox.width, gbox.height) : 0; const host = b.parentElement || document.body; const probe = document.createElement('span'); probe.style.position = 'absolute'; probe.style.visibility = 'hidden'; probe.style.display = 'block'; probe.style.flex = 'none'; probe.style.width = 'var(--size-send-icon)'; probe.style.background = 'var(--role-button)'; probe.style.color = 'var(--role-button-fg)'; host.appendChild(probe); const ps = getComputedStyle(probe); const token = parseFloat(ps.width); const wantFill = ps.backgroundColor; const wantGlyph = ps.color; probe.remove(); const masked = gs ? ((gs.maskImage || gs.webkitMaskImage || 'none') !== 'none') : false; const noText = b.textContent.trim() === ''; const borderZero = ['Top', 'Right', 'Bottom', 'Left'].every((side) => parseFloat(bs['border' + side + 'Width']) === 0); const flat = bs.backgroundImage === 'none'; const ringless = bs.boxShadow === 'none'; const ok = token >= 20 && drawn >= 20 && drawn <= size && box.width >= 36 && box.height >= 36 && borderZero && flat && ringless && bs.backgroundColor === wantFill && Boolean(gs) && gs.backgroundColor === wantGlyph && masked && noText && b.children.length === 1; return { ok, token, drawn, size, w: box.width, h: box.height, border: bs.borderTopWidth, flat, ringless, fill: bs.backgroundColor, wantFill, glyph: gs && gs.backgroundColor, wantGlyph, masked, noText, children: b.children.length }; })()";
+  const sendReads = [];
+  for (const scheme of ['light', 'dark']) {
+    nativeTheme.themeSource = scheme;
+    await pause(300);
+    await cdp('Emulation.clearDeviceMetricsOverride', {});
+    await pause(200);
+    sendReads.push({ at: 'desktop-' + scheme, ...(await js(sendArrow)) });
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 812, deviceScaleFactor: 1, mobile: false });
+    await waitFor('window.innerWidth === 390', 5000);
+    await pause(200);
+    sendReads.push({ at: '390-' + scheme, ...(await js(sendArrow)) });
+  }
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 375', 5000);
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  report.phoneSend = sendReads.length === 4 && sendReads.every((r) => r.ok);
+  if (!report.phoneSend) console.error('phoneSend: ' + JSON.stringify(sendReads));
   // The open drawer is read until it has settled, as the closed one is below. One read straight after the resize failed
   // on the macOS arm64 runner while the screenshot taken next shows the drawer open, and the single boolean could not
   // say which part it was, so each part is reported when the drawer never settles open.
