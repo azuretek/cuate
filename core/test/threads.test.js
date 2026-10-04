@@ -110,7 +110,7 @@ test('a real reply connects to its original: a ghost of the original with its re
   assert.deepEqual(t.replyingTo, { id: 'SYN-0002' });
 });
 
-test('the thread view lists exactly the original and its replies, with time separators and delivery, under the contact header with a close control, and the composer reads Reply', () => {
+test('the thread view lists exactly the original and its replies, with time separators and delivery, in a card with the shared close control at its top right, under the contact header left as it is, and the composer reads Reply', () => {
   const h = withParts(host({ replyingTo: { id: 'SYN-0002' } }));
   assert.deepEqual([...threadIds(h.messages, 'SYN-0002')].sort(), ['SYN-0002', 'SYN-0005', 'SYN-0006']);
   const view = words(conversation.threadView.call(h, false));
@@ -121,8 +121,15 @@ test('the thread view lists exactly the original and its replies, with time sepa
   assert.ok(!/thread-line|thread-ghost/.test(view), 'no marks inside the thread');
   const page = words(conversation.render.call(h));
   assert.match(page, /class=messages behind/);
-  assert.ok(page.includes('aria-label="Close thread"') && page.includes('data-icon="x"'), 'a close control');
-  assert.ok(!page.includes('aria-label="Conversations"'), 'the back arrow gives way to the close control');
+  // The close control is the shared one, first in the thread card, so it sits at the card's top right (issue 213); the
+  // contact header keeps its way back and carries no close control, so nothing there reads as closing the conversation.
+  const card = view.slice(view.indexOf('class="thread-list"'));
+  assert.ok(card.indexOf('class="thread-card-head"') >= 0 && card.indexOf('class="thread-card-head"') < card.indexOf('data-id='), 'the close control heads the card');
+  assert.match(card, /class="thread-card-head"><button type="button" class="close-button" data-close="thread"[^>]*aria-label="Close thread"/, 'the shared close control');
+  const head = page.slice(0, page.indexOf('</header>'));
+  assert.ok(!head.includes('close-button') && !head.includes('Close thread'), 'no close control in the header');
+  assert.match(head, /aria-label="Back to chats"/, 'the header keeps its way back, the shared chats icon');
+  assert.match(head, /data-icon="messages-square"/, 'the way back is the shared chats icon, never a close control');
   assert.ok(page.includes('Avery Quinn'), 'the contact header stays');
   const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: 'SYN-0002' }, frequent: [], preview: '', disabled: false, placeholder: 'Reply' };
   const markup = words(composer.render.call(c));
