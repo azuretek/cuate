@@ -14,9 +14,19 @@ class AppNotices extends KitElement {
     this.notices = [];
     this.keep = keepScroll(this, { scroller: '.app-notice-stack' });
   }
+  // A press on a card's body is that notice's own action and nothing else (issue 253): the card takes the press, so it
+  // never falls through to the conversation or dismisses the sheet under it, and the close control and the in-card action
+  // keep their own presses.
+  onCard(e, notice) {
+    if (!notice.action) return;
+    const hit = e.target && typeof e.target.closest === 'function' ? e.target : null;
+    if (hit && (hit.closest('.close-button') || hit.closest('.app-notice-action'))) return;
+    this.runAction?.(notice.action.command);
+  }
+
   render() {
     const visible = this.notices.filter((n) => !n.read);
-    return html`<section class="app-notice-stack" aria-label="App notices" aria-live="polite" aria-relevant="additions text">${visible.map((n) => html`<article class="app-notice" data-id=${n.id} data-tone=${n.tone}>
+    return html`<section class="app-notice-stack" aria-label="App notices" aria-live="polite" aria-relevant="additions text">${visible.map((n) => html`<article class="app-notice" data-id=${n.id} data-tone=${n.tone} @click=${(e) => this.onCard(e, n)}>
       <span class="app-notice-icon icon" data-icon=${TONE_ICONS[n.tone] || TONE_ICONS.info} aria-hidden="true"></span>
       <div class="app-notice-body"><span>${n.message}</span>${n.detail ? html`<span class="muted">${n.detail}</span>` : nothing}${n.percent === null ? nothing : html`<progress class="app-notice-progress" aria-label="Download progress" max="1" value=${n.percent}></progress>`}
       ${n.action ? html`<button type="button" class="app-notice-action" data-command=${n.action.command} @click=${press(() => this.runAction?.(n.action.command))}>${n.action.label}</button>` : nothing}</div>

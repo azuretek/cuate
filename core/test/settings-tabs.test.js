@@ -68,11 +68,14 @@ test('the settings page draws its sections as tabs: a tablist, one tab and one p
   assert.match(read('core/app/components/app-sheet.js'), /sheet-nav/, 'the sheet draws the tabs above its scrolled body');
 });
 
-test('on a phone Settings and About are pages that fill the screen, not a card over the app', () => {
+test('on a phone Settings and About are a floating sheet over the conversation, not a page that replaces the view (issue 253)', () => {
   const phone = phoneBlock();
-  assert.match(phone, /\.sheet\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/, 'the sheet fills the phone');
-  assert.match(phone, /\.sheet-scrim\s*\{[^}]*padding:\s*var\(--inset-top\) var\(--inset-right\) var\(--inset-bottom\) var\(--inset-left\)/, 'no backdrop margin around it, only the system bars');
-  assert.match(phone, /\.sheet-scrim\s*\{[^}]*background:\s*var\(--color-bg-raised\)/, 'the bars wear the page\'s own surface');
+  assert.match(phone, /\.sheet\s*\{[^}]*width:\s*100%/, 'the card spans the phone');
+  assert.doesNotMatch(phone, /\.sheet\s*\{[^}]*height:\s*100%/, 'the card no longer fills the phone like a page');
+  assert.doesNotMatch(phone, /\.sheet\s*\{[^}]*box-shadow:\s*none/, 'the card keeps its shadow, so it reads as floating (issue 253)');
+  assert.match(phone, /\.sheet\s*\{[^}]*border-radius:\s*var\(--radius-lg\) var\(--radius-lg\) 0 0/, 'the card keeps rounded top corners against the bottom edge');
+  assert.match(phone, /\.sheet-scrim\s*\{[^}]*align-items:\s*flex-end/, 'the card is anchored to the bottom edge');
+  assert.doesNotMatch(phone, /\.sheet-scrim\s*\{[^}]*background:\s*var\(--color-bg-raised\)/, 'the backdrop keeps its blur and dim over the conversation (issue 253)');
 });
 
 test('the app icon is a setting the server holds, offered from the one spec: the original Orange first and the default (issue 246)', () => {
@@ -251,7 +254,7 @@ test('Settings tabs read as a strip on the panel they open', () => {
   const nav = /\.sheet-nav \{[^}]*\}/.exec(css);
   assert.ok(nav, 'the strip is styled');
   assert.match(nav[0], /border-bottom: var\(--size-border\) solid var\(--color-border\)/, 'the strip sits on a baseline');
-  assert.match(nav[0], /background: var\(--color-bg-sunken\)/, 'the strip wears the sunken surface');
+  assert.match(nav[0], /background: var\(--color-bg-raised\)/, 'the strip wears the same surface as the panel it opens (issue 253)');
   const tab = /\.settings-tab \{[^}]*\}/.exec(css);
   assert.ok(tab, 'the tab is styled');
   assert.match(tab[0], /margin-bottom: calc\(-1 \* var\(--size-border\)\)/, 'the tab overlaps the baseline');
