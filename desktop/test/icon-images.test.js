@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { loadMasters, shellIcons, encodePng, TRAY_SIZES } from '../src/icon-images.js';
 import { importTheme } from '../../core/app/rules/theme.js';
-import { renderIcon, iconPalette, onGroup } from '../../core/app/rules/icon.js';
+import { renderIcon, iconPalette, iconColours, onGroup, OVERLAY_SIZES, TRAY_BADGE, TRAY_CROP } from '../../core/app/rules/icon.js';
 
 const CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'core');
 const tokens = JSON.parse(readFileSync(path.join(CORE, 'spec', 'tokens.json'), 'utf8')).color;
@@ -44,7 +44,7 @@ test('Windows carries the count on a taskbar overlay and Windows and Linux redra
   const three = shellIcons({ platform: 'win32', masters, tokens, unread: 3 });
   const twelve = shellIcons({ platform: 'win32', masters, tokens, unread: 12 });
   assert.ok(three.overlay && twelve.overlay);
-  assert.notDeepEqual(Buffer.from(three.overlay.data), Buffer.from(twelve.overlay.data), '3 and 9+ differ');
+  assert.notDeepEqual(Buffer.from(three.overlay[0].image.data), Buffer.from(twelve.overlay[0].image.data), '3 and 9+ differ');
   assert.equal(three.description, '3 unread messages');
   for (const platform of ['win32', 'linux']) {
     const a = shellIcons({ platform, masters, tokens, scheme: 'light' });
@@ -55,6 +55,42 @@ test('Windows carries the count on a taskbar overlay and Windows and Linux redra
   assert.equal(shellIcons({ platform: 'darwin', masters, tokens }).window, null, 'macOS keeps its bundle icon in the Dock');
 });
 
+test('the badge reads the same way on every desktop: red with a white count, exact to 9 and 9+ above (issue 218)', () => {
+  // Windows: the overlay at every size the taskbar asks for, one image per display scale, so it is never resampled.
+  const win = shellIcons({ platform: 'win32', masters, tokens, unread: 12 });
+  assert.deepEqual(win.overlay.map((r) => [r.image.width, r.scale]), OVERLAY_SIZES);
+  // macOS's Dock and a Linux launcher draw their own red badge; the shell gives them the same label the overlay draws.
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const at = (unread) => shellIcons({ platform, masters, tokens, unread }).badgeText;
+    assert.deepEqual([0, 1, 5, 9, 10, 250].map(at), ['', '1', '5', '9', '9+', '9+'], platform);
+  }
+  // The Windows notification area and the Linux panel: the tray's badge is the palette's red with its count in white,
+  // drawn rather than knocked out, so it reads on a light panel and a dark one alike.
+  for (const platform of ['win32', 'linux']) {
+    for (const scheme of ['light', 'dark']) {
+      const out = shellIcons({ platform, masters, tokens, scheme, unread: 5 });
+      const rep = out.tray.reps.find((r) => r.image.width === 32);
+      const { width, data } = rep.image;
+      let white = 0;
+      let red = 0;
+      const want = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      const [fill, text] = [want(out.palette.badge.fill), want(out.palette.badge.text)];
+      const k = 32 / TRAY_CROP[2];
+      const [cx, cy, r] = [(TRAY_BADGE.text.cx - TRAY_CROP[0]) * k, (TRAY_BADGE.text.cy - TRAY_CROP[1]) * k, TRAY_BADGE.text.r * k];
+      for (let y = 0; y < 32; y += 1) for (let x = 0; x < 32; x += 1) {
+        if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > r - 0.5) continue;
+        const o = (y * width + x) * 4;
+        const px = [data[o], data[o + 1], data[o + 2]];
+        assert.equal(data[o + 3], 255, platform + ' ' + scheme + ': the badge is solid at ' + x + ',' + y);
+        if (px.every((v, i) => Math.abs(v - text[i]) < 24)) white += 1;
+        if (px.every((v, i) => Math.abs(v - fill[i]) < 24)) red += 1;
+      }
+      assert.ok(white >= 12, platform + ' ' + scheme + ': the count is drawn in white (' + white + ' px)');
+      assert.ok(red >= 40, platform + ' ' + scheme + ': on the red disc (' + red + ' px)');
+    }
+  }
+});
+
 test('a fixed palette chosen in Settings draws every image whatever the theme and the scheme the page reports (issue 167)', () => {
   const spec = JSON.parse(readFileSync(path.join(CORE, 'spec', 'app-icons.json'), 'utf8'));
   const [first, second] = spec.icons.filter((i) => i.colors);
@@ -63,7 +99,7 @@ test('a fixed palette chosen in Settings draws every image whatever the theme an
     const fixed = { scheme: first.scheme, colors: first.colors };
     const light = at({ scheme: 'light', fixed });
     assert.deepEqual(at({ scheme: 'dark', colors: elegant.color.dark, fixed }).palette, light.palette, platform + ': the theme no longer colours it');
-    assert.deepEqual(light.palette, iconPalette(first.colors, first.scheme), platform + ': the palette is the spec\'s, through the one function');
+    assert.deepEqual(light.palette, iconPalette(iconColours(tokens[first.scheme], first.colors), first.scheme), platform + ': the palette is the spec\'s, through the one function');
     assert.notDeepEqual(at({ scheme: 'light', fixed: { scheme: second.scheme, colors: second.colors } }).palette, light.palette);
     assert.notDeepEqual(at({ scheme: 'light', fixed: null }).palette, light.palette, platform + ': no fixed palette follows the theme again');
     assert.equal(at({ scheme: 'light', fixed, unread: 3 }).badgeCount, 3, 'the count still shows');

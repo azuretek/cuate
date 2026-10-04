@@ -160,12 +160,12 @@ app.whenReady().then(async () => {
         const out = shellIcons({ platform: process.platform, masters, tokens, scheme, colors: colours[scheme] || {}, unread });
         const tag = name + '-' + scheme + '-' + unread;
         for (const r of out.tray.reps) fs.writeFileSync(path.join(SHOTS, 'given-tray-' + process.platform + '-' + tag + '@' + r.image.width + '.png'), encodePng(r.image));
-        if (out.overlay) fs.writeFileSync(path.join(SHOTS, 'given-overlay-' + tag + '.png'), encodePng(out.overlay));
+        if (out.overlay) for (const r of out.overlay) fs.writeFileSync(path.join(SHOTS, 'given-overlay-' + tag + '@' + r.image.width + '.png'), encodePng(r.image));
         const image = nativeFrom(out.tray.reps);
         if (out.tray.template) image.setTemplateImage(true);
         tray.setImage(image);
         if (out.window) owner.setIcon(nativeFrom([{ scale: 1, image: out.window }]));
-        if (process.platform === 'win32') owner.setOverlayIcon(out.overlay ? nativeFrom([{ scale: 1, image: out.overlay }]) : null, out.description);
+        if (process.platform === 'win32') owner.setOverlayIcon(out.overlay ? nativeFrom(out.overlay) : null, out.description);
         await pause(800);
         if (process.platform === 'darwin') {
           // The template is the same silhouette in every theme; the menu bar recolours it, so each appearance is shot.
