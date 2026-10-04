@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mapMessage } from '../app/rules/engine-imsg.js';
-import { threadMarks, threadIds, replyCountLabel, mergeMessages } from '../app/rules/messages.js';
+import { threadMarks, threadLinks, threadIds, replyCountLabel, mergeMessages } from '../app/rules/messages.js';
 
 const defined = {};
 globalThis.HTMLElement = class { addEventListener() {} removeAttribute() {} setAttribute() {} hasAttribute() { return false; } getAttribute() { return null; } dispatchEvent() {} };
@@ -61,7 +61,7 @@ const attachmentId = (a) => 'att:' + a.filename;
 const mapped = () => mergeMessages([], IMSG_ROWS.map((m) => mapMessage(m, { attachmentId })));
 const chat = { id: '7', name: 'Avery Quinn', participants: [HANDLE], isGroup: false, service: 'iMessage' };
 const host = (o = {}) => ({ messages: mapped(), chat, sending: true, pop: null, replyingTo: null, reactFor: null, reacting: null, note: null, hasMore: false, windowControls: null, uploadMaxBytes: 1, ...o });
-const withParts = (h) => { for (const k of ['bubble', 'threadView', 'menu', 'ghost', 'composerPlaceholder']) h[k] = conversation[k]; return h; };
+const withParts = (h) => { for (const k of ['bubble', 'threadView', 'menu', 'ghost', 'links', 'composerPlaceholder']) h[k] = conversation[k]; return h; };
 
 test('only a message the engine records with a thread originator is a reply, never one that reply_to_guid chains to the row before it', () => {
   const byId = new Map(mapped().map((m) => [m.id, m]));
@@ -86,12 +86,13 @@ test('two ordinary consecutive messages show no thread mark', () => {
   assert.ok(!page.includes('reply-mark'), 'the old per-message mark is gone');
 });
 
-test('a real reply connects to its original: a ghost of the original with its reply count above the replies, and a line on the reply from the other side', () => {
+test('a real reply connects to its original: a ghost of the original with its reply count above the replies, and a line from the original to the reply', () => {
   const list = mapped();
   const marks = threadMarks(list);
   assert.deepEqual([...marks.keys()].sort(), ['SYN-0005', 'SYN-0006']);
-  assert.deepEqual(marks.get('SYN-0005'), { root: 'SYN-0002', ghost: { root: 'SYN-0002', count: 2 }, connector: true }, 'the ghost sits above the run of replies that holds the newest');
-  assert.deepEqual(marks.get('SYN-0006'), { root: 'SYN-0002', ghost: null, connector: false }, 'a reply on your own side needs no line');
+  assert.deepEqual(marks.get('SYN-0005'), { root: 'SYN-0002', ghost: { root: 'SYN-0002', count: 2 } }, 'the ghost sits above the run of replies that holds the newest');
+  assert.deepEqual(marks.get('SYN-0006'), { root: 'SYN-0002', ghost: null });
+  assert.deepEqual(threadLinks(list).map((l) => l.from + '>' + l.to), ['SYN-0002>SYN-0005', 'SYN-0005>SYN-0006'], 'your original to their reply, and their reply to your answer');
   assert.equal(replyCountLabel(1), '1 Reply');
   assert.equal(replyCountLabel(2), '2 Replies');
   const h = withParts(host());
@@ -101,11 +102,8 @@ test('a real reply connects to its original: a ghost of the original with its re
   assert.ok(page.slice(ghostAt, page.indexOf('Could we make it half past?')).includes('Yes, nine at the trailhead.'), 'the ghost repeats the original');
   assert.ok(page.includes('2 Replies'));
   assert.match(page, /thread-ghost-row mine/, 'the ghost is on the original\'s side');
-  const received = words(conversation.bubble.call(h, { message: list[4], first: true, last: true }, null, false, 'list'));
-  assert.equal((received.match(/class="thread-line"/g) || []).length, 1, 'the reply from the other side carries the line');
-  assert.ok(received.includes('aria-label="Open the thread"'));
-  const own = words(conversation.bubble.call(h, { message: list[5], first: true, last: true }, null, false, 'list'));
-  assert.ok(!own.includes('thread-line'));
+  assert.equal((page.match(/class="thread-line"/g) || []).length, 2, 'one line where the thread changes hands each time');
+  assert.ok(page.includes('aria-label="Open the thread"'));
   // Tapping the line, the ghost, the count or a reply opens the thread named by its original.
   const t = host();
   conversation.openThread.call(t, list[4]);
@@ -139,4 +137,59 @@ test('the thread view lists exactly the original and its replies, with time sepa
   assert.equal(conversation.composerPlaceholder.call(h), 'Reply');
   assert.equal(conversation.composerPlaceholder.call(host()), 'Message');
   assert.equal(conversation.composerPlaceholder.call(host({ sending: false })), 'Sending is off on the server');
+});
+
+// Issue 214: the timeline links a thread's messages only where the conversation in it changes hands. Synthetic messages
+// in the client's own shape, one minute apart.
+const msg = (id, minute, fromMe, replyTo = null) => ({ id, sentAt: new Date(Date.UTC(2026, 0, 16, 9, minute)).toISOString(), fromMe, sender: fromMe ? '' : HANDLE, text: 'Synthetic ' + id, replyTo, attachments: [], reactions: [] });
+const linkPairs = (links) => links.map((l) => l.from + '>' + l.to);
+const drawnLines = (page) => [...page.matchAll(/class="thread-line"[^>]*?data-from=([A-Z0-9-]+)[^>]*?data-to=([A-Z0-9-]+)/g)].map((m) => m[1] + '>' + m[2]);
+
+test('a thread draws a line only at the end of a run from one side, to the first message of the other side\'s answer', () => {
+  const list = [
+    msg('R', 0, true),
+    msg('X1', 1, false),
+    msg('A1', 2, false, 'R'),
+    msg('A2', 3, false, 'R'),
+    msg('X2', 4, true),
+    msg('B1', 5, true, 'R'),
+    msg('B2', 6, true, 'R'),
+    msg('A3', 7, false, 'R'),
+    msg('X3', 8, false),
+  ];
+  const links = threadLinks(list);
+  // Your original links to the reply it received; their latest in the run (A2, never A1) links to your next reply; your
+  // latest (B2, never B1) links to their next reply. Nothing starts or ends on a message outside the thread.
+  assert.deepEqual(linkPairs(links), ['R>A1', 'A2>B1', 'B2>A3']);
+  assert.deepEqual(links.map((l) => l.side), ['mine', 'theirs', 'mine'], 'each line runs on the side of the message it leaves');
+  for (const id of ['X1', 'X2', 'X3', 'A1', 'B1']) assert.ok(!links.some((l) => l.from === id), id + ' starts no line');
+  const h = withParts(host({ messages: list }));
+  const page = words(conversation.render.call(h));
+  assert.deepEqual(drawnLines(page), ['R>A1', 'A2>B1', 'B2>A3'], 'the conversation draws exactly those lines, between those bubbles');
+  for (const m of list) assert.ok(!words(conversation.bubble.call(h, { message: m, first: true, last: true }, null, false, 'list')).includes('thread-line'), m.id + ' carries no line of its own');
+  const own = threadLinks([msg('S', 0, false), msg('S1', 1, false, 'S'), msg('S2', 2, false, 'S')]);
+  assert.deepEqual(own, [], 'a thread answered only from one side has no change of hands to draw');
+});
+
+test('two interleaved threads link each message only to the answer in its own thread, on separate lanes where they overlap', () => {
+  const list = [
+    msg('T2', 0, false),
+    msg('T1', 1, true),
+    msg('O1', 2, false),
+    msg('P1', 3, false, 'T1'),
+    msg('Q1', 4, true, 'T2'),
+    msg('P2', 5, true, 'T1'),
+    msg('Q2', 6, false, 'T2'),
+    msg('O2', 7, true),
+  ];
+  const links = threadLinks(list);
+  assert.deepEqual(linkPairs(links), ['T2>Q1', 'T1>P1', 'P1>P2', 'Q1>Q2'], 'P1 answers into P2, never the neighbouring Q1');
+  assert.deepEqual(links.map((l) => l.root), ['T2', 'T1', 'T1', 'T2']);
+  const lane = (pair) => links.find((l) => l.from + '>' + l.to === pair).lane;
+  assert.notEqual(lane('T2>Q1'), lane('P1>P2'), 'two lines on their side whose spans overlap take separate lanes');
+  assert.equal(lane('T1>P1'), lane('Q1>Q2'), 'a lane is reused once the line in it has ended');
+  const h = withParts(host({ messages: list }));
+  const page = words(conversation.render.call(h));
+  assert.deepEqual(drawnLines(page), linkPairs(links));
+  assert.equal((page.match(/class="thread-line"/g) || []).length, 4, 'no line for O1 or O2');
 });
