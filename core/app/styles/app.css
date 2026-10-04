@@ -315,16 +315,17 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 .about-icon { width: var(--size-app-icon); height: var(--size-app-icon); margin-bottom: var(--space-2); }
 .about-name { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); }
 .about-version { color: var(--color-fg-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
-.about-check { align-self: flex-start; }
+/* Check for updates is centred on the page (issue 244); its answer still appears in the notice area. */
+.about-check { align-self: center; }
 /* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
 .about-update-line { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .about-update-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
-/* A page moved inside the sheet that is up (About from Settings, and back) slides across on the screen-push token and
-   the sheet's curve, Chela's screen motion; the sheet itself does not move. */
-@keyframes page-push { from { transform: translateX(100%); } to { transform: translateX(0); } }
-@keyframes page-pop { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-app-settings[data-motion="push"], app-about[data-motion="push"] { animation: page-push var(--motion-screen) var(--motion-sheet-ease) both; }
-app-settings[data-motion="pop"], app-about[data-motion="pop"] { animation: page-pop var(--motion-screen) var(--motion-sheet-ease) both; }
+/* Each page is its own surface with its own motion (issue 244): Settings slides down into place and About slides up
+   into its place, on the screen token and the sheet's curve. Reduced motion keeps the page and drops the travel. */
+@keyframes page-down { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+@keyframes page-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+app-settings[data-motion="down"], app-about[data-motion="down"] { animation: page-down var(--motion-screen) var(--motion-sheet-ease) both; }
+app-settings[data-motion="up"], app-about[data-motion="up"] { animation: page-up var(--motion-screen) var(--motion-sheet-ease) both; }
 @media (prefers-reduced-motion: reduce) { app-settings[data-motion], app-about[data-motion] { animation: none; } }
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--color-border); border-radius: 0; background: none; color: var(--color-fg-muted); cursor: pointer; text-align: left; flex: none; }
@@ -343,17 +344,24 @@ app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0
 .sheet-body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .sheet-section { display: flex; flex-direction: column; min-width: 0; }
 .sheet-section[hidden] { display: none; }
-/* Settings' tabs (issue 167): one per section, between the heading and the scrolled body, so they stay in place while a
-   section scrolls. They wrap rather than scroll sideways, so every tab is on screen at a phone's width, and the one on
-   show wears the accent, as the skin switch's thumb does. The card keeps the sheet's width as the tabs change, so the
-   card does not jump from one section to the next. */
+/* Settings' tabs (issue 167), drawn as a tab strip that belongs to the panel it opens (issue 244). The strip sits on
+   a baseline and wears the sunken surface, the tab in force is filled with the panel's own surface and its bottom edge
+   covered, so it reads as joined to the body below rather than a pill floating over it. The tabs still wrap rather than
+   scroll sideways, so every tab is on screen at a phone's width, and the card keeps the sheet's width as the tabs
+   change, so the card does not jump from one section to the next. */
 app-settings { width: var(--size-sheet); max-width: 100%; }
-.sheet-nav { flex: none; padding: 0 var(--space-4) var(--space-3); border-bottom: var(--size-border) solid var(--color-border); }
-.settings-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.settings-tab { flex: none; padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); cursor: pointer; }
-.settings-tab:hover { background: var(--color-bg-sunken); color: var(--color-fg); }
-.settings-tab[aria-selected="true"] { background: var(--color-accent); color: var(--color-accent-fg); }
-.settings-tab:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.sheet-nav { flex: none; padding: var(--space-3) var(--space-4) 0; border-bottom: var(--size-border) solid var(--color-border); background: var(--color-bg-sunken); }
+.settings-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: flex-end; }
+.settings-tab { flex: none; margin-bottom: calc(-1 * var(--size-border)); padding: var(--space-2) var(--space-3); border: var(--size-border) solid transparent; border-bottom: 0; border-top-left-radius: var(--radius-md); border-top-right-radius: var(--radius-md); background: none; color: var(--color-fg-muted); font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); cursor: pointer; }
+.settings-tab:hover { background: var(--color-bg-raised); color: var(--color-fg); }
+.settings-tab[aria-selected="true"] { background: var(--color-bg-raised); color: var(--color-fg); border-color: var(--color-border); }
+.settings-tab:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
+/* A group with its own sections (Behavior, issue 244): each is a small block inside the tab's panel, so the notice
+   toggles and the update controls stay apart rather than running as one long list. */
+.settings-subsection { display: flex; flex-direction: column; min-width: 0; }
+.settings-subsection + .settings-subsection { margin-top: var(--space-4); }
+.settings-subsection-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
+.settings-subsection-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 /* The app icon (issue 167): each choice is its own picture with its name under it, the one in force ringed in the
    accent. */
 .app-icon-choices { display: flex; flex-wrap: wrap; gap: var(--space-3); }
@@ -403,14 +411,15 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .segmented[data-at="3"] { --at: 3; }
 .segment-thumb { position: absolute; top: 0; bottom: 0; left: calc(100% / var(--segments, 3) * var(--at, 0)); width: calc(100% / var(--segments, 3)); background: var(--color-accent); border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); transition: left var(--motion-normal) var(--motion-ease); }
 .segment { position: relative; display: flex; align-items: center; justify-content: center; padding: var(--space-1) var(--space-3); cursor: pointer; color: var(--color-fg-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); transition: color var(--motion-normal) var(--motion-ease); }
-.segment input, .scale-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.segment input { position: absolute; opacity: 0; pointer-events: none; }
 .segment[data-selected] { color: var(--color-accent-fg); }
-.segment:has(input:focus-visible), .scale-choice:has(input:focus-visible) { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.segment:has(input:focus-visible) { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
 @media (prefers-reduced-motion: reduce) { .segment-thumb, .segment { transition: none; } }
-/* The text size choices: one chip per percentage, wrapping on a narrow window. */
-.scale-choices { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.scale-choice { position: relative; padding: var(--space-1) var(--space-3); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); cursor: pointer; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-fg-muted); background: var(--color-bg); }
-.scale-choice[data-selected] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-fg); }
+/* The text size slider (issue 244): the track and its thumb take the theme's accent, the reading beside it shows the
+   percentage in force, and the thumb lands only on the schema's own stops. */
+.scale-slider { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.scale-range { flex: 1 1 auto; min-width: 0; accent-color: var(--color-accent); }
+.scale-value { flex: none; text-align: right; color: var(--color-fg); font-variant-numeric: tabular-nums; }
 /* The theme picker: a grid of cards, each drawn in its own theme's colours (set on the card by the component). */
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--size-avatar) * 3), 1fr)); gap: var(--space-2); }
 .theme-card { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); cursor: pointer; font: inherit; text-align: left; min-width: 0; }
@@ -589,12 +598,16 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 .window-control svg { display: block; width: var(--size-window-glyph); height: var(--size-window-glyph); stroke-width: var(--size-window-glyph-stroke); }
 .window-control svg * { vector-effect: non-scaling-stroke; }
 
-/* Settings and About arrive and leave like an iOS sheet: up from the bottom edge over a fading scrim, and back
-   down on close. Chela's own stylesheet moves them exactly this way, on these values, so a reader who uses both
-   apps sees one design rather than two. Nothing here names a colour or a length of its own: the dim is the token
-   the drawer's scrim already uses, and every duration and curve is a motion token. */
+/* Settings and About arrive over a fading scrim, each from its own edge (issue 244): the Settings sheet slides
+   DOWN into place and the About sheet slides UP into its place, and each leaves back the way it came; the confirm card
+   keeps the rising sheet's motion. Chela's own stylesheet moves the sheet this way, on these values, so a reader who
+   uses both apps sees one design rather than two. Nothing here names a colour or a length of its own: the dim is the
+   token the drawer's scrim already uses, and every duration and curve is a motion token. */
 @keyframes surface-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes surface-sheet-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes sheet-down-in { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+@keyframes sheet-up-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes sheet-up-out { from { transform: translateY(0); } to { transform: translateY(-100%); } }
+@keyframes sheet-down-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
 @keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 
@@ -604,7 +617,10 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 /* The card is only as wide as its content needs, up to a sensible maximum, and it is centred in the backdrop rather
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
-.sheet { position: relative; z-index: 4; display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); animation: surface-sheet-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+.sheet { position: relative; z-index: 4; display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+/* The card arrives from the edge its page names: Settings from the top (down), About from the bottom (up). */
+.sheet[data-arrive="down"] { animation: sheet-down-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+.sheet[data-arrive="up"] { animation: sheet-up-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* On a phone Settings and About are pages that fill the screen (issue 167), not a card over the app: no backdrop
    margin, no rounded edge, and the safe areas kept clear of the strip and the last row. The strip at the top is the
    way back, and a phone has no Escape key to name on it. This block follows the card's own rules, so it wins over them. */
@@ -621,14 +637,16 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
   .sheet-back[data-narrow] .sheet-back-wide { display: none; }
   .sheet-back[data-narrow] .sheet-back-narrow { display: inline-flex; }
 }
-/* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. */
+/* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. Each page
+   leaves back the way it came (issue 244): Settings up, About down. */
 body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
-body.surface--leaving .sheet { animation: surface-sheet-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+body.surface--leaving .sheet[data-view="settings"] { animation: sheet-up-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+body.surface--leaving .sheet[data-view="about"] { animation: sheet-down-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
 /* Reduced motion keeps the change and drops the travel: the same plain fade Chela uses, arriving over the normal
    duration and leaving over the fast one, so leaving stays quicker than arriving. */
 @media (prefers-reduced-motion: reduce) {
-  .sheet, .sheet-scrim { animation: surface-scrim-in var(--motion-normal) ease-out both; }
-  body.surface--leaving .sheet, body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-fast) ease-out both; }
+  .sheet[data-arrive], .sheet-scrim { animation: surface-scrim-in var(--motion-normal) ease-out both; }
+  body.surface--leaving .sheet[data-view="settings"], body.surface--leaving .sheet[data-view="about"], body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-fast) ease-out both; }
 }
 
 /* The sort choices open under the sort icon, drawn as the filter menu is. */

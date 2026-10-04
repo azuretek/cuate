@@ -26,14 +26,11 @@
   root.openSettings();
   await until(() => document.querySelector('app-settings [data-action=about]'), 'the About row in Settings');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the sheet to arrive');
-  // About lives under Settings, on its own tab (issue 167).
-  document.querySelector('app-settings .settings-tab[data-tab=about]').click();
-  await until(() => document.querySelector('app-settings .settings-tab[data-tab=about]').getAttribute('aria-selected') === 'true', 'the About tab');
-  await root.updateComplete;
+  // The About row is on every Settings page (issue 244), so no tab has to be picked first.
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
   await until(() => about() && about().querySelector('.about-row') && !document.querySelector('app-settings'), 'the About page');
-  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page push to finish');
+  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page slide to finish');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
   const parts = [...about().querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section).join('|');
