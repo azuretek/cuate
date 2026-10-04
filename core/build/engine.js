@@ -164,6 +164,7 @@ var engine = (() => {
     firstUrl: () => firstUrl,
     fixedPalette: () => fixedPalette,
     forgetChats: () => forgetChats,
+    forgetNoticeState: () => forgetNoticeState,
     forgetRead: () => forgetRead,
     formatListTime: () => formatListTime,
     formatSeparator: () => formatSeparator,
@@ -1440,6 +1441,11 @@ var engine = (() => {
   }
   function quietNotices(notices, read = {}, closed = {}) {
     return notices.map((n) => noticeQuiet(n, read, closed) ? { ...n, read: true } : n);
+  }
+  function forgetNoticeState(state, id) {
+    const out = noticeState(state);
+    delete out[id];
+    return out;
   }
 
   // core/app/rules/payload.js

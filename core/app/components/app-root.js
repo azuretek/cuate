@@ -15,7 +15,7 @@ import { localAttachment, toBase64 } from '../rules/attach.js';
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
-import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY, NOTICE_CLOSED_KEY } from '../rules/app-notices.js';
+import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY, NOTICE_CLOSED_KEY } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
 import './app-notices.js';
@@ -902,6 +902,16 @@ class AppRoot extends KitElement {
   // until the shell answers, and fails when the shell refused it.
   async checkUpdates() {
     this.appNotices = forgetRead(this.appNotices, 'app-update');
+    // A re-ask forgets the stored revision here and on the server, so the same answer shows again even though it was
+    // closed or read before (issue 191); without this the persistent state would hide the answer to a person's press.
+    if (Object.hasOwn(this.noticeClosed, 'app-update')) {
+      this.noticeClosed = forgetNoticeState(this.noticeClosed, 'app-update');
+      this.bridge('storage.set', { key: NOTICE_CLOSED_KEY, value: JSON.stringify(this.noticeClosed) }).catch(() => {});
+    }
+    if (Object.hasOwn(this.noticeRead, 'app-update')) {
+      this.noticeRead = forgetNoticeState(this.noticeRead, 'app-update');
+      if (this.client) this.client.settingsWrite({ [NOTICE_READ_KEY]: this.noticeRead }).catch(() => {});
+    }
     if (this.updateVia()) return this.phoneCheck({ asked: true });
     let answer;
     try { answer = await this.bridge('updates.check', {}); } catch { return false; }

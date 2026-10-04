@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, noticeStateOf, withNoticeState, noticeQuiet, NOTICE_READ_KEY, NOTICE_CLOSED_KEY } from '../app/rules/app-notices.js';
+import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, noticeStateOf, withNoticeState, noticeQuiet, forgetNoticeState, NOTICE_READ_KEY, NOTICE_CLOSED_KEY } from '../app/rules/app-notices.js';
 
 const download = (percent) => appUpdateNotice({ state: 'downloading', version: '1.2.3', percent });
 test('duplicate events are silent and progress replaces one operation', () => {
@@ -115,6 +115,19 @@ test('a notice closed here or read through the server stays quiet until its oper
   assert.equal(quietNotices([ready], {}, { 'app-update': ready.revision })[0].read, true);
   const newer = appUpdateNotice({ state: 'ready', version: '1.2.4' });
   assert.notEqual(quietNotices([newer], { 'app-update': ready.revision }, {})[0].read, true, 'a new release announces itself');
+});
+
+test('a re-ask forgets a closed or read revision so the same answer shows again', () => {
+  const ready = appUpdateNotice({ state: 'ready', version: '1.2.3' });
+  // A closed or read revision stays quiet on a repeated event...
+  assert.equal(quietNotices([ready], {}, { 'app-update': ready.revision })[0].read, true);
+  assert.equal(quietNotices([ready], { 'app-update': ready.revision }, {})[0].read, true);
+  // ...but About's Check for updates forgets it, so asking again shows the same answer, here and on the server.
+  const closed = forgetNoticeState({ 'app-update': ready.revision, other: 'x' }, 'app-update');
+  assert.deepEqual(closed, { other: 'x' });
+  assert.equal(quietNotices([ready], {}, closed)[0].read, undefined);
+  const read = forgetNoticeState({ 'app-update': ready.revision }, 'app-update');
+  assert.deepEqual(read, {});
 });
 
 test('the read and closed stores keep every id and tolerate a malformed device value', () => {

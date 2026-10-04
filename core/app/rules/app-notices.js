@@ -85,3 +85,12 @@ export function noticeQuiet(notice, read = {}, closed = {}) {
 export function quietNotices(notices, read = {}, closed = {}) {
   return notices.map((n) => (noticeQuiet(n, read, closed) ? { ...n, read: true } : n));
 }
+
+// A notice asked for again (About's Check for updates, issue 171) forgets its stored revision too, here and on the
+// server, so the same answer shows again even though the reader closed or read it before. Without this the persistent
+// state hides the answer a person just asked for, which is the whole point of the re-ask.
+export function forgetNoticeState(state, id) {
+  const out = noticeState(state);
+  delete out[id];
+  return out;
+}
