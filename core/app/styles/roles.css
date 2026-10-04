@@ -1,0 +1,90 @@
+/* The surface roles (issue 217, the "chart colours" direction Abi chose). Every surface the eye has to separate
+   reads one role here, and a role is only a pointer at a palette token the theme carries, so an imported theme
+   restyles every surface and this block is the one place the direction lives. The theme's chart colours finally earn
+   their place: avatars cycle through chart-1 to chart-5, notices and received bubbles take a chart-2 tint, the sort,
+   filter and menu hovers use chart-3, the chips chart-4, and the unread mark chart-1. The text pairs these roles draw
+   are held at 4.5:1 in both schemes of the default palette and an imported theme by core/test/roles.test.js. */
+:root {
+  --role-page: var(--color-bg);
+  --role-page-fg: var(--color-fg);
+  --role-page-muted: var(--color-fg-muted);
+  --role-divider: var(--color-border);
+
+  --role-sidebar: var(--color-sidebar);
+  --role-sidebar-fg: var(--color-sidebar-fg);
+  --role-sidebar-muted: var(--color-fg-muted);
+  --role-sidebar-edge: var(--color-sidebar-border);
+  --role-search: oklch(from var(--color-bg-raised) calc(l + 0.02) c h);
+  --role-search-fg: var(--color-bg-raised-fg);
+  --role-search-border: color-mix(in oklab, var(--color-accent) 30%, var(--color-sidebar-border));
+  --role-head-icon: var(--color-sidebar-fg);
+  --role-head-icon-hover: color-mix(in oklab, var(--color-chart-3) 16%, var(--color-sidebar));
+  --role-head-icon-hover-fg: var(--color-sidebar-fg);
+  --role-head-icon-open: var(--color-accent);
+  --role-head-icon-open-fg: var(--color-accent-fg);
+
+  --role-row-divider: var(--color-sidebar-border);
+  --role-row-hover: color-mix(in oklab, var(--color-chart-3) 10%, var(--color-sidebar));
+  --role-row-hover-fg: var(--color-sidebar-fg);
+  --role-row-press: color-mix(in oklab, var(--color-chart-3) 18%, var(--color-sidebar));
+  --role-row-selected: color-mix(in oklab, var(--color-accent) 13%, var(--color-sidebar));
+  --role-row-selected-fg: var(--color-sidebar-fg);
+  --role-row-selected-muted: var(--color-sidebar-fg);
+  --role-row-selected-bar: var(--color-accent);
+  --role-avatar: color-mix(in oklab, var(--color-chart-1) 24%, var(--color-sidebar));
+  --role-avatar-fg: var(--color-sidebar-fg);
+  --role-unread: var(--color-chart-1);
+
+  --role-conv-head: var(--color-bg);
+  --role-composer-bar: var(--color-sidebar);
+  --role-composer-field: oklch(from var(--color-bg-raised) calc(l + 0.03) c h);
+  --role-composer-field-fg: var(--color-bg-raised-fg);
+  --role-composer-field-border: color-mix(in oklab, var(--color-accent) 35%, var(--color-border));
+  --role-composer-field-ring: color-mix(in oklab, var(--color-accent) 22%, var(--color-border));
+  --role-focus: var(--color-ring);
+
+  --role-sent: var(--color-bubble-me);
+  --role-sent-fg: var(--color-bubble-me-fg);
+  --role-received: color-mix(in oklab, var(--color-chart-2) 14%, var(--color-bg));
+  --role-received-fg: var(--color-fg);
+
+  --role-notice: color-mix(in oklab, var(--color-chart-2) 15%, var(--color-bg-raised));
+  --role-notice-fg: var(--color-fg);
+  --role-notice-muted: var(--color-fg);
+  --role-notice-border: color-mix(in oklab, var(--color-chart-2) 45%, var(--color-bg-raised));
+  --role-notice-stripe: var(--color-chart-2);
+  --role-notice-icon: var(--color-chart-2);
+  --role-notice-action: var(--color-fg);
+  --role-notice-hover: color-mix(in oklab, var(--color-chart-2) 26%, var(--color-bg-raised));
+
+  --role-menu: var(--color-popover);
+  --role-menu-fg: var(--color-popover-fg);
+  --role-menu-muted: var(--color-fg-muted);
+  --role-menu-border: color-mix(in oklab, var(--color-accent) 45%, var(--color-popover));
+  --role-menu-shadow: var(--shadow-lg);
+  --role-menu-hover: color-mix(in oklab, var(--color-chart-3) 18%, var(--color-popover));
+  --role-menu-hover-fg: var(--color-popover-fg);
+  --role-menu-press: color-mix(in oklab, var(--color-chart-3) 28%, var(--color-popover));
+  --role-menu-checked: var(--color-popover-fg);
+  --role-chip: color-mix(in oklab, var(--color-chart-4) 12%, var(--color-popover));
+  --role-chip-fg: var(--color-popover-fg);
+  --role-chip-border: color-mix(in oklab, var(--color-chart-4) 40%, var(--color-popover));
+  --role-chip-hover: color-mix(in oklab, var(--color-chart-4) 22%, var(--color-popover));
+  --role-chip-on: var(--color-accent);
+  --role-chip-on-fg: var(--color-accent-fg);
+
+  --role-button: var(--color-accent);
+  --role-button-fg: var(--color-accent-fg);
+  --role-button-hover: oklch(from var(--color-accent) calc(l - 0.04) c h);
+  --role-button-press: oklch(from var(--color-accent) calc(l - 0.06) c h);
+}
+:root[data-scheme="dark"] {
+  --role-search: oklch(from var(--color-sidebar) calc(l + 0.05) c h);
+  --role-composer-bar: var(--color-bg);
+}
+/* The avatars cycle the chart colours down the list, so the palette is visible at a glance: the first of every five
+   rows takes chart-1 (the role's own default), the rest chart-2 to chart-5. */
+.chat-row:nth-child(5n + 2) { --role-avatar: color-mix(in oklab, var(--color-chart-2) 24%, var(--color-sidebar)); }
+.chat-row:nth-child(5n + 3) { --role-avatar: color-mix(in oklab, var(--color-chart-3) 24%, var(--color-sidebar)); }
+.chat-row:nth-child(5n + 4) { --role-avatar: color-mix(in oklab, var(--color-chart-4) 24%, var(--color-sidebar)); }
+.chat-row:nth-child(5n + 5) { --role-avatar: color-mix(in oklab, var(--color-chart-5) 24%, var(--color-sidebar)); }
