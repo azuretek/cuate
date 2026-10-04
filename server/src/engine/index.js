@@ -6,6 +6,7 @@ import { openSync, readSync, closeSync } from 'node:fs';
 import { createRpc } from './rpc.js';
 import { annotatePayloads } from './payload.js';
 import { mapChat, mapMessage, mapReaction } from '../../../core/app/rules/engine-imsg.js';
+import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 // The first bytes of a message's own payload, read without copying the whole file. A payload under a temp path that is
 // already gone reads nothing, which is how a missing one stays missing.
@@ -42,7 +43,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
 
   let transport = null;
   let rpc = null;
-  let state = { kind, version: null, ready: false, features: [] };
+  let state = { kind, version: null, ready: false, capabilities: null };
   let lastRowid = 0;
   let stopping = false;
   let restartMs = 1000;
@@ -141,9 +142,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       log.emit('engine.error', { method: 'status', code: numCode(e), error: e.message });
     }
     canReadStatus = Array.isArray(st?.methods) && st.methods.includes('message.send_status');
-    // rpc_features is imsg's own capability list (an older release omits it, so the array is empty). The reaction
-    // sender reads it through supportsEmojiTapback to decide whether an arbitrary emoji can be sent.
-    setState({ version: st && st.version != null ? String(st.version) : null, ready: Boolean(st && st.database && st.database.ready), features: Array.isArray(st?.rpc_features) ? st.rpc_features : [] });
+    // capabilities is the engine's own block (an older release omits it, so it stays null). The reaction sender
+    // reads it through supportsEmojiTapback to decide whether an arbitrary emoji can be sent.
+    setState({ version: st && st.version != null ? String(st.version) : null, ready: Boolean(st && st.database && st.database.ready), capabilities: st && typeof st.capabilities === 'object' ? st.capabilities : null });
     log.emit('engine.start', { kind, version: state.version, ready: state.ready });
     try {
       await subscribe();
@@ -256,13 +257,19 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // out, so a file on its own is not a text send carrying nothing.
   const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo);
 
-  // The running engine advertises `tapback.emoji.safe` when its bridge can send an arbitrary emoji reaction without
-  // crashing Messages. The first emoji build advertised only `tapback.emoji` and handed a freed invocation target to
-  // -retainArguments on send, so a client that trusted it took Messages down (SIGSEGV). `tapback.emoji` alone is
-  // therefore a build known to crash on an emoji reaction and is refused here. A stock bridge builds only
-  // associated_message_type 2000 to 2005 and folds some emoji onto a standard kind, so it is refused any emoji that is
-  // not one of the six (issue 188). The refusal is explicit and never downgraded to a classic tapback.
-  const supportsEmojiTapback = () => state.features.includes('tapback.emoji.safe');
+  // imsg names and versions its capabilities rather than advertising adjectives, so the client asks for the version
+  // it needs. A capability's version tracks the shape of its API, and advertising it means the build supports that
+  // shape. `tapback.emoji` is version 2 where the engine sends an arbitrary emoji as itself; a build that advertises
+  // an older version, or predates the block and reports none, does not support that pattern. Such a build is denied
+  // here, in place, and is never asked. A stock bridge builds only associated_message_type 2000 to 2005 and folds
+  // some emoji onto a standard kind, so it is refused any emoji that is not one of the six (issue 188). The refusal
+  // is explicit and never downgraded to a classic tapback.
+  const REACTION_TAPBACK_EMOJI_VERSION = EMOJI_TAPBACK_VERSION;
+  const capabilityVersion = (name) => {
+    const value = state.capabilities && state.capabilities.features ? state.capabilities.features[name] : null;
+    return Number.isInteger(value) ? value : 0;
+  };
+  const supportsEmojiTapback = () => capabilityVersion('tapback.emoji') >= REACTION_TAPBACK_EMOJI_VERSION;
 
   // imsg's bridge `tapback` adds or removes a reaction on a message by its guid, as an arbitrary `emoji` when the
   // engine advertises it, otherwise as one of the six classic `kind`s (issue 188).
@@ -293,6 +300,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     sendFile,
     react,
     supportsEmojiTapback,
+    capabilityVersion: (name) => capabilityVersion(name),
+    emojiTapbackVersion: () => capabilityVersion('tapback.emoji'),
     info: () => ({ kind: state.kind, version: state.version, ready: state.ready }),
     on: (cb) => listeners.add(cb),
     onState: (cb) => stateListeners.add(cb),
