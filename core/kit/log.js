@@ -5,7 +5,10 @@
 import { scrub } from './rules/scrub.js';
 
 export const LEVELS = ['debug', 'info', 'notice', 'warn', 'error', 'fatal'];
-const FREE_TEXT = new Set(['error', 'line', 'problem']);
+// Fields whose value is free text, so the scrub runs over them. A chat id is free text and not a plain identifier:
+// the engine's chat id is a GUID that can embed the handle it belongs to, a phone number included, so it is scrubbed
+// like any other free text (core/test/log-privacy.test.js).
+const FREE_TEXT = new Set(['error', 'line', 'problem', 'chat']);
 
 export function createLogger({ spec, app, version = null, run, pid = null, sink, now, level = 'notice', recorderSize = 2000, strict = false }) {
   const recorder = [];
