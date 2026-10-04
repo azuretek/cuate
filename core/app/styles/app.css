@@ -565,6 +565,11 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 .sidebar-head, .conv-head { -webkit-app-region: drag; }
 .chat-search, .filter-button, .gear-button, .conv-back, .window-controls, .window-control { -webkit-app-region: no-drag; }
 .search-box, .search-mode-button, .sort-button { -webkit-app-region: no-drag; }
+/* While the image viewer owns the surface, the headers give up their window drag (issue 245): the viewer's X sits at
+   the viewer's own top-right corner, over the top strip, and it must never sit in a drag region at all, even one the
+   no-drag backdrop already cancels. The same strip drags the window again the moment the viewer closes. */
+.app-window:has(app-image-viewer) .sidebar-head,
+.app-window:has(app-image-viewer) .conv-head { -webkit-app-region: no-drag; }
 /* macOS pushes the header content below the traffic lights, keeping the surface to the top edge. */
 .app-window[data-platform="darwin"] .sidebar-head,
 .app-window[data-platform="darwin"] .conv-head { height: calc(var(--size-header) + var(--size-window-strip)); padding-block-start: var(--size-window-strip); }
