@@ -19,5 +19,5 @@ test('the registry names every panel the harness can leave open', () => {
   for (const want of ['sort menu', 'filter menu', 'search menu', 'message menu', 'thread view', 'emoji panel', 'attach menu', 'notice']) {
     assert.ok(names.includes(want), 'the guard is missing ' + want);
   }
-  for (const [, selector] of OVERLAYS) assert.match(selector, /^\.[a-z-]+$/);
+  for (const [, selector] of OVERLAYS) assert.match(selector, /^\.[a-z-]+(:not\(\.[a-z-]+\))?$/);
 });

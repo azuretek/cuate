@@ -6,7 +6,7 @@
 //
 // Each entry is [the name a failure prints, the selector the app renders that panel under].
 const OVERLAYS = [
-  ['sort menu', '.sort-menu'],
+  ['sort menu', '.sort-menu:not(.search-menu)'],
   ['filter menu', '.filter-menu'],
   ['search menu', '.search-menu'],
   ['message menu', '.message-pop'],
