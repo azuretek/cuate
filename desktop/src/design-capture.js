@@ -171,7 +171,7 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         await shot(tag('5-search-menu'), ['search menu']);
         await resetState();
         await convPane();
-        await js('(() => { ' + root + ".appNotices = [{ id: 'design-217', tone: 'info', message: 'Cuate 0.9 is ready to install', detail: 'It installs when you restart. Your conversations stay as they are.', action: { label: 'Restart now', command: 'design' }, percent: null, read: false }]; return true; })()");
+        await js('(() => { ' + root + ".appNotices = [{ id: 'design-217', tone: 'info', message: 'Update 0.9 is ready to install', detail: 'It installs when you restart. Your conversations stay as they are.', action: { label: 'Restart now', command: 'design' }, percent: null, read: false }]; return true; })()");
         await waitFor("Boolean(document.querySelector('.app-notice'))", 5000);
         await pause(500);
         await force('.app-notice-action', ['hover']);
