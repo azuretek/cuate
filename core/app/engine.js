@@ -16,6 +16,7 @@ export { springCurve } from '../kit/rules/motion.js';
 export { PRESS_STATES, admitPress, outcomeOf, holdsAfter, durationMs } from '../kit/rules/press.js';
 export { anchorFrom, scrollFor } from '../kit/rules/scroll.js';
 export { pressOutside, closedByPress, closedByEscape, stackOf, swallows, SWALLOW_MS } from '../kit/rules/dismiss.js';
+export * from '../kit/rules/popover.js';
 export * from '../kit/rules/build.js';
 export * from './rules/build-spec.js';
 export * from './rules/app-icons-spec.js';
