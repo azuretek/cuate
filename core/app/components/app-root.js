@@ -60,8 +60,9 @@ class AppRoot extends KitElement {
     // The phone keeps one pane at a time: the list slides in over the conversation, and listOpen says which pane is
     // showing. view says which page the sheet draws, if any (the conversation, settings or about). aboutFrom says what
     // About was opened from ('settings' when it was pushed over Settings, so its back returns there), and pageMotion
-    // how the page on screen arrived inside the sheet ('push' or 'pop'; null when the sheet itself arrived).
-    view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true },
+    // how the page on screen arrived inside the sheet ('down' when Settings returns, 'up' when About arrives; null when
+    // the sheet itself arrived). sheetMotion is how the sheet itself arrived ('down' for Settings, 'up' for About).
+    view: { state: true }, listOpen: { state: true }, aboutFrom: { state: true }, pageMotion: { state: true }, sheetMotion: { state: true },
     // The Settings tab on show (issue 167), held here so a push to About and back returns to the tab it left.
     settingsTab: { state: true },
     // Follow theme's picture in Settings (issue 167): the app icon in the theme in force, drawn here as a PNG data URL.
@@ -174,6 +175,9 @@ class AppRoot extends KitElement {
     this.heldScreen = null;
     this.aboutFrom = null;
     this.pageMotion = null;
+    // How the sheet itself arrives when it opens (issue 244): Settings slides down into place, About slides up into
+    // its place. It is set only on a fresh open, so switching pages inside the sheet does not slide the card twice.
+    this.sheetMotion = null;
     this.settingsTab = null;
     // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
     this.iconApplied = null;
@@ -771,7 +775,7 @@ class AppRoot extends KitElement {
   // Settings asked for while About is up goes back to Settings inside the same sheet, the way About's back does.
   openSettings() {
     this.settingsProblem = '';
-    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'pop'); return; }
+    if (this.view === 'about' && !this.sheetLeaving) { this.showPage('settings', 'down'); return; }
     // Settings arriving afresh opens on its first tab; only a return from About keeps the tab it left.
     if (!this.sheetShowing) this.settingsTab = null;
     this.openSheet('settings');
@@ -782,7 +786,7 @@ class AppRoot extends KitElement {
   // About as its page, and back closes it. Asking for it while it is up changes nothing.
   openAbout() {
     if (this.view === 'about' && !this.sheetLeaving) return;
-    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'push'); return; }
+    if (this.view === 'settings' && !this.sheetLeaving) { this.aboutFrom = 'settings'; this.showPage('about', 'up'); return; }
     this.aboutFrom = null;
     this.pageMotion = null;
     this.openSheet('about');
@@ -792,13 +796,15 @@ class AppRoot extends KitElement {
   showPage(view, motion) {
     if (view !== 'about') this.aboutFrom = null;
     this.pageMotion = motion;
+    // A page moved inside the sheet that is up does not re-trigger the sheet's own arrival.
+    this.sheetMotion = null;
     this.view = view;
   }
 
   // A page's back strip (and Escape): the page under it when there is one (rules/screens.js), else the sheet closes.
   pageBack() {
     const under = pageAfterBack(this.view, this.aboutFrom);
-    if (under) this.showPage(under, 'pop');
+    if (under) this.showPage(under, 'down');
     else this.closeView();
   }
 
@@ -867,7 +873,7 @@ class AppRoot extends KitElement {
   // the next up. The motion and the dim are Chela's own conventions, so a reader who uses both apps sees one design
   // rather than two; this only sequences.
   openSheet(next) {
-    if (!this.sheetShowing) this.view = next;
+    if (!this.sheetShowing) { this.view = next; this.sheetMotion = next === 'about' ? 'up' : 'down'; }
     else if (this.view !== next) { this.pendingSheet = next; this.leaveSheet(); }
   }
 
@@ -920,6 +926,7 @@ class AppRoot extends KitElement {
     this.pendingSheet = null;
     this.view = next || 'messages';
     this.pageMotion = null;
+    this.sheetMotion = null;
     if (this.view !== 'about') this.aboutFrom = null;
   }
 
@@ -1454,7 +1461,7 @@ class AppRoot extends KitElement {
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0"></div>
       <main class="main">${this.mainView(chat)}</main>
-      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
+      ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-view=${this.view} data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
