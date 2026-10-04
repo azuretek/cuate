@@ -2,6 +2,7 @@ import { html } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
+import { aimCarets } from '../../kit/popover.js';
 import { EMOJI_CATEGORIES, emojiInCategory, searchEmoji, frequentEmoji, emojiPickerSections, pickerSide, isEmoji } from '../rules/emoji.js';
 
 // The recently used list is the shell's storage, shared by every place the picker opens (the composer, and a
@@ -54,6 +55,8 @@ class AppEmojiPicker extends KitElement {
   // the panel and this settles after one pass.
   updated() {
     const panel = this.querySelector('.emoji-picker');
+    // The panel wears the shared caret, aimed at the composer's emoji button that opened it (issue 217).
+    if (panel) aimCarets(this);
     const anchor = this.parentElement;
     if (!panel || !anchor) return;
     const side = pickerSide(panel.getBoundingClientRect(), anchor.getBoundingClientRect());
@@ -111,7 +114,7 @@ class AppEmojiPicker extends KitElement {
     const searching = Boolean(this.query.trim());
     const list = this.results();
     const sections = emojiPickerSections({ side: this.side, recents: frequent.length > 0 });
-    return html`<div class="emoji-picker" role="dialog" aria-label="Emoji" data-dismiss=${this.dismiss} data-side=${this.side}>
+    return html`<div class="emoji-picker" role="dialog" aria-label="Emoji" data-dismiss=${this.dismiss} data-side=${this.side} data-popover data-popover-edge=${this.side === 'below' ? 'top' : 'bottom'}>
       ${sections.map((id) => this.section(id, frequent, list, searching))}
     </div>`;
   }

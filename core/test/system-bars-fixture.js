@@ -79,7 +79,9 @@
     // The label carries the measurements for the iOS test, which reads the page only through accessibility:
     // bars:<scheme>:ready:<env top>:<env bottom>:<header content top>:<composer content gap>:<r>,<g>,<b> in CSS pixels.
     const round = (n) => Math.round(n * 100) / 100;
-    const label = ['bars', proof.scheme, 'ready', round(proof.envTop), round(proof.envBottom), round(proof.headContentTop), round(proof.composerContentGap), (proof.top || [0, 0, 0]).join(',')].join(':');
+    // The label carries the colour the page painted at each edge, so a surface that differs top and bottom (the
+    // conversation's header above and its composer below) is judged on the strip beside it, not on the other edge.
+    const label = ['bars', proof.scheme, 'ready', round(proof.envTop), round(proof.envBottom), round(proof.headContentTop), round(proof.composerContentGap), (proof.top || [0, 0, 0]).join(','), (proof.bottom || [0, 0, 0]).join(',')].join(':');
     marker.textContent = label;
     marker.setAttribute('aria-label', label);
     return proof;
