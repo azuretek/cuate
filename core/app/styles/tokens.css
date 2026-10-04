@@ -37,6 +37,11 @@
   --size-spinner: 28px;
   --size-dot: 10px;
   --size-border: 1px;
+  --size-grip-w: 11px;
+  --size-grip-h: 44px;
+  --size-grip-hit: 12px;
+  --size-grip-dot: 1.2px;
+  --size-grip-press-scale: 1.12;
   --size-onboarding: 420px;
   --size-sheet-max: 90vh;
   --size-drawer: min(86vw, 320px);
