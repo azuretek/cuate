@@ -97,19 +97,17 @@ test('Android: available offers the download, ready offers the system installer,
   assert.deepEqual(failed.action, { command: 'updates.download', label: 'Try again' });
 });
 
-test('About\'s Check for updates button reports the same progress and offers the same next step as the notice', () => {
-  assert.deepEqual(aboutUpdate(null), { label: 'Check for updates', command: null, line: null, percent: null });
-  assert.deepEqual(aboutUpdate({ state: 'current', version: DEV_98 }), { label: 'Check for updates', command: null, line: 'You are on the latest version.', percent: null });
+test('About\'s Check for updates button offers the same next step as the notice, and reports no outcome of its own', () => {
+  assert.deepEqual(aboutUpdate(null), { label: 'Check for updates', command: null });
+  assert.deepEqual(aboutUpdate({ state: 'current', version: DEV_98 }), { label: 'Check for updates', command: null });
   const ios = aboutUpdate({ state: 'available', version: DEV_98, via: 'testflight' });
   assert.equal(ios.label, 'Open TestFlight');
   assert.equal(ios.command, 'updates.install');
-  assert.match(ios.line, /available/);
   assert.equal(aboutUpdate({ state: 'available', version: DEV_98, canInstall: true, via: 'apk' }).label, 'Download');
   const going = aboutUpdate({ state: 'downloading', version: DEV_98, percent: 0.42, canInstall: true, via: 'apk', detail: '5.0 MB of 12 MB' });
   assert.equal(going.label, 'Check for updates', 'the button never writes its own busy label');
   assert.equal(going.command, null);
-  assert.equal(going.percent, 0.42);
-  assert.match(going.line, /Downloading/);
+  assert.deepEqual(Object.keys(going), ['label', 'command'], 'the outcome is the notice banner\'s, never a line beside the button (issue 252)');
   const ready = aboutUpdate({ state: 'ready', version: DEV_98, canInstall: true, via: 'apk' });
   assert.equal(ready.label, 'Install');
   assert.equal(ready.command, 'updates.install');

@@ -154,6 +154,10 @@ test('every fixed palette is the Flor de muerto masters coloured through the one
     assert.match(launcherColours, new RegExp('<color name="ic_launcher_background_' + icon.id + '">' + palette.tile.behind + '</color>', 'i'), icon.id + ': the launcher tile is the palette\'s');
   }
   assert.match(read('package.json'), /icons\.mjs --check/, 'pnpm run build holds every generated icon to the spec');
+  const palette = json('core/spec/tokens.json').color.light;
+  const orange = icons.icons.find((i) => i.id === 'orange');
+  assert.equal(orange.scheme, 'light');
+  assert.deepEqual(orange.colors, Object.fromEntries(ICON_TOKENS.map((k) => [k, palette[k]])), 'Orange is the default theme light palette, so the picker, About and every generated asset share the one colour (issue 252)');
 });
 
 test('every shell answers app.icon', () => {

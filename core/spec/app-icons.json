@@ -1,18 +1,18 @@
 {
-  "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto in its dark rendering; Paper is the light one. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+  "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto: the default theme light palette from core/spec/tokens.json, the same drawing this app shipped as its icon, so the picker, the About picture and every generated asset agree to the one colour; Paper is its paper-coloured counterpart. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
   "default": "orange",
   "icons": [
     {
       "id": "orange",
       "label": "Orange",
-      "scheme": "dark",
+      "scheme": "light",
       "colors": {
-        "accent": "#ff5c5c",
-        "accent-fg": "#0e1015",
-        "fg": "#f4f4f5",
-        "bg": "#0e1015",
-        "bg-raised": "#161920",
-        "danger": "#f87171",
+        "accent": "#bd4531",
+        "accent-fg": "#ffffff",
+        "fg": "#211e1a",
+        "bg": "#faf9f7",
+        "bg-raised": "#ffffff",
+        "danger": "#b91c1c",
         "badge": "#dc2626",
         "badge-fg": "#ffffff"
       }

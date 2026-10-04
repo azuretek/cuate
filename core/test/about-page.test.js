@@ -290,3 +290,15 @@ test('Settings and About arrive on their own edge, and reduced motion drops the 
   assert.equal(h.sheetMotion, null, 'the page switch does not re-slide the sheet');
   assert.equal(h.pageMotion, 'up');
 });
+
+test('the copy action is the real button with the kit press, and no update line sits under the check (issue 252)', () => {
+  const about = read('core/app/components/app-about.js');
+  assert.match(about, /class="button about-copy"/, 'Copy for a bug report is the app real button, not a text link');
+  assert.match(about, /[?]disabled=[$][{]this[.]copying[}]/, 'the button is disabled while a copy is in flight and for the beat after');
+  assert.match(about, /if [(]this[.]copying[)] return false;/, 'a second press during the beat copies nothing twice');
+  assert.match(about, /@click=[$][{]press[(][(][)] => this[.]copy[(][)][)][}]/, 'the press goes through the kit, so it shows the pending state and the confirmation');
+  assert.match(about, /this[.]copied === .copied. [?] .Copied./, 'a readable confirmation, the button own label, not a notice');
+  assert.equal(/about-update-line|about-update-progress/.test(about), false, 'the outcome is the notice banner, never a line beside the button');
+  const css = read('core/app/styles/app.css');
+  assert.equal(/about-update-line|about-update-progress/.test(css), false, 'the stylesheet carries no rule for a line that is gone');
+});

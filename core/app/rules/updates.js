@@ -299,13 +299,14 @@ export function apkReadyBanner({ version = null } = {}) {
   return { message: what + ' is downloaded and verified.', detail: 'Install hands it to Android, which asks you to confirm.' };
 }
 
-// About's Check for updates (issue 192): the button and the line under it follow the same update state the notice
-// draws, so the page that was pressed shows the progress too. While a step is offered (open TestFlight, download,
-// install, try again) the button is that step, labelled as the notice's action is; otherwise it checks. The button never
-// writes its own busy label: a check in progress is the kit press's pending state, and a download's progress is the
-// line and the bar under the button.
+// About's Check for updates (issue 192): the button follows the same update state the notice draws, so the page that
+// was pressed offers the step the notice offers. While a step is offered (open TestFlight, download, install, try again)
+// the button is that step, labelled as the notice's action is; otherwise it checks. The outcome itself is reported in
+// ONE place, the notice banner, never beside the control (issue 252): this returns the button's label and the bridge
+// command it runs, and nothing the page would print under it. The button never writes its own busy label either: a
+// check in progress is the kit press's pending state, and the disabled beat after it.
 export function aboutUpdate(status) {
-  const idle = { label: 'Check for updates', command: null, line: null, percent: null };
+  const idle = { label: 'Check for updates', command: null };
   if (!status || !status.state) return idle;
   const banner = updateBanner(status.state, status);
   if (!banner) return idle;
@@ -313,7 +314,5 @@ export function aboutUpdate(status) {
   return {
     label: action ? action.label : idle.label,
     command: action ? action.command : null,
-    line: status.state === 'checking' ? null : banner.message,
-    percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null,
   };
 }

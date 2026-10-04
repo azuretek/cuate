@@ -318,8 +318,6 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 /* Check for updates is centred on the page (issue 244); its answer still appears in the notice area. */
 .about-check { align-self: center; }
 /* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
-.about-update-line { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
-.about-update-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
 /* Each page is its own surface with its own motion (issue 244): Settings slides down into place and About slides up
    into its place, on the screen token and the sheet's curve. Reduced motion keeps the page and drops the travel. */
 @keyframes page-down { from { transform: translateY(-100%); } to { transform: translateY(0); } }
