@@ -13,8 +13,8 @@ test('the caret is aimed at the middle of the control that opened the popover', 
 
 test('a control wider than the popover, or off one side, still puts the caret on the popover', () => {
   // The message menu: a wide row under a narrow pill, so the caret points at the control's near edge.
-  assert.equal(caretX(anchor(0, 600), box(0, 160), 'start'), 6);
-  assert.equal(caretX(anchor(0, 600), box(0, 160), 'end'), 154);
+  assert.equal(caretX(anchor(0, 600), box(0, 160), 'start'), 7);
+  assert.equal(caretX(anchor(0, 600), box(0, 160), 'end'), 153);
 });
 
 test('an untargeted placement is refused: a control that is not over the popover answers null', () => {
@@ -32,7 +32,7 @@ test('the caret never overhangs the popover, however the control sits', () => {
 });
 
 test('the caret is kept whole by half its drawn width, so a corner or a screen edge never overhangs it', () => {
-  // The caret is 12px (tokens size.caret), so its clamp is exactly half of it: 6.
-  assert.equal(caretX(anchor(0, 4), box(0, 160), 'center'), 6, 'a control at the popover left edge');
-  assert.equal(caretX(anchor(156, 4), box(0, 160), 'center'), 154, 'a control at the popover right edge');
+  // The caret is 14px (tokens size.caret), so its clamp is exactly half of it: 7.
+  assert.equal(caretX(anchor(0, 4), box(0, 160), 'center'), 7, 'a control at the popover left edge');
+  assert.equal(caretX(anchor(156, 4), box(0, 160), 'center'), 153, 'a control at the popover right edge');
 });
