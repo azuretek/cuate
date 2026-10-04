@@ -18,13 +18,13 @@ export function firstUrl(text) {
   return m[0].replace(/[.,;:!?)\]]+$/, '');
 }
 
-// The site a URL names, readably: its host without a leading www. A URL that cannot be read gives ''.
+// The site a URL names, readably: its host without a leading www, read by hand rather than with the URL API, which
+// the embedded engines a shell runs do not all carry. A URL that cannot be read gives ''.
 export function linkSite(url) {
-  try {
-    return new URL(String(url)).hostname.replace(/^www\./i, '');
-  } catch {
-    return '';
-  }
+  const m = /^https?:\/\/([^/?#]+)/i.exec(String(url || ''));
+  if (!m) return '';
+  const host = m[1].replace(/^.*@/, '').replace(/:[0-9]+$/, '').toLowerCase();
+  return host.replace(/^www\./, '');
 }
 
 // Whether a payload is media we can show in place (a picture or a video), from the type its own bytes gave it.

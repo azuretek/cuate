@@ -1346,11 +1346,10 @@ var engine = (() => {
     return m[0].replace(/[.,;:!?)\]]+$/, "");
   }
   function linkSite(url) {
-    try {
-      return new URL(String(url)).hostname.replace(/^www\./i, "");
-    } catch {
-      return "";
-    }
+    const m = /^https?:\/\/([^/?#]+)/i.exec(String(url || ""));
+    if (!m) return "";
+    const host = m[1].replace(/^.*@/, "").replace(/:[0-9]+$/, "").toLowerCase();
+    return host.replace(/^www\./, "");
   }
   function payloadMedia(mime) {
     return /^(?:image|video)\//i.test(String(mime || ""));
