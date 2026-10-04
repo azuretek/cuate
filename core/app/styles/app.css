@@ -180,28 +180,16 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .conv-body[data-reacting] > .messages, .conv-body[data-reacting] > .thread-view { padding-bottom: calc(var(--size-picker-h) + var(--space-4)); scroll-padding-bottom: calc(var(--size-picker-h) + var(--space-4)); }
 .bubble-row.targeted .bubble, .bubble-row.targeted .attachment-image { box-shadow: 0 0 0 calc(var(--size-border) * 2) var(--color-accent); }
 .message-note { font-size: var(--font-size-xs); color: var(--color-danger); margin: var(--space-1) var(--space-2) 0; }
-/* Threads as the phone draws them (issue 195). A reply keeps its place in time. Above the run of replies holding a
-   thread's newest reply, the original repeats as a small outlined ghost on its own side, no fill, with the reply count
-   under it. Every other message carries nothing. */
-.thread-ghost-row { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); margin-top: var(--space-4); }
-.thread-ghost-row.mine { align-items: flex-end; }
-.thread-ghost-row + .bubble-row { margin-top: var(--space-1); }
-.thread-ghost { max-width: calc(var(--size-bubble-max) * 0.75); padding: var(--space-1) var(--space-3); border: var(--size-border) solid var(--color-fg-muted); border-radius: var(--radius-lg); background: none; color: var(--color-fg-muted); font-size: var(--font-size-sm); text-align: start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.thread-count { padding: 0 var(--space-3); border: 0; background: none; color: var(--color-accent); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); cursor: pointer; }
-.thread-ghost:hover, .thread-ghost:focus-visible, .thread-count:hover, .thread-count:focus-visible { color: var(--color-fg); outline: none; }
+/* A thread is drawn from the stored pointer alone (issue 208). A message with replies is marked once, by one quiet line
+   under it reading the reply count, which opens the thread; a reply opens its thread when pressed and carries no line
+   of its own. Nothing is drawn between two messages, so no pairing is implied that the stored pointer does not
+   support. */
+.thread-replies { display: flex; margin-top: var(--space-1); margin-bottom: var(--space-2); }
+.thread-replies.mine { justify-content: flex-end; }
+.thread-count { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); border: 0; background: none; color: var(--color-accent); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); cursor: pointer; }
+.thread-count:hover, .thread-count:focus-visible { color: var(--color-fg); outline: none; }
 .bubble-row.thread-reply .bubble { cursor: pointer; }
-/* The lines between a thread's messages (issue 214), drawn over the list where a thread changes hands: out of the side
-   of the message a line leaves, down the list's margin on that side, and across the answer's row into its near edge,
-   so it is attached to both bubbles. The component lays each one out from where the bubbles are; only the stroke takes
-   a press, so the messages it passes stay pressable. */
 .messages { position: relative; }
-.thread-line { --thread-gap: var(--space-2); --thread-lane: var(--space-1); --thread-radius: var(--radius-md); --thread-reach: var(--space-3); position: absolute; left: 0; top: 0; width: 0; height: 0; padding: 0; margin: 0; border: 0; background: none; pointer-events: none; overflow: visible; z-index: 1; }
-.thread-line svg { display: block; overflow: visible; }
-.thread-line path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.thread-line path.stroke { stroke: var(--color-fg-muted); stroke-width: calc(var(--size-border) * 1.5); }
-.thread-line path.hit { stroke: transparent; stroke-width: var(--space-3); pointer-events: stroke; cursor: pointer; }
-.thread-line:hover path.stroke, .thread-line:focus-visible path.stroke { stroke: var(--color-accent); }
-.thread-line:focus-visible { outline: none; }
 /* An open thread is its own conversation over the rest, which blurs and dims behind it: only the thread's original and
    replies, each under its time, in a card whose top right corner holds its close control (issue 213). The contact
    header stays as it is, so nothing there reads as closing the conversation. */

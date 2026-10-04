@@ -996,8 +996,12 @@ async function runSmoke(w) {
   console.log('composer keeps place: ' + JSON.stringify({ checks: keepChecks, backBefore, backGrown, backSteps, endBefore, endGrown, endResized, endBack }));
   await js(`(() => { const t = document.querySelector('app-composer textarea'); t.value = ${q(REPLY)}; document.querySelector('app-composer button.send').click(); return true; })()`);
   const replySel = `[...document.querySelectorAll('.messages .bubble-row.mine')].find((r) => r.textContent.includes(${q(REPLY)}) && !r.dataset.id.startsWith('local:'))`;
-  await waitFor(`Boolean(${replySel}?.previousElementSibling?.matches('.thread-ghost-row'))`, 20000);
-  const replied = await js(`(() => { const r = ${replySel}; const g = r.previousElementSibling; return { id: r.dataset.id, root: g.dataset.thread, ghost: (g.querySelector('.thread-ghost')?.textContent || '').trim(), count: (g.querySelector('.thread-count')?.textContent || '').trim(), side: g.classList.contains('theirs') ? 'theirs' : 'mine', line: Boolean(r.querySelector('.thread-line')), text: r.textContent, enabled: !g.querySelector('.thread-ghost').disabled, cleared: !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') && document.querySelector('app-composer textarea').placeholder === 'Message' }; })()`);
+  await waitFor(`Boolean(${replySel}) && Boolean(document.querySelector(${q(row)})?.nextElementSibling?.classList.contains('thread-replies'))`, 20000);
+  const replied = await js(`(() => {
+    const r = ${replySel};
+    const host = document.querySelector(${q(row)});
+    const sum = host && host.nextElementSibling && host.nextElementSibling.matches('.thread-replies') ? host.nextElementSibling : null;
+    return { id: r.dataset.id, root: r.dataset.thread, marked: r.classList.contains('thread-reply'), text: r.textContent, summary: sum ? { root: sum.dataset.thread, count: (sum.querySelector('.thread-count')?.textContent || '').trim(), side: sum.classList.contains('theirs') ? 'theirs' : 'mine', enabled: !sum.querySelector('.thread-count').disabled } : null, cleared: !document.querySelector('.conv-body').dataset.thread && !document.querySelector('.messages.behind') && document.querySelector('app-composer textarea').placeholder === 'Message' }; })()`);
   await js(`(() => { const r = ${replySel}; r.scrollIntoView({ block: 'center' }); return true; })()`);
   await pause(300);
   await shot('16-replied-light.png');
@@ -1006,39 +1010,34 @@ async function runSmoke(w) {
   await shot('16b-replied-dark.png');
   nativeTheme.themeSource = 'light';
   // The reply count opens its thread, and the reply sent from the thread is in it, after its first message.
-  await js(`${replySel}.previousElementSibling.querySelector('.thread-count').click()`);
+  await js(`document.querySelector(${q(row)}).nextElementSibling.querySelector('.thread-count').click()`);
   await waitFor(`Boolean(document.querySelector(${q('.thread-view .bubble-row[data-id="' + TARGET + '"]')}))`, 5000);
   await pause(400);
   const landed = await js(`[...document.querySelectorAll('.thread-view .bubble-row')].map((r) => r.dataset.id)`);
   await both('16c-thread-with-reply');
   await escape();
   await waitFor("!document.querySelector('.thread-view')", 5000);
-  // The fixture's own thread (issue 195): Avery's reply to your earlier message carries the line, the ghost of your
-  // message sits above the two replies with their count, and the ordinary messages, which the engine chains to the
-  // message before them, carry nothing. The thread opens from the line, and on a phone from the reply itself, with
-  // exactly its three messages, on a desktop window and at a phone's width, light and dark.
+  // The fixture's own threads (issues 195 and 208): the message each thread answers carries one quiet count line under
+  // it, each reply is marked once and links only to its own original, and the ordinary messages, which the engine chains
+  // to the message before them, carry nothing; no line is drawn between two messages. The thread opens from the count,
+  // and on a phone from the reply itself, with exactly its three messages, on a desktop window and at a phone's width,
+  // light and dark.
   const FIXTURE_ROOT = 'FAKE-0009';
   const FIXTURE_REPLY = 'FAKE-0014';
   const marksState = () => js(`(() => {
     const list = document.querySelector('.messages');
     const rows = [...list.querySelectorAll('.bubble-row')];
-    const reply = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
-    const ghost = reply && reply.previousElementSibling;
-    if (reply) reply.scrollIntoView({ block: 'center' });
-    const lines = [...list.querySelectorAll('.thread-line')].map((l) => ({ from: l.dataset.from, to: l.dataset.to, side: l.dataset.side, lane: Number(l.dataset.lane), hidden: l.hidden }));
+    const first = list.querySelector('.bubble-row[data-id="${FIXTURE_REPLY}"]');
+    if (first) first.scrollIntoView({ block: 'center' });
     return {
-      pairs: lines.map((l) => l.from + '>' + l.to),
-      lanes: lines.map((l) => l.side + l.lane),
-      lines,
-      ghosts: [...list.querySelectorAll('.thread-ghost-row')].map((g) => ({ root: g.dataset.thread, side: g.classList.contains('mine') ? 'mine' : 'theirs', count: (g.querySelector('.thread-count')?.textContent || '').trim(), fill: getComputedStyle(g.querySelector('.thread-ghost')).backgroundColor })),
-      marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => r.dataset.id),
-      ghostRoot: ghost && ghost.matches('.thread-ghost-row') ? ghost.dataset.thread : null,
-      count: ghost ? (ghost.querySelector('.thread-count')?.textContent || '').trim() : '', ghostFill: ghost && ghost.querySelector('.thread-ghost') ? getComputedStyle(ghost.querySelector('.thread-ghost')).backgroundColor : '',
+      lines: list.querySelectorAll('.thread-line').length,
+      summaries: [...list.querySelectorAll('.thread-replies')].map((g) => ({ root: g.dataset.thread, side: g.classList.contains('mine') ? 'mine' : 'theirs', count: (g.querySelector('.thread-count')?.textContent || '').trim() })),
+      marked: rows.filter((r) => r.classList.contains('thread-reply')).map((r) => ({ id: r.dataset.id, root: r.dataset.thread })),
     };
   })()`);
   const marks = await marksState();
   await both('16d-thread-marks');
-  await js(`document.querySelector('.messages .thread-line[data-from="${FIXTURE_ROOT}"][data-to="${FIXTURE_REPLY}"]').click()`);
+  await js(`document.querySelector('.messages .thread-replies[data-thread="${FIXTURE_ROOT}"] .thread-count').click()`);
   await waitFor(`document.querySelector('.conv-body')?.dataset.thread === ${q(FIXTURE_ROOT)}`, 5000);
   await pause(400);
   const fixtureThread = await focusState();
@@ -1065,20 +1064,22 @@ async function runSmoke(w) {
   await js(`(() => { document.querySelector('app-root').listOpen = ${JSON.stringify(marksListOpen)}; return true; })()`);
   await pause(300);
   const fixtureIds = [FIXTURE_ROOT, FIXTURE_REPLY, 'FAKE-0015'].join('|');
-  // Two interleaved threads (issue 214): each draws a line only where it changes hands, T2's own side sits on its own
-  // lane beside T1's, and no message outside the two threads (the document included) is marked.
+  // Two interleaved threads (issues 195 and 208): each keeps its own count and its own path, every reply links only to
+  // its own original, nothing is inferred from adjacency, and no message outside a thread (the document included) is
+  // marked.
   const marksOk = (m) => {
-    const laneOf = (pair) => { const i = m.pairs.indexOf(pair); return i < 0 ? null : m.lanes[i]; };
-    const expected = ['FAKE-0009>FAKE-0014', 'FAKE-0014>FAKE-0015', 'FAKE-0016>FAKE-0017', 'FAKE-0017>FAKE-0018'];
-    const markedOk = ['FAKE-0014', 'FAKE-0015', 'FAKE-0017', 'FAKE-0018'].every((id) => m.marked.includes(id)) && m.marked.includes(replied.id) && !m.marked.includes('FAKE-0013') && !m.marked.includes('FAKE-0019');
-    return expected.every((p) => m.pairs.includes(p)) && m.lines.every((l) => !l.hidden)
-      && laneOf('FAKE-0009>FAKE-0014') !== laneOf('FAKE-0017>FAKE-0018')
-      && markedOk && m.ghostFill === 'rgba(0, 0, 0, 0)'
-      && m.ghosts.some((g) => g.root === 'FAKE-0009' && g.side === 'mine' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)')
-      && m.ghosts.some((g) => g.root === 'FAKE-0016' && g.side === 'theirs' && g.count === '2 Replies' && g.fill === 'rgba(0, 0, 0, 0)');
+    const count = (root) => m.summaries.find((s) => s.root === root) || null;
+    const answers = { 'FAKE-0014': 'FAKE-0009', 'FAKE-0015': 'FAKE-0009', 'FAKE-0017': 'FAKE-0016', 'FAKE-0018': 'FAKE-0016' };
+    const markedOk = Object.entries(answers).every(([id, root]) => m.marked.some((x) => x.id === id && x.root === root))
+      && m.marked.some((x) => x.id === replied.id && x.root === TARGET)
+      && !m.marked.some((x) => x.id === 'FAKE-0013') && !m.marked.some((x) => x.id === 'FAKE-0019');
+    return m.lines === 0 && markedOk && m.summaries.length === 3
+      && count('FAKE-0009')?.count === '2 Replies' && count('FAKE-0009')?.side === 'mine'
+      && count('FAKE-0013')?.count === '1 Reply' && count('FAKE-0013')?.side === 'theirs'
+      && count('FAKE-0016')?.count === '2 Replies' && count('FAKE-0016')?.side === 'theirs';
   };
   const threadOk = (t) => t.ids.join('|') === fixtureIds && t.close && t.back && t.placeholder === 'Reply' && t.separators === 3 && t.blurred;
-  const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.ghost.includes('See you soon') && replied.side === 'theirs' && replied.count === '1 Reply' && !replied.line && !/Reply to/.test(replied.text), enabled: replied.enabled, cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
+  const replyChecks = { focused: replyFocused, relationship: replied.root === TARGET && replied.marked && Boolean(replied.summary) && replied.summary.root === TARGET && replied.summary.count === '1 Reply' && replied.summary.side === 'theirs' && !/Reply to/.test(replied.text), enabled: Boolean(replied.summary?.enabled), cleared: replied.cleared, landsInThread: landed[0] === TARGET && landed.includes(replied.id) && landed.length === 2, marks: marksOk(marks), phoneMarks: marksOk(phoneMarks), fixtureThread: threadOk(fixtureThread), phoneThread: threadOk(fixturePhoneThread) };
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
 

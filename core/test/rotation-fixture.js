@@ -101,8 +101,12 @@
     previousWidth = innerWidth;
     step('frame');
     const current = rows().find(row => row.dataset.id === key);
-    const relationships = [...scroller.querySelectorAll('.thread-line')];
-    const chatDesign = document.documentElement.dataset.scheme === scheme && relationships.length === 25 && relationships.every(link => !link.textContent.includes('Synthetic rotation message') && !/Reply to/.test(link.textContent))
+    // A thread is drawn from the stored pointer alone (issue 208): the fixture's 25 replies each mark the message
+    // they answer with one quiet count line, and nothing is drawn between two messages.
+    const summaries = [...scroller.querySelectorAll('.thread-replies')];
+    const chatDesign = document.documentElement.dataset.scheme === scheme && summaries.length === 25
+      && summaries.every(s => (s.querySelector('.thread-count')?.textContent || '').trim() === '1 Reply' && !s.textContent.includes('Synthetic rotation message') && !/Reply to/.test(s.textContent))
+      && scroller.querySelectorAll('.bubble-row.thread-reply').length === 25 && !scroller.querySelector('.thread-line') && !scroller.querySelector('.thread-ghost')
       && !scroller.querySelector('.reply-quote') && scroller.querySelector('.reaction');
     const checks = {
       design: Boolean(chatDesign), present: !blank,
