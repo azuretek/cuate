@@ -31,7 +31,9 @@ export function createWatchdog({
   maxBackoffMs = WATCHDOG_DEFAULTS.maxBackoffMs,
   setInterval: startTimer = setInterval,
   clearInterval: stopTimer = clearInterval,
-  restartEngine = () => engine.start(),
+  // ensure() is the guarded start: it joins a start already running and never replaces a live child, so the
+  // watchdog and the adapter's own restart cannot each spawn a child for the same broken engine (issue 264).
+  restartEngine = () => (engine.ensure ? engine.ensure() : engine.start()),
   engineReady = () => engine.info().ready,
 }) {
   const settings = mac.settings;
@@ -138,7 +140,8 @@ export function createRestarts({ engine, mac, log, exit = (code) => process.exit
     },
     async engine() {
       log.emit('mac.restart', { what: 'engine' });
-      await engine.start();
+      // An explicit restart replaces the child; ensure() would leave a running one alone.
+      await (engine.restart ? engine.restart() : engine.start());
       return { restarted: true };
     },
     server() {

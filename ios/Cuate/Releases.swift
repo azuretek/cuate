@@ -98,4 +98,36 @@ enum BuildIdentity {
         let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         return value.hasPrefix("$(") ? "" : value
     }
+    /// The architecture this build runs on, so About names it rather than Unknown.
+    static var arch: String {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return "x86_64"
+        #else
+        return ""
+        #endif
+    }
+
+    /// Whether this copy was installed (a release build) rather than run from source (a Debug build), so About reports
+    /// how the copy was obtained on every platform.
+    static var packaged: Bool {
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    /// How this copy was obtained: TestFlight signs a sandbox receipt, the App Store a production one, and a Debug run
+    /// from Xcode none. A release build with no receipt yet (before the first refresh) reads as the App Store, which is
+    /// where a receipted copy came from anyway.
+    static var installSource: String {
+        #if DEBUG
+        return "source"
+        #else
+        guard let url = Bundle.main.appStoreReceiptURL else { return "App Store" }
+        return url.lastPathComponent == "sandboxReceipt" ? "TestFlight" : "App Store"
+        #endif
+    }
 }
