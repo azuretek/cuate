@@ -163,6 +163,7 @@ class HostBridge(
             "app.icon" -> success(appIcon(args.optString("icon")))
             "notify" -> success(notify(args))
             "open.external" -> success(openExternal(args))
+            "file.save" -> success(saveFile(args))
             // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
             // its own to answer; the one bridge spec still declares the command for the desktop's tray check.
             "updates.check" -> success(JSONObject.NULL)
@@ -249,6 +250,34 @@ class HostBridge(
             .build()
         manager.notify(title.hashCode(), notification)
         return true
+    }
+
+    /**
+     * A document pressed in a conversation (issue 219): the page hands the bytes as base64 under the file's real name,
+     * and the system's share sheet, which includes Save to Files, is offered. The bytes are written to the app's cache
+     * and shared through the provider the manifest declares.
+     */
+    private fun saveFile(args: JSONObject): Boolean {
+        val name = args.optString("name")
+        val data = args.optString("data")
+        if (name.isEmpty() || data.isEmpty()) return false
+        val mime = args.optString("mime").ifEmpty { "application/octet-stream" }
+        return try {
+            val bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT)
+            val dir = java.io.File(context.cacheDir, "saves").apply { mkdirs() }
+            val file = java.io.File(dir, java.io.File(name).name.ifEmpty { "Attachment" })
+            file.writeBytes(bytes)
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun openExternal(args: JSONObject): Boolean {

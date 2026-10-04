@@ -68,10 +68,13 @@ const noAppIcon = (icon) => ({ applied: false, icon });
 // The app's own icons, redrawn from the theme and the unread count (issue 189). A shell with none to redraw answers false.
 const noIcons = () => false;
 
+// A document pressed in a conversation (issue 219). A shell with nowhere to save answers false.
+const noSave = () => false;
+
 // The colour tokens the page sends for the icon: strings only, a bounded handful, never anything else it might carry.
 const iconColors = (colors) => (colors && typeof colors === 'object' && !Array.isArray(colors) ? Object.fromEntries(Object.entries(colors).filter(([k, v]) => /^[a-z][a-z-]{0,31}$/.test(k) && typeof v === 'string' && v.length <= 120).slice(0, 16)) : {});
 
-export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
+export function createHandlers({ secure, notify, info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -80,6 +83,9 @@ export function createHandlers({ secure, notify, info, openExternal, checkUpdate
     'app.icon': async ({ icon }) => appIcon(String(icon ?? '')),
     notify: async ({ title, body }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500)),
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
+    // A document is offered for saving under its real name (issue 219): the page hands the bytes and the name, and the
+    // shell shows its save dialog (desktop) or share or save sheet (phone).
+    'file.save': async ({ name, mime, data }) => saveFile({ name: String(name ?? '').slice(0, 255), mime: String(mime ?? '').slice(0, 100), data: typeof data === 'string' ? data : '' }),
     // About's Check for updates (issue 171): the tray's own check, answering the state it reached; the outcome that
     // follows arrives on update.state as the tray's does.
     'updates.check': async () => checkUpdates() ?? null,
