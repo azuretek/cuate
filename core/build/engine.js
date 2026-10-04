@@ -986,7 +986,7 @@ var engine = (() => {
     "families": [
       {
         "id": "naranja",
-        "label": "Naranja",
+        "label": "Barro",
         "variants": {
           "light": {
             "id": "naranja_light",
@@ -1094,7 +1094,7 @@ var engine = (() => {
       },
       {
         "id": "jade",
-        "label": "Jade",
+        "label": "Nopal",
         "variants": {
           "light": {
             "id": "jade_light",

@@ -9,7 +9,7 @@ export const APP_ICONS = {
   "families": [
     {
       "id": "naranja",
-      "label": "Naranja",
+      "label": "Barro",
       "variants": {
         "light": {
           "id": "naranja_light",
@@ -117,7 +117,7 @@ export const APP_ICONS = {
     },
     {
       "id": "jade",
-      "label": "Jade",
+      "label": "Nopal",
       "variants": {
         "light": {
           "id": "jade_light",

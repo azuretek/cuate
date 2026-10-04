@@ -75,7 +75,7 @@ test('on a phone Settings and About are pages that fill the screen, not a card o
   assert.match(phone, /\.sheet-scrim\s*\{[^}]*background:\s*var\(--color-bg-raised\)/, 'the bars wear the page\'s own surface');
 });
 
-test('the app icon is a setting the server holds, offered from the one spec: each colour a Light/Dark family, Naranja Dark the default (issue 246)', () => {
+test('the app icon is a setting the server holds, offered from the one spec: each colour a Light/Dark family, Barro Dark the default (issue 246)', () => {
   const field = settingsFields().find((f) => f.key === 'appearance.appIcon');
   assert.ok(field, 'Settings offers the app icon');
   assert.equal(field.group, 'appearance');
@@ -94,7 +94,7 @@ test('the app icon is a setting the server holds, offered from the one spec: eac
   assert.equal(field.default, 'naranja_dark');
   // Every colour's name is Spanish, with no extra text: the tile's label is the colour alone, and which variant it is
   // lives in the tile's accessible name and in the swatch (issue 254).
-  const names = ['Naranja', 'Azul', 'Rosa', 'Jade', 'Morado'];
+  const names = ['Barro', 'Azul', 'Rosa', 'Nopal', 'Morado'];
   for (const name of names) assert.ok(variants.some((v) => v.familyLabel === name), 'the colour ' + name + ' is offered');
   for (const v of variants) assert.equal(/light|dark|mexicano/i.test(v.familyLabel), false, v.familyLabel + ' carries no extra text beside the name');
   const allChoices = appIconChoices({});
