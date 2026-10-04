@@ -75,7 +75,7 @@ test('a notice floats above every surface and takes its own press (issue 253)', 
   assert.match(css, /\.app-notice \{[^}]*pointer-events: auto;/, 'the card takes its own press');
   // A press on a notice is not an outside press for the sheet, so it never dismisses it.
   const root = readFileSync(new URL('../app/components/app-root.js', import.meta.url), 'utf8');
-  assert.match(root, /<app-notices data-dismiss-keep="sheet"/, 'a press on a notice never dismisses the sheet');
+  assert.match(root, /<app-notices data-dismiss-keep="sheet about"/, 'a press on a notice never dismisses either sheet');
   // The card body runs its action and nothing else; the close control keeps its own press.
   const src = readFileSync(new URL('../app/components/app-notices.js', import.meta.url), 'utf8');
   assert.match(src, /@click=\$\{\(e\) => this\.onCard\(e, n\)\}/, 'the card body is a press');

@@ -31,17 +31,19 @@
   // The About row is on every Settings page (issue 244), so no tab has to be picked first.
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
-  await until(() => about() && about().querySelector('.about-row') && !document.querySelector('app-settings'), 'the About page');
-  // Issue 253: About REPLACES the Settings page inside the ONE sheet, so there is never a second card or a second
-  // backdrop stacked above it.
-  if (document.querySelectorAll('.sheet').length !== 1 || document.querySelectorAll('.sheet-scrim').length !== 1) throw new Error('About is stacked as a second sheet');
-  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page replacement to finish');
+  await until(() => about() && about().querySelector('.about-row'), 'the About sheet');
+  // Issue 253: About is its OWN sheet, stacked ABOVE the Settings sheet, which steps aside underneath it: two cards
+  // and two backdrops, the About one on top.
+  const aboutSheet = document.querySelector('.sheet[data-view=about]');
+  const settingsSheet = document.querySelector('.sheet[data-view=settings]');
+  if (!aboutSheet || !settingsSheet || document.querySelectorAll('.sheet').length !== 2 || document.querySelectorAll('.sheet-scrim').length !== 2) throw new Error('About is not stacked as its own sheet above Settings');
+  await until(() => !aboutSheet.getAnimations().some((a) => a.playState === 'running'), 'the About sheet to arrive');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
   if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
   const parts = [...about().querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section).join('|');
   if (parts !== 'identity|updates|build') throw new Error('About draws ' + parts);
-  const sheetTop = document.querySelector('.sheet').getBoundingClientRect().top;
+  const sheetTop = document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top;
   about().querySelector('[data-action=check-updates]').click();
   const notice = () => (document.querySelector('.app-notice') || {}).textContent || '';
   await until(() => notice().includes('is available'), 'the update-available notice');
@@ -52,7 +54,7 @@
   const dismiss = document.querySelector('.app-notice .close-button').getBoundingClientRect();
   const top = document.elementFromPoint(dismiss.left + dismiss.width / 2, dismiss.top + dismiss.height / 2);
   if (!top || !top.closest('.close-button')) throw new Error('the notice is covered by ' + (top ? top.className || top.tagName : 'nothing'));
-  const moved = document.querySelector('.sheet').getBoundingClientRect().top - sheetTop;
+  const moved = document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top - sheetTop;
   if (Math.abs(moved) > 1) throw new Error('the notice pushed the sheet down by ' + moved);
   // The button has shown its answer and is idle again, so the capture shows its label.
   await until(() => !about().querySelector('[data-action=check-updates]').dataset.press, 'the button to settle', 5000);

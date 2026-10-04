@@ -19,7 +19,7 @@ const sheetOut = Number.parseFloat(tokens.motion['sheet-out']);
 // A host carrying the state the departure reads, with the token the stylesheet resolves.
 function host() {
   const h = new AppRoot();
-  Object.assign(h, { view: 'settings', sheetLeaving: false, pendingSheet: null, aboutFrom: 'settings', pageMotion: 'fade' });
+  Object.assign(h, { view: 'settings', sheetLeaving: false, pendingSheet: null, aboutFrom: 'settings' });
   globalThis.getComputedStyle = () => ({ getPropertyValue: (name) => (name === '--motion-sheet-out' ? tokens.motion['sheet-out'] : '') });
   return h;
 }
@@ -37,7 +37,6 @@ test('a leaving sheet finishes without its animationend once the token duration 
   assert.equal(h.sheetLeaving, false, 'no frame ever came, and the sheet still left');
   assert.equal(h.view, 'messages');
   assert.equal(h.aboutFrom, null);
-  assert.equal(h.pageMotion, null, 'the next sheet arrives as a sheet, not as a page pushed inside one');
 });
 
 test('the animationend finishes the departure first, and the deadline that follows changes nothing', (t) => {

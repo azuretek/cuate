@@ -320,12 +320,7 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 /* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
 .about-update-line { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .about-update-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
-/* About REPLACES Settings inside the one sheet (issue 253): it is not a second sheet and it does not rise above
-   Settings, so the page is replaced in place with a fade, on the sheet's arrival duration and curve, identical at
-   every width. Reduced motion keeps the change and drops the fade. */
-@keyframes page-fade { from { opacity: 0; } to { opacity: 1; } }
-app-settings[data-motion="fade"], app-about[data-motion="fade"] { animation: page-fade var(--motion-sheet-in) var(--motion-sheet-ease) both; }
-@media (prefers-reduced-motion: reduce) { app-settings[data-motion], app-about[data-motion] { animation: none; } }
+/* Settings and About are the app's two sheets (issue 253), each with its own arrival below; no page fades in place. */
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--role-back-border); border-radius: 0; background: var(--role-back); color: var(--role-back-fg); cursor: pointer; text-align: left; flex: none; }
 .sheet-back:hover { background: var(--role-back-hover); color: var(--role-back-fg); }
@@ -604,11 +599,11 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 .window-control svg { display: block; width: var(--size-window-glyph); height: var(--size-window-glyph); stroke-width: var(--size-window-glyph-stroke); }
 .window-control svg * { vector-effect: non-scaling-stroke; }
 
-/* Settings and About are the app's ONE sheet, over a fading scrim (issue 253): the sheet slides UP into place from
-   the bottom edge whichever page it holds, and leaves back to that edge; the confirm card keeps the rising sheet's
-   motion. Chela's own stylesheet moves the sheet this way, on these values, so a reader who uses both apps sees one
-   design rather than two. Nothing here names a colour or a length of its own: the dim is the token the drawer's scrim
-   already uses, and every duration and curve is a motion token. */
+/* Settings and About are the app's two sheets (issue 253): the Settings sheet, and the About sheet stacked above it.
+   Each slides UP into place from the bottom edge and leaves back to that edge on its own; the confirm card keeps the
+   rising sheet's motion. Chela's own stylesheet moves the sheets this way, on these values, so a reader who uses both
+   apps sees one design rather than two. Nothing here names a colour or a length of its own: the dim is the token the
+   drawer's scrim already uses, and every duration and curve is a motion token. */
 @keyframes surface-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes sheet-up-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes sheet-down-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
@@ -622,9 +617,12 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
 .sheet { position: relative; z-index: 4; display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
-/* The ONE sheet arrives from the bottom edge whichever page it holds (issue 253), so About is a page inside it and
-   never a second sheet above Settings. */
+/* Either sheet arrives from the bottom edge (issue 253). */
 .sheet[data-arrive="up"] { animation: sheet-up-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
+/* The About sheet is a later layer ABOVE the Settings sheet it is stacked over (issue 253): above the settings
+   backdrop and card, and below the notices, which draw above every surface. */
+.sheet-scrim[data-sheet="about"] { z-index: 5; }
+.sheet-scrim[data-sheet="about"] .sheet { z-index: 6; }
 /* On a phone the sheet keeps the card's own treatment (issue 253): the backdrop's blur and dim over the conversation,
    the card's edge, rounded top corners and shadow, anchored to the bottom edge, with the safe areas kept clear of the
    strip and the last row. The strip at the top is the way back, and a phone has no Escape key to name on it. This block
@@ -644,14 +642,13 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
   .sheet-back[data-narrow] .sheet-back-wide { display: none; }
   .sheet-back[data-narrow] .sheet-back-narrow { display: inline-flex; }
 }
-/* One class says leaving, so both the sheet and its dim leave together and neither can be left behind. The sheet leaves
-   back the way it came (issue 253): it rises from the bottom edge whichever page it holds, so it returns to the bottom
-   edge. */
-body.surface--leaving .sheet-scrim { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
-body.surface--leaving .sheet { animation: sheet-down-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+/* Each sheet says leaving for itself, so the sheet and its dim leave together without taking the OTHER sheet with
+   them, and each leaves back the way it came (issue 253): both rise from the bottom edge, so both return to it. */
+.sheet-scrim[data-leaving] { animation: surface-scrim-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
+.sheet-scrim[data-leaving] .sheet { animation: sheet-down-out var(--motion-sheet-out) var(--motion-sheet-ease) both; }
 /* Reduced motion keeps the change and drops the travel: a straight cut, with no animation at all. */
 @media (prefers-reduced-motion: reduce) {
-  .sheet[data-arrive], .sheet-scrim, body.surface--leaving .sheet-scrim, body.surface--leaving .sheet { animation: none; }
+  .sheet[data-arrive], .sheet-scrim, .sheet-scrim[data-leaving], .sheet-scrim[data-leaving] .sheet { animation: none; }
 }
 
 /* The sort choices open under the sort icon, drawn as the filter menu is. */

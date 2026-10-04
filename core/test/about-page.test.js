@@ -26,34 +26,41 @@ function host() {
   return h;
 }
 
-test('About replaces Settings inside the one sheet, and its back returns to Settings', () => {
+test('About is its own sheet stacked above Settings, and its back returns to Settings', () => {
   const h = host();
   h.openSettings();
   assert.equal(h.view, 'settings');
+  assert.equal(h.settingsSheetShowing, true);
   h.openAbout();
-  assert.equal(h.view, 'about', 'About is a page of its own, not a section of Settings');
+  assert.equal(h.view, 'about', 'About is its own screen');
   assert.equal(h.aboutFrom, 'settings');
-  assert.equal(h.sheetLeaving, false, 'the sheet stays up: About replaces the page inside it, not a second sheet');
-  assert.equal(h.pageMotion, 'fade', 'the page is replaced in place, never a rise above Settings (issue 253)');
+  assert.equal(h.aboutSheetShowing, true, 'the About sheet is up');
+  assert.equal(h.settingsSheetShowing, true, 'the Settings sheet steps aside UNDER it, not away');
+  assert.equal(h.sheetLeaving, false, 'the Settings sheet does not leave when About arrives');
+  assert.equal(h.aboutMotion, 'up', 'the About sheet rises into place (issue 253)');
   h.pageBack();
+  assert.equal(h.aboutLeaving, true, 'back runs the About sheet down');
+  assert.equal(h.settingsSheetShowing, true, 'the Settings sheet is still under it');
+  h.finishAboutLeave();
   assert.equal(h.view, 'settings', 'back from About returns to Settings');
-  assert.equal(h.pageMotion, 'fade', 'the return is the same in-place replacement (issue 253)');
-  assert.equal(h.sheetLeaving, false);
+  assert.equal(h.aboutFrom, null);
+  assert.equal(h.aboutSheetShowing, false);
 });
 
-test('About opened on its own (the tray, the app menu) closes the sheet on back', () => {
+test('About opened on its own (the tray, the app menu) closes its own sheet on back', () => {
   const h = host();
   h.openScreen('about');
   assert.equal(h.view, 'about');
   assert.equal(h.aboutFrom, null);
+  assert.equal(h.settingsSheetShowing, false, 'no Settings sheet is under it');
   h.pageBack();
-  assert.equal(h.sheetLeaving, true, 'nothing is under it, so back runs the sheet down');
-  h.finishSheetLeave();
+  assert.equal(h.aboutLeaving, true, 'nothing is under it, so back runs the About sheet down');
+  h.finishAboutLeave();
   assert.equal(h.view, 'messages');
   assert.equal(h.aboutFrom, null);
 });
 
-test('asking for About again while it is up changes nothing, and Settings from About goes back to Settings', () => {
+test('asking for About again while it is up changes nothing, and Settings brings About down to the sheet under it', () => {
   const h = host();
   h.openSettings();
   h.openAbout();
@@ -61,8 +68,23 @@ test('asking for About again while it is up changes nothing, and Settings from A
   assert.equal(h.view, 'about');
   assert.equal(h.aboutFrom, 'settings');
   h.openSettings();
+  assert.equal(h.aboutLeaving, true, 'the About sheet comes down');
+  h.finishAboutLeave();
   assert.equal(h.view, 'settings');
-  assert.equal(h.sheetLeaving, false);
+  assert.equal(h.sheetLeaving, false, 'the Settings sheet never left');
+  assert.equal(h.aboutSheetShowing, false);
+});
+
+test('closing the surface takes the About sheet and the Settings sheet under it', () => {
+  const h = host();
+  h.openSettings();
+  h.openAbout();
+  h.closeView();
+  assert.equal(h.aboutLeaving, true, 'the About sheet leaves');
+  assert.equal(h.sheetLeaving, true, 'and the Settings sheet under it');
+  h.finishAboutLeave();
+  h.finishSheetLeave();
+  assert.equal(h.view, 'messages');
 });
 
 test('pageAfterBack: only About pushed from Settings has a page under it', () => {
@@ -260,34 +282,41 @@ test('the phone About fixture cannot be activated in a release build, and both p
   assert.match(read('.github/workflows/android.yml'), /about-light\.png[\s\S]*about-dark\.png/);
 });
 
-test('Escape and a press outside the sheet go back the way the strip does, so About returns to Settings', () => {
+test('Escape and a press outside the About sheet go back the way its strip does, so About returns to Settings', () => {
   const root = read('core/app/components/app-root.js');
-  assert.match(root, /dismissable\(this, \{ name: 'sheet', open: \(\) => this\.sheetShowing && !this\.sheetLeaving, close: \(\) => this\.pageBack\(\) \}\)/);
+  assert.match(root, /dismissable\(this, \{ name: 'about', open: \(\) => this\.aboutSheetShowing && !this\.aboutLeaving, close: \(\) => this\.pageBack\(\) \}\)/);
   const h = host();
   h.openSettings();
   h.openAbout();
   h.pageBack();
+  assert.equal(h.aboutLeaving, true, 'the About sheet is the one that leaves');
+  h.finishAboutLeave();
   assert.equal(h.view, 'settings');
 });
 
-// Issue 253: About REPLACES Settings inside the one sheet, so the page is replaced in place with a fade rather than
-// rising above Settings as a second sheet, identical at every width, and reduced motion is a straight cut.
-test('About replaces Settings inside the one sheet, and reduced motion drops the fade', () => {
+// Issue 253: About is its OWN sheet, stacked above the Settings sheet, each with its own rise and its own way back;
+// the notices draw above both, and reduced motion drops the travel.
+test('About is a second sheet above Settings, each arriving on its own, and reduced motion drops the travel', () => {
   const css = read('core/app/styles/app.css');
-  assert.match(css, /@keyframes page-fade \{ from \{ opacity: 0; \}/, 'the page is replaced in place with a fade');
-  assert.match(css, /app-settings\[data-motion="fade"\], app-about\[data-motion="fade"\] \{ animation: page-fade var\(--motion-sheet-in\) var\(--motion-sheet-ease\)/, 'the replacement runs on the sheet arrival duration and curve (issue 253)');
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ app-settings\[data-motion\], app-about\[data-motion\] \{ animation: none; \} \}/, 'reduced motion is a straight cut');
-  assert.doesNotMatch(css, /@keyframes page-(up|down)/, 'no page rises above another (issue 253)');
-  assert.match(css, /\.sheet\[data-arrive="up"\]/, 'the one sheet arrives from the bottom edge');
-  assert.doesNotMatch(css, /\.sheet\[data-arrive="down"\]/, 'no second sheet arrives from the top');
+  assert.match(css, /\.sheet\[data-arrive="up"\] \{ animation: sheet-up-in var\(--motion-sheet-in\) var\(--motion-sheet-ease\) both; \}/, 'either sheet arrives from the bottom edge');
+  assert.doesNotMatch(css, /page-fade|@keyframes page-/, 'no page fades or rises in place any more (issue 253)');
+  assert.match(css, /\.sheet-scrim\[data-sheet="about"\] \{ z-index: 5; \}/, 'the About backdrop is above the Settings backdrop');
+  assert.match(css, /\.sheet-scrim\[data-sheet="about"\] \.sheet \{ z-index: 6; \}/, 'the About card is above the Settings card');
+  assert.match(css, /\.sheet-scrim\[data-leaving\] \{ animation: surface-scrim-out/, 'each sheet leaves on its own');
+  assert.match(css, /\.sheet-scrim\[data-leaving\] \.sheet \{ animation: sheet-down-out/, 'a leaving sheet takes its own dim, not the other sheet');
+  assert.doesNotMatch(css, /body\.surface--leaving/, 'the shared body class no longer moves the sheets');
   assert.doesNotMatch(css, /@keyframes sheet-(down-in|up-out)/, 'no dead sheet keyframes are kept');
-  // The two are distinct pages of the one sheet: About has its own header and its own way back to Settings.
+  // The two are distinct sheets: About has its own header and its own way back to Settings.
   assert.match(read('core/app/components/app-about.js'), /app-sheet \.title=\$\{'About'\}/, 'About draws its own header, not Settings');
-  assert.match(read('core/app/components/app-root.js'), /\.backLabel=\$\{this\.aboutFrom === 'settings' \? 'Back to settings' : 'Back to app'\}/, 'About keeps its own way back to Settings');
+  const root = read('core/app/components/app-root.js');
+  assert.match(root, /\.backLabel=\$\{this\.aboutFrom === 'settings' \? 'Back to settings' : 'Back to app'\}/, 'About keeps its own way back to Settings');
+  assert.match(root, /dismissable\(this, \{ name: 'about', open: \(\) => this\.aboutSheetShowing && !this\.aboutLeaving/, 'the About sheet has its own dismissal, so Escape closes it first');
+  assert.match(root, /data-dismiss-keep="sheet about"/, 'the notices float above BOTH sheets and take the press first');
   const h = host();
   h.openSettings();
-  assert.equal(h.sheetMotion, 'up', 'a fresh Settings sheet rises from the bottom edge (issue 253)');
+  assert.equal(h.settingsSheetShowing, true);
+  assert.equal(h.sheetMotion, 'up', 'a fresh Settings sheet rises from the bottom edge');
   h.openAbout();
-  assert.equal(h.sheetMotion, null, 'the page replacement does not re-slide the sheet');
-  assert.equal(h.pageMotion, 'fade');
+  assert.equal(h.aboutMotion, 'up', 'the About sheet has its own rise');
+  assert.equal(h.settingsSheetShowing, true, 'the Settings sheet steps aside under About, it does not leave');
 });

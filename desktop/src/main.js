@@ -677,9 +677,9 @@ async function runSmoke(w) {
   // check, and its outcome is drawn where the scheduled check reports, the update banner; a run from source cannot
   // update itself, so it says that in the app.
   const trayItem = (id) => trayMenu.getMenuItemById(id);
-  // The About page is the sheet's page (issue 171): the sheet is named About, it draws app-about with its rows and no
-  // settings page, and any push that brought it has finished.
-  const aboutShown = "(() => { const s = document.querySelector('.sheet'); const a = document.querySelector('app-about'); return Boolean(s && s.getAttribute('aria-label') === 'About' && a && a.querySelector('.about-row') && !document.querySelector('app-settings') && document.querySelectorAll('.sheet').length === 1 && document.querySelectorAll('.sheet-scrim').length === 1 && !a.getAnimations().some((x) => x.playState === 'running')); })()";
+  // About is its OWN sheet (issues 171, 253): a second card stacked above the Settings sheet, which steps aside
+  // underneath it, so two cards and two backdrops are up, the About one on top, and its arrival has finished.
+  const aboutShown = "(() => { const about = document.querySelector('.sheet[data-view=about]'); const settings = document.querySelector('.sheet[data-view=settings]'); const a = document.querySelector('app-about'); const top = document.querySelector('.sheet-scrim[data-sheet=about]'); const under = document.querySelector('.sheet-scrim[data-sheet=settings]'); return Boolean(about && a && a.querySelector('.about-row') && settings && top && under && document.querySelectorAll('.sheet').length === 2 && document.querySelectorAll('.sheet-scrim').length === 2 && Number(getComputedStyle(top).zIndex) > Number(getComputedStyle(under).zIndex) && !about.getAnimations().some((x) => x.playState === 'running')); })()";
   const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
   trayItem('settings').click();
   const settingsRaised = await visibleWithin(true);
@@ -2345,8 +2345,8 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   // The notice is seen (issue 253): it floats above the sheet, its dismiss control is the topmost thing at its centre,
   // and the sheet under it did not move when the notice appeared, so a notice never pushes the page down.
-  await js("window.__sheetTop = document.querySelector('.sheet') && document.querySelector('.sheet').getBoundingClientRect().top");
-  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.close-button'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.close-button') && sheet && document.querySelector('app-about') && Math.abs(sheet.getBoundingClientRect().top - window.__sheetTop) < 1); })()";
+  await js("window.__sheetTop = document.querySelector('.sheet[data-view=about]') && document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top");
+  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.close-button'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet[data-view=about]'); return Boolean(top && top.closest('.close-button') && sheet && document.querySelector('app-about') && Math.abs(sheet.getBoundingClientRect().top - window.__sheetTop) < 1); })()";
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutPhoneNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
@@ -2374,7 +2374,7 @@ async function runSmoke(w) {
   // Check for updates runs the tray's own check, and its answer is the app notice; a run with no updater says why.
   // The width differs from the phone check above, so the sheet's resting place is read again here: noticeSeen holds the
   // sheet to where it was just before the notice appeared.
-  await js("window.__sheetTop = document.querySelector('.sheet') && document.querySelector('.sheet').getBoundingClientRect().top");
+  await js("window.__sheetTop = document.querySelector('.sheet[data-view=about]') && document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top");
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutCheckNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
@@ -2397,7 +2397,7 @@ async function runSmoke(w) {
   const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')) }))()");
   // Back from About returns to Settings, the page it was pushed over.
   await js("document.querySelector('app-about .sheet-back').click()");
-  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
+  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
