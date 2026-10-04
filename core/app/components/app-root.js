@@ -18,6 +18,7 @@ import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, mess
 import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
+import { withRuntime } from '../../kit/rules/build.js';
 import './app-notices.js';
 import { screenFor, pageAfterBack } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
@@ -201,7 +202,10 @@ class AppRoot extends KitElement {
     // The shell names its platform and product before the page boots, so the bar is drawn with the first paint and
     // only where a window exists. A phone answers call but installs no event stream, so the bar is desktop only.
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
-      this.bridge('app.info').then((info) => { this.host = info || {}; }, () => {});
+      // The shell's report with the page's own running environment folded in: the runtime rows (Electron, Chromium, Node)
+      // and a commit the shell did not stamp are read from the process the page actually runs in, so a phone's web view
+      // reports what it has rather than Unknown (PR 257).
+      this.bridge('app.info').then((info) => { this.host = withRuntime(info || {}, globalThis); }, () => { this.host = withRuntime({}, globalThis); });
     }
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.on === 'function') {
       this.offUpdate = window.bridge.on('update.state', (data) => this.onUpdate(data || {}));
