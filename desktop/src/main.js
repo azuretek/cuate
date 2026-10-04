@@ -1597,10 +1597,14 @@ async function runSmoke(w) {
   console.log('switch instant: ' + JSON.stringify(heldSwitch));
   await clickRow(SWITCH_A);
   await waitFor(showsName(SWITCH_A), 10000);
-  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(switchListWasOpen)));
   w.setSize(1100, 720);
   await pause(300);
   await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  // Each chat click above opens with show, which closes the list drawer, and the last chat's page closes it once more
+  // as its fetch lands, after a restore placed here first would have run; so the drawer is put back after that page has
+  // settled, the way the marks and emoji sections above restore theirs.
+  await pause(400);
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(switchListWasOpen)));
 
   // The conversation header stays pinned and nothing but media zooms (issue 180). A long conversation is scrolled to
   // each end, the page itself is told to scroll and a field takes focus, then a pinch (ctrl and the wheel) and the zoom
