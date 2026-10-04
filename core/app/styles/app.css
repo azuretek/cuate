@@ -245,7 +245,11 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
    the field's height again when it does (issue 139). */
 .composer-ruler { position: absolute; visibility: hidden; pointer-events: none; white-space: pre; }
 .composer textarea:focus { border-color: var(--role-focus); }
-.send { flex: none; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--role-button); color: var(--role-button-fg); font-size: var(--font-size-send); font-weight: var(--font-weight-bold); line-height: 1; cursor: pointer; }
+.send { flex: none; display: grid; place-items: center; width: var(--size-avatar); height: var(--size-avatar); border-radius: var(--radius-pill); border: 0; background: var(--role-button); color: var(--role-button-fg); cursor: pointer; }
+/* The arrow is the shared icon set's stroked glyph, drawn in the button's own text colour, and its size is the
+   button's own fraction, so it fills the circle as the button scales (issue 216). Its weight is the glyph's own
+   stroke width in the token set, so the arrow reads as a real arrow rather than a hairline glyph. */
+.send .icon { width: var(--size-send-icon); height: var(--size-send-icon); }
 .send:disabled { opacity: 0.4; cursor: default; }
 .send:hover:not(:disabled), .button.primary:hover { background: var(--role-button-hover); }
 .send:active:not(:disabled), .button.primary:active { background: var(--role-button-press); }

@@ -16,7 +16,7 @@
     "http.request": { "level": "debug", "msg": "request", "fields": { "route": "string", "status": "number", "ms": "number" } },
     "http.error": { "level": "error", "msg": "request failed", "fields": { "route": "string", "status": "number", "code": "string", "error": "string?" } },
     "auth.refused": { "level": "notice", "msg": "request refused", "fields": { "route": "string", "reason": "string" } },
-    "send.refused": { "level": "notice", "msg": "send refused", "fields": { "reason": "string", "chat": "string" } },
+    "send.refused": { "level": "notice", "msg": "send refused", "fields": { "reason": "string", "chat": "string", "needed": "number?", "have": "number?" } },
     "send.failed": { "level": "error", "msg": "send failed", "fields": { "chat": "string", "code": "string", "error": "string?" } },
     "send.uncertain": { "level": "warn", "msg": "send outcome uncertain; not retried", "fields": { "chat": "string", "code": "string" } },
     "ws.refused": { "level": "notice", "msg": "event stream refused", "fields": { "reason": "string" } },
