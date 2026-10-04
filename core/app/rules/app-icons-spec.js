@@ -1,6 +1,6 @@
 // Generated from core/spec/app-icons.json and core/spec/icon by desktop/scripts/icons.mjs. Edit those, not this file.
 export const APP_ICONS = {
-  "description": "The app icon choices Settings offers (appearance.appIcon, issues 167 and 189). Follow theme, the default, is the icon issue 189 draws: the Flor de muerto masters coloured from the active theme's tokens, redrawn by the desktop shell whenever the theme changes, and on the phones the store icon in the default theme, since neither can recolour an installed icon. Every other choice is a fixed palette: the seven tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+  "description": "The app icon choices Settings offers (appearance.appIcon, issues 167 and 189). Follow theme, the default, is the icon issue 189 draws: the Flor de muerto masters coloured from the active theme's tokens, redrawn by the desktop shell whenever the theme changes, and on the phones the store icon in the default theme, since neither can recolour an installed icon. Every other choice is a fixed palette: the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
   "default": "theme",
   "icons": [
     {
@@ -18,7 +18,8 @@ export const APP_ICONS = {
         "bg": "#f7faf9",
         "bg-raised": "#ffffff",
         "danger": "#b91c1c",
-        "danger-fg": "#ffffff"
+        "badge": "#dc2626",
+        "badge-fg": "#ffffff"
       }
     },
     {
@@ -32,7 +33,8 @@ export const APP_ICONS = {
         "bg": "#0b1615",
         "bg-raised": "#13221f",
         "danger": "#f87171",
-        "danger-fg": "#0b1615"
+        "badge": "#dc2626",
+        "badge-fg": "#ffffff"
       }
     },
     {
@@ -46,7 +48,8 @@ export const APP_ICONS = {
         "bg": "#fbf8f2",
         "bg-raised": "#ffffff",
         "danger": "#b91c1c",
-        "danger-fg": "#ffffff"
+        "badge": "#dc2626",
+        "badge-fg": "#ffffff"
       }
     }
   ]
