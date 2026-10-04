@@ -278,7 +278,7 @@ test('an import says what it carried and names each refused value once, and an e
 test('the settings page draws the schema and writes the value a control gives', () => {
   const fields = settingsFields();
   assert.deepEqual(fields.slice(0, 2).map((f) => f.key), ['appearance.skin', 'appearance.textScale']);
-  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScale', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'every key the schema declares lands in one section, once, in the schema order');
+  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScale', 'appearance.appIcon', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'every key the schema declares lands in one section, once, in the schema order');
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
   for (const g of settingsGroups().filter((g) => g.kind === 'settings')) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
@@ -296,7 +296,7 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(settingValue(skin, { 'appearance.skin': 'dark' }), 'dark', 'the server value wins');
   assert.equal(coerceSetting(size, '150'), 150, 'a percentage control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
-  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
+  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'appearance.appIcon': 'theme', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
 });
 
 test('there is no density setting, and the skin and the text size are a switch and percentage choices (issue 112)', () => {

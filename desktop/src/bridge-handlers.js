@@ -62,18 +62,22 @@ const noWindow = { minimize: () => false, toggleMaximize: () => false, close: ()
 // desktop window draws its own bar inside the page, so it has nothing to match and answers false.
 const noAppearance = () => false;
 
+// The app icon chosen in Settings (issue 167). A shell with no icon of its own to change answers that it applied none.
+const noAppIcon = (icon) => ({ applied: false, icon });
+
 // The app's own icons, redrawn from the theme and the unread count (issue 189). A shell with none to redraw answers false.
 const noIcons = () => false;
 
 // The colour tokens the page sends for the icon: strings only, a bounded handful, never anything else it might carry.
 const iconColors = (colors) => (colors && typeof colors === 'object' && !Array.isArray(colors) ? Object.fromEntries(Object.entries(colors).filter(([k, v]) => /^[a-z][a-z-]{0,31}$/.test(k) && typeof v === 'string' && v.length <= 120).slice(0, 16)) : {});
 
-export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, icons = noIcons }) {
+export function createHandlers({ secure, notify, info, openExternal, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
     'storage.delete': async ({ key }) => secure.delete(key),
     'app.info': async () => info(),
+    'app.icon': async ({ icon }) => appIcon(String(icon ?? '')),
     notify: async ({ title, body }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500)),
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
     // About's Check for updates (issue 171): the tray's own check, answering the state it reached; the outcome that

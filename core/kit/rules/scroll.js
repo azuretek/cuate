@@ -37,5 +37,8 @@ export function revealDelta(view, field) {
   let delta = 0;
   if (field.bottom > view.bottom) delta = field.bottom - view.bottom;
   if (field.top - delta < view.top) delta = field.top - view.top;
-  return Math.abs(delta) < 1 ? 0 : delta;
+  // A scroll position lands on whole pixels, so a field a fraction of a pixel past the edge stays past it unless the
+  // move is rounded away from zero: a full-screen page with no margin below it left a field 0.56px under the keyboard.
+  if (Math.abs(delta) < 0.5) return 0;
+  return delta > 0 ? Math.ceil(delta) : Math.floor(delta);
 }

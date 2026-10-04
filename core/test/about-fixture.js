@@ -26,6 +26,10 @@
   root.openSettings();
   await until(() => document.querySelector('app-settings [data-action=about]'), 'the About row in Settings');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the sheet to arrive');
+  // About lives under Settings, on its own tab (issue 167).
+  document.querySelector('app-settings .settings-tab[data-tab=about]').click();
+  await until(() => document.querySelector('app-settings .settings-tab[data-tab=about]').getAttribute('aria-selected') === 'true', 'the About tab');
+  await root.updateComplete;
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
   await until(() => about() && about().querySelector('.about-row') && !document.querySelector('app-settings'), 'the About page');
