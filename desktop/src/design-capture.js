@@ -151,6 +151,17 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         await convPane();
         await js(typed);
         await shot(tag('2-conversation'), []);
+        // The send button's own states (issue 216): pressed while a draft is typed, and the empty field, where the
+        // send is refused. Both are the same circle in the same place, so the pair reads as one control, and the
+        // crops can be taken from the composer alone rather than the whole screen.
+        await force('.send', ['active']);
+        await pause(250);
+        await shot(tag('2b-send-pressed'), []);
+        await force('.send', []);
+        await js("(() => { const t = document.querySelector('app-composer textarea'); if (t) { t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); } return true; })()");
+        await pause(250);
+        await shot(tag('2c-composer-empty'), []);
+        await resetState();
         await listPane();
         await js("document.querySelector('.sidebar-head .sort-button').click()");
         await waitFor("Boolean(document.querySelector('.sort-menu:not(.search-menu)'))", 5000);
