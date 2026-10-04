@@ -20,6 +20,7 @@ import { renderIcon } from '../../core/app/rules/icon.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
+import { runRegionProbe } from './region-probe.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CORE = app.isPackaged ? path.join(process.resourcesPath, 'core') : path.resolve(here, '../../core');
@@ -489,6 +490,42 @@ async function runSmoke(w) {
   await waitFor("!document.querySelector('.active-chip')");
   await js("document.querySelector('.sidebar-head .filter-button').click()");
   report.header = report.header && report.headerSearchName && report.headerSearchMessage && report.headerFilter;
+  // The header's four controls take a REAL pointer press (issue 240). -webkit-app-region is inherited, so a menu drawn
+  // inside the drag header computes to drag and a real press on an option moves the window and never reaches the page;
+  // the scripted .click() checks above skip the region check and cannot see the fault, and a synthetic dispatched event
+  // cannot either. Each control opens its menu on a real press, that same press does not dismiss it, a chosen option
+  // takes effect, and the open menu's own region is no-drag where the header is drag.
+  const hmAt = (sel) => js("(() => { const e = document.querySelector(" + JSON.stringify(sel) + "); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()");
+  const hmPressAt = async (p) => { if (!p) return false; wc.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y }); await pause(30); wc.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 }); await pause(30); wc.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 }); await pause(180); return true; };
+  const hmPress = async (sel) => hmPressAt(await hmAt(sel));
+  const hmRegionAt = async (sel) => js("(() => { const els = [...document.querySelectorAll('*')].filter((e) => { const m = (getComputedStyle(e).getPropertyValue('-webkit-app-region') || '').trim(); return m === 'drag' || m === 'no-drag'; }); const t = document.querySelector(" + JSON.stringify(sel) + "); if (!t) return null; const r = t.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; let region = null; for (const e of els) { const q = e.getBoundingClientRect(); if (q.width && q.height && x >= q.left && x < q.right && y >= q.top && y < q.bottom) region = (getComputedStyle(e).getPropertyValue('-webkit-app-region') || '').trim(); } return region || 'none'; })()");
+  const hmShutMenus = async () => { await js("(() => { const r = document.querySelector('app-root'); r.filterOpen = false; r.sortOpen = false; r.searchOpen = false; if (r.view === 'settings' || r.view === 'about') r.view = 'messages'; return true; })()"); await pause(150); };
+  const hmOpenOnPress = async (trigger, menu) => { await hmShutMenus(); await hmPress(trigger); return { opened: await js("Boolean(document.querySelector(" + JSON.stringify(menu) + "))"), region: await hmRegionAt(menu) }; };
+  const headerMenuChecks = {};
+  const search = await hmOpenOnPress('.sidebar-head .search-mode-button', '.search-menu');
+  search.chose = (await hmPressAt(await hmAt('.search-menu .sort-choice:nth-child(2)'))) && await js("(document.querySelector('.search-mode-button').getAttribute('aria-label') || '').includes('Full text')");
+  headerMenuChecks.search = search.opened && search.region === 'no-drag' && search.chose;
+  // Put the mode back to Contact through the same menu, so the steps after this one see the list the earlier ones left.
+  await hmOpenOnPress('.sidebar-head .search-mode-button', '.search-menu');
+  await hmPressAt(await hmAt('.search-menu .sort-choice:nth-child(1)'));
+  const filter = await hmOpenOnPress('.sidebar-head .filter-button', '.filter-menu');
+  filter.chose = (await hmPressAt(await hmAt('.filter-menu .chip'))) && await js("Boolean(document.querySelector('.active-chip'))");
+  headerMenuChecks.filter = filter.opened && filter.region === 'no-drag' && filter.chose;
+  await js("(() => { const c = document.querySelector('.active-chip .chip-clear'); if (c) c.click(); return true; })()");
+  await pause(150);
+  const sort = await hmOpenOnPress('.sidebar-head .sort-button', '.sort-menu');
+  sort.chose = (await hmPressAt(await hmAt('.sort-menu .sort-choice:nth-child(2)'))) && await js("document.querySelector('app-root').settings['chats.sort'] === 'name'");
+  headerMenuChecks.sort = sort.opened && sort.region === 'no-drag' && sort.chose;
+  // Back to Recent, which the earlier sort step left and which the phone steps below select the first row under.
+  await hmOpenOnPress('.sidebar-head .sort-button', '.sort-menu');
+  await hmPressAt(await hmAt('.sort-menu .sort-choice:nth-child(1)'));
+  await waitFor("document.querySelector('app-root').settings['chats.sort'] === 'recent'", 5000);
+  await hmShutMenus();
+  await hmPress('.sidebar-head .gear-button');
+  headerMenuChecks.gear = await js("Boolean(document.querySelector('.sheet')) && document.querySelector('app-root').view === 'settings'");
+  await hmShutMenus();
+  report.headerMenus = Object.values(headerMenuChecks).every(Boolean);
+  console.log('header menus: ' + JSON.stringify({ checks: headerMenuChecks, search, filter, sort }));
   nativeTheme.themeSource = 'light';
   await pause(400);
   await shot('01-conversation-light.png');
@@ -2835,7 +2872,8 @@ function createWindow() {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') console.error('page: ' + e.message); });
     // The sheet's event history, kept from every load so a failure can say whether a departure started (smoke-failure.js).
     win.webContents.on('did-finish-load', () => { win.webContents.executeJavaScript(smokeTraceInstaller(), true).catch(() => {}); });
-    (process.env.SMOKE_DESIGN ? runDesign(win, { nativeTheme, out: SMOKE, core: CORE, serverUrl: process.env.SMOKE_SERVER_URL, token: process.env.SMOKE_TOKEN, themeText: readFileSync(process.env.SMOKE_THEME_FIXTURE, 'utf8'), app }) : runSmoke(win)).catch(async (e) => {
+    const smokeRun = process.env.SMOKE_PROBE ? runRegionProbe(win, { out: SMOKE }) : process.env.SMOKE_DESIGN ? runDesign(win, { nativeTheme, out: SMOKE, core: CORE, serverUrl: process.env.SMOKE_SERVER_URL, token: process.env.SMOKE_TOKEN, themeText: readFileSync(process.env.SMOKE_THEME_FIXTURE, 'utf8'), app }) : runSmoke(win);
+    smokeRun.then((result) => { if (process.env.SMOKE_PROBE) app.exit(result ? 0 : 1); }).catch(async (e) => {
       console.error('smoke failed: ' + (e && e.message));
       // Retain what the renderer held when the step failed, bounded and sanitized, so a stuck surface is
       // read from evidence rather than guessed. It runs only on the failure path and never rethrows.

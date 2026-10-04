@@ -214,17 +214,27 @@ app-attachment { display: block; max-width: var(--size-bubble-max); margin-botto
 .attachment-image.placeholder { width: var(--size-image-placeholder); aspect-ratio: 4 / 3; height: auto; background: var(--color-bg-sunken); border: var(--size-border) solid var(--color-image-edge); box-shadow: var(--shadow-image); }
 .attachment-image.sticker { border-radius: 0; }
 .attachment-file { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-border); background: var(--color-bg-raised); }
-app-link-card { display: block; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); }
-.link-card { display: flex; flex-direction: column; overflow: hidden; text-decoration: none; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-raised); box-shadow: var(--shadow-sm); transition: box-shadow var(--motion-fast) var(--motion-ease); }
+/* A plugin payload drawn as the link it is (issue 238), sized and dressed as one object (issue 245): the card shrinks
+   to its content instead of a fixed wide box, so a portrait preview leaves no dead space and a narrow card never
+   stretches to the conversation's width. The picture sits one inset inside the card's own hairline, keeping the
+   media's own corner radius, with no second border or shadow; and the site and the URL are one compact block under
+   the image, the same padding on every side, the site name allowed two lines before it truncates and the URL
+   truncating rather than wrapping mid-token. Nothing is fetched to decorate the message. */
+app-link-card { display: inline-block; max-width: var(--size-bubble-max); margin-bottom: var(--space-1); vertical-align: top; }
+.link-card { display: inline-block; width: fit-content; max-width: 100%; overflow: hidden; padding: var(--space-1); text-decoration: none; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-raised); box-shadow: var(--shadow-sm); transition: box-shadow var(--motion-fast) var(--motion-ease); }
 .link-card:hover { box-shadow: var(--shadow-md); }
 .link-card:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .link-card-image { display: block; }
 .link-card-image app-attachment { margin-bottom: 0; }
-.link-card-image .attachment-image, .link-card-image .attachment-preview { border-radius: 0; box-shadow: none; }
-.link-card-body { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); color: var(--color-bg-raised-fg); }
-.link-card-site { font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: var(--font-tracking); color: var(--color-accent); }
-.link-card-title { font-weight: var(--font-weight-medium); }
-.link-card-url { font-size: var(--font-size-sm); color: var(--color-fg-muted); overflow-wrap: anywhere; }
+.link-card-image .attachment-image, .link-card-image .attachment-preview { border-radius: calc(var(--radius-lg) - var(--space-1)); box-shadow: none; }
+.link-card-image .attachment-preview { border: 0; padding: 0; background: none; }
+/* With a picture, the body takes no width of its own: zero to the shrink-to-fit card, so a long URL never widens the
+   box, then stretched back to the picture's width so the text wraps under it. Without one the card sizes to the text. */
+.link-card.has-image .link-card-body { width: 0; min-width: 100%; }
+.link-card-body { display: block; padding: var(--space-3); color: var(--color-bg-raised-fg); }
+.link-card-site { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: var(--font-tracking); color: var(--color-accent); }
+.link-card-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: var(--space-1); font-weight: var(--font-weight-medium); }
+.link-card-url { display: block; margin-top: var(--space-1); overflow: hidden; font-size: var(--font-size-sm); color: var(--color-fg-muted); white-space: nowrap; text-overflow: ellipsis; }
 
 app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--role-divider); background: var(--role-composer-bar); padding-block-end: var(--inset-bottom); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
@@ -564,6 +574,11 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 .sidebar-head, .conv-head { -webkit-app-region: drag; }
 .chat-search, .filter-button, .gear-button, .conv-back, .window-controls, .window-control { -webkit-app-region: no-drag; }
 .search-box, .search-mode-button, .sort-button { -webkit-app-region: no-drag; }
+/* While the image viewer owns the surface, the headers give up their window drag (issue 245): the viewer's X sits at
+   the viewer's own top-right corner, over the top strip, and it must never sit in a drag region at all, even one the
+   no-drag backdrop already cancels. The same strip drags the window again the moment the viewer closes. */
+.app-window:has(app-image-viewer) .sidebar-head,
+.app-window:has(app-image-viewer) .conv-head { -webkit-app-region: no-drag; }
 /* macOS pushes the header content below the traffic lights, keeping the surface to the top edge. */
 .app-window[data-platform="darwin"] .sidebar-head,
 .app-window[data-platform="darwin"] .conv-head { height: calc(var(--size-header) + var(--size-window-strip)); padding-block-start: var(--size-window-strip); }
@@ -645,23 +660,29 @@ body.surface--leaving .sheet[data-view="about"] { animation: sheet-down-out var(
 .search-choice { display: flex; flex-direction: column; }
 .sort-check { display: inline-block; width: var(--space-3); }
 .sort-check .icon { width: var(--space-3); height: var(--space-3); }
-/* The one caret a popover wears (issue 217; restyled in #227): the panel's own edge raised into a triangle that points
-   at the control that opened it, so the menu reads as belonging to that control and not stuck on top of it. Every
-   popover carries data-popover and the edge it sits on (data-popover-edge); the kit's aimCarets() reads the control
-   from the same dismiss pair the popover already uses and sets --caret-x, so a new menu gets its caret for free. One
-   --size-caret token sizes the drawn width for desktop and the phone width alike, and the triangle is drawn the whole
-   of it. Two triangles layer in the popover's own stacking context, so no shadow or translucent surface shows
-   through: the outer carries the panel's border token at the panel's own one border weight, the inner the panel's
-   surface token. Each base sits --caret-overlap (exactly one border width) inside the panel, so the panel's border is
-   covered at the opening and its edge rises into the triangle's two sides with no seam, no gap and no double line
-   where they meet. */
+/* A popover that opens inside a drag strip takes its own presses (issues 217 and 240). -webkit-app-region is
+   INHERITED: the chats header and the conversation header are drag (bar-layout), and every panel drawn inside one
+   computes to drag too, so a real press on an option starts a window drag and never reaches the page while a scripted
+   click (which skips the region check) still works. Every popover is no-drag, which punches a hole in the strip for the
+   panel and its options; the trigger controls already carry no-drag themselves. */
+[data-popover] { -webkit-app-region: no-drag; }
+/* The one caret a popover wears (issue 217; restyled in #227; the seam cut in #241): the panel's own edge raised into a
+   triangle that points at the control that opened it, so the menu reads as belonging to that control and not stuck on
+   top of it. Every popover carries data-popover and the edge it sits on (data-popover-edge); the kit's aimCarets() reads
+   the control from the same dismiss pair the popover already uses and sets --caret-x, so a new menu gets its caret for
+   free. One --size-caret token sizes the drawn width for desktop and the phone width alike, and the triangle is drawn
+   the whole of it. Two triangles layer in the popover's own stacking context: the outer carries the panel's border
+   token at the panel's own one border weight, the inner the panel's surface token. Each base sits --caret-overlap
+   (exactly one border width) inside the panel, and the inner spans the WHOLE --size-caret at its base, so the panel's
+   border is not drawn across the span the caret occupies: its edge breaks to become the triangle's two sides, with no
+   seam, no gap and no double line where they meet, the same on both edges and in every theme. */
 [data-popover] { --caret-size: var(--size-caret); --caret-tip: calc(var(--size-caret) * 0.8); --caret-overlap: var(--size-border); }
 [data-popover]::before,
 [data-popover]::after { content: ''; position: absolute; left: var(--caret-x, 50%); width: 0; height: 0; transform: translateX(-50%); pointer-events: none; border-left: calc(var(--caret-size) / 2) solid transparent; border-right: calc(var(--caret-size) / 2) solid transparent; }
 [data-popover][data-popover-edge="top"]::before { top: calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip)); border-bottom: var(--caret-tip) solid var(--role-menu-border); }
-[data-popover][data-popover-edge="top"]::after { top: calc(var(--caret-overlap) - var(--caret-tip)); border-bottom: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2 - var(--size-border)); border-right-width: calc(var(--caret-size) / 2 - var(--size-border)); }
+[data-popover][data-popover-edge="top"]::after { top: calc(var(--caret-overlap) - var(--caret-tip)); border-bottom: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2); border-right-width: calc(var(--caret-size) / 2); }
 [data-popover][data-popover-edge="bottom"]::before { bottom: calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip)); border-top: var(--caret-tip) solid var(--role-menu-border); }
-[data-popover][data-popover-edge="bottom"]::after { bottom: calc(var(--caret-overlap) - var(--caret-tip)); border-top: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2 - var(--size-border)); border-right-width: calc(var(--caret-size) / 2 - var(--size-border)); }
+[data-popover][data-popover-edge="bottom"]::after { bottom: calc(var(--caret-overlap) - var(--caret-tip)); border-top: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2); border-right-width: calc(var(--caret-size) / 2); }
 
 
 /* Edit is a small text control, not an icon (issue 137): a rounded highlight on hover and, while edit mode is on, a
@@ -726,10 +747,14 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-image { --zoom-x: 0; --zoom-y: 0; --zoom-scale: 1; flex: none; display: block; max-width: 100%; max-height: 100%; min-width: 0; min-height: 0; object-fit: contain; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); transform: translate(calc(var(--zoom-x) * 1px), calc(var(--zoom-y) * 1px)) scale(var(--zoom-scale)); transform-origin: center; transition: transform var(--motion-normal) var(--motion-ease); cursor: zoom-in; -webkit-user-drag: none; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
 .viewer[data-zoomed="true"] .viewer-image { cursor: grab; }
 .viewer[data-gesture="on"] .viewer-image { transition: none; cursor: grabbing; }
-/* The viewer's X sits just below the contact header's drag strip, never over it, so it does not rely on the window
-   taking up the backdrop's no-drag box the moment the viewer opens (issue 213). */
-.viewer > .close-button { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: calc(var(--space-4) + var(--inset-right)); z-index: 1; }
-.app-window[data-platform="darwin"] .viewer > .close-button { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
+/* The viewer's X belongs to the viewer surface, not the conversation behind it (issue 245): it is placed from the
+   viewer's own top-right corner, a margin in from the true window edge, and never measured or laid out from the
+   contact header or the name/group banner the backdrop blurs. It stays clear of the platform's own top chrome at
+   every size: the traffic-light strip macOS keeps over the surface, and the window controls Windows and Linux draw
+   in that corner, so it can never sit on them or be read as part of either. It carries no drag region, and the
+   backdrop under it is no-drag too (issue 213), so the whole circle answers wherever it lands. */
+.viewer > .close-button { position: absolute; top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); right: calc(var(--inset-right) + var(--space-4)); z-index: 1; }
+.app-window[data-platform="darwin"] .viewer > .close-button { top: calc(var(--inset-top) + var(--size-window-strip) + var(--space-3)); }
 .viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }
 
