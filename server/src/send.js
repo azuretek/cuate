@@ -112,7 +112,7 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
   };
 
   // Add or remove this device owner's reaction on one message. Messages itself takes any emoji as a reaction; an
-  // engine that advertises tapback.emoji sends any emoji as itself, and one that does not sends only the six standard
+  // engine that advertises tapback.emoji version 2 sends any emoji as itself, and one that does not sends only the six standard
   // tapbacks (it folds some other emoji onto them, so passing one through would send the wrong reaction), so any other
   // emoji is refused before it costs rate budget or reaches the engine (issue 188). One reaction per message is in
   // flight at a time, because a tapback sent twice can undo itself.

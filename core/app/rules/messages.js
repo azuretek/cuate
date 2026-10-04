@@ -2,7 +2,7 @@
 const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 
 // The six standard tapbacks, in the order the Mac offers them, as { type, glyph }. These are the reactions every
-// engine can send; one that advertises tapback.emoji sends any other emoji as itself, and one that does not shows it
+// engine can send; one that advertises tapback.emoji version 2 sends any other emoji as itself, and one that does not shows it
 // when it arrives but refuses it when sent (issues 138 and 188).
 export const TAPBACKS = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
 
