@@ -22,3 +22,10 @@ fails while that file is stale.
 Unicode data files are copyright © Unicode, Inc., used under the Unicode Terms of Use
 (https://www.unicode.org/terms_of_use.html); SPDX-License-Identifier: Unicode-3.0. CLDR data files are
 likewise © Unicode, Inc., under the same licence.
+
+## The groups
+
+`emoji-test.txt` names ten groups, one of which is Component: it holds the skin-tone, hair
+and other modifiers, every one of them a bare `component` and none of them a
+fully-qualified sequence, so it offers nothing a picker can insert on its own and is left
+out. The other nine are the tabs, in the standard's own order.
