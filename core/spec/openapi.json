@@ -468,6 +468,63 @@
         ]
       }
     },
+    "/api/v1/chats/{chatId}/typing": {
+      "post": {
+        "operationId": "typing",
+        "summary": "POST /api/v1/chats/:chatId/typing",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "send",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TypingState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chatId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TypingRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/attachments/{attachmentId}": {
       "get": {
         "operationId": "attachment",
@@ -946,6 +1003,26 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ChatRead"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
+    "typing": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TypingEvent"
               }
             }
           }
@@ -1500,6 +1577,58 @@
         "required": [
           "chatId",
           "unread"
+        ],
+        "additionalProperties": false
+      },
+      "TypingRequest": {
+        "type": "object",
+        "properties": {
+          "typing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "typing"
+        ],
+        "additionalProperties": false
+      },
+      "TypingState": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "typing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "chatId",
+          "typing"
+        ],
+        "additionalProperties": false
+      },
+      "TypingEvent": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "typing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "chatId",
+          "from",
+          "kind",
+          "typing"
         ],
         "additionalProperties": false
       },
