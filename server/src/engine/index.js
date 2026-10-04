@@ -1,8 +1,32 @@
 // The engine adapter: one interface over imsg rpc (or the fake), mapped to our model by core's rules. It supervises
 // the engine, restarting it with a backoff and resuming the live stream after the last row it saw.
+import os from 'node:os';
+import path from 'node:path';
+import { openSync, readSync, closeSync } from 'node:fs';
 import { createRpc } from './rpc.js';
+import { annotatePayloads } from './payload.js';
 import { mapChat, mapMessage, mapReaction } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
+
+// The first bytes of a message's own payload, read without copying the whole file. A payload under a temp path that is
+// already gone reads nothing, which is how a missing one stays missing.
+const HEAD_BYTES = 64;
+function readHead(a) {
+  const recorded = String(a.original_path || a.filename || '');
+  if (!recorded) return null;
+  const file = recorded.startsWith('~/') ? path.join(os.homedir(), recorded.slice(2)) : recorded;
+  let fd;
+  try {
+    fd = openSync(file, 'r');
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const n = readSync(fd, buf, 0, HEAD_BYTES, 0);
+    return n > 0 ? buf.subarray(0, n) : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* nothing left to close */ } }
+  }
+}
 
 const numCode = (e) => (typeof e.code === 'number' ? e.code : null);
 const omit = (o, keys) => {
@@ -12,6 +36,11 @@ const omit = (o, keys) => {
 };
 
 export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000 }) {
+  // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
+  // from.
+  const toModel = (raw) => mapMessage(annotatePayloads(raw, readHead), { attachmentId });
+
+
   let transport = null;
   let rpc = null;
   let state = { kind, version: null, ready: false, capabilities: null };
@@ -56,7 +85,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
         if (r) emit('reaction', r);
         return;
       }
-      emit('message.new', { message: mapMessage(raw, { attachmentId }) });
+      emit('message.new', { message: toModel(raw) });
     } else if (method === 'watch.overflow') {
       const after = Number.isFinite(params.resume_after_rowid) ? params.resume_after_rowid : lastRowid;
       lastRowid = Math.max(lastRowid, after);
@@ -111,7 +140,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     const params = { chat_id: Number(chatId), limit: limit + 2, attachments: true };
     if (before) params.end = before;
     const r = await request('messages.history', params, timeoutMs, ['attachments']);
-    let list = (r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction).map((m) => mapMessage(m, { attachmentId }));
+    let list = (r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction).map((m) => toModel(m));
     if (before) list = list.filter((m) => m.sentAt < before);
     list.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
     const page = list.slice(0, limit).reverse();
@@ -148,7 +177,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     const r = await request('messages.after', params, timeoutMs, ['attachments', 'include_reactions']);
     const rows = r && Array.isArray(r.messages) ? r.messages : [];
     return {
-      messages: rows.filter((m) => includeReactions || !m.is_reaction).map((m) => mapMessage(m, { attachmentId })),
+      messages: rows.filter((m) => includeReactions || !m.is_reaction).map((m) => toModel(m)),
       nextRowid: r && Number.isFinite(r.next_rowid) ? r.next_rowid : params.since_rowid,
       hasMore: Boolean(r && r.has_more),
     };
