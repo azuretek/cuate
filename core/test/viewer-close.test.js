@@ -40,3 +40,10 @@ test('the viewer X carries no drag, and the backdrop under it is no-drag', () =>
   assert.match(src, /\.sheet-scrim,\s*\.app-notice\s*\{\s*-webkit-app-region:\s*no-drag;\s*\}/, 'the viewer backdrop takes no window drag');
   assert.doesNotMatch(rule(src, '.viewer > .close-button'), /-webkit-app-region:\s*drag/, 'the viewer X never sits in a drag region');
 });
+
+test('the headers give up their window drag while the viewer is open', () => {
+  const src = css();
+  const dropped = rules(src).filter((r) => /app-image-viewer/.test(r.sel) && /(?:sidebar|conv)-head/.test(r.sel));
+  assert.ok(dropped.length >= 1, 'the viewer makes the headers drop their drag');
+  for (const r of dropped) assert.match(r.body, /-webkit-app-region:\s*no-drag/, r.sel + ' keeps a window drag under the viewer');
+});
