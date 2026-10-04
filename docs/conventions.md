@@ -144,6 +144,7 @@ Status words: a rule with no status holds on main today. **Adopted, not yet buil
 - **The product name lives only where `naming.json` says.** Source: #1. Held by: `core/test/guards.test.js` "the product name lives only where naming.json says".
 - **Fixtures, captures and logs hold synthetic data only**: handles in 555-555-01xx or at example.com, text written in the fixture. Source: #1. Held by: `core/test/fixtures.test.js` "the fixture file holds synthetic inputs only".
 - **No em dash anywhere**, in code, docs or commit messages. Source: #1. Held by: `core/test/guards.test.js` "no em dash anywhere in the repository".
+- **Every process logs through the one logger**, `core/kit/log.js`: one JSON record per line, with a level, an event name from `core/spec/log-events.json`, a component and a run id, and the sink, clock and ids injected so the server and every shell share the shape. No code writes a log line through the console or the process's own streams; a file that must is named in `core/spec/log-allowlist.json` with its reason. Source: #264. Held by: `core/test/logging-guard.test.js` "no code outside the one logger writes to the console or a stream"; `core/test/logging-guard.test.js` "the allowlist names a reason for every path, and every path it names exists"; `core/test/guards.test.js` "every log event has a level, a message and typed fields"; the `no-console` rule in `eslint.config.mjs`.
 
 ## Superseded
 
