@@ -101,8 +101,10 @@ var engine = (() => {
     apkAvailableBanner: () => apkAvailableBanner,
     apkManifestProblem: () => apkManifestProblem,
     apkReadyBanner: () => apkReadyBanner,
+    appIconChoiceLabel: () => appIconChoiceLabel,
     appIconChoices: () => appIconChoices,
     appIconFor: () => appIconFor,
+    appIconVariants: () => appIconVariants,
     appUpdateNotice: () => appUpdateNotice,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
@@ -975,117 +977,192 @@ var engine = (() => {
 
   // core/app/rules/app-icons-spec.js
   var APP_ICONS = {
-    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto in its dark rendering; Paper is the light one. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
-    "default": "orange",
-    "icons": [
+    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167, 189 and 246). Every colour is one family with two variants: a paper variant labelled Light and the bright variant labelled Dark, drawn from the Flor de muerto masters (issue 189) through iconPalette and renderIcon, so a variant is the same glyph in other colours and never a second drawing. Each variant names the seven tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme it is drawn in; a colour family's two variants share one name and differ only in their colours. Follow theme is not a colour: it draws the icon from the active theme's tokens and takes the Light or Dark rendering from the appearance in force, switching when the appearance does; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. desktop/scripts/icons.mjs draws every variant for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+    "default": "naranja_dark",
+    "followTheme": {
+      "id": "theme",
+      "label": "Follow theme"
+    },
+    "families": [
       {
-        "id": "orange",
-        "label": "Orange",
-        "scheme": "dark",
-        "colors": {
-          "accent": "#ff5c5c",
-          "accent-fg": "#0e1015",
-          "fg": "#f4f4f5",
-          "bg": "#0e1015",
-          "bg-raised": "#161920",
-          "danger": "#f87171",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
-        }
-      },
-      {
-        "id": "paper",
-        "label": "Paper",
-        "scheme": "light",
-        "colors": {
-          "accent": "#efe7d8",
-          "accent-fg": "#8a3324",
-          "fg": "#2b241c",
-          "bg": "#fbf8f2",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "id": "naranja",
+        "label": "Naranja",
+        "variants": {
+          "light": {
+            "id": "naranja_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#efe7d8",
+              "accent-fg": "#8a3324",
+              "fg": "#2b241c",
+              "bg": "#fbf8f2",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "naranja_dark",
+            "label": "Dark",
+            "scheme": "dark",
+            "colors": {
+              "accent": "#ff5c5c",
+              "accent-fg": "#0e1015",
+              "fg": "#f4f4f5",
+              "bg": "#0e1015",
+              "bg-raised": "#161920",
+              "danger": "#f87171",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "azul",
         "label": "Azul",
-        "scheme": "light",
-        "colors": {
-          "accent": "#0a84ff",
-          "accent-fg": "#ffffff",
-          "fg": "#0b2545",
-          "bg": "#f5f9ff",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "variants": {
+          "light": {
+            "id": "azul_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#dbeafe",
+              "accent-fg": "#1e3a8a",
+              "fg": "#0b2545",
+              "bg": "#f5f9ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "azul_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#0a84ff",
+              "accent-fg": "#ffffff",
+              "fg": "#0b2545",
+              "bg": "#f5f9ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "rosa",
-        "label": "Rosa mexicano",
-        "scheme": "light",
-        "colors": {
-          "accent": "#e4007c",
-          "accent-fg": "#ffffff",
-          "fg": "#3a0b28",
-          "bg": "#fdf4f9",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "label": "Rosa",
+        "variants": {
+          "light": {
+            "id": "rosa_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#fce7f3",
+              "accent-fg": "#9d174d",
+              "fg": "#3a0b28",
+              "bg": "#fdf4f9",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "rosa_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#e4007c",
+              "accent-fg": "#ffffff",
+              "fg": "#3a0b28",
+              "bg": "#fdf4f9",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "jade",
         "label": "Jade",
-        "scheme": "light",
-        "colors": {
-          "accent": "#00a36c",
-          "accent-fg": "#ffffff",
-          "fg": "#062b1f",
-          "bg": "#f3fbf8",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
-        }
-      },
-      {
-        "id": "cempasuchil",
-        "label": "Cempas\xFAchil",
-        "scheme": "light",
-        "colors": {
-          "accent": "#ff9f0a",
-          "accent-fg": "#ffffff",
-          "fg": "#3a2400",
-          "bg": "#fdf9f0",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "variants": {
+          "light": {
+            "id": "jade_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#d1fae5",
+              "accent-fg": "#065f46",
+              "fg": "#062b1f",
+              "bg": "#f3fbf8",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "jade_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#00a36c",
+              "accent-fg": "#ffffff",
+              "fg": "#062b1f",
+              "bg": "#f3fbf8",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "morado",
         "label": "Morado",
-        "scheme": "light",
-        "colors": {
-          "accent": "#7c3aed",
-          "accent-fg": "#ffffff",
-          "fg": "#22103f",
-          "bg": "#faf7ff",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "variants": {
+          "light": {
+            "id": "morado_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#ede9fe",
+              "accent-fg": "#5b21b6",
+              "fg": "#22103f",
+              "bg": "#faf7ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "morado_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#7c3aed",
+              "accent-fg": "#ffffff",
+              "fg": "#22103f",
+              "bg": "#faf7ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
-      },
-      {
-        "id": "theme",
-        "label": "Follow theme"
       }
     ]
   };
@@ -1097,22 +1174,45 @@ var engine = (() => {
   // core/app/rules/app-icons.js
   var APP_ICON_KEY = "appearance.appIcon";
   var FOLLOW_THEME = "theme";
+  function appIconVariants(spec = APP_ICONS) {
+    return spec.families.flatMap((family) => ["light", "dark"].map((key) => {
+      const variant = family.variants[key];
+      return { id: variant.id, label: variant.label, family: family.id, familyLabel: family.label, scheme: variant.scheme, colors: variant.colors };
+    }));
+  }
+  function appIconChoiceLabel(variant) {
+    return variant.familyLabel + " " + variant.label;
+  }
   function appIconFor(values, spec = APP_ICONS) {
     const id = values && values[APP_ICON_KEY];
-    return spec.icons.some((i) => i.id === id) ? id : spec.default;
+    const known = id === FOLLOW_THEME || appIconVariants(spec).some((v) => v.id === id);
+    return known ? id : spec.default;
   }
   function fixedPalette(id, spec = APP_ICONS) {
-    const icon = spec.icons.find((i) => i.id === id);
-    return icon && icon.colors ? { scheme: icon.scheme === "dark" ? "dark" : "light", colors: { ...icon.colors } } : null;
+    const variant = appIconVariants(spec).find((v) => v.id === id);
+    return variant && variant.colors ? { scheme: variant.scheme === "dark" ? "dark" : "light", colors: { ...variant.colors } } : null;
   }
   function appIconChoices(values, { themePicture = null } = {}, spec = APP_ICONS) {
     const current = appIconFor(values, spec);
-    return spec.icons.map((i) => ({
-      id: i.id,
-      label: i.label,
-      src: i.colors ? "assets/app-icons/" + i.id + ".png" : themePicture || "assets/app-icon.png",
-      selected: i.id === current
+    const choices = appIconVariants(spec).map((v) => ({
+      id: v.id,
+      label: appIconChoiceLabel(v),
+      family: v.family,
+      familyLabel: v.familyLabel,
+      variantLabel: v.label,
+      src: "assets/app-icons/" + v.id + ".png",
+      selected: v.id === current
     }));
+    choices.push({
+      id: FOLLOW_THEME,
+      label: spec.followTheme.label,
+      family: null,
+      familyLabel: null,
+      variantLabel: null,
+      src: themePicture || "assets/app-icon.png",
+      selected: current === FOLLOW_THEME
+    });
+    return choices;
   }
   function iconToApply(applied, values, spec = APP_ICONS) {
     const next = appIconFor(values, spec);
@@ -2353,6 +2453,7 @@ var engine = (() => {
   }
 
   // core/app/rules/settings.js
+  var APP_ICON_VARIANTS = APP_ICONS.families.flatMap((family) => ["light", "dark"].map((key) => ({ ...family.variants[key], familyLabel: family.label })));
   var SETTINGS_SCHEMA = {
     groups: [
       { id: "appearance", label: "Appearance", description: "How the app looks and how much text it shows." },
@@ -2368,9 +2469,10 @@ var engine = (() => {
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
       "appearance.textScale": { group: "appearance", label: "Text size", type: "scale", options: TEXT_SCALES, default: 100 },
-      // The app icon (issue 167): one of the icons core/spec/app-icons.json names, each drawn as its own picture, held by
-      // the server like every other setting and applied by each shell where its platform can (rules/app-icons.js).
-      "appearance.appIcon": { group: "appearance", label: "App icon", type: "icon", options: APP_ICONS.icons.map((i) => i.id), labels: Object.fromEntries(APP_ICONS.icons.map((i) => [i.id, i.label])), default: APP_ICONS.default },
+      // The app icon (issues 167 and 246): every colour is one family with a paper Light variant and a bright Dark one,
+      // from core/spec/app-icons.json, plus Follow theme. Each is drawn as its own picture, held by the server like every
+      // other setting and applied by each shell where its platform can (rules/app-icons.js).
+      "appearance.appIcon": { group: "appearance", label: "App icon", type: "icon", options: [...APP_ICON_VARIANTS.map((v) => v.id), APP_ICONS.followTheme.id], labels: Object.fromEntries([...APP_ICON_VARIANTS.map((v) => [v.id, v.familyLabel + " " + v.label]), [APP_ICONS.followTheme.id, APP_ICONS.followTheme.label]]), default: APP_ICONS.default },
       // Every notice the client can raise, each on its own switch, in Behavior's Notices section. Turning one off
       // silences only that notice.
       "notifications.newMessage": { group: "behavior", section: "notices", label: "New messages", type: "toggle", default: true },

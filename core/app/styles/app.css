@@ -362,14 +362,21 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .settings-subsection + .settings-subsection { margin-top: var(--space-4); }
 .settings-subsection-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
 .settings-subsection-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
-/* The app icon (issue 167): each choice is its own picture with its name under it, the one in force ringed in the
-   accent. */
-.app-icon-choices { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.app-icon-choice { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); font: inherit; font-size: var(--font-size-sm); cursor: pointer; }
+/* The app icon (issues 167 and 246): every colour is one family of two variants, a paper Light one and the bright Dark
+   one, so the choices are grouped per colour in the same grid the themes below them take (the same columns, the same
+   gaps and the same tile size), and each tile is a card with the variant's picture and its name under it, the one in
+   force ringed in the accent. */
+.app-icon-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--size-avatar) * 3), 1fr)); gap: var(--space-2); }
+.app-icon-choice { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); font: inherit; font-size: var(--font-size-sm); cursor: pointer; min-width: 0; }
 .app-icon-choice:hover { background: var(--color-bg-sunken); }
 .app-icon-choice[aria-checked="true"] { border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
 .app-icon-choice:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.app-icon-picture { display: block; width: var(--size-app-icon-choice); height: var(--size-app-icon-choice); }
+.app-icon-tile { position: relative; display: block; }
+.app-icon-picture { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--radius-sm); }
+.app-icon-name { font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Follow theme is not a colour: the same drawing as every other choice, marked by a small half-accent, half-foreground
+   disc so it reads as the theme-following one rather than its own artwork (issue 246). */
+.app-icon-choice[data-icon-id="theme"] .app-icon-follow { position: absolute; right: var(--space-1); bottom: var(--space-1); width: var(--space-3); height: var(--space-3); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-bg-raised); background: linear-gradient(var(--color-accent) 50%, var(--color-fg) 50%); }
 .sheet-section-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
 .sheet-section-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-rows { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); overflow: hidden; min-width: 0; }

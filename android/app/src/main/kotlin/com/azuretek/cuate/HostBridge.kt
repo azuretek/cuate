@@ -199,8 +199,13 @@ class HostBridge(
     private fun appIcon(icon: String): JSONObject {
         val answer = JSONObject().put("icon", icon)
         val spec = JSONObject(BundledSpec.text(context.assets, "spec/app-icons.json"))
-        val icons = spec.getJSONArray("icons")
-        val ids = (0 until icons.length()).map { icons.getJSONObject(it).getString("id") }
+        val ids = mutableListOf<String>()
+        val families = spec.getJSONArray("families")
+        for (i in 0 until families.length()) {
+            val variants = families.getJSONObject(i).getJSONObject("variants")
+            for (key in listOf("light", "dark")) ids.add(variants.getJSONObject(key).getString("id"))
+        }
+        spec.optJSONObject("followTheme")?.optString("id")?.takeIf { it.isNotEmpty() }?.let { ids.add(it) }
         if (icon !in ids) return answer.put("applied", false)
         val fallback = spec.getString("default")
         val pm = context.packageManager
