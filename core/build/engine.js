@@ -975,38 +975,19 @@ var engine = (() => {
 
   // core/app/rules/app-icons-spec.js
   var APP_ICONS = {
-    "description": "The app icon choices Settings offers (appearance.appIcon, issues 167 and 189). Follow theme, the default, is the icon issue 189 draws: the Flor de muerto masters coloured from the active theme's tokens, redrawn by the desktop shell whenever the theme changes, and on the phones the store icon in the default theme, since neither can recolour an installed icon. Every other choice is a fixed palette: the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
-    "default": "theme",
+    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto in its dark rendering; Paper is the light one. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+    "default": "orange",
     "icons": [
       {
-        "id": "theme",
-        "label": "Follow theme"
-      },
-      {
-        "id": "teal",
-        "label": "Teal",
-        "scheme": "light",
-        "colors": {
-          "accent": "#156c68",
-          "accent-fg": "#ffffff",
-          "fg": "#13201f",
-          "bg": "#f7faf9",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
-        }
-      },
-      {
-        "id": "night",
-        "label": "Night",
+        "id": "orange",
+        "label": "Orange",
         "scheme": "dark",
         "colors": {
-          "accent": "#4fd1c5",
-          "accent-fg": "#0b1615",
-          "fg": "#e8f3f1",
-          "bg": "#0b1615",
-          "bg-raised": "#13221f",
+          "accent": "#ff5c5c",
+          "accent-fg": "#0e1015",
+          "fg": "#f4f4f5",
+          "bg": "#0e1015",
+          "bg-raised": "#161920",
           "danger": "#f87171",
           "badge": "#dc2626",
           "badge-fg": "#ffffff"
@@ -1026,6 +1007,85 @@ var engine = (() => {
           "badge": "#dc2626",
           "badge-fg": "#ffffff"
         }
+      },
+      {
+        "id": "azul",
+        "label": "Azul",
+        "scheme": "light",
+        "colors": {
+          "accent": "#0a84ff",
+          "accent-fg": "#ffffff",
+          "fg": "#0b2545",
+          "bg": "#f5f9ff",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "rosa",
+        "label": "Rosa mexicano",
+        "scheme": "light",
+        "colors": {
+          "accent": "#e4007c",
+          "accent-fg": "#ffffff",
+          "fg": "#3a0b28",
+          "bg": "#fdf4f9",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "jade",
+        "label": "Jade",
+        "scheme": "light",
+        "colors": {
+          "accent": "#00a36c",
+          "accent-fg": "#ffffff",
+          "fg": "#062b1f",
+          "bg": "#f3fbf8",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "cempasuchil",
+        "label": "Cempas\xFAchil",
+        "scheme": "light",
+        "colors": {
+          "accent": "#ff9f0a",
+          "accent-fg": "#ffffff",
+          "fg": "#3a2400",
+          "bg": "#fdf9f0",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "morado",
+        "label": "Morado",
+        "scheme": "light",
+        "colors": {
+          "accent": "#7c3aed",
+          "accent-fg": "#ffffff",
+          "fg": "#22103f",
+          "bg": "#faf7ff",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
+          "badge": "#dc2626",
+          "badge-fg": "#ffffff"
+        }
+      },
+      {
+        "id": "theme",
+        "label": "Follow theme"
       }
     ]
   };

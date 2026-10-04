@@ -75,27 +75,32 @@ test('on a phone Settings and About are pages that fill the screen, not a card o
   assert.match(phone, /\.sheet-scrim\s*\{[^}]*background:\s*var\(--color-bg-raised\)/, 'the bars wear the page\'s own surface');
 });
 
-test('the app icon is a setting the server holds, offered from the one spec: Follow theme first and the default', () => {
+test('the app icon is a setting the server holds, offered from the one spec: the original Orange first and the default (issue 246)', () => {
   const field = settingsFields().find((f) => f.key === 'appearance.appIcon');
   assert.ok(field, 'Settings offers the app icon');
   assert.equal(field.group, 'appearance');
   assert.equal(field.type, 'icon');
   assert.deepEqual(field.options, icons.icons.map((i) => i.id));
-  assert.equal(icons.default, FOLLOW_THEME, 'the icon follows the theme unless a fixed palette is chosen (issue 189)');
-  assert.equal(icons.icons[0].id, FOLLOW_THEME, 'Follow theme is the first choice');
-  assert.equal(icons.icons[0].label, 'Follow theme');
-  assert.equal(field.default, FOLLOW_THEME);
+  assert.equal(icons.default, 'orange', 'the original orange icon is the default (issue 246)');
+  assert.equal(icons.icons[0].id, 'orange', 'the original orange icon is the first choice (issue 246)');
+  assert.equal(icons.icons[0].label, 'Orange');
+  assert.equal(field.default, 'orange');
+  // The Night choice is gone, and the coloured alternatives carry the Mexican names Abi's palette sheet gave them.
+  assert.equal(icons.icons.some((i) => i.id === 'night'), false, 'the Night choice is dropped (issue 246)');
+  const labels = icons.icons.map((i) => i.label);
+  for (const name of ['Azul', 'Rosa mexicano', 'Jade', 'Cempas\u00fachil', 'Morado']) assert.ok(labels.includes(name), 'the coloured choice ' + name + ' is offered');
+  assert.ok(icons.icons.some((i) => i.id === FOLLOW_THEME), 'Follow theme is still a choice');
   const [fixed, other] = icons.icons.filter((i) => i.id !== FOLLOW_THEME).map((i) => i.id);
-  assert.equal(appIconFor({}), FOLLOW_THEME);
+  assert.equal(appIconFor({}), icons.default);
   assert.equal(appIconFor({ 'appearance.appIcon': fixed }), fixed);
-  assert.equal(appIconFor({ 'appearance.appIcon': 'nope' }), FOLLOW_THEME, 'an id the spec does not hold follows the theme');
+  assert.equal(appIconFor({ 'appearance.appIcon': 'nope' }), icons.default, 'an id the spec does not hold draws the default');
   const choices = appIconChoices({ 'appearance.appIcon': other });
   assert.deepEqual(choices.map((c) => c.id), icons.icons.map((i) => i.id));
   assert.deepEqual(choices.filter((c) => c.selected).map((c) => c.id), [other]);
   for (const c of choices) assert.equal(c.src, c.id === FOLLOW_THEME ? 'assets/app-icon.png' : 'assets/app-icons/' + c.id + '.png');
   // Follow theme's picture is the icon in the theme in force, drawn by the page; until it is, the default theme's.
-  assert.equal(appIconChoices({}, { themePicture: 'data:image/png;base64,AAAA' })[0].src, 'data:image/png;base64,AAAA');
-  assert.equal(iconToApply(null, {}), FOLLOW_THEME, 'the first settings read applies the icon');
+  assert.equal(appIconChoices({}, { themePicture: 'data:image/png;base64,AAAA' }).find((c) => c.id === FOLLOW_THEME).src, 'data:image/png;base64,AAAA');
+  assert.equal(iconToApply(null, {}), icons.default, 'the first settings read applies the icon');
   assert.equal(iconToApply(fixed, { 'appearance.appIcon': fixed }), null, 'an icon already applied is not asked for again');
   assert.equal(iconToApply(fixed, { 'appearance.appIcon': other }), other);
   assert.equal(fixedPalette(FOLLOW_THEME), null, 'Follow theme has no palette of its own');
@@ -119,14 +124,14 @@ test('every fixed palette is the Flor de muerto masters coloured through the one
   assert.ok(alternates, 'the iOS project ships the alternate icons');
   assert.match(read('ios/project.yml'), /ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS:\s*YES/);
   const named = alternates[1].split(/\s+/).filter(Boolean).sort();
-  assert.deepEqual(named, icons.icons.filter((i) => i.id !== FOLLOW_THEME).map((i) => 'AppIcon-' + i.id).sort());
+  assert.deepEqual(named, icons.icons.filter((i) => i.colors).map((i) => 'AppIcon-' + i.id).sort(), 'every fixed choice ships an iOS alternate set');
   const launcherColours = read(res + 'values/app_icons.xml');
   for (const icon of icons.icons) {
     const alias = aliases.find((a) => a.includes('android:name=".AppIcon_' + icon.id + '"'));
     assert.ok(alias, icon.id + ' has its Android launcher alias');
     assert.match(alias, /android:targetActivity="\.MainActivity"/);
     assert.match(alias, /category\.LAUNCHER/);
-    assert.ok(alias.includes('android:enabled="' + (icon.id === FOLLOW_THEME) + '"'), icon.id + ': only Follow theme launches a fresh install');
+    assert.ok(alias.includes('android:enabled="' + (icon.id === icons.default) + '"'), icon.id + ': only the default choice launches a fresh install');
     if (icon.id === FOLLOW_THEME) {
       // A phone cannot recolour an installed icon, so Follow theme there is the store icon, drawn in the default theme.
       assert.equal(icon.colors, undefined, 'Follow theme carries no colours of its own');
@@ -178,14 +183,14 @@ test('the page asks its shell for the chosen icon once the settings are read, an
   const h = new AppRoot();
   const calls = [];
   h.bridge = async (name, args) => { calls.push([name, args]); return { applied: true, icon: args.icon }; };
-  h.settings = { 'appearance.appIcon': 'night' };
+  h.settings = { 'appearance.appIcon': 'rosa' };
   h.settingsRead = false;
   await h.applyAppIcon();
   assert.deepEqual(calls, [], 'nothing is applied before the server\'s settings are read');
   h.settingsRead = true;
   await h.applyAppIcon();
   await h.applyAppIcon();
-  assert.deepEqual(calls, [['app.icon', { icon: 'night' }]], 'one change, one ask');
+  assert.deepEqual(calls, [['app.icon', { icon: 'rosa' }]], 'one change, one ask');
   h.settings = { 'appearance.appIcon': 'paper' };
   await h.applyAppIcon();
   assert.deepEqual(calls.at(-1), ['app.icon', { icon: 'paper' }]);

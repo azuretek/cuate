@@ -123,7 +123,10 @@ test('no shell wears a platform accent: the phone shells and the page take their
   const spec = json('core/spec/tokens.json');
   const ios = 'ios/' + json('core/spec/naming.json').product;
   const SYSTEM_BLUES = /#(?:007aff|0a84ff|0040dd|409cff|0071e3)\b/i;
-  const shells = [...walk(ios), ...walk('android/app/src/main')].filter((f) => /\.(?:json|xml|swift|kt|plist)$/.test(f));
+  // The per-choice launcher tiles (values/app_icons.xml, issue 246) hold the colours a person explicitly picked from
+  // Settings, one of them Abi's Azul; they are a choice, not a fallback, so they are not held to this rule. The default
+  // launcher tile, the accent colour set and every native control still are.
+  const shells = [...walk(ios), ...walk('android/app/src/main')].filter((f) => /\.(?:json|xml|swift|kt|plist)$/.test(f)).filter((f) => f !== 'android/app/src/main/res/values/app_icons.xml');
   for (const f of shells) assert.equal(SYSTEM_BLUES.test(read(f)), false, f + ' carries a platform system blue');
   assert.deepEqual(json(ios + '/Assets.xcassets/AccentColor.colorset/Contents.json'), accentColorset(spec), 'the iOS accent colour set is the tokens\' accent, light and dark (pnpm run tokens)');
   const launcher = /<color name="ic_launcher_background">(#[0-9A-Fa-f]{6})<\/color>/.exec(read('android/app/src/main/res/values/colors.xml'))[1].toLowerCase();
