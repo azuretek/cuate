@@ -63,6 +63,45 @@ app-root { display: block; height: 100%; }
 /* The two headers run up behind the status bar and the list runs down behind the home indicator, so the bars take the
    header's and the list's own surface; the content starts below and ends above them (issue 175). */
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--role-sidebar-edge); background: var(--role-sidebar); color: var(--role-sidebar-fg); padding-block-end: var(--inset-bottom); padding-inline-start: var(--inset-left); }
+/* The divider between the chats list and the conversation (issue 217, section D). The grab affordance is a pill the
+   pointer reveals on hover and grows on press; at rest nothing is drawn. Only the pill is drawn: the hit strip
+   straddles the seam as 12px of resize cursor the whole way down, so the edge can be grabbed anywhere along it and
+   not only over the pill. Every length is a token and every colour is a theme role, so an imported theme restyles it. */
+.conv-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--size-sidebar) - var(--size-grip-hit) / 2);
+  width: var(--size-grip-hit);
+  /* Below every panel and backdrop, so a press that starts on a sheet's own edge still reaches it. */
+  z-index: 1;
+  cursor: col-resize;
+  background: none;
+  -webkit-app-region: no-drag;
+}
+.conv-divider:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
+.conv-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+  width: var(--size-grip-w);
+  height: var(--size-grip-h);
+  border: var(--size-border) solid var(--role-sidebar-edge);
+  border-radius: var(--radius-pill);
+  background-image:
+    radial-gradient(circle var(--size-grip-dot) at 50% 24%, var(--role-sidebar-fg) 99%, transparent 100%),
+    radial-gradient(circle var(--size-grip-dot) at 50% 50%, var(--role-sidebar-fg) 99%, transparent 100%),
+    radial-gradient(circle var(--size-grip-dot) at 50% 76%, var(--role-sidebar-fg) 99%, transparent 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
+}
+.conv-divider:hover::before,
+.conv-divider:focus-visible::before { opacity: 1; }
+.conv-divider:active::before { transform: translate(-50%, -50%) scale(var(--size-grip-press-scale)); }
 .sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; flex: none; }
 /* The header's three icons are one kind of control (issue 136): the filter, the sort and the gear share their size,
    their hover and their open state, so the sort reads as one of the set rather than a pill of its own. */
@@ -421,6 +460,31 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
   .shell[data-drawer="drag"] .scrim { visibility: visible; }
   .conv-back { display: inline-flex; }
   .main { grid-column: 1; padding-inline-start: var(--inset-left); }
+  /* The same pill on the phone drawer's right edge (issue 217, section D). The shell owns the drag from the screen
+     edge, so this is only the visible affordance; it takes no pointer events, so a touch drag is never blocked by it,
+     and the drawer's own edge keeps the whole seam grabbable. */
+  .conv-divider { display: none; }
+  .sidebar::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: calc(-1 * var(--size-grip-hit) / 2);
+    transform: translateY(-50%);
+    box-sizing: border-box;
+    width: var(--size-grip-w);
+    height: var(--size-grip-h);
+    border: var(--size-border) solid var(--role-sidebar-edge);
+    border-radius: var(--radius-pill);
+    background-image:
+      radial-gradient(circle var(--size-grip-dot) at 50% 24%, var(--role-sidebar-fg) 99%, transparent 100%),
+      radial-gradient(circle var(--size-grip-dot) at 50% 50%, var(--role-sidebar-fg) 99%, transparent 100%),
+      radial-gradient(circle var(--size-grip-dot) at 50% 76%, var(--role-sidebar-fg) 99%, transparent 100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
+  }
+  .sidebar:hover::after { opacity: 1; }
+  .sidebar:active::after { transform: translateY(-50%) scale(var(--size-grip-press-scale)); }
   /* iOS zooms the whole page in when a control whose font is below 16px takes focus, and that zoom is what pushed the
      send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
      field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
