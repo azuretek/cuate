@@ -10,6 +10,7 @@ import nodePath from 'node:path';
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { tapbackType } from '../../core/app/rules/messages.js';
+import { platformCapabilities, reactionFallbackText, platformReactionUnsupported, platformThreadUnsupported } from '../../core/app/rules/platform.js';
 import { internalPayload } from './file-type.js';
 
 // Whether a held file can go out as an attachment: null, or a refusal [code, the reason in words]. A message's own
@@ -25,7 +26,7 @@ async function unsendable(rec) {
   return null;
 }
 
-export function createSender({ engine, store, config, log, now = Date.now }) {
+export function createSender({ engine, store, config, log, platformOfChat = () => 'imessage', now = Date.now }) {
   const recent = [];
   const inFlight = new Set();
   const reacting = new Set();
@@ -65,6 +66,14 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
     if (prev) return { http: 200, body: { status: prev.status, clientKey, messageId: prev.message_id ?? null, duplicate: true } };
     if (inFlight.has(clientKey)) return { http: 409, error: ['in_flight', 'That message is still being sent.'] };
     if (!String(text).trim() && !file) return { http: 400, error: ['bad_text', 'Send text, a file, or a file with a caption'] };
+    // A threaded reply is offered only where the conversation's platform carries threads (issue 184): a request to
+    // thread anywhere else is refused in place, and never sent as a reply the recipient cannot read. Costing nothing,
+    // it is checked before the rate window is charged.
+    if (replyTo && !platformCapabilities(await platformOfChat(chatId)).thread) {
+      const refusal = platformThreadUnsupported();
+      log.emit('send.refused', { reason: 'reply_unsupported', chat: chatId });
+      return { http: 422, error: ['reply_unsupported', refusal.message + ' ' + refusal.detail] };
+    }
     const refused = admit(chatId);
     if (refused) return refused;
     // Resolved and checked before the window is charged, so a request naming a file we do not hold, or one we would not
@@ -116,8 +125,49 @@ export function createSender({ engine, store, config, log, now = Date.now }) {
   // tapbacks (it folds some other emoji onto them, so passing one through would send the wrong reaction), so any other
   // emoji is refused before it costs rate budget or reaches the engine (issue 188). One reaction per message is in
   // flight at a time, because a tapback sent twice can undo itself.
-  async function react(chatId, { targetId, emoji, remove = false }) {
+  async function react(chatId, { targetId, emoji, remove = false, text = '' }) {
+    const platform = await platformOfChat(chatId);
+    const caps = platformCapabilities(platform);
+    // The conversation's own platform decides the form (issue 184). A platform the engine did not name, and one that
+    // carries no reaction at all, is refused in place: which form to send is not something to guess.
+    if (!caps.tapback && !caps.fallback) {
+      const refusal = platformReactionUnsupported(platform);
+      log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });
+      return { http: 422, error: ['reaction_unsupported', refusal.message + ' ' + refusal.detail] };
+    }
     const type = tapbackType(emoji);
+    // Where the platform carries a reaction as the classic text fallback, the six are sent as that phrase quoting the
+    // message they answer, which the other client reads back as a reaction. An arbitrary emoji has no such phrase, and
+    // a reaction sent this way cannot be taken back, so both are refused rather than sent in a form that cannot be read.
+    if (caps.fallback && !caps.tapback) {
+      const fallback = !remove && type ? reactionFallbackText(type, text) : null;
+      if (!fallback) {
+        const refusal = remove
+          ? { message: 'A reaction on this conversation cannot be taken back.', detail: 'The service has no way to remove one.' }
+          : platformReactionUnsupported(platform);
+        log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });
+        return { http: 422, error: ['reaction_unsupported', refusal.message + ' ' + refusal.detail] };
+      }
+      const key = chatId + '/' + targetId;
+      if (reacting.has(key)) return { http: 409, error: ['in_flight', 'A reaction to that message is still being sent.'] };
+      const refused = admit(chatId);
+      if (refused) return refused;
+      const refund = charge();
+      reacting.add(key);
+      try {
+        const r = await engine.sendText(chatId, fallback);
+        if (r.ok) return { http: 201, body: { status: 'sent', targetId, type, add: true, form: 'text' } };
+        if (r.uncertain) {
+          log.emit('send.uncertain', { chat: chatId, code: r.code });
+          return { http: 202, body: { status: 'uncertain', targetId, type, add: true, form: 'text' } };
+        }
+        refund();
+        log.emit('send.failed', { chat: chatId, code: r.code, error: r.error || null });
+        return { http: 502, error: ['react_failed', 'The Mac did not send the reaction.'] };
+      } finally {
+        reacting.delete(key);
+      }
+    }
     const arbitrary = engine.supportsEmojiTapback();
     if (!arbitrary && !type) {
       log.emit('send.refused', { reason: 'reaction_unsupported', chat: chatId });

@@ -1489,6 +1489,9 @@
           },
           "remove": {
             "type": "boolean"
+          },
+          "text": {
+            "type": "string"
           }
         },
         "required": [
@@ -1513,6 +1516,9 @@
           },
           "add": {
             "type": "boolean"
+          },
+          "form": {
+            "type": "string"
           }
         },
         "required": [
