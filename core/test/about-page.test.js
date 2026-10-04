@@ -26,18 +26,18 @@ function host() {
   return h;
 }
 
-test('About opened from Settings is pushed over it, and its back returns to Settings', () => {
+test('About opened from Settings slides up over it, and its back returns to Settings sliding down', () => {
   const h = host();
   h.openSettings();
   assert.equal(h.view, 'settings');
   h.openAbout();
   assert.equal(h.view, 'about', 'About is a page of its own, not a section of Settings');
   assert.equal(h.aboutFrom, 'settings');
-  assert.equal(h.sheetLeaving, false, 'the sheet stays up: the page is pushed inside it, not a second sheet');
-  assert.equal(h.pageMotion, 'push');
+  assert.equal(h.sheetLeaving, false, 'the sheet stays up: the page slides over it, not a second sheet');
+  assert.equal(h.pageMotion, 'up', 'About slides up into its place (issue 244)');
   h.pageBack();
   assert.equal(h.view, 'settings', 'back from About returns to Settings');
-  assert.equal(h.pageMotion, 'pop');
+  assert.equal(h.pageMotion, 'down', 'Settings slides down into place (issue 244)');
   assert.equal(h.sheetLeaving, false);
 });
 
@@ -196,10 +196,12 @@ test('forgetRead drops only a dismissed card, so a fresh answer is shown', () =>
   assert.equal(putNotice(forgetRead(read, 'app-update'), card)[0].read, false);
 });
 
-test('Settings ends with an About row that opens the page, and About is drawn by its own component in the sheet chrome', () => {
+test('Settings draws an About row on every page that opens the page, and About is drawn by its own component in the sheet chrome', () => {
   const groups = settingsGroups();
-  assert.equal(groups.at(-1).id, 'about', 'About is still the last thing in Settings');
+  assert.equal(groups.some((g) => g.kind === 'about'), false, 'About is not a section of Settings (issue 244)');
   const settings = read('core/app/components/app-settings.js');
+  assert.match(settings, /settings-about-row/, 'the About row is drawn on the page');
+  assert.match(settings, /this\.aboutRow\(\)/, 'the About row is part of the body, so it sits under every tab');
   assert.match(settings, /data-action="about"/, 'Settings links to the About page');
   assert.equal(settings.includes('<app-about'), false, 'Settings no longer draws About inline');
   assert.equal(/reveal/.test(settings), false, 'the reveal that scrolled to the About section is gone');
@@ -254,4 +256,25 @@ test('Escape and a press outside the sheet go back the way the strip does, so Ab
   h.openAbout();
   h.pageBack();
   assert.equal(h.view, 'settings');
+});
+
+// Issue 244: Settings and About are distinct pages that arrive on their own edge, and reduced motion is a straight cut.
+test('Settings and About arrive on their own edge, and reduced motion drops the travel', () => {
+  const css = read('core/app/styles/app.css');
+  assert.match(css, /@keyframes page-down \{ from \{ transform: translateY\(-100%\); \}/, 'Settings slides down into place');
+  assert.match(css, /@keyframes page-up \{ from \{ transform: translateY\(100%\); \}/, 'About slides up into its place');
+  assert.match(css, /app-settings\[data-motion="down"\], app-about\[data-motion="down"\] \{ animation: page-down/, 'Settings uses the down motion');
+  assert.match(css, /app-settings\[data-motion="up"\], app-about\[data-motion="up"\] \{ animation: page-up/, 'About uses the up motion');
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ app-settings\[data-motion\], app-about\[data-motion\] \{ animation: none; \} \}/, 'reduced motion is a straight cut');
+  assert.match(css, /\.sheet\[data-arrive="down"\]/, 'the Settings sheet arrives from the top');
+  assert.match(css, /\.sheet\[data-arrive="up"\]/, 'the About sheet arrives from the bottom');
+  // The two are distinct surfaces: About has its own header and its own way back to Settings.
+  assert.match(read('core/app/components/app-about.js'), /app-sheet \.title=\$\{'About'\}/, 'About draws its own header, not Settings');
+  assert.match(read('core/app/components/app-root.js'), /\.backLabel=\$\{this\.aboutFrom === 'settings' \? 'Back to settings' : 'Back to app'\}/, 'About keeps its own way back to Settings');
+  const h = host();
+  h.openSettings();
+  assert.equal(h.sheetMotion, 'down', 'a fresh Settings sheet arrives sliding down');
+  h.openAbout();
+  assert.equal(h.sheetMotion, null, 'the page switch does not re-slide the sheet');
+  assert.equal(h.pageMotion, 'up');
 });

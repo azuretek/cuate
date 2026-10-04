@@ -540,9 +540,11 @@ test('a setting written by one device is read back by another', async () => {
 test('every notice switch and the automatic download setting is held on the server', async () => {
   const a = s.store.createToken('device', 'notice device a').token;
   const b = s.store.createToken('device', 'notice device b').token;
-  // The keys come from the settings schema's own sections, so a switch added there is held to this test too.
-  const keys = settingsGroups().filter((g) => g.id === 'notifications' || g.id === 'updates').flatMap((g) => g.fields.map((f) => f.key));
-  assert.ok(keys.includes('notifications.updateAvailable') && keys.includes('updates.autoDownload'), 'the sections name the switches');
+  // The keys come from the settings schema's own group, so a switch added there is held to this test too. The notice
+  // toggles and the update preferences share one tab, Behavior (issue 244).
+  const behavior = settingsGroups().find((g) => g.id === 'behavior');
+  const keys = behavior ? behavior.fields.map((f) => f.key) : [];
+  assert.ok(keys.includes('notifications.updateAvailable') && keys.includes('updates.autoDownload'), 'the section names the switches');
   for (const value of [false, true]) {
     const values = Object.fromEntries(keys.map((k) => [k, k === 'updates.autoDownload' ? value : !value]));
     assert.equal((await s.put('/api/v1/settings', a, { values })).status, 200);
