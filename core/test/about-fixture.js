@@ -55,7 +55,10 @@
   const button = about().querySelector('[data-action=check-updates]');
   const action = document.querySelector('.app-notice .app-notice-action');
   await until(() => button.dataset.command !== 'check', 'About\'s button to offer the update', 5000);
-  if (!action || action.textContent.trim() !== button.textContent.trim()) throw new Error('About offers ' + button.textContent.trim() + ' but the notice offers ' + (action ? action.textContent.trim() : 'nothing'));
+  // A shared action button draws every state's words up front in ONE box (issue 190), so its textContent holds them
+  // all; the label it shows at rest is the idle one, and that is the step it offers.
+  const shownLabel = (el) => { if (!el) return ''; const idle = el.querySelector('.action-label[data-when=idle]'); return ((idle ? idle.textContent : el.textContent) || '').trim(); };
+  if (!action || shownLabel(action) !== shownLabel(button)) throw new Error('About offers ' + shownLabel(button) + ' but the notice offers ' + (action ? shownLabel(action) : 'nothing'));
   await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
   const marker = document.createElement('output');
@@ -73,7 +76,7 @@
   reported.textContent = reported.getAttribute('aria-label');
   Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(reported);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim(), button: button.textContent.trim(), command: button.dataset.command, channel, build };
+  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim(), button: shownLabel(button), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;
