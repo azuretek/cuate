@@ -121,13 +121,17 @@ const PRODUCT = { key: 'product', label: 'App' };
 
 export function aboutRows(host, info, spec = BUILD_SPEC) {
   const halves = { client: reportRows(spec, 'client', host || {}), server: reportRows(spec, 'server', info || {}) };
-  return ABOUT_ORDER.map(([half, key]) => {
+  const rows = ABOUT_ORDER.map(([half, key]) => {
     if (key === PRODUCT.key) {
       const name = (host && host.product) || (info && info.product);
       return { ...PRODUCT, value: name ? String(name) : UNKNOWN };
     }
     return halves[half].find((row) => row.key === key) || { key, label: key, value: UNKNOWN };
   });
+  // A value a half could not report is not shown at all: a platform whose runtime has no Electron or Node, or a build
+  // with no stamp, prints no such row rather than a row reading Unknown (PR 257). Every row that is drawn reports
+  // something true, and core/spec/build.json stays the one owner of which fields exist.
+  return rows.filter((row) => row.value !== UNKNOWN);
 }
 
 // The About links, from the repository the server reports on its info route (core/spec/naming.json is the owner of

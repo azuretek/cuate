@@ -173,6 +173,14 @@ test('every variant is the Flor de muerto masters coloured through the one palet
     assert.deepEqual(leftover, [], dir + ' carries no orphaned Cempasuchil asset');
   }
   assert.match(read('package.json'), /icons\.mjs --check/, 'pnpm run build holds every generated icon to the spec');
+  const palette = json('core/spec/tokens.json').color.light;
+  const orange = icons.families.find((f) => f.id === 'naranja').variants.dark;
+  assert.equal(orange.scheme, 'light');
+  assert.deepEqual(orange.colors, Object.fromEntries(ICON_TOKENS.map((k) => [k, palette[k]])), 'Barro Dark is the original orange: the default theme light palette, so the picker, About and every generated asset share the one colour (PR 257)');
+  const drawn = iconPalette(orange.colors, orange.scheme);
+  assert.equal(drawn.glyph, '#ffffff', 'the original orange draws the About icon: a white glyph on the terracotta tile (PR 257)');
+  assert.equal(drawn.tile.behind, palette.accent, 'the tile is the terracotta accent, not a near-black picker tile');
+  assert.ok(drawn.tile.top !== drawn.tile.bottom, 'the terracotta tile keeps its gradient, lighter at the top');
 });
 
 test('the icon choices read as one grid with the themes, grouped per colour, with Follow theme marked (issue 246)', () => {

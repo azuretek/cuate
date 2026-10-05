@@ -1,5 +1,5 @@
 {
-  "description": "The app icon choices Settings offers (appearance.appIcon; issues 167, 189 and 246). Every colour is one family with two variants: a paper variant labelled Light and the bright variant labelled Dark, drawn from the Flor de muerto masters (issue 189) through iconPalette and renderIcon, so a variant is the same glyph in other colours and never a second drawing. Each variant names the seven tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme it is drawn in; a colour family's two variants share one name and differ only in their colours. Follow theme is not a colour: it draws the icon from the active theme's tokens and takes the Light or Dark rendering from the appearance in force, switching when the appearance does; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. desktop/scripts/icons.mjs draws every variant for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+  "description": "The app icon choices Settings offers (appearance.appIcon; issues 167, 189, 246 and PR 257). Every colour is one family with two variants: a paper variant labelled Light and the bright variant labelled Dark, drawn from the Flor de muerto masters (issue 189) through iconPalette and renderIcon, so a variant is the same glyph in other colours and never a second drawing. Each variant names the seven tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme it is drawn in; a colour family's two variants share one name and differ only in their colours. Barro first: its Dark variant is the original terracotta Flor de muerto (the default theme light palette from core/spec/tokens.json, a white glyph on the filled terracotta tile), so the picker, the About picture and every generated asset draw the one colour (PR 257), and Barro Dark is the default; its Light variant is the paper counterpart. Follow theme is not a colour: it draws the icon from the active theme's tokens and takes the Light or Dark rendering from the appearance in force, switching when the appearance does; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. desktop/scripts/icons.mjs draws every variant for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
   "default": "naranja_dark",
   "followTheme": {
     "id": "theme",
@@ -28,14 +28,14 @@
         "dark": {
           "id": "naranja_dark",
           "label": "Dark",
-          "scheme": "dark",
+          "scheme": "light",
           "colors": {
-            "accent": "#ff5c5c",
-            "accent-fg": "#0e1015",
-            "fg": "#f4f4f5",
-            "bg": "#0e1015",
-            "bg-raised": "#161920",
-            "danger": "#f87171",
+            "accent": "#bd4531",
+            "accent-fg": "#ffffff",
+            "fg": "#211e1a",
+            "bg": "#faf9f7",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
             "badge": "#dc2626",
             "badge-fg": "#ffffff"
           }

@@ -296,6 +296,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             "build": build.isEmpty ? NSNull() : build,
             "updateChannel": BuildIdentity.channel(of: version) == "dev" ? "dev" : "latest",
             "platform": "ios",
+            "arch": BuildIdentity.arch.isEmpty ? NSNull() : BuildIdentity.arch,
+            "packaged": BuildIdentity.packaged,
+            "installSource": BuildIdentity.installSource,
         ]
     }
 
