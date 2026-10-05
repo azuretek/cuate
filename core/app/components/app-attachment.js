@@ -37,12 +37,15 @@ export async function saveAttachment(a, { client, bridge = globalThis.window?.br
 }
 
 class AppAttachment extends KitElement {
-  static properties = { attachment: { attribute: false }, client: { attribute: false }, src: { state: true }, failed: { state: true } };
+  static properties = { attachment: { attribute: false }, client: { attribute: false }, src: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
 
   constructor() {
     super();
     this.src = '';
     this.failed = false;
+    // A link whose video the server resolves (issue 243): the still previews it, and a press plays the video rather
+    // than the still. Empty for an ordinary attachment.
+    this.linkUrl = '';
   }
 
   disconnectedCallback() {
@@ -81,6 +84,12 @@ class AppAttachment extends KitElement {
   // the attachment and its kind so the viewer can step to the conversation's other media (issue 181).
   open() {
     if (!this.src) return;
+    // A still that previews a linked video hands the viewer the link, not an attachment of ours, so the viewer plays
+    // the video the server holds (issue 243). Otherwise the attachment opens as itself, exactly as before.
+    if (this.linkUrl) {
+      this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || 'Video', linkUrl: this.linkUrl, kind: 'video' } }));
+      return;
+    }
     this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: mediaKind(this.attachment) || 'image' } }));
   }
 

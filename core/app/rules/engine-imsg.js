@@ -1,6 +1,7 @@
 // Pure: the mapping from the imsg engine's JSON (docs/json.md in openclaw/imsg) to the model core/spec/api.json
 // declares. The server imports it; its fake engine speaks the same JSON, so tests exercise this path end to end.
 import { isPayloadName, firstUrl, linkSite, payloadMedia } from './payload.js';
+import { isPlayableLink } from './link-media.js';
 
 const TAPBACKS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
 
@@ -75,7 +76,10 @@ export function stripInlineObjects(text) {
 // The attachments and link a message carries, split so a payload is never a file. A real attachment keeps its name; a
 // payload becomes the link card (the site, the URL, the title and the still it carried), or media shown under an honest
 // name, or a quiet count when it is neither. A link is built only when the message actually carried a payload and names
-// a URL, so ordinary text that happens to hold a link is left exactly as it was.
+// a URL, so ordinary text that happens to hold a link is left exactly as it was. A payload that carries a video is
+// never dropped (issue 243): it rides the link card as its playable media (a video we hold) and the card plays it in
+// the app's own viewer, and play marks a link on a site the server can resolve to a video the client plays the same
+// way (issue 243), never fetching the site on render.
 function payloadParts(m, { attachmentId }) {
   const views = (Array.isArray(m.attachments) ? m.attachments : []).map((a) => attachmentView(a, attachmentId));
   const files = views.filter((v) => !v.payload).map((v) => modelAttachment(v));
@@ -83,7 +87,8 @@ function payloadParts(m, { attachmentId }) {
   if (!payloads.length) return { attachments: files, link: null, payloads: 0 };
   const url = firstUrl(stripInlineObjects(m.text)) || firstUrl(m.payload_url);
   const image = payloads.find((v) => !v.missing && /^image\//i.test(v.mime)) || null;
-  const link = url ? { url, site: linkSite(url), title: payloadTitle(m), image: image ? modelAttachment(image, 'Link preview') : null } : null;
+  const video = payloads.find((v) => !v.missing && /^video\//i.test(v.mime)) || null;
+  const link = url ? { url, site: linkSite(url), title: payloadTitle(m), image: image ? modelAttachment(image, 'Link preview') : null, video: video ? modelAttachment(video, 'Video') : null, play: isPlayableLink(url) } : null;
   const carried = link ? [] : payloads.filter((v) => !v.missing && payloadMedia(v.mime));
   return {
     attachments: [...files, ...carried.map((v) => modelAttachment(v, /^video\//i.test(v.mime) ? 'Video' : 'Photo'))],
