@@ -143,6 +143,7 @@ const checks = [
   { key: 'attachMenu', bound: 'true', value: (report) => report.attachMenu, test: (v) => v === true },
   { key: 'imagePreview', bound: 'true', value: (report) => report.imagePreview, test: (v) => v === true },
   { key: 'imageViewer', bound: 'true', value: (report) => report.imageViewer, test: (v) => v === true },
+  { key: 'mediaViewer', bound: 'true', value: (report) => report.mediaViewer, test: (v) => v === true },
   { key: 'sendOnce', bound: 'true', value: (report) => report.sendOnce, test: (v) => v === true },
   { key: 'importOnce', bound: 'true', value: (report) => report.importOnce, test: (v) => v === true },
   { key: 'pressStates', bound: 'true', value: (report) => report.pressStates, test: (v) => v === true },
