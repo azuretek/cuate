@@ -302,7 +302,7 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(settingValue(skin, { 'appearance.skin': 'dark' }), 'dark', 'the server value wins');
   assert.equal(coerceSetting(size, '150'), 150, 'a percentage control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
-  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'appearance.appIcon': 'orange', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
+  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'appearance.appIcon': 'naranja_dark', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
 });
 
 test('there is no density setting, and the skin and the text size are a switch and percentage choices (issue 112)', () => {
@@ -934,7 +934,9 @@ test('the About section shows every field in chela\'s order, each from its own h
   assert.deepEqual([...shown].sort(), [...declared].sort());
   assert.equal(new Set(shown).size, shown.length, 'no field is shown twice');
   for (const row of rows) assert.ok(typeof row.value === 'string' && row.value.length > 0, row.key + ' has a value to copy');
-  assert.equal(aboutRows({}, {}).find((r) => r.key === 'commit').value, 'Unknown', 'a missing value reads Unknown');
+  const empty = aboutRows({}, {});
+  assert.equal(empty.some((r) => r.key === 'commit'), false, 'a value no half reported draws no row, never Unknown (PR 257)');
+  assert.equal(empty.some((r) => r.value === 'Unknown'), false, 'no row About draws ever reads Unknown (PR 257)');
 });
 
 test('the About links go to the source, the licence and the issues, and only over https', () => {

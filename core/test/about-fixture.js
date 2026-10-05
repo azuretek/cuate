@@ -18,7 +18,7 @@
   const scheme = window.fixtureScheme === 'dark' ? 'dark' : 'light';
   // The chosen icon (issue 246): About draws the choice in force, not one fixed drawing, so the fixture picks one
   // and the native legs hold the page to its picture.
-  root.settings = { ...root.settings, 'appearance.skin': scheme, 'appearance.appIcon': 'rosa' };
+  root.settings = { ...root.settings, 'appearance.skin': scheme, 'appearance.appIcon': 'rosa_dark' };
   root.info = { product: (root.host && root.host.product) || 'App', serverVersion: '1.0.0', serverChannel: 'dev', apiVersion: 1, engine: { kind: 'fake', version: '1.0.0' }, repository: 'https://example.invalid/owner/app' };
   root.chats = [];
   root.phase = 'ready';
@@ -40,7 +40,7 @@
   await until(() => !aboutSheet.getAnimations().some((a) => a.playState === 'running'), 'the About sheet to arrive');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
-  if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
+  if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa_dark.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
   const parts = [...about().querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section).join('|');
   if (parts !== 'identity|updates|build') throw new Error('About draws ' + parts);
   const sheetTop = document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top;
@@ -62,7 +62,10 @@
   const button = about().querySelector('[data-action=check-updates]');
   const action = document.querySelector('.app-notice .app-notice-action');
   await until(() => button.dataset.command !== 'check', 'About\'s button to offer the update', 5000);
-  if (!action || action.textContent.trim() !== button.textContent.trim()) throw new Error('About offers ' + button.textContent.trim() + ' but the notice offers ' + (action ? action.textContent.trim() : 'nothing'));
+  // A shared action button draws every state's words up front in ONE box (issue 190), so its textContent holds them
+  // all; the label it shows at rest is the idle one, and that is the step it offers.
+  const shownLabel = (el) => { if (!el) return ''; const idle = el.querySelector('.action-label[data-when=idle]'); return ((idle ? idle.textContent : el.textContent) || '').trim(); };
+  if (!action || shownLabel(action) !== shownLabel(button)) throw new Error('About offers ' + shownLabel(button) + ' but the notice offers ' + (action ? shownLabel(action) : 'nothing'));
   // The notice floats over the top of the card (issue 253), where the icon sits, so it is dismissed once its words are
   // read: the native legs capture the page with its icon, and the notice over the sheet is still driven and held by the
   // desktop smoke (06g/06h) and the app-notice tests.
@@ -86,7 +89,7 @@
   reported.textContent = reported.getAttribute('aria-label');
   Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(reported);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: button.textContent.trim(), command: button.dataset.command, channel, build };
+  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: shownLabel(button), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;

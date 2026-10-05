@@ -302,6 +302,23 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .button.primary { background: var(--role-button); color: var(--role-button-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
+/* A standalone action button (issue 190): one action in its row or page, centred there, that shows its own state in
+   place rather than delegating it to a line or a notice beside it. Every label it can show is drawn up front in ONE
+   grid box, so the button is as wide as its widest state and the row never jumps; the stylesheet shows the label the
+   kit press is in, from the control's own data-press, and keeps the rest in the box with visibility (never display),
+   so every state keeps the same box. The kit's mark is not drawn over the words; a failure still rings the button. */
+.action-button { display: inline-flex; align-items: center; justify-content: center; align-self: center; text-align: center; }
+.action-labels { display: grid; place-items: center; }
+.action-label { grid-area: 1 / 1; visibility: hidden; }
+.action-button:not([data-press]) .action-label[data-when="idle"],
+.action-button[data-press="pending"] .action-label[data-when="pending"],
+.action-button[data-press="success"] .action-label[data-when="success"],
+.action-button[data-press="failure"] .action-label[data-when="failure"] { visibility: visible; }
+.action-button[data-press] { -webkit-text-fill-color: currentColor; }
+.action-button[data-press] > * { visibility: visible; }
+.action-button[data-press]::after { content: none; animation: none; }
+.action-button[data-press="pending"] { cursor: progress; }
+
 /* Settings and About are the two pages of the app's one sheet surface: a top strip that is itself the back control, the
    page's title and its one-line description, then its sections. Settings ends with the row that opens About, a page of
    its own on every platform (issue 171). The chrome is drawn by app-sheet. */
@@ -322,8 +339,6 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 /* Check for updates is centred on the page (issue 244); its answer still appears in the notice area. */
 .about-check { align-self: center; }
 /* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
-.about-update-line { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
-.about-update-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
 /* Settings and About are the app's two sheets (issue 253), each with its own arrival below; no page fades in place. */
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--role-back-border); border-radius: 0; background: var(--role-back); color: var(--role-back-fg); cursor: pointer; text-align: left; flex: none; }
@@ -367,14 +382,21 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .settings-subsection + .settings-subsection { margin-top: var(--space-4); }
 .settings-subsection-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
 .settings-subsection-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
-/* The app icon (issue 167): each choice is its own picture with its name under it, the one in force ringed in the
-   accent. */
-.app-icon-choices { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.app-icon-choice { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); font: inherit; font-size: var(--font-size-sm); cursor: pointer; }
+/* The app icon (issues 167 and 246): every colour is one family of two variants, a paper Light one and the bright Dark
+   one, so the choices are grouped per colour in the same grid the themes below them take (the same columns, the same
+   gaps and the same tile size), and each tile is a card with the variant's picture and its name under it, the one in
+   force ringed in the accent. */
+.app-icon-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--size-avatar) * 3), 1fr)); gap: var(--space-2); }
+.app-icon-choice { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-fg); font: inherit; font-size: var(--font-size-sm); cursor: pointer; min-width: 0; }
 .app-icon-choice:hover { background: var(--color-bg-sunken); }
 .app-icon-choice[aria-checked="true"] { border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
 .app-icon-choice:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.app-icon-picture { display: block; width: var(--size-app-icon-choice); height: var(--size-app-icon-choice); }
+.app-icon-tile { position: relative; display: block; }
+.app-icon-picture { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--radius-sm); }
+.app-icon-name { font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Follow theme is not a colour: the same drawing as every other choice, marked by a small half-accent, half-foreground
+   disc so it reads as the theme-following one rather than its own artwork (issue 246). */
+.app-icon-choice[data-icon-id="theme"] .app-icon-follow { position: absolute; right: var(--space-1); bottom: var(--space-1); width: var(--space-3); height: var(--space-3); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-bg-raised); background: linear-gradient(var(--color-accent) 50%, var(--color-fg) 50%); }
 .sheet-section-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
 .sheet-section-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-rows { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); overflow: hidden; min-width: 0; }
@@ -394,7 +416,7 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .about-link-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); min-width: 0; }
 .about-link { text-decoration: none; font-size: var(--font-size-sm); }
 .about-link:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.about-copy { align-self: flex-start; margin-top: var(--space-2); }
+.about-copy { align-self: center; margin-top: var(--space-2); }
 .about-compare { margin: var(--space-2) 0 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .about-compare.mismatch { color: var(--color-danger); }
 /* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
