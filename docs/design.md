@@ -78,6 +78,22 @@ Threads follow Apple's behaviour and the engine's data (issue 195); the rules an
 - **The thread view.** Tapping a reply or the count opens it. The conversation blurs and dims behind; the thread sits in a card with its close (X) control at the top right, and the contact header stays as it is; only the original and its replies show, each under its day and time, with the delivery status of your last message in it; and the composer's field reads Reply and sends into the thread. Escape, the close control or sending closes it.
 - **A document is saved, not opened.** An attachment that is not a picture or a video (a PDF or any other file) is a save control (issue 219): pressing it hands the shell the file's bytes under its real name through the `file.save` bridge command (core/spec/host-bridge.json), so the desktop opens a save dialog and a phone opens its system share or save sheet, which includes Save to Files; a page with no shell downloads it under that name. The press stops at the attachment, and only a real reply, its line or the ghost opens the thread, so a document never does. A picture or a video keeps opening the media viewer.
 
+## Platforms
+
+A conversation carries messages over one service, and the engine reports which in a chat's `service` field (openclaw/imsg `docs/json.md`: `iMessage`, `SMS`, etc.). Cuate reads that field (the adapter maps it in `core/app/rules/engine-imsg.js`) and lets the conversation's own platform decide what a message action offers and how a reaction is sent (issue 184). This is the engine-capability rule (issue 188) applied to a message platform: the platform names what it can do, and anything else is refused in place, never substituted and never sent in a form the recipient cannot read. What each case does:
+
+| Case | Send side | Render side |
+|---|---|---|
+| Reaction on the message service's own conversation | The engine's bridge tapback: any emoji where it advertises `tapback.emoji` version 2, otherwise one of the six classic reactions (issue 188) | Shown as a reaction, as before |
+| Threaded reply on the message service's own conversation | The engine's bridge `reply_to`, and the reply stays in the thread | As before (issue 195) |
+| A tapback on an SMS or RCS conversation | Sent as that platform's own text fallback, the phrase `Loved "<original>"` (likewise Liked, Disliked, Laughed at, Emphasized, Questioned), a plain message the other client reads back as a reaction on the quoted message. The bridge is never asked | An incoming fallback is folded onto the message it quotes and shown as a reaction, in history and live |
+| A threaded reply on an SMS or RCS conversation | Not offered: the platform has no thread, so answering is a plain message; a reply requested as a thread is refused in place | No thread marks are drawn |
+| An emoji reaction on an SMS or RCS conversation | Refused in place, naming the limit (the six classic reactions), with nothing sent and no downgrade to a classic one | A custom-emoji fallback (`Reacted <emoji> to "<original>"`) still shows as a reaction |
+| Removing a reaction on an SMS or RCS conversation | Refused in place: the text fallback has no removal | Nothing changes |
+| A service the engine did not name | Neither action is offered, and a request is refused rather than guessed | Nothing is folded |
+
+The phrases are not invented here: Apple's and Google's clients exchange the six as `Loved "..."` and the like, and a custom emoji as `Reacted <emoji> to "..."`; the engine's own reaction reader recognises exactly those two shapes (openclaw/imsg `Sources/IMsgCore/MessageStore+Reactions.swift`), and Google Messages renders the tapback fallback into a reaction, the interoperability the GSMA RCS Universal Profile's reaction and reply features and their SMS fallback describe. `service` is the field that carries the platform; where the engine reported none the adapter already defaults it, and a service the app does not recognise is treated as unknown rather than guessed at. The rules and what holds each are in [conventions.md](conventions.md#messages-and-the-conversation).
+
 ## Testing
 
 - The server's suite runs against the fake engine: auth and scopes, loopback binding, paging, search, settings kept on the server, sending (off, rate limited, duplicate, uncertain, failed), attachments, the event stream with resume, engine restarts, and the log leak test.

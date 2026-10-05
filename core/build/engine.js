@@ -52,6 +52,7 @@ var engine = (() => {
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
     OVERLAY_SIZES: () => OVERLAY_SIZES,
+    PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PRESS_STATES: () => PRESS_STATES,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
@@ -159,11 +160,13 @@ var engine = (() => {
     emptyListText: () => emptyListText,
     engineLabel: () => engineLabel,
     failedBanner: () => failedBanner,
+    fallbackPhrase: () => fallbackPhrase,
     feedVersions: () => feedVersions,
     fillTemplate: () => fillTemplate,
     filterChats: () => filterChats,
     firstUrl: () => firstUrl,
     fixedPalette: () => fixedPalette,
+    foldReactions: () => foldReactions,
     forgetChats: () => forgetChats,
     forgetRead: () => forgetRead,
     formatListTime: () => formatListTime,
@@ -215,6 +218,7 @@ var engine = (() => {
     normalizeSort: () => normalizeSort,
     noticeEnabled: () => noticeEnabled,
     noticeHoldMs: () => noticeHoldMs,
+    offersReaction: () => offersReaction,
     onGroup: () => onGroup,
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
@@ -226,6 +230,7 @@ var engine = (() => {
     panBy: () => panBy,
     parseColour: () => parseColour,
     parseGlyph: () => parseGlyph,
+    parseReactionText: () => parseReactionText,
     parseTraceparent: () => parseTraceparent,
     payloadMedia: () => payloadMedia,
     phoneUpdate: () => phoneUpdate,
@@ -234,11 +239,16 @@ var engine = (() => {
     pinch: () => pinch,
     placeChat: () => placeChat,
     placeFor: () => placeFor,
+    platformCapabilities: () => platformCapabilities,
+    platformOf: () => platformOf,
+    platformReactionUnsupported: () => platformReactionUnsupported,
+    platformThreadUnsupported: () => platformThreadUnsupported,
     policy: () => policy,
     pressOutside: () => pressOutside,
     progressFor: () => progressFor,
     putNotice: () => putNotice,
     quietCount: () => quietCount,
+    reactionFallbackText: () => reactionFallbackText,
     reactionGlyph: () => reactionGlyph,
     reactionUnsupported: () => reactionUnsupported,
     readyBanner: () => readyBanner,
@@ -408,7 +418,9 @@ var engine = (() => {
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
       send: (chatId, { text, file, clientKey, replyTo }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...file ? { file } : {}, clientKey, ...replyTo ? { replyTo } : {} }),
-      react: (chatId, messageId, { emoji, remove = false }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
+      // `text` is the message being reacted to, carried only so the server can compose the platform's own text
+      // fallback where the conversation is not on the message service (issue 184); it is not sent otherwise.
+      react: (chatId, messageId, { emoji, remove = false, text = "" }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...remove ? { remove: true } : {}, ...text ? { text } : {} }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
@@ -1912,6 +1924,103 @@ var engine = (() => {
     return progress >= SETTLE;
   }
 
+  // core/app/rules/platform.js
+  function platformOf(chat) {
+    const s = String(chat && chat.service || "").trim().toLowerCase();
+    if (s === "" || s === "imessage") return "imessage";
+    if (s === "sms") return "sms";
+    if (s === "rcs") return "rcs";
+    return "unknown";
+  }
+  var PLATFORM_CAPABILITIES = {
+    imessage: { tapback: true, fallback: false, thread: true, emoji: true },
+    sms: { tapback: false, fallback: true, thread: false, emoji: false },
+    rcs: { tapback: false, fallback: true, thread: false, emoji: false },
+    unknown: { tapback: false, fallback: false, thread: false, emoji: false }
+  };
+  function platformCapabilities(platform) {
+    return PLATFORM_CAPABILITIES[platform] || PLATFORM_CAPABILITIES.unknown;
+  }
+  function offersReaction(platform) {
+    const c = platformCapabilities(platform);
+    return Boolean(c.tapback || c.fallback);
+  }
+  var PHRASES = [
+    ["love", "Loved"],
+    ["like", "Liked"],
+    ["dislike", "Disliked"],
+    ["laugh", "Laughed at"],
+    ["emphasis", "Emphasized"],
+    ["question", "Questioned"]
+  ];
+  function fallbackPhrase(type) {
+    const hit = PHRASES.find(([t]) => t === type);
+    return hit ? hit[1] : null;
+  }
+  var quoted = (text) => '"' + String(text == null ? "" : text) + '"';
+  function reactionFallbackText(type, original) {
+    const phrase = fallbackPhrase(type);
+    return phrase ? phrase + " " + quoted(original) : null;
+  }
+  var FALLBACK_RE = /^(Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) "([^"]*)"$/;
+  var REACTED_RE = /^Reacted (\S+) to "([^"]*)"$/;
+  function parseReactionText(text) {
+    const t = String(text == null ? "" : text).trim();
+    const m = FALLBACK_RE.exec(t);
+    if (m) {
+      const hit = PHRASES.find(([, phrase]) => phrase === m[1]);
+      return hit ? { type: hit[0], emoji: null, text: m[2] } : null;
+    }
+    const reacted = REACTED_RE.exec(t);
+    return reacted ? { type: "emoji", emoji: reacted[1], text: reacted[2] } : null;
+  }
+  function foldReactions(messages, platform) {
+    const list = messages || [];
+    if (!platformCapabilities(platform).fallback) return list;
+    const out = [];
+    const who = (m) => m.fromMe ? "me" : m.sender || "";
+    for (const m of list) {
+      const parsed = m.text ? parseReactionText(m.text) : null;
+      if (parsed) {
+        let target = null;
+        for (let i = out.length - 1; i >= 0; i -= 1) {
+          const x = out[i];
+          if (x.text && String(x.text).trim() === parsed.text) {
+            target = x;
+            break;
+          }
+        }
+        if (target) {
+          const me = who(m);
+          const reactions = (target.reactions || []).filter((r) => (r.fromMe ? "me" : r.sender || "") !== me);
+          reactions.push({ type: parsed.type, emoji: parsed.emoji, fromMe: m.fromMe, sender: m.fromMe ? null : m.sender || null });
+          out[out.indexOf(target)] = { ...target, reactions };
+          continue;
+        }
+      }
+      out.push(m);
+    }
+    return out;
+  }
+  function platformReactionUnsupported(platform) {
+    if (platformCapabilities(platform).fallback) {
+      return {
+        message: "This conversation carries the six classic reactions, not arbitrary emoji.",
+        detail: "Send one of the six classic reactions instead."
+      };
+    }
+    return {
+      message: "This conversation cannot carry a reaction.",
+      detail: "The message service for this conversation could not be determined."
+    };
+  }
+  function platformThreadUnsupported() {
+    return {
+      message: "This conversation has no threads, so the reply was not sent as one.",
+      detail: "Answer with a message instead."
+    };
+  }
+
   // core/app/rules/messages.js
   var GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
   var TAPBACKS2 = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
@@ -1936,9 +2045,13 @@ var engine = (() => {
   }
   var MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
   var canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
-  function messageActions(m, { sending = false } = {}) {
+  function messageActions(m, { sending = false, platform = "imessage" } = {}) {
     if (!sending || !canTarget(m)) return [];
-    return m.fromMe ? ["react"] : ["reply", "react"];
+    const caps = platformCapabilities(platform);
+    const actions = [];
+    if (!m.fromMe && caps.thread) actions.push("reply");
+    if (caps.tapback || caps.fallback) actions.push("react");
+    return actions;
   }
   function threadRoot(messages, id) {
     return rootIn(new Map((messages || []).map((m) => [m.id, m])), id);
