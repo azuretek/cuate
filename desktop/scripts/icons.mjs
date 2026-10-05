@@ -10,7 +10,8 @@
 //            runtime, so the store icon is the default theme's.
 //   Android  the adaptive icon: the glyph as foreground at every density, the accent as background, and the glyph's
 //            alpha as the monochrome layer launchers tint for themed icons
-//   choices  every fixed palette Settings offers beside Follow theme (core/spec/app-icons.json, issue 167): its picture
+//   choices  every colour family's two variants Settings offers beside Follow theme (core/spec/app-icons.json, issues
+//            167 and 246): each variant's picture
 //            in Settings, an iOS alternate icon set and an Android adaptive icon with its launcher colour, each drawn
 //            through the same palette and renderer from that palette's tokens; and the page's mirror of the spec, which
 //            carries the masters so Settings can draw Follow theme in the theme in force
@@ -98,11 +99,12 @@ export async function icons(check = false) {
   const accent = toHex(cssColour(JSON.parse(text('core/spec/tokens.json')).color.light.accent)).toUpperCase();
   file(res + 'values/colors.xml', '<?xml version="1.0" encoding="utf-8"?>\n<!-- ' + GENERATED + ' -->\n<resources>\n    <color name="ic_launcher_background">' + accent + '</color>\n</resources>\n');
 
-  // The choices (issue 167). Follow theme is everything above; each fixed palette is the same masters through the same
-  // palette function, from the tokens the spec gives it (any it leaves out are the default theme's in its scheme).
+  // The choices (issues 167, 246). Follow theme is everything above; every colour is one family with a paper (Light)
+  // and a bright (Dark) variant, each the same masters through the same palette function, from the tokens the spec
+  // gives it (any it leaves out are the default theme's in its scheme).
   const choices = JSON.parse(text('core/spec/app-icons.json'));
   const tokens = JSON.parse(text('core/spec/tokens.json')).color;
-  const fixed = choices.icons.filter((i) => i.colors);
+  const fixed = choices.families.flatMap((family) => ['light', 'dark'].map((v) => ({ family: family.id, ...family.variants[v] })));
   const launcherTiles = [];
   for (const icon of fixed) {
     const scheme = icon.scheme === 'dark' ? 'dark' : 'light';
