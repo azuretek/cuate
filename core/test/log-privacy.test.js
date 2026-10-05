@@ -20,7 +20,7 @@ const HANDLE = 'synthetic.handle@example.invalid';
 const HOME = ['', 'Users', 'synthetic'].join('/');
 
 // A field name that names what a person typed, or who they are, may never be declared: a body must have nowhere to
-// go, rather than being scrubbed after it arrives. The free-text sinks (error, line, problem, chat) are the exception
+// go, rather than being scrubbed after it arrives. The free-text sinks (error, line, problem, chat, stderr) are the exception
 // and are scrubbed by the logger, which is why their names are not here.
 const CONTENT_FIELD = /^(?:text|body|message|content|caption|snippet|subject|preview|phone|number|handle|address|email|contact|sender|recipient|filename|path)$/;
 

@@ -479,7 +479,7 @@ var engine = (() => {
 
   // core/kit/log.js
   var LEVELS = ["debug", "info", "notice", "warn", "error", "fatal"];
-  var FREE_TEXT = /* @__PURE__ */ new Set(["error", "line", "problem", "chat"]);
+  var FREE_TEXT = /* @__PURE__ */ new Set(["error", "line", "problem", "chat", "stderr"]);
   function createLogger({ spec, app, version = null, run, pid = null, sink, now, level = "notice", recorderSize = 2e3, strict = false }) {
     const recorder = [];
     const state = { min: LEVELS.indexOf(level) };
