@@ -86,20 +86,21 @@ test('the scrollbars are one set, on the containers that scroll', () => {
 test('the send arrow takes its size and weight from the tokens, and its circle is the row\'s own', () => {
   // The arrow is the shared icon set's stroked glyph rather than a text arrow: its size is the button's own fraction,
   // so it fills the circle and scales with it, and its weight is the glyph's own stroke width in the token set, so it
-  // reads as a real arrow. The circle carries no ring of its own, and both its fill and the arrow's colour come from
-  // the button's role tokens, so an imported theme restyles it (issue 216).
+  // reads as a real arrow. The circle is the composer row's own control size, the compact tool size of the attach and
+  // emoji controls beside the field (issue 216), it carries no ring of its own, and both its fill and the arrow's
+  // colour come from the button's role tokens, so an imported theme restyles it.
   const tokens = json('core/spec/tokens.json');
   const glyph = tokens.icons.glyphs['arrow-up'];
   assert.ok(glyph, 'the arrow-up glyph is in the token set');
   assert.ok(Number(glyph['stroke-width'] || tokens.icon.stroke) >= 2, 'the arrow carries a real stroke weight');
   const size = tokens.size['send-icon'];
   assert.equal(typeof size, 'string', 'the send arrow has a size token');
-  assert.match(size, /var\(--size-avatar\)/, 'the arrow scales with the button');
+  assert.match(size, /var\(--size-tool\)/, 'the arrow scales with the button');
   const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
   const rule = /\.send\s*\{([^}]*)\}/.exec(css);
   assert.ok(rule, 'the .send rule exists');
-  assert.match(rule[1], /width:\s*var\(--size-avatar\)/, 'the circle is the row-control size');
-  assert.match(rule[1], /height:\s*var\(--size-avatar\)/, 'the circle is the row-control size');
+  assert.match(rule[1], /width:\s*var\(--size-tool\)/, 'the circle is the composer row control size');
+  assert.match(rule[1], /height:\s*var\(--size-tool\)/, 'the circle is the composer row control size');
   assert.match(rule[1], /border:\s*0\s*;/, 'the button carries no border');
   assert.equal(/box-shadow|outline/.test(rule[1]), false, 'the button carries no ring');
   assert.match(rule[1], /background:\s*var\(--role-button\)/, 'the fill comes from the role token');
@@ -115,15 +116,17 @@ test('the send arrow takes its size and weight from the tokens, and its circle i
 
 test('the send button is no larger than the composer row it sits in', () => {
   // The field is one line tall at its smallest: its font's line box, its own padding and its border. The send button
-  // sits flush at the end of that row, so a button taller than it reads heavier than the row it belongs to, and the
-  // arrow inside it is the button's own fraction again (issue 216). The attach and emoji controls are the compact tool
-  // size beside the field, so they never outgrow the row either (issue 187), and they take that size from the token.
+  // sits flush at the end of that row as the composer's own control size, the same compact tool size the attach and
+  // emoji controls beside the field take (issue 216, 187), and the arrow inside it is the button's own fraction again.
+  // The guard therefore bounds the row's controls by the tool size rather than the avatar size, each from its token.
   const tokens = json('core/spec/tokens.json');
   const px = (v) => parseFloat(v);
   const row = px(tokens.font.line) * px(tokens.font['size-md']) + 2 * px(tokens.space['2']) + 2 * px(tokens.size.border);
-  assert.ok(px(tokens.size.avatar) <= row, 'the send button (' + tokens.size.avatar + ') outgrows the composer row (' + row.toFixed(1) + 'px)');
-  assert.ok(px(tokens.size.tool) <= row, 'the tool controls (' + tokens.size.tool + ') outgrow the composer row (' + row.toFixed(1) + 'px)');
+  assert.ok(px(tokens.size.tool) <= row, 'the composer controls (' + tokens.size.tool + ') outgrow the composer row (' + row.toFixed(1) + 'px)');
   const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const send = /\.send\s*\{([^}]*)\}/.exec(css);
+  assert.ok(send && /width:\s*var\(--size-tool\)/.test(send[1]), 'the send button takes the composer row control size (issue 216)');
+  assert.ok(send && /height:\s*var\(--size-tool\)/.test(send[1]), 'the send button takes the composer row control size (issue 216)');
   const tool = /\.tool\s*\{([^}]*)\}/.exec(css);
   assert.ok(tool && /width:\s*var\(--size-tool\)/.test(tool[1]), 'the tool controls take the compact tool size (issue 187)');
 });

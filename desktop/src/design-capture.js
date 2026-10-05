@@ -161,16 +161,29 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         await convPane();
         await js(typed);
         await shot(tag('2-conversation'), []);
-        // The send button's own states (issue 216): pressed while a draft is typed, and the empty field, where the
-        // send is refused. Both are the same circle in the same place, so the pair reads as one control, and the
-        // crops can be taken from the composer alone rather than the whole screen.
+        // The send button's own states (issue 216): rest with a draft, hover, pressed, and the pending (sending)
+        // state the kit draws while a send is in flight, then the empty field where the send is refused. All are the
+        // same circle in the same place, so the crops read as one control across its states, and the crop is taken
+        // from the composer alone rather than the whole screen.
+        await shot(tag('2a-send-rest'), [], '.composer');
+        await force('.send', ['hover']);
+        await pause(250);
+        await shot(tag('2b-send-hover'), [], '.composer');
         await force('.send', ['active']);
         await pause(250);
-        await shot(tag('2b-send-pressed'), []);
+        await shot(tag('2c-send-pressed'), [], '.composer');
         await force('.send', []);
+        // The pending state is the kit's own: a press whose work has not settled draws the spinner in the circle.
+        await js("import('../kit/press.js').then((m) => { window.__dpress = m; return true; })");
+        await js("(() => { const b = document.querySelector('app-composer button.send'); window.__dheld = []; window.__dpress.runPress(b, () => new Promise((ok) => window.__dheld.push(ok))); return b.dataset.press === 'pending'; })()");
+        await pause(250);
+        await shot(tag('2d-send-sending'), [], '.composer');
+        await js("(() => { (window.__dheld || []).forEach((ok) => ok(true)); return true; })()");
+        try { await waitFor("!document.querySelector('app-composer button.send').dataset.press", 3000); } catch { /* the kit clears its own state */ }
+        await js("(() => { const b = document.querySelector('app-composer button.send'); delete b.dataset.press; b.removeAttribute('aria-busy'); b.removeAttribute('aria-disabled'); return true; })()");
         await js("(() => { const t = document.querySelector('app-composer textarea'); if (t) { t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); } return true; })()");
         await pause(250);
-        await shot(tag('2c-composer-empty'), []);
+        await shot(tag('2e-composer-empty'), [], '.composer');
         await resetState();
         await listPane();
         await js("document.querySelector('.sidebar-head .sort-button').click()");
