@@ -81,11 +81,15 @@ appProc.stdout.on('data', (d) => {
   if (m) report = JSON.parse(m[1]);
   process.stdout.write(d);
 });
-// The bound on the whole run. It is generous enough for a congested queue (smoke-timeout.js says why and what the
-// measured run times are; the outside-dismiss proof (issue 170) and the close-control proof (issue 213) are part of
-// what it must cover). SMOKE_TIMEOUT_MS shortens it for a local run, and it is never removed: a hung run still stops.
-// When it fires it records how long the run had lasted, the last step the app reached and every step it had
-// completed, so a timeout is diagnosable rather than a bare kill (issue 267).
+// The bound on the whole run, a failsafe for a smoke that HANGS rather than for one that is merely slow: the
+// outside-dismiss proof (issue 170), the close-control proof (issue 213) and the text-size walk (issue 253) are
+// all part of what it covers, so the bound has room for them beside every earlier check. It is generous enough for
+// a congested queue (smoke-timeout.js says why and what the measured run times are; the software-rendered Linux
+// runner and the Intel and emulated-ARM legs run the walk far more slowly than the arm64 one, so a bound tight
+// enough to kill a runner that is still working is a flaky leg, not a caught hang).
+// SMOKE_TIMEOUT_MS shortens it for a local run, and it is never removed: a hung run still stops. When it fires it
+// records how long the run had lasted, the last step the app reached and every step it had completed, so a timeout
+// is diagnosable rather than a bare kill (issue 267).
 let smokeTimeout = null;
 const killer = setTimeout(() => {
   const progress = summarizeSmokeProgress(output);
@@ -168,6 +172,7 @@ const checks = [
   { key: 'closeControls', bound: 'true', value: (report) => report.closeControls, test: (v) => v === true },
   { key: 'settingsTabs', bound: 'true', value: (report) => report.settingsTabs, test: (v) => v === true },
   { key: 'phoneSettings', bound: 'true', value: (report) => report.phoneSettings, test: (v) => v === true },
+  { key: 'aboutEverywhere', bound: 'true', value: (report) => report.aboutEverywhere, test: (v) => v === true },
   { key: 'appIcon', bound: 'true', value: (report) => report.appIcon, test: (v) => v === true },
   { key: 'chatsBack', bound: 'true', value: (report) => report.chatsBack, test: (v) => v === true },
   { key: 'headerMenus', bound: 'true', value: (report) => report.headerMenus, test: (v) => v === true },
