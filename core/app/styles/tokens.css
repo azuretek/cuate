@@ -70,7 +70,7 @@
   --size-message-action: 28px;
   --size-app-icon: 72px;
   --size-app-icon-choice: 48px;
-  --size-send-icon: calc(var(--size-avatar) * 0.62);
+  --size-send-icon: calc(var(--size-tool) * 0.62);
   --motion-fast: 100ms;
   --motion-normal: 180ms;
   --motion-spin: 900ms;
