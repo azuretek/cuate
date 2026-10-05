@@ -4,11 +4,12 @@ name: test release
 # path this workflow is copied from. Two differences are deliberate and named
 # here rather than left for a diff to find later:
 #
-#   * There is no tag (v*) trigger, and none is wanted. This workflow publishes
-#     only test builds; a stable release selects an exact snapshot through a
-#     separately designed process (docs/release.md). The sibling's tag path
-#     exists because it publishes stable releases, so the version job's
-#     tag-equals-package.json check has nothing to check here.
+#   * The tag path (vX.Y.Z) is the RELEASE lane, folded in from the sibling
+#     (chela) at issue #279. A stable release is cut only by a vX.Y.Z tag, never
+#     automatically; the tag is produced by release-please (release-please.yml)
+#     with draft and force-tag-creation, and this workflow is started for it with
+#     workflow_dispatch (a tag pushed with GITHUB_TOKEN raises no workflow event).
+#     The dev lane below is unchanged: it publishes a snapshot per shipping push.
 #   * cancel-in-progress stays false. The sibling cancels an in-progress branch
 #     build when a newer push arrives; this workflow must never cancel a
 #     publishing run, because a cancelled run can leave a draft behind. A newer
@@ -17,6 +18,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch: null
 permissions:
   contents: read
@@ -31,8 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      release: ${{ steps.changes.outputs.release }}
-      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.pick.outputs.release }}
+      version: ${{ steps.pick.outputs.version }}
+      tagged: ${{ steps.pick.outputs.tagged }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,13 +45,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      # The dev lane (a main push or a manual dispatch): which paths ship, and the
+      # X.Y.Z-dev.<count>.<sha> snapshot of this commit.
       - id: changes
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
         run: node scripts/release/changes.mjs
       - id: version
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: node scripts/release/version.mjs
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+      # The release lane (a vX.Y.Z tag): the tag IS the version, and it must agree
+      # with every file that owns one, refused loudly before anything is built.
+      - id: stable
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: node scripts/release/version.mjs --check-files "$GITHUB_REF"
+      - id: pick
+        env:
+          DEV_VERSION: ${{ steps.version.outputs.version }}
+          DEV_RELEASE: ${{ steps.changes.outputs.release }}
+          STABLE_VERSION: ${{ steps.stable.outputs.version }}
+        run: |
+          set -eo pipefail
+          if [ -n "$STABLE_VERSION" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "version=$STABLE_VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=$DEV_RELEASE" >> "$GITHUB_OUTPUT"
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+            echo "version=$DEV_VERSION" >> "$GITHUB_OUTPUT"
+          fi
+    if: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
   # The platforms gate. A test build publishes only once every pipeline that
   # builds a platform on this commit has, as a whole, concluded success, and the
   # iOS half is the archive, the TestFlight upload, its wait for the build to
@@ -58,7 +87,8 @@ jobs:
   # platform joins the gate by failing a test rather than by publishing silently.
   # Named platforms, not gate: ci.yml owns the one job called gate, and a second
   # one would mean two answers to what the required gate is. desktop/test/release-policy.test.js
-  # fails when the release path grows its own.
+  # fails when the release path grows its own. Exactly one gate call carries
+  # purpose publish, on the dev lane and the release lane alike.
   platforms:
     needs: prepare
     if: ${{ needs.prepare.outputs.release == 'true' }}
@@ -72,7 +102,7 @@ jobs:
 
   build:
     needs: prepare
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
+    if: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
     uses: ./.github/workflows/package.yml
     with:
       signed: true
@@ -87,7 +117,7 @@ jobs:
   # server's own tests first, and the publisher needs it, so a server that fails its tests holds the whole release.
   server:
     needs: prepare
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
+    if: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' }}
     uses: ./.github/workflows/server-artifact.yml
     with:
       version: ${{ needs.prepare.outputs.version }}
@@ -97,7 +127,7 @@ jobs:
       - platforms
       - build
       - server
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' && needs.platforms.result == 'success' }}
+    if: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.prepare.outputs.release == 'true' && needs.platforms.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -133,8 +163,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release/android-artifact.mjs fetch "$GITHUB_SHA" release-assets
-      - name: Verify all assets, draft, attach, verify remote digests, publish, retain ten
+      - name: Verify all assets, draft, attach, verify remote digests, publish
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: node scripts/release/release.mjs release-assets "$VERSION" "$GITHUB_SHA" --apply
+
