@@ -6,7 +6,7 @@ A push to main that changes a shipped path produces a test build: the desktop ap
 
 Stable releases are driven by release-please (`release-please-config.json`, `.release-please-manifest.json` and `.github/workflows/release-please.yml`). On every push to `main` it maintains one release pull request; merging it bumps the version in every file that carries it, writes `CHANGELOG.md` from the merged commits grouped by type, and tags `vX.Y.Z`. The pull request title is the line the changelog reads, so the `gate` refuses a title that is not `type(scope): a sentence` (`scripts/release/pr-title.mjs`).
 
-The test-build lane above is kept as a **stated exception**, not leftover custom code: a platform requires a build per shipping change for the updater, TestFlight and the Android APK, so `scripts/release/version.mjs` still derives the `X.Y.Z-dev.<count>.<sha>` snapshot and `release.yml` still publishes it. release-please does not build or publish anything; it only decides the next version, the tag and the notes.
+The test-build lane above is kept as a **stated exception**, not leftover custom code: a platform requires a build per shipping change for the updater, TestFlight and the Android APK, so `scripts/release/version.mjs` still derives the `X.Y.Z-dev.<count>.<sha>` snapshot and `release.yml` still publishes it. release-please does not build or publish anything; it only decides the next version, the tag and the notes. It runs on a push to `main` but builds no platform, so it is not a pipeline the publishing gate names: `desktop/test/gate.test.js` exempts it by name, with that reason, so every workflow that DOES build a platform is still caught.
 
 ## Snapshot and channels
 
