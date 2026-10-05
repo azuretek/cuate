@@ -54,7 +54,8 @@
   "models": {
     "Health": { "ok": "boolean", "version": "string", "commit": "string?" },
     "Info": { "product": "string", "repository": "string", "apiVersion": "number", "serverVersion": "string", "serverChannel": "string", "serverBuild": "string?", "serverCommit": "string?", "serverBuiltAt": "string?", "serverPlatform": "string", "epoch": "string", "engine": "EngineInfo", "sending": "boolean", "uploadMaxBytes": "number", "serverUpdate": "ServerUpdate?" },
-    "EngineInfo": { "kind": "string", "version": "string?", "ready": "boolean" },
+    "EngineInfo": { "kind": "string", "version": "string?", "ready": "boolean", "restarts": "number?", "uptimeMs": "number?", "readyMs": "number?", "lastExit": "EngineExit?" },
+    "EngineExit": { "code": "number?", "signal": "string?", "at": "string", "uptimeMs": "number" },
     "Diagnostics": { "product": "string", "serverVersion": "string", "serverChannel": "string", "serverBuild": "string?", "serverCommit": "string?", "serverBuiltAt": "string?", "serverPlatform": "string", "epoch": "string", "startedAt": "string?", "uptimeMs": "number", "engine": "EngineInfo", "database": "DatabaseState", "sending": "boolean", "counters": "object", "lastError": "DiagnosticError?" },
     "DatabaseState": { "ready": "boolean" },
     "DiagnosticError": { "at": "string", "event": "string", "message": "string" },
