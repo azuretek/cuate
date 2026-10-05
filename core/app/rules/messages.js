@@ -1,4 +1,6 @@
 // Pure: the conversation's rules.
+import { platformCapabilities } from './platform.js';
+
 const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 
 // The six standard tapbacks, in the order the Mac offers them, as { type, glyph }. These are the reactions every
@@ -49,9 +51,16 @@ export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) &&
 
 // What a message's menu offers (issue 169): React on any message the engine can target, and Reply in thread only on
 // someone else's, since a thread is started by answering another person. Sending off on the server offers neither.
-export function messageActions(m, { sending = false } = {}) {
+// The conversation's own platform decides the rest (issue 184): a threaded reply is offered only where the platform
+// carries threads, and React only where the platform carries a reaction (as an engine tapback, or as the platform's
+// own text fallback). A platform the app cannot name offers neither.
+export function messageActions(m, { sending = false, platform = 'imessage' } = {}) {
   if (!sending || !canTarget(m)) return [];
-  return m.fromMe ? ['react'] : ['reply', 'react'];
+  const caps = platformCapabilities(platform);
+  const actions = [];
+  if (!m.fromMe && caps.thread) actions.push('reply');
+  if (caps.tapback || caps.fallback) actions.push('react');
+  return actions;
 }
 
 // The first message of the thread a message belongs to, followed up through replyTo (a parent not loaded included).

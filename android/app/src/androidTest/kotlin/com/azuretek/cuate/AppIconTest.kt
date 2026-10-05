@@ -36,8 +36,11 @@ class AppIconTest {
     fun choosingAnIconMakesItsAliasTheOneLauncherEntry() {
         val spec = JSONObject(BundledSpec.text(context.assets, "spec/app-icons.json"))
         val fallback = spec.getString("default")
-        val icons = spec.getJSONArray("icons")
-        val ids = (0 until icons.length()).map { icons.getJSONObject(it).getString("id") }
+        val families = spec.getJSONArray("families")
+        val ids = (0 until families.length()).flatMap { f ->
+            val variants = families.getJSONObject(f).getJSONObject("variants")
+            listOf("light", "dark").map { variants.getJSONObject(it).getString("id") }
+        }
         val other = ids.first { it != fallback }
         val bridge = HostBridge(context, SecureStore(context), HostBridge.commandNames(context.assets), "App", "0")
         try {

@@ -1,115 +1,190 @@
 {
-  "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto: the default theme light palette from core/spec/tokens.json, the same drawing this app shipped as its icon, so the picker, the About picture and every generated asset agree to the one colour: the About page icon is the filled terracotta tile (#bd4531, its gradient #d65a4e at the top down to #a4300b) with a white glyph, which overrules the near-black tile with the coral #ff5c5c glyph the picker drew; Paper is its paper-coloured counterpart. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
-  "default": "orange",
-  "icons": [
+  "description": "The app icon choices Settings offers (appearance.appIcon; issues 167, 189, 246 and PR 257). Every colour is one family with two variants: a paper variant labelled Light and the bright variant labelled Dark, drawn from the Flor de muerto masters (issue 189) through iconPalette and renderIcon, so a variant is the same glyph in other colours and never a second drawing. Each variant names the seven tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme it is drawn in; a colour family's two variants share one name and differ only in their colours. Barro first: its Dark variant is the original terracotta Flor de muerto (the default theme light palette from core/spec/tokens.json, a white glyph on the filled terracotta tile), so the picker, the About picture and every generated asset draw the one colour (PR 257), and Barro Dark is the default; its Light variant is the paper counterpart. Follow theme is not a colour: it draws the icon from the active theme's tokens and takes the Light or Dark rendering from the appearance in force, switching when the appearance does; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. desktop/scripts/icons.mjs draws every variant for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+  "default": "naranja_dark",
+  "followTheme": {
+    "id": "theme",
+    "label": "Follow theme"
+  },
+  "families": [
     {
-      "id": "orange",
-      "label": "Orange",
-      "scheme": "light",
-      "colors": {
-        "accent": "#bd4531",
-        "accent-fg": "#ffffff",
-        "fg": "#211e1a",
-        "bg": "#faf9f7",
-        "bg-raised": "#ffffff",
-        "danger": "#b91c1c",
-        "badge": "#dc2626",
-        "badge-fg": "#ffffff"
-      }
-    },
-    {
-      "id": "paper",
-      "label": "Paper",
-      "scheme": "light",
-      "colors": {
-        "accent": "#efe7d8",
-        "accent-fg": "#8a3324",
-        "fg": "#2b241c",
-        "bg": "#fbf8f2",
-        "bg-raised": "#ffffff",
-        "danger": "#b91c1c",
-        "badge": "#dc2626",
-        "badge-fg": "#ffffff"
+      "id": "naranja",
+      "label": "Barro",
+      "variants": {
+        "light": {
+          "id": "naranja_light",
+          "label": "Light",
+          "scheme": "light",
+          "colors": {
+            "accent": "#efe7d8",
+            "accent-fg": "#8a3324",
+            "fg": "#2b241c",
+            "bg": "#fbf8f2",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        },
+        "dark": {
+          "id": "naranja_dark",
+          "label": "Dark",
+          "scheme": "light",
+          "colors": {
+            "accent": "#bd4531",
+            "accent-fg": "#ffffff",
+            "fg": "#211e1a",
+            "bg": "#faf9f7",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        }
       }
     },
     {
       "id": "azul",
       "label": "Azul",
-      "scheme": "light",
-      "colors": {
-        "accent": "#0a84ff",
-        "accent-fg": "#ffffff",
-        "fg": "#0b2545",
-        "bg": "#f5f9ff",
-        "bg-raised": "#ffffff",
-        "danger": "#b91c1c",
-        "badge": "#dc2626",
-        "badge-fg": "#ffffff"
+      "variants": {
+        "light": {
+          "id": "azul_light",
+          "label": "Light",
+          "scheme": "light",
+          "colors": {
+            "accent": "#dbeafe",
+            "accent-fg": "#1e3a8a",
+            "fg": "#0b2545",
+            "bg": "#f5f9ff",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        },
+        "dark": {
+          "id": "azul_dark",
+          "label": "Dark",
+          "scheme": "light",
+          "colors": {
+            "accent": "#0a84ff",
+            "accent-fg": "#ffffff",
+            "fg": "#0b2545",
+            "bg": "#f5f9ff",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        }
       }
     },
     {
       "id": "rosa",
-      "label": "Rosa mexicano",
-      "scheme": "light",
-      "colors": {
-        "accent": "#e4007c",
-        "accent-fg": "#ffffff",
-        "fg": "#3a0b28",
-        "bg": "#fdf4f9",
-        "bg-raised": "#ffffff",
-        "danger": "#b91c1c",
-        "badge": "#dc2626",
-        "badge-fg": "#ffffff"
+      "label": "Rosa",
+      "variants": {
+        "light": {
+          "id": "rosa_light",
+          "label": "Light",
+          "scheme": "light",
+          "colors": {
+            "accent": "#fce7f3",
+            "accent-fg": "#9d174d",
+            "fg": "#3a0b28",
+            "bg": "#fdf4f9",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        },
+        "dark": {
+          "id": "rosa_dark",
+          "label": "Dark",
+          "scheme": "light",
+          "colors": {
+            "accent": "#e4007c",
+            "accent-fg": "#ffffff",
+            "fg": "#3a0b28",
+            "bg": "#fdf4f9",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        }
       }
     },
     {
       "id": "jade",
-      "label": "Jade",
-      "scheme": "light",
-      "colors": {
-        "accent": "#00a36c",
-        "accent-fg": "#ffffff",
-        "fg": "#062b1f",
-        "bg": "#f3fbf8",
-        "bg-raised": "#ffffff",
-        "danger": "#b91c1c",
-        "badge": "#dc2626",
-        "badge-fg": "#ffffff"
-      }
-    },
-    {
-      "id": "cempasuchil",
-      "label": "Cempasúchil",
-      "scheme": "light",
-      "colors": {
-        "accent": "#ff9f0a",
-        "accent-fg": "#ffffff",
-        "fg": "#3a2400",
-        "bg": "#fdf9f0",
-        "bg-raised": "#ffffff",
-        "danger": "#b91c1c",
-        "badge": "#dc2626",
-        "badge-fg": "#ffffff"
+      "label": "Nopal",
+      "variants": {
+        "light": {
+          "id": "jade_light",
+          "label": "Light",
+          "scheme": "light",
+          "colors": {
+            "accent": "#d1fae5",
+            "accent-fg": "#065f46",
+            "fg": "#062b1f",
+            "bg": "#f3fbf8",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        },
+        "dark": {
+          "id": "jade_dark",
+          "label": "Dark",
+          "scheme": "light",
+          "colors": {
+            "accent": "#00a36c",
+            "accent-fg": "#ffffff",
+            "fg": "#062b1f",
+            "bg": "#f3fbf8",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        }
       }
     },
     {
       "id": "morado",
       "label": "Morado",
-      "scheme": "light",
-      "colors": {
-        "accent": "#7c3aed",
-        "accent-fg": "#ffffff",
-        "fg": "#22103f",
-        "bg": "#faf7ff",
-        "bg-raised": "#ffffff",
-        "danger": "#b91c1c",
-        "badge": "#dc2626",
-        "badge-fg": "#ffffff"
+      "variants": {
+        "light": {
+          "id": "morado_light",
+          "label": "Light",
+          "scheme": "light",
+          "colors": {
+            "accent": "#ede9fe",
+            "accent-fg": "#5b21b6",
+            "fg": "#22103f",
+            "bg": "#faf7ff",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        },
+        "dark": {
+          "id": "morado_dark",
+          "label": "Dark",
+          "scheme": "light",
+          "colors": {
+            "accent": "#7c3aed",
+            "accent-fg": "#ffffff",
+            "fg": "#22103f",
+            "bg": "#faf7ff",
+            "bg-raised": "#ffffff",
+            "danger": "#b91c1c",
+            "badge": "#dc2626",
+            "badge-fg": "#ffffff"
+          }
+        }
       }
-    },
-    {
-      "id": "theme",
-      "label": "Follow theme"
     }
   ]
 }
