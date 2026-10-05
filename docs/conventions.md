@@ -159,6 +159,11 @@ Status words: a rule with no status holds on main today. **Adopted, not yet buil
 - **An engine failure is never swallowed.** Every request logs its method, its duration and its outcome; a failure logs the engine's own code and message; the child's exit logs its code or signal, its uptime, its last stderr line, and what it was restarting away from; and a dead link refuses an HTTP read with a 5xx rather than answering from a stale copy. Source: #271. Held by: `server/test/engine-link.test.js` "an engine failure is surfaced as a refusal and a log line, never swallowed".
 - **An in-flight engine request is answered when its child is replaced, never dropped.** A request in flight when the child exits or is replaced is rejected with `engine_exit`, so the caller gets an outcome it can act on. Source: #271. Held by: `server/test/engine-link.test.js` "a request in flight when the child exits is answered with engine_exit, not dropped".
 
+## Observability and evidence
+
+- **The counters a person reads during a problem are derived from the log stream.** `server/src/diagnostics.js` counts each declared failure or lifecycle event and keeps the most recent error, so a counter cannot disagree with its log line because it is reading it; `GET /api/v1/diagnostics` exposes the build stamp, the engine link, whether the Messages database is readable, the sending switch, the counters and the last error. Source: #263. Held by: `server/test/diagnostics.test.js` "each mapped failure event moves its counter, and the successes move nothing".
+- **What is deliberately not measured is written down.** docs/observability.md records the omissions and their reason, so an omission is a decision rather than an oversight. Source: #263. Held by: `server/test/diagnostics.test.js` "docs/observability.md records what is deliberately not measured".
+
 ## Superseded
 
 Kept so an old issue or capture is not mistaken for current behaviour. Each names what replaced it.

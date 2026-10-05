@@ -144,6 +144,43 @@
         ]
       }
     },
+    "/api/v1/diagnostics": {
+      "get": {
+        "operationId": "diagnostics",
+        "summary": "GET /api/v1/diagnostics",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnostics"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/chats": {
       "get": {
         "operationId": "chats",
@@ -1246,6 +1283,101 @@
         "required": [
           "at",
           "uptimeMs"
+        ],
+        "additionalProperties": false
+      },
+      "Diagnostics": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "serverChannel": {
+            "type": "string"
+          },
+          "serverBuild": {
+            "type": "string"
+          },
+          "serverCommit": {
+            "type": "string"
+          },
+          "serverBuiltAt": {
+            "type": "string"
+          },
+          "serverPlatform": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "uptimeMs": {
+            "type": "number"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineInfo"
+          },
+          "database": {
+            "$ref": "#/components/schemas/DatabaseState"
+          },
+          "sending": {
+            "type": "boolean"
+          },
+          "counters": {
+            "type": "object"
+          },
+          "lastError": {
+            "$ref": "#/components/schemas/DiagnosticError"
+          }
+        },
+        "required": [
+          "product",
+          "serverVersion",
+          "serverChannel",
+          "serverPlatform",
+          "epoch",
+          "uptimeMs",
+          "engine",
+          "database",
+          "sending",
+          "counters"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseState": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready"
+        ],
+        "additionalProperties": false
+      },
+      "DiagnosticError": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "event",
+          "message"
         ],
         "additionalProperties": false
       },
