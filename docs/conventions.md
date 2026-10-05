@@ -159,6 +159,11 @@ Status words: a rule with no status holds on main today. **Adopted, not yet buil
 - **An engine failure is never swallowed.** Every request logs its method, its duration and its outcome; a failure logs the engine's own code and message; the child's exit logs its code or signal, its uptime, its last stderr line, and what it was restarting away from; and a dead link refuses an HTTP read with a 5xx rather than answering from a stale copy. Source: #271. Held by: `server/test/engine-link.test.js` "an engine failure is surfaced as a refusal and a log line, never swallowed".
 - **An in-flight engine request is answered when its child is replaced, never dropped.** A request in flight when the child exits or is replaced is rejected with `engine_exit`, so the caller gets an outcome it can act on. Source: #271. Held by: `server/test/engine-link.test.js` "a request in flight when the child exits is answered with engine_exit, not dropped".
 
+## Releases
+
+- **A release's notes are summarised from the merged pull requests, grouped by conventional type, and generated, never written by hand.** Each entry is the pull request's number and link, its title, and the one line the body's `## What changed` section opens with, newest first, and it names the issue the body closes where it says so; a title that does not parse is grouped under Other. Why: a body assembled from raw commits, or typed by hand, hides what changed and drifts from what landed. Source: #275. Held by: `desktop/test/changelog.test.js` "the notes group merged pull requests by type, newest first, with a link, the title and the body summary".
+- **A pull request the generator cannot summarise is refused by the check the gate runs**, so the notes are never poorer for a title or a body that gave them nothing to lift. A title reads `type(scope): summary` with one of feat, fix, perf, refactor, docs, chore, and the body's `## What changed` section opens with one line; the check says exactly what to add. Why: an automated changelog is only as good as the pull requests that feed it. Source: #275. Held by: `desktop/test/changelog.test.js` "the conventions check names exactly what to add to a bad title and a body with no summary".
+
 ## Superseded
 
 Kept so an old issue or capture is not mistaken for current behaviour. Each names what replaced it.

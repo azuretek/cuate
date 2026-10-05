@@ -237,9 +237,34 @@ jobs:
       exempt: ${{ github.event_name == 'pull_request' && 'release to TestFlight|sign and publish the APK' || '' }}
       window: 120
 
+  # ★ A release's notes are generated from the merged pull requests, so a pull
+  # request the generator cannot summarise must not reach a release's body. This
+  # job fails when the title is not "type(scope): what changed" with a known type,
+  # or when the body's "## What changed" section carries no line to lift, and it
+  # names exactly what to add. It is a leg of the sole gate, so it is enforced by
+  # the check the repository already requires. It reads the pull request's own
+  # title and body from the event file: no token and no install, and a no-op on a
+  # push, which carries no pull request.
+  conventions:
+    name: pull request conventions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: The title is conventional with a scope, and the body carries a summary
+        if: github.event_name == 'pull_request'
+        run: node scripts/release/pr-conventions.mjs
+
   gate:
     name: gate
-    needs: [test, desktop, packaging, server, platforms]
+    needs: [test, desktop, packaging, server, platforms, conventions]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -248,11 +273,11 @@ jobs:
       - name: Every leg passed
         run: |
           failed=''
-          for leg in "test=${{ needs.test.result }}" "desktop=${{ needs.desktop.result }}" "packaging=${{ needs.packaging.result }}" "server=${{ needs.server.result }}" "platforms=${{ needs.platforms.result }}"; do
+          for leg in "test=${{ needs.test.result }}" "desktop=${{ needs.desktop.result }}" "packaging=${{ needs.packaging.result }}" "server=${{ needs.server.result }}" "platforms=${{ needs.platforms.result }}" "conventions=${{ needs.conventions.result }}"; do
             [ "${leg#*=}" = success ] || failed="$failed ${leg%%=*} (${leg#*=})"
           done
           if [ -n "$failed" ]; then
             echo "::error title=gate::the gate fails because a leg it needs did not pass:$failed. The cause is in that leg."
             exit 1
           fi
-          echo 'every leg the gate needs passed: test, desktop, packaging, server, platforms'
+          echo 'every leg the gate needs passed: test, desktop, packaging, server, platforms, conventions'

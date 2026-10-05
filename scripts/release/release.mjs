@@ -40,13 +40,19 @@ export function prunePlan(releases, tag) {
   return { keep: after.slice(0, KEEP).map((release) => release.tag_name), drop: after.slice(KEEP).map((release) => release.tag_name) };
 }
 
-export function publish({ dir, version, sha, apply = false, gh = (args) => execFileSync('gh', args, { encoding: 'utf8', timeout: 120000 }) }) {
+export function publish({ dir, version, sha, notesFile = null, apply = false, gh = (args) => execFileSync('gh', args, { encoding: 'utf8', timeout: 120000 }) }) {
   if (!/^\d+\.\d+\.\d+-dev\.\d+\.[a-f0-9]{10}$/.test(version) || !/^[a-f0-9]{40}$/.test(sha) || !version.endsWith(sha.slice(0, 10))) throw new Error('Invalid snapshot identity');
   const assets = verifyAssets(dir, version, { commit: sha });
   const tag = 'v' + version;
   console.log(JSON.stringify({ repo: naming.repo, tag, sha, assets, apply }));
   if (!apply) return;
   const repo = ['--repo', naming.repo];
+  // The body is generated from the merged pull requests (scripts/release/changelog.mjs)
+  // and handed here as a file. The sentence is the fallback for a run without one,
+  // so a release is never published with an empty body.
+  const notes = notesFile
+    ? ['--notes-file', notesFile]
+    : ['--notes', 'Test build of commit ' + sha + ': the desktop apps, the server and the Android APK, one version. See docs/release.md for installation, update channels and verifying the server artifact.'];
   const releases = JSON.parse(gh(['api', 'repos/' + naming.repo + '/releases?per_page=100']));
   const existing = releases.find((release) => release.tag_name === tag);
   // ★ A published release is never replaced in place: what went out to installed
@@ -64,7 +70,7 @@ export function publish({ dir, version, sha, apply = false, gh = (args) => execF
     // repair in place rather than start over.
     if (existing && existing.draft) gh(['release', 'delete', tag, ...repo, '--yes']);
     if (!alreadyPublished) {
-      gh(['release', 'create', tag, ...repo, '--target', sha, '--draft', '--prerelease', '--title', tag, '--notes', 'Test build of commit ' + sha + ': the desktop apps, the server and the Android APK, one version. See docs/release.md for installation, update channels and verifying the server artifact.']);
+      gh(['release', 'create', tag, ...repo, '--target', sha, '--draft', '--prerelease', '--title', tag, ...notes]);
       created = true;
       gh(['release', 'upload', tag, ...repo, ...assets.map((asset) => path.join(dir, asset))]);
       const draft = JSON.parse(gh(['release', 'view', tag, ...repo, '--json', 'databaseId']));
@@ -93,5 +99,6 @@ export function publish({ dir, version, sha, apply = false, gh = (args) => execF
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes('--apply')) assertPublicationAllowed();
-  publish({ dir: process.argv[2], version: process.argv[3], sha: process.argv[4], apply: process.argv.includes('--apply') });
+  const notesAt = process.argv.indexOf('--notes-file');
+  publish({ dir: process.argv[2], version: process.argv[3], sha: process.argv[4], notesFile: notesAt > -1 ? process.argv[notesAt + 1] : null, apply: process.argv.includes('--apply') });
 }

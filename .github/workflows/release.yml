@@ -104,10 +104,15 @@ jobs:
       contents: write
       # Reads the android pipeline's release artifact for this commit (issue 192); nothing here writes to Actions.
       actions: read
+      # Reads the merged pull requests the release body is generated from.
+      pull-requests: read
     steps:
+      # Full history and tags: the notes are the pull requests merged since the previous
+      # release tag, which is found with git tag --merged.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -133,8 +138,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release/android-artifact.mjs fetch "$GITHUB_SHA" release-assets
+      # The body is generated from the merged pull requests since the previous tag, never
+      # from raw commits, so the version stays single-sourced in version.mjs and every
+      # release reads the same way.
+      - name: Generate the release notes from the merged pull requests
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: node scripts/release/changelog.mjs --tag "v$VERSION" --out release-notes.md
       - name: Verify all assets, draft, attach, verify remote digests, publish, retain ten
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare.outputs.version }}
-        run: node scripts/release/release.mjs release-assets "$VERSION" "$GITHUB_SHA" --apply
+        run: node scripts/release/release.mjs release-assets "$VERSION" "$GITHUB_SHA" --notes-file release-notes.md --apply
