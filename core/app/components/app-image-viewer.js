@@ -19,6 +19,10 @@ import { swipeStep } from '../rules/media.js';
 // right arrow keys (at fit; a zoomed picture pans instead), and a finger's horizontal swipe, each staying put at the
 // ends rather than wrapping. It loads a video item the same way it loads a picture, and draws it as a video element.
 //
+// A shared video link is one such item (issue 243): it names no attachment of ours but the link itself, and the viewer
+// loads the media the server resolved and cached, so it plays here with the controls it already owns, and the client
+// never opens the third party.
+//
 // Every number it draws comes from rules/zoom.js. This only measures the picture and the stage, turns pointer, wheel
 // and key events into calls on those rules, and paints the view they answer:
 // - a mouse: left click zooms in at the point clicked, right click zooms out there with no context menu, the wheel or
@@ -143,12 +147,16 @@ class AppImageViewer extends KitElement {
     this.alt = item.alt || item.name || '';
     this.src = item.src || this.urls.get(item.id) || '';
     await this.updateComplete;
-    if (!this.src && item.attachmentId && this.client) this.load(item);
+    if (!this.src && (item.attachmentId || item.linkUrl) && this.client) this.load(item);
   }
 
   async load(item) {
     try {
-      const blob = await this.client.attachment(item.attachmentId, { format: needsJpeg(item) ? 'jpeg' : undefined });
+      // A link item is a shared video the server resolves and caches (issue 243), so the viewer asks the server for it
+      // and never the site; every other item is one of our own attachments.
+      const blob = item.linkUrl
+        ? await this.client.linkMedia(item.linkUrl)
+        : await this.client.attachment(item.attachmentId, { format: needsJpeg(item) ? 'jpeg' : undefined });
       const url = URL.createObjectURL(blob);
       this.urls.set(item.id, url);
       const current = this.items[this.index];

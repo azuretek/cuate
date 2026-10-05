@@ -43,6 +43,8 @@ var engine = (() => {
     INSTALL: () => INSTALL,
     LETTER_OTHER: () => LETTER_OTHER,
     LEVELS: () => LEVELS,
+    LINK_BOUNDS: () => LINK_BOUNDS,
+    LINK_SITES: () => LINK_SITES,
     MANUAL: () => MANUAL,
     MAX_THEMES: () => MAX_THEMES,
     MESSAGE_GUID: () => MESSAGE_GUID,
@@ -189,6 +191,7 @@ var engine = (() => {
     groupSections: () => groupSections,
     hideChats: () => hideChats,
     holdsAfter: () => holdsAfter,
+    hostOf: () => hostOf,
     hueDistance: () => hueDistance,
     iconColours: () => iconColours,
     iconPalette: () => iconPalette,
@@ -208,6 +211,9 @@ var engine = (() => {
     isHorizontal: () => isHorizontal,
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
+    isPlayableLink: () => isPlayableLink,
+    linkMediaKey: () => linkMediaKey,
+    linkMediaSite: () => linkMediaSite,
     linkSite: () => linkSite,
     listSections: () => listSections,
     localAttachment: () => localAttachment,
@@ -248,6 +254,7 @@ var engine = (() => {
     panBy: () => panBy,
     parseColour: () => parseColour,
     parseGlyph: () => parseGlyph,
+    parseOgVideo: () => parseOgVideo,
     parseReactionText: () => parseReactionText,
     parseTraceparent: () => parseTraceparent,
     payloadMedia: () => payloadMedia,
@@ -458,6 +465,13 @@ var engine = (() => {
       },
       async attachment(id, o = {}) {
         const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
+        if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
+        return res.blob();
+      },
+      // A shared video link's media, resolved and cached by the server (issue 243), as bytes for the viewer. The client
+      // reaches only us, never the site the link names.
+      async linkMedia(url) {
+        const res = await fetchImpl(base + "/api/v1/links/media" + query({ url }), { headers: auth });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
         return res.blob();
       },
@@ -1657,6 +1671,51 @@ var engine = (() => {
     return "";
   }
 
+  // core/app/rules/link-media.js
+  var LINK_SITES = [
+    { host: "instagram.com", resolve: "og-video", ttlMs: 216e5 }
+  ];
+  var LINK_BOUNDS = { timeoutMs: 1e4, maxPageBytes: 524288, maxMediaBytes: 26214400 };
+  function hostOf(url) {
+    const m = /^https?:\/\/([^/?#]+)/i.exec(String(url || ""));
+    if (!m) return "";
+    return m[1].replace(/^.*@/, "").replace(/:[0-9]+$/, "").toLowerCase().replace(/^www\./, "");
+  }
+  function linkMediaSite(url) {
+    const host = hostOf(url);
+    if (!host) return null;
+    return LINK_SITES.find((s) => host === s.host || host.endsWith("." + s.host)) || null;
+  }
+  function isPlayableLink(url) {
+    return Boolean(linkMediaSite(url));
+  }
+  function linkMediaKey(url) {
+    let h = 2166136261;
+    const s = String(url || "");
+    for (let i = 0; i < s.length; i += 1) {
+      h ^= s.charCodeAt(i);
+      h = h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  function parseOgVideo(html) {
+    const text = String(html || "");
+    const dq = String.fromCharCode(34);
+    const sq = String.fromCharCode(39);
+    const q = "[" + dq + sq + "]";
+    const grab = (prop) => {
+      const tag = new RegExp("<meta[^>]+(?:property|name)=" + q + prop + q + "[^>]*>", "i").exec(text);
+      if (!tag) return null;
+      const content = new RegExp("content=" + q + "([^" + dq + sq + "]*)" + q, "i").exec(tag[0]);
+      return content ? content[1].trim() : null;
+    };
+    for (const prop of ["og:video:secure_url", "og:video:url", "og:video"]) {
+      const value = grab(prop);
+      if (value && /^https?:\/\//i.test(value)) return value;
+    }
+    return null;
+  }
+
   // core/app/rules/engine-imsg.js
   var TAPBACKS = /* @__PURE__ */ new Set(["love", "like", "dislike", "laugh", "emphasis", "question"]);
   var NO_CHAT_ID = "0";
@@ -1711,7 +1770,8 @@ var engine = (() => {
     if (!payloads.length) return { attachments: files, link: null, payloads: 0 };
     const url = firstUrl(stripInlineObjects(m.text)) || firstUrl(m.payload_url);
     const image = payloads.find((v) => !v.missing && /^image\//i.test(v.mime)) || null;
-    const link = url ? { url, site: linkSite(url), title: payloadTitle(m), image: image ? modelAttachment(image, "Link preview") : null } : null;
+    const video = payloads.find((v) => !v.missing && /^video\//i.test(v.mime)) || null;
+    const link = url ? { url, site: linkSite(url), title: payloadTitle(m), image: image ? modelAttachment(image, "Link preview") : null, video: video ? modelAttachment(video, "Video") : null, play: isPlayableLink(url) } : null;
     const carried = link ? [] : payloads.filter((v) => !v.missing && payloadMedia(v.mime));
     return {
       attachments: [...files, ...carried.map((v) => modelAttachment(v, /^video\//i.test(v.mime) ? "Video" : "Photo"))],

@@ -11,6 +11,7 @@ import { platformOf } from '../../core/app/rules/platform.js';
 import { createAttachments } from './attachments.js';
 import { createUploads } from './uploads.js';
 import { createThemeFonts } from './theme-fonts.js';
+import { createLinkMedia } from './link-media.js';
 import { createSearch } from './search.js';
 import { createSettings } from './settings.js';
 import { loadRoutes } from './routes/index.js';
@@ -56,7 +57,7 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
@@ -225,6 +226,9 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     themeFetch,
     // A theme's fonts, fetched at import and served to the clients (issue 132).
     themeFonts: dataDir ? createThemeFonts({ dataDir, fetchImpl: themeFetch }) : null,
+    // A shared video link's media, resolved and cached on the server so a client never reaches the third party
+    // (issue 243). The fetch is injected, so a test stands in for the site.
+    linkMedia: createLinkMedia({ dataDir, fetchImpl: linkFetch }),
     // The installed server's last update outcome, which info reports so a client that reconnects after a rollback
     // still hears about it. Null for a checkout.
     updateOutcome,

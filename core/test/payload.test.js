@@ -29,7 +29,7 @@ test('a URL reads readably and a stray mark is dropped', () => {
 
 test('a link payload becomes a link card: the site and the URL, never a filename', () => {
   const m = msg({ text: 'https://www.instagram.com/reel/Dda347IpKrV/', attachments: [linkPayload('image/jpeg')] });
-  assert.deepEqual(m.link, { url: 'https://www.instagram.com/reel/Dda347IpKrV/', site: 'instagram.com', title: null, image: { id: id({ transfer_name: 'D15E301E-EDE6-473D-9DF7-00BD12F88274.pluginPayloadAttachment' }), name: 'Link preview', mime: 'image/jpeg', bytes: 52554, sticker: false, missing: false } });
+  assert.deepEqual(m.link, { url: 'https://www.instagram.com/reel/Dda347IpKrV/', site: 'instagram.com', title: null, image: { id: id({ transfer_name: 'D15E301E-EDE6-473D-9DF7-00BD12F88274.pluginPayloadAttachment' }), name: 'Link preview', mime: 'image/jpeg', bytes: 52554, sticker: false, missing: false }, video: null, play: true });
   assert.deepEqual(m.attachments, [], 'the payload is not a file');
   assert.equal(m.payloads, 0);
   assert.ok(!JSON.stringify(m).includes('.pluginPayloadAttachment'), 'no raw payload name anywhere in the model');
@@ -58,6 +58,22 @@ test('a payload that carries real media is an attachment like any other', () => 
   assert.equal(m.attachments[0].mime, 'image/jpeg');
   assert.equal(m.link, null);
   assert.ok(!JSON.stringify(m).includes('.pluginPayloadAttachment'));
+});
+
+test('a shared video link is playable, and a video the payload carries rides the card instead of being dropped', () => {
+  const reel = msg({ text: 'https://www.instagram.com/reel/Dda347IpKrV/', attachments: [linkPayload('image/jpeg')] });
+  assert.equal(reel.link.play, true, 'a link on a site the server can resolve is playable');
+  const held = msg({ text: 'https://www.instagram.com/reel/Dda347IpKrV/', attachments: [linkPayload('video/mp4', { name: 'clip.pluginPayloadAttachment' })] });
+  assert.ok(held.link.video && held.link.video.mime === 'video/mp4', 'the video is the card media, never dropped');
+  assert.equal(held.link.video.name, 'Video', 'an honest name, never the raw one');
+  assert.equal(held.payloads, 0);
+  assert.ok(!JSON.stringify(held).includes('.pluginPayloadAttachment'), 'no raw payload name anywhere in the model');
+});
+
+test('a plain link is not playable: it stays the card it is', () => {
+  const m = msg({ payload_url: 'https://example.com/a/thing', attachments: [linkPayload('image/jpeg')] });
+  assert.equal(m.link.play, false, 'a site we do not resolve is not playable');
+  assert.equal(m.link.video, null);
 });
 
 test('an ordinary attachment is untouched and no link is invented for plain text', () => {
