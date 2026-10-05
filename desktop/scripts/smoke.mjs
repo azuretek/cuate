@@ -135,6 +135,7 @@ const checks = [
   { key: 'phoneFits', bound: 'true', value: (report) => report.phoneFits, test: (v) => v === true },
   { key: 'phoneComposer', bound: 'true', value: (report) => report.phoneComposer, test: (v) => v === true },
   { key: 'phoneSend', bound: 'true', value: (report) => report.phoneSend, test: (v) => v === true },
+  { key: 'sendStates', bound: 'true', value: (report) => report.sendStates, test: (v) => v === true },
   { key: 'phoneEdgeOnly', bound: 'true', value: (report) => report.phoneEdgeOnly, test: (v) => v === true },
   { key: 'phoneSettle', bound: 'true', value: (report) => report.phoneSettle, test: (v) => v === true },
   { key: 'phoneTracks', bound: 'true', value: (report) => report.phoneTracks, test: (v) => v === true },
