@@ -47,7 +47,11 @@ test('inventory: every setting the desktop page offers is reached from a tab, an
   const settings = read('core/app/components/app-settings.js');
   assert.match(settings, /settings-about-row/, 'the About row is drawn on the page');
   assert.match(settings, /data-action="about"/, 'the About row opens the About page');
-  assert.match(settings, /this\.aboutRow\(\)/, 'the About row is part of the body, so it sits under every tab');
+  // The row is each panel's LAST child (issue 253), so every tab's body ends with it, not only the tab it was added to.
+  const panel = /section\(group\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(panel, 'the page draws a panel per group');
+  assert.match(panel[0], /\$\{this\.sectionBody\(group\)\}[\s\S]*?\$\{this\.aboutRow\(\)\}[\s\S]*?<\/section>/, 'the About row is the last thing in the panel');
+  assert.doesNotMatch(settings, /map\(\(group\) => this\.section\(group\)\)\}[\s\S]{0,40}\$\{this\.aboutRow\(\)\}/, 'the row is not left outside the panels, under only one tab');
   const seen = new Map();
   for (const tab of tabs) for (const key of tab.keys) { assert.ok(!seen.has(key), key + ' is in two tabs'); seen.set(key, tab.id); }
   for (const field of settingsFields()) assert.ok(seen.has(field.key), field.key + ' is reached from no tab');
@@ -302,6 +306,30 @@ test('issue 168: the way back to the chats list is the chats icon, labelled with
   assert.match(css, /\.sheet-back-narrow\s*\{[^}]*display:\s*none/, 'the desktop hides the phone\'s chats control');
 });
 
+
+// Issue 253: the About row is the last thing in EVERY tab's own body at every width, and it is drawn from the one
+// schema, so a tab added later cannot land without it. The desktop smoke walks every tab the schema declares, scrolls
+// that tab's body to the end and reads the row at desktop width, 375 and 390.
+test('the About row is the last thing in every tab body, drawn from the one schema', () => {
+  const settings = read('core/app/components/app-settings.js');
+  assert.match(settings, /settingsGroups\(\)\.map\(\(group\) => this\.section\(group\)\)/, 'every group in the schema is drawn as a panel');
+  assert.match(settings, /section\(group\) \{[\s\S]*?\$\{this\.aboutRow\(\)\}[\s\S]*?<\/section>/, 'the panel ends with the About row');
+  const row = /aboutRow\(\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(row, 'the page draws the About row');
+  assert.match(row[0], /class="sheet-rows settings-about-row"/, 'the row is its own surface');
+  assert.match(row[0], /data-action="about"/, 'the row opens the About page');
+  assert.match(row[0], /class="setting-label">About</, 'the row is labelled About');
+  assert.match(row[0], /class="setting-nav-value">\$\{version\}</, 'the version sits on the value side, to the right');
+  assert.match(row[0], /data-icon="chevron-right"/, 'the row carries the chevron');
+  // The stylesheet keeps the body scrolling rather than shrinking a panel over the row that follows it (issue 253).
+  assert.match(read('core/app/styles/app.css'), /\.sheet-body > \* \{ flex: none; \}/, 'body children keep their height, so the row is reachable');
+  // The desktop smoke walks every tab the schema declares and holds the row, at both widths.
+  const smoke = read('desktop/src/main.js');
+  assert.match(smoke, /const aboutInPanel = "\(\(\) => \{/, 'the smoke reads the About row in the tab body');
+  assert.match(smoke, /walkAbout\(walk\[t\.id\]\)/, 'every tab in the walk must hold the row');
+  assert.match(smoke, /report\.aboutEverywhere = tabsOk\(aboutWalk390\)/, 'the walk runs at 390 too');
+});
+
 // Issue 244: the text size is a slider whose positions are the schema's stops, so a key or a drag lands only on an
 // offered percentage; it is keyboard-operable (a range is), names itself, announces the percentage rather than the
 // index, writes the value as it moves (the live preview), and shows the value in force beside it. The stops are the
@@ -315,12 +343,37 @@ test('text size is a slider that lands only on the schema stops and announces th
   assert.match(slider[0], /aria-label=\$\{field\.label\}/, 'it is named for its setting');
   assert.match(slider[0], /aria-valuetext=\$\{[^}]*percent[^}]*\}/, 'a screen reader hears the percentage, not the index');
   assert.match(slider[0], /<output class="scale-value"/, 'the percentage in force is written beside it');
-  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSlide\(e, field, stops\)\}/, 'a move writes the setting as it is made, the live preview');
+  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSliderMove\(e, field, stops\)\}/, 'a move paints the reading (the commit is on release, issue 253)');
   const size = settingsFields().find((f) => f.key === 'appearance.textScale');
   assert.deepEqual(size.options, TEXT_SCALES, 'the stops are the schema\'s percentages');
   assert.match(read('core/app/styles/app.css'), /\.scale-range \{[^}]*accent-color: var\(--color-accent\)/, 'the track takes the theme accent');
 });
 
+// Issue 253: the text size is committed on RELEASE. While the handle is dragged the slider only paints the reading;
+// the setting is written once, on the control's change (a pointer release, a key release) or on Enter, so nothing
+// behind the sheet re-lays-out mid-drag and the app resizes once. The commit is smoothed where motion is allowed.
+test('the text size slider commits on release, so the app resizes once', () => {
+  const settings = read('core/app/components/app-settings.js');
+  const slider = /<div class="scale-slider[\s\S]*?<\/div>`/.exec(settings);
+  assert.ok(slider, 'the page draws the text size slider');
+  assert.match(slider[0], /@input=\$\{\(e\) => this\.onSliderMove\(e, field, stops\)\}/, 'a drag paints the reading only');
+  assert.match(slider[0], /@change=\$\{\(e\) => this\.onSliderCommit\(e, field, stops\)\}/, 'a release commits the size');
+  assert.match(slider[0], /@keydown=\$\{\(e\) => this\.onSliderKey\(e, field, stops\)\}/, 'Enter commits too');
+  const move = /onSliderMove\(e, field, stops\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(move, 'the move handler is drawn');
+  assert.doesNotMatch(move[0], /this\.fire\(/, 'the move never writes the setting, so nothing re-lays-out mid-drag');
+  const commit = /onSliderCommit\(e, field, stops\) \{[\s\S]*?\n {2}\}/.exec(settings);
+  assert.ok(commit, 'the commit handler is drawn');
+  assert.match(commit[0], /this\.fire\('setting', \{ key: field\.key, value: stops\[at\] \}\)/, 'the commit writes the stop exactly once');
+  assert.match(settings, /onSliderKey\(e, field, stops\) \{[\s\S]*?e\.key !== 'Enter'[\s\S]*?this\.onSliderCommit\(e, field, stops\)/, 'Enter is the keyboard release');
+  // The type sizes are committed in ONE step and are never transitioned: applyTheme() reads these very variables
+  // back off the root to scale a theme's own type sizes, so a transition on them would hand a half-way size into the
+  // next scale and commit the wrong size. That is the defect the desktop smoke caught at the 300% stop (issue 253),
+  // so the guard is a negative one: the stylesheet must not register or transition the type-size variables.
+  const css = read('core/app/styles/app.css');
+  assert.doesNotMatch(css, /@property --font-size-/, 'the type sizes are not registered as transitionable lengths');
+  assert.doesNotMatch(css, /transition: --font-size-/, 'no type size is transitioned, so the read-back stays a settled value');
+});
 // Issue 244: the tabs read as a strip on the body they open, not loose pills floating above it.
 test('Settings tabs read as a strip on the panel they open', () => {
   const css = read('core/app/styles/app.css');
