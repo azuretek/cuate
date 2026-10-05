@@ -759,31 +759,70 @@ async function runSmoke(w) {
   console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, recents: emojiRecents, order: emojiOrder }));
   await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
 
-  // The attach menu (issue 72): the attach button sits beside the emoji button, opens a short menu upward from the
-  // composer rather than a sheet, and a file picked there stages above the field, uploads, and sends with its caption.
-  // The file is handed to the input the way the system picker would, since a smoke cannot drive the OS dialog.
-  await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
-  await waitFor("Boolean(document.querySelector('app-composer .attach-menu'))");
-  await caretOf('.attach-menu');
-  const attachMenu = await js("(() => { const c = document.querySelector('app-composer'); const menu = c.querySelector('.attach-menu'); const tools = [...c.querySelectorAll('.composer-tools button.tool')].map((b) => b.getAttribute('aria-label')); return { tools, items: [...menu.querySelectorAll('[role=menuitem]')].map((b) => b.textContent.trim()), above: menu.getBoundingClientRect().bottom <= c.querySelector('form').getBoundingClientRect().top + 1, sheet: menu.getBoundingClientRect().width >= window.innerWidth }; })()");
-  await js("document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()");
-  const ATTACH_CAPTION = 'smoke caption \u{1F44B}\u{1F3FD}';
-  await js(`(() => { const c = document.querySelector('app-composer'); const input = c.querySelector('input[type=file]'); const dt = new DataTransfer(); dt.items.add(new File(['synthetic smoke file'], 'smoke-note.txt', { type: 'text/plain' })); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
-  await waitFor("Boolean(document.querySelector('app-composer .staged-file'))");
-  const staged = await js("document.querySelector('app-composer .staged-name').textContent");
+  // The composer's attach and emoji controls (issue 187): compact icon buttons, sized and spaced from the tokens, the
+  // emoji control drawing the icon set's smiley and the attach control opening the shell's own picker on one press,
+  // with no type menu of ours. A smoke cannot drive the OS dialog, so the input's own click is counted instead: the
+  // press must hand the picker the attach rule's filter (empty) and click the file input exactly once.
+  const composerProbe = () => js(`(() => { const c = document.querySelector('app-composer'); const tools = [...c.querySelectorAll('.composer-tools button.tool')]; const attach = tools[0]; const emoji = tools[1]; const field = c.querySelector('textarea'); const cs = getComputedStyle(document.documentElement); const token = parseFloat(cs.getPropertyValue('--size-tool')); const gapToken = parseFloat(cs.getPropertyValue('--space-1')); const a = attach.getBoundingClientRect(); const e = emoji.getBoundingClientRect(); const f = field.getBoundingClientRect(); const ai = attach.querySelector('.icon'); const ei = emoji.querySelector('.icon'); return { attachIcon: ai ? ai.getAttribute('data-icon') : '', emojiIcon: ei ? ei.getAttribute('data-icon') : '', attachText: attach.textContent.trim(), emojiText: emoji.textContent.trim(), menu: document.querySelectorAll('.attach-menu').length, token, gapToken, w: a.width, h: a.height, gap: e.left - a.right, fieldGap: f.left - e.right, labels: tools.map((b) => b.getAttribute('aria-label')).join('|'), haspopup: attach.getAttribute('aria-haspopup') }; })()`)
+  const pickerProbe = await js(`(() => { const c = document.querySelector('app-composer'); const attach = c.querySelector('.composer-tools button.tool'); const input = c.querySelector('input[type=file]'); let clicks = 0; let accept = null; const original = HTMLInputElement.prototype.click; HTMLInputElement.prototype.click = function () { clicks += 1; accept = this.accept; }; try { attach.click(); } finally { HTMLInputElement.prototype.click = original; } return { clicks, accept, menu: document.querySelectorAll('.attach-menu').length }; })()`)
+  const composerTools = await composerProbe();
+  const composerToolChecks = {
+    labels: composerTools.labels === 'Attach|Emoji',
+    attachIcon: composerTools.attachIcon === 'paperclip',
+    emojiIcon: composerTools.emojiIcon === 'smile-plus',
+    noGlyphText: composerTools.attachText === '' && composerTools.emojiText === '',
+    noMenu: composerTools.menu === 0,
+    size: Math.abs(composerTools.w - composerTools.token) < 1 && Math.abs(composerTools.h - composerTools.token) < 1,
+    gap: Math.abs(composerTools.gap - composerTools.gapToken) < 1,
+    noPopup: composerTools.haspopup === null,
+    pickerOnce: pickerProbe.clicks === 1 && pickerProbe.accept === '' && pickerProbe.menu === 0,
+  };
+  report.composerTools = Object.values(composerToolChecks).every(Boolean);
+  console.log('composer tools: ' + JSON.stringify({ checks: composerToolChecks, tools: composerTools, picker: pickerProbe }));
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  await shot('03i-composer-tools-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('03j-composer-tools-dark.png');
+  nativeTheme.themeSource = 'light';
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await pause(300);
+  const composerToolsPhone = await composerProbe();
+  await shot('03k-composer-tools-phone-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('03l-composer-tools-phone-dark.png');
+  nativeTheme.themeSource = 'light';
+  await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
+  await waitFor('window.innerWidth > 390', 5000);
+  const phoneChecks = {
+    size: Math.abs(composerToolsPhone.w - composerToolsPhone.token) < 1 && Math.abs(composerToolsPhone.h - composerToolsPhone.token) < 1,
+    gap: Math.abs(composerToolsPhone.gap - composerToolsPhone.gapToken) < 1,
+    icons: composerToolsPhone.attachIcon === 'paperclip' && composerToolsPhone.emojiIcon === 'smile-plus',
+    labels: composerToolsPhone.labels === 'Attach|Emoji',
+  };
+  console.log('composer tools 390: ' + JSON.stringify({ checks: phoneChecks, tools: composerToolsPhone }));
+  report.composerTools = report.composerTools && Object.values(phoneChecks).every(Boolean);
+  // The staged file still stages, uploads and sends with its caption; that path is unchanged (issue 72), only the menu
+  // before it is gone. The file is handed to the input the way the system picker would, since a smoke cannot drive the
+  // OS dialog.
+  const ATTACH_CAPTION = 'smoke caption 👋🏽';
+  await js(`(() => { const c = document.querySelector('app-composer'); const input = c.querySelector('input[type=file]'); const dt = new DataTransfer(); dt.items.add(new File(['synthetic smoke file'], 'smoke-note.txt', { type: 'text/plain' })); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`)
+  await waitFor(`Boolean(document.querySelector('app-composer .staged-file'))`);
+  const staged = await js(`document.querySelector('app-composer .staged-name').textContent`);
   await sendText(ATTACH_CAPTION);
   await waitFor(`[...document.querySelectorAll('.bubble-row.mine')].some((r) => r.textContent.includes(${JSON.stringify(ATTACH_CAPTION)}) && r.textContent.includes('smoke-note.txt') && !r.dataset.id.startsWith('local:'))`, 20000);
-  const attachChecks = {
-    beside: attachMenu.tools.join('|') === 'Attach|Emoji',
-    items: attachMenu.items.length === 2,
-    above: attachMenu.above,
-    notSheet: !attachMenu.sheet,
+  const sendChecks = {
     staged: staged === 'smoke-note.txt',
-    cleared: await js("!document.querySelector('app-composer .staged-file')"),
+    cleared: await js(`!document.querySelector('app-composer .staged-file')`),
   };
-  report.attachMenu = Object.values(attachChecks).every(Boolean);
-  console.log('attach menu: ' + JSON.stringify({ checks: attachChecks, menu: attachMenu }));
+  report.composerTools = report.composerTools && Object.values(sendChecks).every(Boolean);
+  console.log('attach send: ' + JSON.stringify(sendChecks));
   await shot('03b-after-file-send.png');
+
 
   // A message's actions (issues 138 and 169). A right click, or a long click with the mouse, opens one menu on a
   // message: its time, then Reply in thread and React as icons from the shared set, and on your own message the time and
@@ -2664,7 +2703,6 @@ async function runSmoke(w) {
   const dismissPanels = [
     { name: 'filter', pane: 'list', open: "document.querySelector('.sidebar-head .filter-button').click()", panel: '.filter-menu' },
     { name: 'sort', pane: 'list', open: "document.querySelector('.sidebar-head .sort-button').click()", panel: '.sort-menu' },
-    { name: 'attach', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Attach\"]').click()", panel: 'app-composer .attach-menu' },
     { name: 'emoji', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()", panel: 'app-composer .emoji-picker' },
     { name: 'message-menu', pane: 'conversation', open: '(() => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); return true; })()', panel: DISMISS_ROW + ' .message-menu' },
     { name: 'thread', pane: 'conversation', open: '(async () => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); const sel = ' + dq(DISMISS_ROW + ' .message-action[aria-label="Reply in thread"]') + '; for (let i = 0; i < 50 && !document.querySelector(sel); i += 1) await new Promise((r) => setTimeout(r, 50)); document.querySelector(sel).click(); return true; })()', panel: '.thread-view .thread-list' },

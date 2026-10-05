@@ -1,12 +1,11 @@
-// Pure: the composer's attach menu and the file it stages. What each menu entry offers the system picker, the label a
-// staged file shows, whether the server will take it (the cap comes from the server's own info, so the client never
-// carries a second copy of the number), and the bytes as base64 for the upload body. No DOM, no clock, no storage.
+// Pure: the composer's attach control and the file it stages. The picker's filter, the label a staged file shows,
+// whether the server will take it (the cap comes from the server's own info, so the client never carries a second copy
+// of the number), and the bytes as base64 for the upload body. No DOM, no clock, no storage.
 
-// The entries the attach menu shows, in order. accept is the system picker's filter; an empty one takes any file.
-export const ATTACH_ACTIONS = [
-  { id: 'media', label: 'Photo or video', accept: 'image/*,video/*' },
-  { id: 'file', label: 'File', accept: '' },
-];
+// The filter handed to the shell's own picker, and it is empty: the picker is the system's, so it means every file.
+// A phone's picker asks for a photo, a video, the camera or a document itself and a desktop opens its file dialog;
+// we keep no type menu of ours and hide nothing from the picker (issue 187).
+export const ATTACH_ACCEPT = '';
 
 const UNITS = ['B', 'KB', 'MB', 'GB'];
 

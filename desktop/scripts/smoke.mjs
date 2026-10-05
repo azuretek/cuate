@@ -144,7 +144,7 @@ const checks = [
   { key: 'onboarding', bound: 'true', value: (report) => report.onboarding, test: (v) => v === true },
   { key: 'surface', bound: 'true', value: (report) => report.surface, test: (v) => v === true },
   { key: 'emojiPanel', bound: 'true', value: (report) => report.emojiPanel, test: (v) => v === true },
-  { key: 'attachMenu', bound: 'true', value: (report) => report.attachMenu, test: (v) => v === true },
+  { key: 'composerTools', bound: 'true', value: (report) => report.composerTools, test: (v) => v === true },
   { key: 'imagePreview', bound: 'true', value: (report) => report.imagePreview, test: (v) => v === true },
   { key: 'imageViewer', bound: 'true', value: (report) => report.imageViewer, test: (v) => v === true },
   { key: 'mediaViewer', bound: 'true', value: (report) => report.mediaViewer, test: (v) => v === true },

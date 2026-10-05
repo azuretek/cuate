@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, addGroup, renameGroup, moveGroup, placeChat, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, defaultGroupName, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, listSections, LETTER_OTHER, DELETE_STEPS } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES } from '../app/rules/emoji-data.js';
 import { graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
-import { ATTACH_ACTIONS, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
+import { ATTACH_ACCEPT, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
 import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions, TAPBACKS, tapbackType, myReaction, replyQuote, canTarget } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
@@ -750,10 +750,12 @@ test('the recently used row sits on the picker edge nearest the emoji button (is
   assert.match(picker, /pickerSide\(/);
 });
 
-test('the attach menu offers a photo or video and any file, in that order', () => {
-  assert.deepEqual(ATTACH_ACTIONS.map((a) => a.id), ['media', 'file']);
-  assert.equal(ATTACH_ACTIONS[0].accept, 'image/*,video/*');
-  assert.equal(ATTACH_ACTIONS[1].accept, '');
+test('the attach control hands the system picker no filter of ours (issue 187)', () => {
+  // The picker is the shell's own, so we hand it every file: a phone asks for a photo, a video, the camera or a
+  // document itself and a desktop opens its file dialog. The type menu and its accept filters are gone.
+  assert.equal(ATTACH_ACCEPT, '', 'the system picker keeps its own choice');
+  const composer = readFileSync(new URL('../app/components/app-composer.js', import.meta.url), 'utf8');
+  assert.equal(/attach-menu|ATTACH_ACTIONS/.test(composer), false, 'the type menu and the code behind it are gone');
 });
 
 test('a staged file reads its size in words, and is refused when empty or past the server cap', () => {
