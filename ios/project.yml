@@ -91,7 +91,7 @@ targets:
         # The version being built, which is the base in package.json's next patch.
         # The release workflow overrides this with the same number, derived from
         # that one base, so the local default and the shipped build agree.
-        MARKETING_VERSION: "0.0.1"
+        MARKETING_VERSION: "0.0.1" # x-release-please-version
         # The plist is a file in the repo rather than generated, so the
         # entitlement-adjacent keys are a reviewable diff rather than a build
         # setting.

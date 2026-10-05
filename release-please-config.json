@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "bump-minor-pre-major": true,
+  "include-component-in-tag": false,
+  "separate-pull-requests": false,
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "cuate",
+      "changelog-path": "CHANGELOG.md",
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "refactor", "section": "Refactor" },
+        { "type": "docs", "section": "Docs" },
+        { "type": "chore", "section": "Chores" },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "build", "section": "Build", "hidden": true },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "style", "section": "Style", "hidden": true },
+        { "type": "revert", "section": "Reverts", "hidden": true }
+      ],
+      "extra-files": [
+        { "type": "json", "path": "core/spec/version.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "desktop/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "server/package.json", "jsonpath": "$.version" },
+        { "type": "generic", "path": "ios/project.yml" },
+        { "type": "generic", "path": "android/app/build.gradle.kts" }
+      ]
+    }
+  }
+}
