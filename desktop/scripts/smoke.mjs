@@ -77,10 +77,13 @@ appProc.stdout.on('data', (d) => {
   if (m) report = JSON.parse(m[1]);
   process.stdout.write(d);
 });
-// The bound on the whole run. The outside-dismiss proof (issue 170) opens and closes nine panels at two widths in two
-// schemes, and the close-control proof (issue 213) clicks every close control at four sizes, so the bound has room
-// for both beside every earlier check.
-const killer = setTimeout(() => appProc.kill('SIGKILL'), 240000);
+// The bound on the whole run, a failsafe for a smoke that HANGS rather than for one that is merely slow: the
+// outside-dismiss proof (issue 170) opens and closes nine panels at two widths in two schemes, the close-control
+// proof (issue 213) clicks every close control at four sizes, and the text-size walk (issue 253) captures every stop
+// at two widths, two schemes and two themes, so the bound has room for all of them beside every earlier check. The
+// software-rendered Linux runner and the Intel and emulated-ARM legs run that walk far more slowly than the arm64
+// one, and a bound tight enough to kill a runner that is still working is a flaky leg, not a caught hang.
+const killer = setTimeout(() => appProc.kill('SIGKILL'), 600000);
 const code = await new Promise((resolve) => { appProc.on('exit', resolve); appProc.on('error', (error) => { console.error(error.message); resolve(-1); }); });
 try { report = JSON.parse(readFileSync(path.join(out, 'report.json'), 'utf8')); } catch { /* absence fails below */ }
 // The required checks, each naming the bound it enforces, so a failure says the value it read and the
