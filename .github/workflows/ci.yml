@@ -57,10 +57,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # The desktop smoke arms its own bound (smoke.mjs, SMOKE_TIMEOUT_MS, ten minutes, issue 267), and the
-    # window-chrome and tray proofs add six minutes each beside install, the Electron ensure and the display
-    # packages. Thirty minutes left no room for a congested queue, so the job outlives its own slowest work.
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
