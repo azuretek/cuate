@@ -22,7 +22,7 @@ const foldFor = (list, chats, chatId) => foldReactions(list, platformOf((chats |
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
-import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
+import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
 import { withRuntime } from '../../kit/rules/build.js';
@@ -142,6 +142,9 @@ class AppRoot extends KitElement {
     this.appNotices = [];
     this.noticeShownAt = null;
     this.noticeHold = null;
+    // The notice state that outlives a render (issue 191): the revisions marked read through the server, which hide a
+    // card on every device until its operation changes phase. Closing a notice is the page's own dismissal instead.
+    this.noticeRead = {};
     this.pending = new Map();
     this.client = null;
     this.drag = null;
@@ -425,6 +428,9 @@ class AppRoot extends KitElement {
       // against defaults the server has already overridden.
       this.settings = await this.readSettings();
       this.settingsRead = true;
+      // A notice's read state is a server setting, so it survives a reload and is read back on every device.
+      this.noticeRead = noticeState(this.settings[NOTICE_READ_KEY]);
+      this.applyNoticeQuiet();
       this.applyUpdateSetting();
       this.applyTheme();
       this.chats = orderChats(chats);
@@ -488,6 +494,8 @@ class AppRoot extends KitElement {
     this.selecting = null;
     this.settings = {};
     this.settingsRead = false;
+    this.appNotices = [];
+    this.noticeRead = {};
     this.typingChat = null;
     this.resetTyping();
     this.view = 'messages';
@@ -617,6 +625,9 @@ class AppRoot extends KitElement {
     } else if (name === 'settings.changed') {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
+      // Marking a notice read on another device arrives here with the rest of the settings, so this page clears it too.
+      this.noticeRead = noticeState(this.settings[NOTICE_READ_KEY]);
+      this.applyNoticeQuiet();
       this.applyUpdateSetting();
       this.applyTheme();
     }
@@ -649,8 +660,41 @@ class AppRoot extends KitElement {
     if (wait > 0) { this.noticeHold = setTimeout(() => this.showUpdateNotice(notice), wait); return; }
     const prior = this.appNotices.find((n) => n.id === 'app-update');
     this.appNotices = notice ? putNotice(this.appNotices, notice) : this.appNotices.filter((n) => n.id !== 'app-update');
+    this.applyNoticeQuiet();
     if (!notice) this.noticeShownAt = null;
     else if (prior?.revision !== notice.revision) this.noticeShownAt = Date.now();
+  }
+
+  // A notice whose revision was read on the server is hidden, on every device (issue 191). The card is left in the
+  // stack with read set, so its revision can be read back.
+  applyNoticeQuiet() {
+    this.appNotices = quietNotices(this.appNotices, this.noticeRead);
+  }
+
+  noticeRevision(id) {
+    return this.appNotices.find((n) => n.id === id)?.revision ?? null;
+  }
+
+  // Close: this page only (issue 191). The card is dismissed here, and the dismissal is never a command to the shell,
+  // so closing a notice tells the server and the other devices nothing. A press re-shows only a new outcome.
+  onNoticeDismiss(e) {
+    const { id } = e.detail || {};
+    if (!id) return;
+    this.appNotices = dismissNotice(this.appNotices, id);
+    this.applyNoticeQuiet();
+  }
+
+  // Mark as read: every device (issue 191). The revision is written to the server as a setting, so the card clears here
+  // at once and the server tells every other client through settings.changed; it is read back at start, so it stays
+  // cleared after a reload. The write is optimistic: a refused or offline write still clears this page for the run.
+  onNoticeRead(e) {
+    const { id, revision } = e.detail || {};
+    if (!id) return;
+    const value = revision ?? this.noticeRevision(id);
+    this.appNotices = dismissNotice(this.appNotices, id);
+    this.noticeRead = withNoticeState(this.noticeRead, id, value);
+    this.applyNoticeQuiet();
+    if (this.client) this.client.settingsWrite({ [NOTICE_READ_KEY]: this.noticeRead }).catch(() => {});
   }
 
   // The latest state that arrived before the settings did, decided now that they have.
@@ -866,6 +910,12 @@ class AppRoot extends KitElement {
   // until the shell answers, and fails when the shell refused it.
   async checkUpdates() {
     this.appNotices = forgetRead(this.appNotices, 'app-update');
+    // A re-ask forgets the read revision on the server too, so the same answer shows again even though the reader
+    // marked it read before (issue 191); without this the persistent state hides the answer a person just asked for.
+    if (Object.hasOwn(this.noticeRead, 'app-update')) {
+      this.noticeRead = forgetNoticeState(this.noticeRead, 'app-update');
+      if (this.client) this.client.settingsWrite({ [NOTICE_READ_KEY]: this.noticeRead }).catch(() => {});
+    }
     if (this.updateVia()) return this.phoneCheck({ asked: true });
     let answer;
     try { answer = await this.bridge('updates.check', {}); } catch { return false; }
@@ -1563,7 +1613,7 @@ class AppRoot extends KitElement {
     // controls in the contact header instead (see mainView).
     return html`<div class="app-window" data-platform=${platform}>
       <div class="app-body">${this.body()}</div>
-      <app-notices data-dismiss-keep="sheet about" .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-dismiss=${(e) => { this.appNotices = dismissNotice(this.appNotices, e.detail.id); }}></app-notices>
+      <app-notices data-dismiss-keep="sheet about" .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-dismiss=${(e) => this.onNoticeDismiss(e)} @notice-read=${(e) => this.onNoticeRead(e)}></app-notices>
     </div>`;
   }
 

@@ -838,6 +838,9 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 .app-notice-action { pointer-events: auto; border: 0; border-radius: var(--radius-sm); background: none; color: var(--role-notice-action); cursor: pointer; padding: var(--space-1); }
 .app-notice-action { align-self: flex-start; font-weight: var(--font-weight-medium); }
 .app-notice-action:hover { background: var(--role-notice-hover); }
+.app-notice-read { flex: none; pointer-events: auto; border: 0; border-radius: var(--radius-pill); background: none; color: var(--role-notice-action); cursor: pointer; padding: var(--space-1); }
+.app-notice-read:hover { background: var(--role-notice-hover); }
+.app-notice-read .icon { display: block; }
 @keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
