@@ -42,7 +42,7 @@ class MainActivity : Activity() {
         /** The asset loader's own origin, so no network is involved in loading the page. */
         const val ASSET_ROOT = "/assets/"
         const val START_URL = "https://appassets.androidplatform.net" + ASSET_ROOT + "app/index.html"
-        /** The request code for the system file picker the composer's attach menu opens. */
+        /** The request code for the system file picker the composer's attach control opens. */
         const val PICK_FILE = 41
     }
 
@@ -248,7 +248,7 @@ class MainActivity : Activity() {
     }
 
     /**
-     * A WebView draws nothing for a file input unless its host opens the picker, so the composer's attach menu
+     * A WebView draws nothing for a file input unless its host opens the picker, so the composer's attach control
      * would do nothing on Android without this. The system picker answers here, and the page receives the file.
      */
     @Deprecated("Activity result APIs need AndroidX activity; the shell is a plain Activity")

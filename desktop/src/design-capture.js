@@ -139,11 +139,11 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         const tag = (n) => themeId + '--' + scheme + '--' + form + '--' + n + '.png';
         // Close every panel the harness can open, then wait until the DOM agrees none is left. The root owns the
         // menus and the notices, the conversation owns the message menu and the thread, and the composer owns the
-        // emoji panel and the attach menu; leaving any one of them out is what leaked into the next capture.
+        // emoji panel; leaving any one of them out is what leaked into the next capture.
         const resetState = async () => {
           await cdp('CSS.disable');
           await cdp('CSS.enable');
-          await js('(() => { const r = ' + root + '; r.sortOpen = false; r.filterOpen = false; r.searchOpen = false; r.appNotices = []; const c = ' + conv + '; if (c) { if (c.replyingTo) c.closeThread(); if (c.pop) c.closePop(); c.reactFor = null; } const cmp = document.querySelector("app-composer"); if (cmp) { if (typeof cmp.closeEmoji === "function") cmp.closeEmoji(); cmp.emojiOpen = false; cmp.attachOpen = false; } document.activeElement?.blur(); return true; })()');
+          await js('(() => { const r = ' + root + '; r.sortOpen = false; r.filterOpen = false; r.searchOpen = false; r.appNotices = []; const c = ' + conv + '; if (c) { if (c.replyingTo) c.closeThread(); if (c.pop) c.closePop(); c.reactFor = null; } const cmp = document.querySelector("app-composer"); if (cmp) { if (typeof cmp.closeEmoji === "function") cmp.closeEmoji(); cmp.emojiOpen = false; } document.activeElement?.blur(); return true; })()');
           await waitFor(overlaysClear, 5000);
           await pause(150);
         };
@@ -220,10 +220,9 @@ async function runDesign(w, { nativeTheme, out, core, serverUrl, token, themeTex
         await shot(tag('9-emoji-panel'), ['emoji panel'], '.emoji-picker');
         await resetState();
         await convPane();
-        await js('(() => { const cmp = document.querySelector("app-composer"); if (cmp) { cmp.attachOpen = true; cmp.emojiOpen = false; } return true; })()');
-        await maybe("Boolean(document.querySelector('.attach-menu'))", 1500);
+        await js('(() => { const cmp = document.querySelector("app-composer"); if (cmp) { cmp.emojiOpen = false; } return true; })()');
         await pause(350);
-        await shot(tag('10-attach-menu'), ['attach menu'], '.attach-menu');
+        await shot(tag('10-composer-tools'), [], '.composer-tools');
         await resetState();
       }
       w.setSize(1100, 720);
