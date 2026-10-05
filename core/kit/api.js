@@ -71,7 +71,9 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     chats: (o = {}) => call('GET', '/api/v1/chats' + query({ limit: o.limit })),
     messages: (chatId, o = {}) => call('GET', `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
     send: (chatId, { text, file, clientKey, replyTo }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...(file ? { file } : {}), clientKey, ...(replyTo ? { replyTo } : {}) }),
-    react: (chatId, messageId, { emoji, remove = false }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
+    // `text` is the message being reacted to, carried only so the server can compose the platform's own text
+    // fallback where the conversation is not on the message service (issue 184); it is not sent otherwise.
+    react: (chatId, messageId, { emoji, remove = false, text = '' }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...(remove ? { remove: true } : {}), ...(text ? { text } : {}) }),
     upload: ({ name, mime, data }) => call('POST', '/api/v1/attachments', { name, mime, data }),
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
     // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in

@@ -43,11 +43,25 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
         <activity-alias
-            android:name=".AppIcon_orange"
+            android:name=".AppIcon_naranja_light"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_naranja_light"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIcon_naranja_dark"
             android:enabled="true"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_orange"
+            android:icon="@mipmap/ic_launcher_naranja_dark"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -55,11 +69,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
         <activity-alias
-            android:name=".AppIcon_paper"
+            android:name=".AppIcon_azul_light"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_paper"
+            android:icon="@mipmap/ic_launcher_azul_light"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -67,11 +82,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
         <activity-alias
-            android:name=".AppIcon_azul"
+            android:name=".AppIcon_azul_dark"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_azul"
+            android:icon="@mipmap/ic_launcher_azul_dark"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -79,11 +95,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
         <activity-alias
-            android:name=".AppIcon_rosa"
+            android:name=".AppIcon_rosa_light"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_rosa"
+            android:icon="@mipmap/ic_launcher_rosa_light"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -91,11 +108,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
         <activity-alias
-            android:name=".AppIcon_jade"
+            android:name=".AppIcon_rosa_dark"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_jade"
+            android:icon="@mipmap/ic_launcher_rosa_dark"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -103,11 +121,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
         <activity-alias
-            android:name=".AppIcon_cempasuchil"
+            android:name=".AppIcon_jade_light"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_cempasuchil"
+            android:icon="@mipmap/ic_launcher_jade_light"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -115,11 +134,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
         <activity-alias
-            android:name=".AppIcon_morado"
+            android:name=".AppIcon_jade_dark"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_morado"
+            android:icon="@mipmap/ic_launcher_jade_dark"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIcon_morado_light"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_morado_light"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".AppIcon_morado_dark"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_morado_dark"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>

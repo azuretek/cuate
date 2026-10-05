@@ -17,6 +17,7 @@ import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { renderIcon } from '../../core/app/rules/icon.js';
+import { fixedPalette } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
@@ -58,12 +59,19 @@ let win = null;
 // redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
 // The launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
 const appIconSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/app-icons.json'), 'utf8'));
+// Every colour is one family with a paper Light and a bright Dark variant (issue 246); Follow theme carries no colours.
+const appIconVariants = appIconSpec.families.flatMap((family) => ['light', 'dark'].map((key) => family.variants[key]));
+const appIconCount = appIconVariants.length + 1;
 let appIconApplied = appIconSpec.default;
 let appIconFixed = null;
 function setAppIcon(icon) {
-  const choice = appIconSpec.icons.find((i) => i.id === icon);
-  if (!choice) return { applied: false, icon };
-  appIconFixed = choice.colors ? { scheme: choice.scheme === 'dark' ? 'dark' : 'light', colors: choice.colors } : null;
+  const choice = appIconVariants.find((i) => i.id === icon);
+  const followTheme = icon === appIconSpec.followTheme.id;
+  if (!choice && !followTheme) return { applied: false, icon };
+  // The choice's palette comes from the one rule the page uses (rules/app-icons.js): a fixed variant's is its own,
+  // and Follow theme (no colours of its own) answers null, clearing the fixed palette so the tray, the window icon
+  // and the Dock draw from the active theme again rather than keeping the last colour picked.
+  appIconFixed = fixedPalette(icon, appIconSpec);
   appIconApplied = icon;
   applyIcons();
   return { applied: true, icon };
@@ -2137,11 +2145,11 @@ async function runSmoke(w) {
   await showTab('appearance');
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
-  const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconSpec.icons.length + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
+  const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconCount + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
   // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
   const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
-  const iconPick = 'rosa';
-  const fixedOf = (id) => ({ scheme: appIconSpec.icons.find((i) => i.id === id).scheme, colors: appIconSpec.icons.find((i) => i.id === id).colors });
+  const iconPick = 'rosa_dark';
+  const fixedOf = (id) => { const c = appIconVariants.find((i) => i.id === id); return { scheme: c.scheme, colors: c.colors }; };
   await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
   await js(iconChoice(iconPick) + '.click()');
   for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== iconPick || appIconApplied !== iconPick); i += 1) await pause(200);

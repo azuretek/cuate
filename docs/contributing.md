@@ -20,6 +20,7 @@
 - Every custom element is defined in core ("every custom element is defined in core").
 - Component CSS takes every colour and length from the tokens ("component CSS carries no literal colours or lengths").
 - Every log event and field is declared in `core/spec/log-events.json`, and nothing private is logged: no message body, number, handle or path can reach a record, held by `core/test/log-privacy.test.js` and the strict logger in the server's tests ("a refusal names the chat by an id that never carries the number inside it").
+- Every process logs through the one logger in `core/kit/log.js`, never the console: a file that writes to the console or the process's streams fails `core/test/logging-guard.test.js` unless it is named with its reason in `core/spec/log-allowlist.json`.
 - Fixtures and captures hold synthetic data only (`server/test/fixtures.test.js`).
 - No em dashes, in code, docs or commit messages ("no em dash anywhere in the repository").
 - Every button goes through the kit's press behaviour, `press()` from `core/kit/press.js`, and draws no busy state or busy disabling of its own ("every button in core/app goes through the kit press behaviour"; the behaviour itself is `core/test/press.test.js`). Work a press starts is returned from its handler, or answered with `respond()` by the component that does it, so the control shows it.

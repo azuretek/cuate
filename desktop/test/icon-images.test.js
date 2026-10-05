@@ -93,7 +93,8 @@ test('the badge reads the same way on every desktop: red with a white count, exa
 
 test('a fixed palette chosen in Settings draws every image whatever the theme and the scheme the page reports (issue 167)', () => {
   const spec = JSON.parse(readFileSync(path.join(CORE, 'spec', 'app-icons.json'), 'utf8'));
-  const [first, second] = spec.icons.filter((i) => i.colors);
+  const variants = spec.families.flatMap((f) => ['light', 'dark'].map((k) => f.variants[k]));
+  const [first, second] = variants;
   for (const platform of ['win32', 'linux']) {
     const at = (o) => shellIcons({ platform, masters, tokens, ...o });
     const fixed = { scheme: first.scheme, colors: first.colors };
