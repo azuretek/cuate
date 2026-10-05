@@ -1,0 +1,29 @@
+{
+  "description": "The files that may write to the process's own console or streams instead of the one logger (core/kit/log.js), each with why. core/test/logging-guard.test.js fails when any other file under core/, server/src or desktop/src logs or writes to a stream outside the logger, so this list is the single, reviewable way to add one.",
+  "allow": [
+    {
+      "path": "server/src/syslog.js",
+      "reason": "the sink itself writes each approved line to the process's stdout or stderr"
+    },
+    {
+      "path": "server/src/main.js",
+      "reason": "the CLI entry reports an uncaught startup error on stderr before the logger exists"
+    },
+    {
+      "path": "server/src/commands/",
+      "reason": "the command line prints its answer to the person's terminal, which is not a log line"
+    },
+    {
+      "path": "desktop/src/main.js",
+      "reason": "the same file is the smoke proof driver, and prints each check on stdout when it runs as one"
+    },
+    {
+      "path": "desktop/src/design-capture.js",
+      "reason": "the design capture prints its result on stdout"
+    },
+    {
+      "path": "desktop/src/region-probe.js",
+      "reason": "the real-input region probe prints its report on stdout"
+    }
+  ]
+}

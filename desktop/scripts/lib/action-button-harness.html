@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/core/app/styles/tokens.css">
+<link rel="stylesheet" href="/core/app/styles/roles.css">
+<link rel="stylesheet" href="/core/app/styles/app.css">
+</head>
+<body>
+<script type="module">
+import '/core/app/components/app-about.js';
+import { runPress } from '/core/kit/press.js';
+import { importTheme, themeVars } from '/core/app/rules/theme.js';
+
+const host = { product: 'The app', version: '1.0.1-dev.291.810552323b', commit: '810552323b', builtAt: '2026-09-20 03:34Z', versions: { electron: '44.4.1', chrome: '152.0.7977.78', node: '22.13.0' }, platform: 'linux', arch: 'x64', packaged: true };
+const info = { product: 'The app', serverVersion: '1.0.0', apiVersion: 1, engine: { kind: 'fake', version: '1.0.0' }, sending: true, epoch: 'abcdef0123' };
+const scrim = document.createElement('div');
+scrim.className = 'sheet-scrim';
+const card = document.createElement('section');
+card.className = 'sheet';
+const el = document.createElement('app-about');
+el.host = host;
+el.info = info;
+card.append(el);
+scrim.append(card);
+document.body.append(scrim);
+
+window.__setTheme = async function (kind, scheme) {
+  const root = document.documentElement;
+  for (const name of [...root.style]) if (name.indexOf('--') === 0) root.style.removeProperty(name);
+  root.dataset.scheme = scheme;
+  if (kind === 'elegant-luxury') {
+    const text = await (await fetch('/core/fixtures/themes/elegant-luxury.json')).text();
+    const theme = importTheme(text).theme;
+    for (const pair of themeVars(theme, scheme)) root.style.setProperty(pair[0], pair[1]);
+  }
+  return true;
+};
+window.__hold = function () {
+  const btn = document.querySelector('.about-check');
+  let res, rej;
+  const p = new Promise(function (a, b) { res = a; rej = b; });
+  runPress(btn, function () { return p; });
+  window.__res = res;
+  window.__rej = rej;
+  return true;
+};
+window.__ok = function () { window.__res(true); return true; };
+window.__bad = function () { window.__rej(new Error('proof')); return true; };
+window.__rect = function () { const b = document.querySelector('.about-check').getBoundingClientRect(); return { w: Math.round(b.width * 100) / 100, h: Math.round(b.height * 100) / 100 }; };
+</script>
+</body>
+</html>
