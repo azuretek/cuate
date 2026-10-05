@@ -31,24 +31,31 @@
   // The About row is on every Settings page (issue 244), so no tab has to be picked first.
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
-  await until(() => about() && about().querySelector('.about-row') && !document.querySelector('app-settings'), 'the About page');
-  await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page slide to finish');
+  await until(() => about() && about().querySelector('.about-row'), 'the About sheet');
+  // Issue 253: About is its OWN sheet, stacked ABOVE the Settings sheet, which steps aside underneath it: two cards
+  // and two backdrops, the About one on top.
+  const aboutSheet = document.querySelector('.sheet[data-view=about]');
+  const settingsSheet = document.querySelector('.sheet[data-view=settings]');
+  if (!aboutSheet || !settingsSheet || document.querySelectorAll('.sheet').length !== 2 || document.querySelectorAll('.sheet-scrim').length !== 2) throw new Error('About is not stacked as its own sheet above Settings');
+  await until(() => !aboutSheet.getAnimations().some((a) => a.playState === 'running'), 'the About sheet to arrive');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
   if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa_dark.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
   const parts = [...about().querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section).join('|');
   if (parts !== 'identity|updates|build') throw new Error('About draws ' + parts);
+  const sheetTop = document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top;
   about().querySelector('[data-action=check-updates]').click();
   const notice = () => (document.querySelector('.app-notice') || {}).textContent || '';
   await until(() => notice().includes('is available'), 'the update-available notice');
   await until(() => !document.querySelector('.app-notice').getAnimations().some((a) => a.playState === 'running'), 'the notice to arrive');
-  // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
-  // own centre, so no sheet covers it; and the sheet starts below the notice's band, so the card covers no sheet.
-  const card = document.querySelector('.app-notice').getBoundingClientRect();
+  // The notice floats above the sheet (issue 253): its dismiss control is the topmost thing at its own centre, so the
+  // notice takes its own press first, and the sheet under it did not move when the notice appeared, so a floating notice
+  // never pushes the page down. The card may overlap the sheet: it is above every surface.
   const dismiss = document.querySelector('.app-notice .close-button').getBoundingClientRect();
   const top = document.elementFromPoint(dismiss.left + dismiss.width / 2, dismiss.top + dismiss.height / 2);
   if (!top || !top.closest('.close-button')) throw new Error('the notice is covered by ' + (top ? top.className || top.tagName : 'nothing'));
-  if (document.querySelector('.sheet').getBoundingClientRect().top < card.bottom) throw new Error('the notice covers the sheet');
+  const moved = document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top - sheetTop;
+  if (Math.abs(moved) > 1) throw new Error('the notice pushed the sheet down by ' + moved);
   // The button has shown its answer and is idle again, so the capture shows its label.
   await until(() => !about().querySelector('[data-action=check-updates]').dataset.press, 'the button to settle', 5000);
   // About's button follows the notice (issue 192): it is now the step the notice offers, labelled as the notice's action.
@@ -59,6 +66,12 @@
   // all; the label it shows at rest is the idle one, and that is the step it offers.
   const shownLabel = (el) => { if (!el) return ''; const idle = el.querySelector('.action-label[data-when=idle]'); return ((idle ? idle.textContent : el.textContent) || '').trim(); };
   if (!action || shownLabel(action) !== shownLabel(button)) throw new Error('About offers ' + shownLabel(button) + ' but the notice offers ' + (action ? shownLabel(action) : 'nothing'));
+  // The notice floats over the top of the card (issue 253), where the icon sits, so it is dismissed once its words are
+  // read: the native legs capture the page with its icon, and the notice over the sheet is still driven and held by the
+  // desktop smoke (06g/06h) and the app-notice tests.
+  const noticeText = notice().trim();
+  document.querySelector('.app-notice .close-button').click();
+  await until(() => !document.querySelector('.app-notice'), 'the notice to close');
   await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
   const marker = document.createElement('output');
@@ -76,7 +89,7 @@
   reported.textContent = reported.getAttribute('aria-label');
   Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(reported);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: notice().trim(), button: shownLabel(button), command: button.dataset.command, channel, build };
+  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: shownLabel(button), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;

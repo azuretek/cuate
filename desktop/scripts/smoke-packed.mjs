@@ -18,7 +18,8 @@ export function packedSmoke() {
   }
   // The bound is for a smoke that hangs, never for one that is merely slow: the whole smoke takes 132 to 144 seconds on
   // the arm64, Linux and Windows runners, and the macos-15-intel runner went past the old 150 second bound with every
-  // check still passing, which failed its package leg with spawnSync ETIMEDOUT.
+  // check still passing, and the text-size walk (issue 253) added to that, which failed its package leg with spawnSync
+  // ETIMEDOUT.
   // The smoke bounds itself (smoke.mjs, SMOKE_TIMEOUT_MS, default ten minutes) and names what it measured when that
   // fires. This outer bound sits above it, so a slow packaged smoke is stopped by the bound that can say how far it
   // got, and spawnSync ETIMEDOUT is only the last resort. The packaged smoke step in package.yml outlives this too.

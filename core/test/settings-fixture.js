@@ -27,12 +27,17 @@
   const page = () => document.querySelector('app-settings');
   await until(() => page() && page().querySelector('.settings-tab'), 'the Settings page');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the page to arrive');
-  // The page fills the screen, and its way back is the chats control.
-  // The page fills the screen between the system bars: the backdrop's padding is the bars' insets and nothing more.
-  const sheet = document.querySelector('.sheet').getBoundingClientRect();
-  const pad = getComputedStyle(document.querySelector('.sheet-scrim'));
-  const room = { w: innerWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight), h: innerHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom) };
-  if (Math.abs(sheet.width - room.w) > 1 || Math.abs(sheet.height - room.h) > 1) throw new Error('Settings is a card, not a page: ' + sheet.width + 'x' + sheet.height + ' of ' + room.w + 'x' + room.h);
+  // The sheet is a floating card over the conversation (issue 253), not a page that replaces the view: it spans the
+  // phone's width, is anchored to the bottom edge, keeps its rounded top corners and its shadow, and its backdrop blurs
+  // what is behind it. Its way back is the chats control.
+  const sheetEl = document.querySelector('.sheet');
+  const sheet = sheetEl.getBoundingClientRect();
+  const scrim = getComputedStyle(document.querySelector('.sheet-scrim'));
+  const width = innerWidth - parseFloat(scrim.paddingLeft) - parseFloat(scrim.paddingRight);
+  if (Math.abs(sheet.width - width) > 1) throw new Error('Settings does not span the phone: ' + sheet.width + ' of ' + width);
+  if (Math.abs(sheet.bottom - (innerHeight - parseFloat(scrim.paddingBottom))) > 1) throw new Error('Settings is not anchored to the bottom edge');
+  if (!parseFloat(getComputedStyle(sheetEl).borderTopLeftRadius)) throw new Error('Settings keeps no rounded top corners, so it reads as a page rather than a card');
+  if (!/blur/.test(scrim.backdropFilter || scrim.webkitBackdropFilter || '')) throw new Error('the backdrop does not blur the conversation behind the card');
   const narrow = page().querySelector('.sheet-back-narrow');
   const shown = (el) => Boolean(el) && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0;
   if (!shown(narrow) || shown(page().querySelector('.sheet-back-wide'))) throw new Error('the way back is not the chats control');

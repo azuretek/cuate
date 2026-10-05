@@ -10,7 +10,7 @@ import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
 import { contrastRatio } from '../../core/app/rules/theme.js';
-import { settingsTabs } from '../../core/app/rules/settings.js';
+import { settingsTabs, settingsFields } from '../../core/app/rules/settings.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
 import updaterPackage from 'electron-updater';
 import { startUpdates, checkForUpdates } from './updates.js';
@@ -685,9 +685,9 @@ async function runSmoke(w) {
   // check, and its outcome is drawn where the scheduled check reports, the update banner; a run from source cannot
   // update itself, so it says that in the app.
   const trayItem = (id) => trayMenu.getMenuItemById(id);
-  // The About page is the sheet's page (issue 171): the sheet is named About, it draws app-about with its rows and no
-  // settings page, and any push that brought it has finished.
-  const aboutShown = "(() => { const s = document.querySelector('.sheet'); const a = document.querySelector('app-about'); return Boolean(s && s.getAttribute('aria-label') === 'About' && a && a.querySelector('.about-row') && !document.querySelector('app-settings') && !a.getAnimations().some((x) => x.playState === 'running')); })()";
+  // About is its OWN sheet (issues 171, 253): a second card stacked above the Settings sheet, which steps aside
+  // underneath it, so two cards and two backdrops are up, the About one on top, and its arrival has finished.
+  const aboutShown = "(() => { const about = document.querySelector('.sheet[data-view=about]'); const settings = document.querySelector('.sheet[data-view=settings]'); const a = document.querySelector('app-about'); const top = document.querySelector('.sheet-scrim[data-sheet=about]'); const under = document.querySelector('.sheet-scrim[data-sheet=settings]'); return Boolean(about && a && a.querySelector('.about-row') && settings && top && under && document.querySelectorAll('.sheet').length === 2 && document.querySelectorAll('.sheet-scrim').length === 2 && Number(getComputedStyle(top).zIndex) > Number(getComputedStyle(under).zIndex) && !about.getAnimations().some((x) => x.playState === 'running')); })()";
   const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
   trayItem('settings').click();
   const settingsRaised = await visibleWithin(true);
@@ -2257,15 +2257,21 @@ async function runSmoke(w) {
     await waitFor(tabSel(id) + ".getAttribute('aria-selected') === 'true'", 5000);
     await pause(200);
   };
+  // Issue 253: the About row is the last thing in EVERY tab's own body, reached by scrolling that tab's body to its
+  // end. The walk presses each tab the schema declares, scrolls its body to the bottom and reads the row (its label,
+  // its version on the right and its chevron), so a tab added later without one fails here at both widths.
+  const aboutInPanel = "(() => { const s = document.querySelector('app-settings'); const body = s.querySelector('.sheet-body'); const panel = s.querySelector('.sheet-section:not([hidden])'); const row = panel && panel.lastElementChild; const isRow = Boolean(row && row.classList.contains('settings-about-row')); const btn = isRow ? row.querySelector('button[data-action=about]') : null; const labelEl = btn ? btn.querySelector('.setting-label') : null; const value = btn ? btn.querySelector('.setting-nav-value') : null; const chevron = btn ? btn.querySelector('.icon[data-icon=chevron-right]') : null; body.scrollTop = body.scrollHeight; const br = body.getBoundingClientRect(); const rr = btn ? btn.getBoundingClientRect() : null; const valueRight = Boolean(value && labelEl && value.getBoundingClientRect().left > labelEl.getBoundingClientRect().left); return { last: isRow, label: labelEl ? labelEl.textContent.trim() : '', value: Boolean(value && value.textContent.trim().length > 0), valueRight, chevron: Boolean(chevron), reached: Boolean(rr && rr.height > 0 && rr.top >= br.top - 1 && rr.bottom <= br.bottom + 1) }; })()";
+  const walkAbout = (w) => Boolean(w && w.about && w.about.last && w.about.label === 'About' && w.about.value && w.about.valueRight && w.about.chevron && w.about.reached);
   const tabWalk = async () => {
     const out = {};
     for (const tab of settingsTabs()) {
       await showTab(tab.id);
       out[tab.id] = await js("(() => { const keys = " + JSON.stringify(tab.keys) + "; const s = document.querySelector('app-settings'); const shown = [...s.querySelectorAll('.sheet-section')].filter((x) => !x.hidden && x.getBoundingClientRect().height > 0).map((x) => x.dataset.section); const seen = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5; }; const panel = s.querySelector('.sheet-section:not([hidden])'); const missing = keys.filter((k) => !seen(panel.querySelector('[data-key=\"' + k + '\"]'))); const extra = " + JSON.stringify(tab.kind) + " === 'about' ? seen(panel.querySelector('[data-action=about]')) : " + JSON.stringify(tab.kind) + " === 'device' ? seen(panel.querySelector('[data-action=signout]')) : true; return { shown: shown.join('|'), missing, extra, doc: document.documentElement.scrollWidth <= innerWidth }; })()");
+      out[tab.id].about = await js(aboutInPanel);
     }
     return out;
   };
-  const tabsOk = (walk) => settingsTabs().every((t) => walk[t.id] && walk[t.id].shown === t.id && walk[t.id].missing.length === 0 && walk[t.id].extra && walk[t.id].doc);
+  const tabsOk = (walk) => settingsTabs().every((t) => walk[t.id] && walk[t.id].shown === t.id && walk[t.id].missing.length === 0 && walk[t.id].extra && walk[t.id].doc && walkAbout(walk[t.id]));
   const tabLabels = await js("[...document.querySelectorAll('app-settings [role=tablist] [role=tab]')].map((t) => t.textContent.trim()).join('|')");
   const desktopWalk = await tabWalk();
   report.settingsTabs = tabLabels === settingsTabs().map((t) => t.label).join('|') && tabsOk(desktopWalk);
@@ -2343,8 +2349,11 @@ async function runSmoke(w) {
     // what the card lands on is named in the report, so a failure says which control was covered rather than only that
     // one was. The scrim is the drawer's backdrop, not a control on the surface, and the card's own buttons are its own.
     // A control counts where it can be seen: its box is cut to every scrolling or clipping ancestor and to the window,
-    // so a message's actions scrolled out of the list above are not read as sitting under the card.
-    const covered = () => js("(() => { const card = document.querySelector('.app-notice'); if (!card) return ['no notice']; const r = card.getBoundingClientRect(); const shown = (el) => { const q = el.getBoundingClientRect(); let l = Math.max(q.left, 0), t = Math.max(q.top, 0), rt = Math.min(q.right, innerWidth), b = Math.min(q.bottom, innerHeight); for (let a = el.parentElement; a; a = a.parentElement) { const s = getComputedStyle(a); if (s.overflowX === 'visible' && s.overflowY === 'visible') continue; const c = a.getBoundingClientRect(); l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom); } return rt > l && b > t ? { left: l, top: t, right: rt, bottom: b } : null; }; return [...document.querySelectorAll('button, input, select, textarea, a[href], [role=button], [role=option], .chat-row')].filter((el) => !card.contains(el) && !el.classList.contains('scrim') && getComputedStyle(el).visibility !== 'hidden').filter((el) => { const q = shown(el); return q && !(r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom); }).map((el) => (el.className || el.tagName.toLowerCase()) + ':' + (el.getAttribute('aria-label') || el.textContent.trim().slice(0, 24))); })()");
+    // so a message's actions scrolled out of the list above are not read as sitting under the card. A control the
+    // notice overlaps is not a failure when the notice is the topmost thing where they overlap (issue 253): a floating
+    // card may cover part of a control, but it takes the press at every point it covers, so only a control with an
+    // overlapped point still reachable beside the card fails.
+    const covered = () => js("(() => { const card = document.querySelector('.app-notice'); if (!card) return ['no notice']; const r = card.getBoundingClientRect(); const shown = (el) => { const q = el.getBoundingClientRect(); let l = Math.max(q.left, 0), t = Math.max(q.top, 0), rt = Math.min(q.right, innerWidth), b = Math.min(q.bottom, innerHeight); for (let a = el.parentElement; a; a = a.parentElement) { const s = getComputedStyle(a); if (s.overflowX === 'visible' && s.overflowY === 'visible') continue; const c = a.getBoundingClientRect(); l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom); } return rt > l && b > t ? { left: l, top: t, right: rt, bottom: b } : null; }; return [...document.querySelectorAll('button, input, select, textarea, a[href], [role=button], [role=option], .chat-row')].filter((el) => !card.contains(el) && !el.classList.contains('scrim') && getComputedStyle(el).visibility !== 'hidden').filter((el) => { const q = shown(el); if (!q) return false; const l = Math.max(q.left, r.left), t0 = Math.max(q.top, r.top), rt = Math.min(q.right, r.right), b = Math.min(q.bottom, r.bottom); if (rt <= l || b <= t0) return false; const t = document.elementFromPoint((l + rt) / 2, (t0 + b) / 2); return !(t && t.closest && t.closest('.app-notice')); }).map((el) => (el.className || el.tagName.toLowerCase()) + ':' + (el.getAttribute('aria-label') || el.textContent.trim().slice(0, 24))); })()");
     const pane = (want) => js("(() => { const root = document.querySelector('app-root'); if (" + JSON.stringify(want) + " === 'list') root.listOpen = true; else root.closeDrawer(); return true; })()");
     const clear = {};
     const listWasOpen = await js("document.querySelector('app-root').listOpen");
@@ -2419,7 +2428,7 @@ async function runSmoke(w) {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
   await waitFor('window.innerWidth === 375', 5000);
   await pause(400);
-  const phonePage = await js("(() => { const s = document.querySelector('.sheet').getBoundingClientRect(); const b = document.querySelector('app-settings .sheet-back'); const vis = (e) => Boolean(e) && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0; const narrow = b.querySelector('.sheet-back-narrow'); const icon = narrow && narrow.querySelector('.icon'); return { fills: Math.abs(s.left) < 1 && Math.abs(s.top) < 1 && Math.abs(s.width - innerWidth) < 1 && Math.abs(s.height - innerHeight) < 1, narrow: vis(narrow), wide: vis(b.querySelector('.sheet-back-wide')), esc: vis(b.querySelector('.sheet-esc')), label: narrow ? narrow.querySelector('.sheet-back-label').textContent.trim() : '', icon: icon ? icon.dataset.icon : '', iconDrawn: vis(icon) }; })()");
+  const phonePage = await js("(() => { const s = document.querySelector('.sheet').getBoundingClientRect(); const b = document.querySelector('app-settings .sheet-back'); const vis = (e) => Boolean(e) && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0; const narrow = b.querySelector('.sheet-back-narrow'); const icon = narrow && narrow.querySelector('.icon'); return { fills: Math.abs(s.left) < 1 && Math.abs(s.width - innerWidth) < 1 && s.top > 1 && s.bottom >= innerHeight - 60, narrow: vis(narrow), wide: vis(b.querySelector('.sheet-back-wide')), esc: vis(b.querySelector('.sheet-esc')), label: narrow ? narrow.querySelector('.sheet-back-label').textContent.trim() : '', icon: icon ? icon.dataset.icon : '', iconDrawn: vis(icon), blur: (() => { const cs = getComputedStyle(document.querySelector('.sheet-scrim')); return /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''); })() }; })()");
   const phoneWalk = await tabWalk();
   await showTab('appearance');
   nativeTheme.themeSource = 'light';
@@ -2433,18 +2442,29 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05i-settings-phone-behavior.png');
-  report.phoneSettings = phonePage.fills && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
+  report.phoneSettings = phonePage.fills && phonePage.blur && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
   if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
-  // About is reached from the About row, which sits at the bottom of every Settings page rather than on a tab
-  // (issue 244): open it with the last tab in force, so the way back can be checked to land there.
+  // Issue 253: the About row is the last thing in every tab's own body at 390px too, reached by scrolling that tab's
+  // body to its end; the walk above runs the same check at the phone's 375.
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await pause(300);
+  const aboutWalk390 = await tabWalk();
+  report.aboutEverywhere = tabsOk(aboutWalk390);
+  if (!report.aboutEverywhere) console.error('about everywhere: ' + JSON.stringify(aboutWalk390));
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 375', 5000);
+  await pause(200);
+  // About is reached from the About row, which is the last thing in every tab's own body rather than a tab
+  // (issues 244, 253): open it with the last tab in force, so the way back can be checked to land there.
   await showTab('device');
 
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
   const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back-label') || {}).textContent || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
-  const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const body = s && s.querySelector('.sheet-body'); const row = body && body.querySelector('.settings-about-row'); const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.querySelector('button[data-action=about]') && row === body.lastElementChild && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
-  await js("document.querySelector('app-settings [data-action=about]').click()");
+  const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const panel = s && s.querySelector('.sheet-section:not([hidden])'); const row = panel && panel.lastElementChild; const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.classList.contains('settings-about-row') && row.querySelector('button[data-action=about]') && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
+  await js("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()");
   await waitFor(aboutShown);
   await pause(1000);
   report.sheetHitAreaAbout = await sheetHit('app-about');
@@ -2462,10 +2482,10 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06d-about-phone-dark.png');
   nativeTheme.themeSource = 'light';
-  // The notice is seen: its dismiss control (the one part of the stack that takes a press) is the topmost thing at its
-  // centre, so the sheet does not cover it; and the sheet starts below the notice's band, on a phone and on the
-  // desktop alike, so the card covers no part of the sheet.
-  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.close-button'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet'); return Boolean(top && top.closest('.close-button') && sheet && document.querySelector('app-about') && sheet.getBoundingClientRect().top >= n.getBoundingClientRect().bottom); })()";
+  // The notice is seen (issue 253): it floats above the sheet, its dismiss control is the topmost thing at its centre,
+  // and the sheet under it did not move when the notice appeared, so a notice never pushes the page down.
+  await js("window.__sheetTop = document.querySelector('.sheet[data-view=about]') && document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top");
+  const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.close-button'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet[data-view=about]'); return Boolean(top && top.closest('.close-button') && sheet && document.querySelector('app-about') && Math.abs(sheet.getBoundingClientRect().top - window.__sheetTop) < 1); })()";
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutPhoneNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
@@ -2491,6 +2511,9 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   await pause(200);
   // Check for updates runs the tray's own check, and its answer is the app notice; a run with no updater says why.
+  // The width differs from the phone check above, so the sheet's resting place is read again here: noticeSeen holds the
+  // sheet to where it was just before the notice appeared.
+  await js("window.__sheetTop = document.querySelector('.sheet[data-view=about]') && document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top");
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
   report.aboutCheckNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
@@ -2513,7 +2536,7 @@ async function runSmoke(w) {
   const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')), unknown: [...document.querySelectorAll('app-about .about-row .about-value-text')].some((e) => e.textContent === 'Unknown') }))()");
   // Back from About returns to Settings, the page it was pushed over.
   await js("document.querySelector('app-about .sheet-back').click()");
-  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
+  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
@@ -2968,6 +2991,56 @@ async function runSmoke(w) {
   await pause(300);
   report.closeControls = Object.keys(closeControlChecks).length === closeSurfaces.length * 5 && Boolean(viewerSrc) && Object.values(closeControlChecks).every(Boolean);
   console.log('close controls: ' + JSON.stringify(closeControlChecks));
+
+  // Issue 253: the text size is committed on RELEASE, so nothing behind the sheet re-lays-out mid-drag, and EVERY stop
+  // the schema offers has to hold the design. Walk every stop at desktop width and at 390, in light and dark, in the
+  // default theme and the imported one, capturing each and probing the conversation for the ways a large size breaks
+  // it: anything running past the window, a control whose target is under 36px, a header that has grown taller, and a
+  // scroll area with content behind it. The findings are RECORDED per stop, never hidden by a smaller ceiling: 300 is
+  // under test and the ceiling is Abi's to choose.
+  await js("(() => { const r = document.querySelector('app-root'); if (r.sheetShowing) r.closeView(); if (r.listOpen && r.openChatId) r.listOpen = false; return true; })()");
+  await waitFor("!document.querySelector('.sheet')", 8000).catch(() => {});
+  await pause(300);
+  const textStops = settingsFields().find((f) => f.key === 'appearance.textScale').options.map(Number);
+  const setScale = async (percent) => {
+    await js("document.querySelector('app-root').setSetting({ key: 'appearance.textScale', value: " + percent + " })");
+    await waitFor("Number(document.querySelector('app-root').settings['appearance.textScale']) === " + percent, 8000);
+    await pause(300);
+  };
+  const setTheme = async (value) => {
+    await js("document.querySelector('app-root').setSetting({ key: 'appearance.theme', value: " + JSON.stringify(value) + " })");
+    await pause(350);
+  };
+  const textProbe = "(() => { const vw = innerWidth; const doc = document.documentElement; const seen = (el) => { const r = el.getBoundingClientRect(); return r.width > 1 && r.height > 1; }; const over = []; const small = []; const cut = []; for (const el of document.querySelectorAll('.app-body *')) { if (!seen(el)) continue; const r = el.getBoundingClientRect(); if (r.right > vw + 1 || r.left < -1) { const c = String(el.className || el.tagName).slice(0, 50); if (!over.includes(c)) over.push(c); } } for (const el of document.querySelectorAll('.app-body button, .app-body select, .app-body a[href]')) { if (!seen(el)) continue; const r = el.getBoundingClientRect(); if (r.width < 36 || r.height < 36) { const c = ((el.getAttribute('aria-label') || String(el.className || el.tagName)).slice(0, 40)) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height); if (!small.includes(c)) small.push(c); } } for (const el of document.querySelectorAll('.app-body *')) { if (el.clientHeight > 0 && el.scrollHeight - el.clientHeight > 2 && getComputedStyle(el).overflowY !== 'visible') { const c = String(el.className || el.tagName).slice(0, 40); if (!cut.includes(c)) cut.push(c); } } const head = document.querySelector('.conv-head, .sidebar-head'); return JSON.stringify({ overflowX: doc.scrollWidth - vw, over: over.slice(0, 8), small: small.slice(0, 8), scrollAreas: cut.slice(0, 8), headH: head ? Math.round(head.getBoundingClientRect().height) : 0 }); })()";
+  report.textStops = {};
+  for (const percent of textStops) {
+    await setScale(percent);
+    const row = {};
+    for (const theme of ['default', 'imported']) {
+      await setTheme(theme === 'imported' ? imported : null);
+      for (const scheme of ['light', 'dark']) {
+        nativeTheme.themeSource = scheme;
+        await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+        await pause(320);
+        row[theme + '-' + scheme + '-desktop'] = JSON.parse(await js(textProbe));
+        await shot('text-' + percent + '-' + theme + '-desktop-' + scheme + '.png');
+        await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+        await waitFor('window.innerWidth === 390', 5000);
+        await pause(320);
+        row[theme + '-' + scheme + '-phone'] = JSON.parse(await js(textProbe));
+        await shot('text-' + percent + '-' + theme + '-phone-' + scheme + '.png');
+      }
+    }
+    report.textStops[percent] = row;
+  }
+  // Put the app back where the rest of the smoke found it: the default theme, 100%, light.
+  await setTheme(null);
+  await setScale(100);
+  nativeTheme.themeSource = 'light';
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  await pause(300);
+  report.textSizeFindings = textStops.map((p) => p + ':' + (Object.values(report.textStops[p]).some((v) => v.overflowX > 1) ? 'overflow' : 'ok') + (Object.values(report.textStops[p]).some((v) => v.over.length) ? '+past' : '') + (Object.values(report.textStops[p]).some((v) => v.small.length) ? '+small' : '')).join('|');
+  console.log('text size findings: ' + report.textSizeFindings);
 
   // Sign out lives on the settings page now.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
