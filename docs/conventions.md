@@ -168,7 +168,7 @@ Status words: a rule with no status holds on main today. **Adopted, not yet buil
 ## Releases
 
 - **The version, the `vX.Y.Z` tag and the changelog are owned by release-please, not by hand.** It keeps one release pull request open against `main`; merging it bumps every file that carries the version, writes `CHANGELOG.md` and tags the release. Why: a hand-written body hid what changed, and a number that lives in several files must be bumped in all of them or the tag and the files disagree. Source: #277. Held by: `desktop/test/release-please.test.js` "release-please owns the version, the tag and the changelog".
-- **A pull request title is the changelog line, so it reads `type(scope): a sentence`.** release-please groups the merged commit by its Conventional Commit type, and merges are squashed, so the title is the subject the changelog reads; the `gate` refuses any other title. Why: an automated changelog is only as good as the titles that feed it. Source: #277. Held by: `desktop/test/release-please.test.js` "a pull request title that is not type(scope): a sentence is refused".
+- **A pull request title is the changelog line and its body opens `## What changed`, and the `gate` refuses either the tool cannot use.** release-please groups the merged commit by its Conventional Commit type, and merges are squashed, so the title is the subject the changelog reads; it does not refuse a bad one, so the conventions leg does. Why: an automated changelog is only as good as the titles that feed it, and a reader needs the body line. Source: #277. Held by: `desktop/test/release-please.test.js` "the conventions check refuses a title that is not type(scope): summary, or a body with no What changed line".
 
 ## Superseded
 

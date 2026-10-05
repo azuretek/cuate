@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { parse } from 'yaml';
-import { titleProblem } from '../../scripts/release/pr-title.mjs';
+import { conventionsProblems, whatChanged } from '../../scripts/release/pr-conventions.mjs';
 
 const read = (file) => readFileSync(new URL('../../' + file, import.meta.url), 'utf8');
 const at = (path) => new URL('../../' + path, import.meta.url);
@@ -36,18 +36,23 @@ test('the workflow maintains the release pull request on main', () => {
   assert.equal(step.with['manifest-file'], '.release-please-manifest.json');
 });
 
-test('a pull request title that is not type(scope): a sentence is refused', () => {
-  assert.equal(titleProblem('fix(composer): the send arrow fills its circle'), null);
-  assert.equal(titleProblem('feat(engine)!: restart one child'), null);
-  for (const bad of ['engine: one child', 'fix: no scope', 'a bare subject', '', null]) assert.match(titleProblem(bad), /type\(scope\)/, String(bad));
+test('the conventions check refuses a title that is not type(scope): summary, or a body with no What changed line', () => {
+  assert.deepEqual(conventionsProblems('fix(composer): the send arrow fills its circle', '## What changed\n\nThe arrow is the icon set glyph.\n'), []);
+  assert.equal(whatChanged('## What changed\n\nOne line.\n'), 'One line.');
+  assert.equal(whatChanged('## What changed\n\n## Why\nx'), null);
+  const both = conventionsProblems('engine: one child', 'Just prose with no heading.');
+  assert.equal(both.length, 2, 'a bare title and a body with no line are both named');
+  assert.match(both[0], /type\(scope\)/);
+  assert.match(both[1], /## What changed/);
+  assert.equal(conventionsProblems('fix(ui): x', '## What changed\n\n## Why\nnothing').length, 1, 'a good title with an empty section is refused once');
 });
 
-test('the title check is a leg of the gate', () => {
+test('the conventions check is a leg of the gate', () => {
   const ci = parse(read('.github/workflows/ci.yml'));
-  assert.ok(ci.jobs.title, 'the title job exists');
-  assert.ok(ci.jobs.gate.needs.includes('title'), 'the gate needs it');
-  assert.ok(ci.jobs.gate.steps[0].run.includes('needs.title.result'));
-  const step = ci.jobs.title.steps.find((s) => s.run === 'node scripts/release/pr-title.mjs');
-  assert.ok(step, 'the job runs the title check');
+  assert.ok(ci.jobs.conventions, 'the conventions job exists');
+  assert.ok(ci.jobs.gate.needs.includes('conventions'), 'the gate needs it');
+  assert.ok(ci.jobs.gate.steps[0].run.includes('needs.conventions.result'));
+  const step = ci.jobs.conventions.steps.find((s) => s.run === 'node scripts/release/pr-conventions.mjs');
+  assert.ok(step, 'the job runs the conventions check');
   assert.equal(step.if, "github.event_name == 'pull_request'");
 });
