@@ -21,7 +21,7 @@ test('the link card is sized to its content, never a fixed wide box', () => {
   const body = rule(src, '.link-card.has-image .link-card-body');
   assert.match(body, /width:\s*0/, 'with a picture, a long URL takes no width of its own');
   assert.match(body, /min-width:\s*100%/, 'the text block stretches back to the picture width');
-  assert.match(component(), /'link-card' \+ \(l\.image \? ' has-image' : ''\)/, 'the component marks a card that carries a picture');
+  assert.match(component(), /'link-card' \+ \(preview \? ' has-image' : ''\)/, 'the component marks a card that carries a picture');
 });
 
 test('the card border sits tight around the preview with one inset and the media radius', () => {
@@ -48,8 +48,18 @@ test('the site and the URL are one compact block, the same padding on every side
   assert.doesNotMatch(url, /overflow-wrap:\s*anywhere/, 'the URL no longer wraps into a ragged block');
 });
 
+test('a playable link is the player surface: not an anchor, and its still hands the viewer the link', () => {
+  const src = component();
+  assert.match(src, /const playable = Boolean\(l\.play \|\| l\.video\)/, 'the card knows a link it can play (issue 243)');
+  assert.match(src, /if \(playable\)/, 'a playable link is drawn by the player branch');
+  assert.match(src, /\.linkUrl=\$\{l\.play && !l\.video \? l\.url : ''\}/, 'the still hands the viewer the link to resolve on the server');
+  assert.match(src, /class="link-card-play"/, 'a link with no picture carries a play button');
+  assert.match(src, /new CustomEvent\('play-link'/, 'a press asks the page to play the link');
+  assert.match(src, /if \(playable\) \{[\s\S]*?return html`<div class=\$\{classes\}/, 'the playable card is a div, never the anchor that leaves for the site');
+});
+
 test('the card draws only what we hold, never a third-party page fetched to decorate a message', () => {
   const src = component();
   assert.doesNotMatch(src, /fetch\(|XMLHttpRequest|https?:\/\//, 'the card never reaches the network to decorate a message');
-  assert.match(src, /l\.image\s*\?\s*html`<span class="link-card-image"><app-attachment/, 'the picture is our own stored attachment');
+  assert.match(src, /html`<span class="link-card-image"><app-attachment/, 'the picture is our own stored attachment');
 });

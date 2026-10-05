@@ -1537,6 +1537,13 @@ class AppRoot extends KitElement {
   // composer has no conversation behind it, so it is a single item with nothing to step to.
   openViewer(detail) {
     const d = detail || {};
+    // A shared video link (issue 243) is a single item the viewer loads from the server, not one of the conversation's
+    // attachments, so it is handed over on its own rather than looked up among the conversation's media.
+    if (d.linkUrl) {
+      const item = { id: String(d.linkUrl), linkUrl: String(d.linkUrl), kind: 'video', alt: d.alt || '' };
+      this.viewing = { src: d.src || '', alt: d.alt || '', kind: 'video', items: [item], index: 0 };
+      return;
+    }
     if (!d.src) { this.viewing = null; return; }
     const items = mediaItems(this.messages || []);
     const at = d.attachmentId ? mediaIndex(items, d.attachmentId) : -1;

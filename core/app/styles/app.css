@@ -235,6 +235,11 @@ app-link-card { display: inline-block; max-width: var(--size-bubble-max); margin
 .link-card-site { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: var(--font-tracking); color: var(--color-accent); }
 .link-card-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: var(--space-1); font-weight: var(--font-weight-medium); }
 .link-card-url { display: block; margin-top: var(--space-1); overflow: hidden; font-size: var(--font-size-sm); color: var(--color-fg-muted); white-space: nowrap; text-overflow: ellipsis; }
+/* A playable link (issue 243) is the player surface: the same card, but a press plays it in the app's own viewer
+   rather than leaving for the site. A link with no picture carries a play button drawing the card's own body. */
+.link-card.playable { cursor: pointer; }
+.link-card-play { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.link-card-play:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
 
 app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--role-divider); background: var(--role-composer-bar); padding-block-end: var(--inset-bottom); }
 .composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }

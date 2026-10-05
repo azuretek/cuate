@@ -93,6 +93,13 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
       if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
       return res.blob();
     },
+    // A shared video link's media, resolved and cached by the server (issue 243), as bytes for the viewer. The client
+    // reaches only us, never the site the link names.
+    async linkMedia(url) {
+      const res = await fetchImpl(base + '/api/v1/links/media' + query({ url }), { headers: auth });
+      if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
+      return res.blob();
+    },
     connect,
     // Drops the event stream the way a lost connection does, so it reconnects and resumes where it left off. The
     // desktop smoke uses it to prove a reconnect never blanks a view (issue 142).

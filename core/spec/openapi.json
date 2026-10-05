@@ -618,6 +618,54 @@
         ]
       }
     },
+    "/api/v1/links/media": {
+      "get": {
+        "operationId": "link-media",
+        "summary": "GET /api/v1/links/media",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "The attachment bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "search",
@@ -1596,6 +1644,12 @@
           },
           "image": {
             "$ref": "#/components/schemas/Attachment"
+          },
+          "video": {
+            "$ref": "#/components/schemas/Attachment"
+          },
+          "play": {
+            "type": "boolean"
           }
         },
         "required": [
