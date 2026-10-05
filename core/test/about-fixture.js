@@ -18,7 +18,7 @@
   const scheme = window.fixtureScheme === 'dark' ? 'dark' : 'light';
   // The chosen icon (issue 246): About draws the choice in force, not one fixed drawing, so the fixture picks one
   // and the native legs hold the page to its picture.
-  root.settings = { ...root.settings, 'appearance.skin': scheme, 'appearance.appIcon': 'rosa' };
+  root.settings = { ...root.settings, 'appearance.skin': scheme, 'appearance.appIcon': 'rosa_dark' };
   root.info = { product: (root.host && root.host.product) || 'App', serverVersion: '1.0.0', serverChannel: 'dev', apiVersion: 1, engine: { kind: 'fake', version: '1.0.0' }, repository: 'https://example.invalid/owner/app' };
   root.chats = [];
   root.phase = 'ready';
@@ -35,7 +35,7 @@
   await until(() => !about().getAnimations().some((a) => a.playState === 'running'), 'the page slide to finish');
   const icon = about().querySelector('.about-icon');
   await until(() => icon.complete && icon.naturalWidth > 0, 'the app icon to load');
-  if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
+  if (!(icon.getAttribute('src') || '').endsWith('assets/app-icons/rosa_dark.png')) throw new Error('About draws ' + icon.getAttribute('src') + ' rather than the chosen icon');
   const parts = [...about().querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section).join('|');
   if (parts !== 'identity|updates|build') throw new Error('About draws ' + parts);
   about().querySelector('[data-action=check-updates]').click();
