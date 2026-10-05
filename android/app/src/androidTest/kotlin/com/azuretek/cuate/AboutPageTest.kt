@@ -188,13 +188,13 @@ class AboutPageTest {
             evaluate(scenario, "document.querySelector('app-about [data-action=check-updates]').click()")
             waitFor(scenario, "((document.querySelector('.app-notice') || {}).textContent || '').includes('downloaded and verified')", "the verified download")
             waitFor(scenario, "(function (b) { return Boolean(b) && b.dataset.command === 'updates.install' && !b.dataset.press; })(document.querySelector('app-about [data-action=check-updates]'))", "About to offer the install")
-            val label = evaluate(scenario, "document.querySelector('app-about [data-action=check-updates]').textContent.trim()")
+            val label = evaluate(scenario, "(document.querySelector('app-about [data-action=check-updates] .action-label[data-when=idle]') || document.querySelector('app-about [data-action=check-updates]')).textContent.trim()")
             assertTrue("About's button is the notice's Install: $label", label == "\"Install\"")
             // The press that started the download holds its own success mark for a moment, so the capture is kept only
             // when the button reads Install both before and after it was taken. The page is scrolled to the button,
             // so the capture shows it and the line under it that names the verified download.
             evaluate(scenario, "document.querySelector('app-about [data-action=check-updates]').scrollIntoView({ block: 'center' })")
-            val idleInstall = "(function (b) { return Boolean(b) && !b.dataset.press && b.textContent.trim() === 'Install'; })(document.querySelector('app-about [data-action=check-updates]'))"
+            val idleInstall = "(function (b) { var l = b && b.querySelector('.action-label[data-when=idle]'); return Boolean(b) && !b.dataset.press && (l || b).textContent.trim() === 'Install'; })(document.querySelector('app-about [data-action=check-updates]'))"
             val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
             var ready: android.graphics.Bitmap? = null
             while (ready == null) {

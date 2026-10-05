@@ -302,6 +302,23 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .button.primary { background: var(--role-button); color: var(--role-button-fg); }
 .button:disabled { opacity: 0.6; cursor: default; }
 
+/* A standalone action button (issue 190): one action in its row or page, centred there, that shows its own state in
+   place rather than delegating it to a line or a notice beside it. Every label it can show is drawn up front in ONE
+   grid box, so the button is as wide as its widest state and the row never jumps; the stylesheet shows the label the
+   kit press is in, from the control's own data-press, and keeps the rest in the box with visibility (never display),
+   so every state keeps the same box. The kit's mark is not drawn over the words; a failure still rings the button. */
+.action-button { display: inline-flex; align-items: center; justify-content: center; align-self: center; text-align: center; }
+.action-labels { display: grid; place-items: center; }
+.action-label { grid-area: 1 / 1; visibility: hidden; }
+.action-button:not([data-press]) .action-label[data-when="idle"],
+.action-button[data-press="pending"] .action-label[data-when="pending"],
+.action-button[data-press="success"] .action-label[data-when="success"],
+.action-button[data-press="failure"] .action-label[data-when="failure"] { visibility: visible; }
+.action-button[data-press] { -webkit-text-fill-color: currentColor; }
+.action-button[data-press] > * { visibility: visible; }
+.action-button[data-press]::after { content: none; animation: none; }
+.action-button[data-press="pending"] { cursor: progress; }
+
 /* Settings and About are the two pages of the app's one sheet surface: a top strip that is itself the back control, the
    page's title and its one-line description, then its sections. Settings ends with the row that opens About, a page of
    its own on every platform (issue 171). The chrome is drawn by app-sheet. */
@@ -391,7 +408,7 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .about-link-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); min-width: 0; }
 .about-link { text-decoration: none; font-size: var(--font-size-sm); }
 .about-link:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.about-copy { align-self: flex-start; margin-top: var(--space-2); }
+.about-copy { align-self: center; margin-top: var(--space-2); }
 .about-compare { margin: var(--space-2) 0 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .about-compare.mismatch { color: var(--color-danger); }
 /* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
