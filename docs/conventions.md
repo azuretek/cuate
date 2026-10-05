@@ -165,6 +165,11 @@ Status words: a rule with no status holds on main today. **Adopted, not yet buil
 - **The counters a person reads during a problem are derived from the log stream.** `server/src/diagnostics.js` counts each declared failure or lifecycle event and keeps the most recent error, so a counter cannot disagree with its log line because it is reading it; `GET /api/v1/diagnostics` exposes the build stamp, the engine link, whether the Messages database is readable, the sending switch, the counters and the last error. Source: #263. Held by: `server/test/diagnostics.test.js` "each mapped failure event moves its counter, and the successes move nothing".
 - **What is deliberately not measured is written down.** docs/observability.md records the omissions and their reason, so an omission is a decision rather than an oversight. Source: #263. Held by: `server/test/diagnostics.test.js` "docs/observability.md records what is deliberately not measured".
 
+## Releases
+
+- **The version, the `vX.Y.Z` tag and the changelog are owned by release-please, not by hand.** It keeps one release pull request open against `main`; merging it bumps every file that carries the version, writes `CHANGELOG.md` and tags the release. Why: a hand-written body hid what changed, and a number that lives in several files must be bumped in all of them or the tag and the files disagree. Source: #277. Held by: `desktop/test/release-please.test.js` "release-please owns the version, the tag and the changelog".
+- **A pull request title is the changelog line, so it reads `type(scope): a sentence`.** release-please groups the merged commit by its Conventional Commit type, and merges are squashed, so the title is the subject the changelog reads; the `gate` refuses any other title. Why: an automated changelog is only as good as the titles that feed it. Source: #277. Held by: `desktop/test/release-please.test.js` "a pull request title that is not type(scope): a sentence is refused".
+
 ## Superseded
 
 Kept so an old issue or capture is not mistaken for current behaviour. Each names what replaced it.
