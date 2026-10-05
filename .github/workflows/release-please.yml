@@ -1,0 +1,52 @@
+name: release-please
+
+# ★ The release driver, mirrored from chela (#167 there) and folded in over the
+# open release-please pull request #278 here, which lacked the two settings that
+# make the tag path work: draft and force-tag-creation.
+#
+# release-please watches main, keeps ONE pull request open that carries the next
+# version bump and its CHANGELOG entry together, and tags vX.Y.Z when that pull
+# request merges. It replaces the hand-written version bump: every file that
+# carries the version is bumped together, so the tag and the files cannot
+# disagree.
+#
+# ★ Why this workflow starts the build itself. The tag is created through the
+# GitHub API with GITHUB_TOKEN, and GitHub raises no workflow event for anything
+# pushed with that token, so release.yml's push: tags trigger would never fire
+# for it. workflow_dispatch IS exempt from that restriction, so this workflow
+# starts release.yml on the new tag with gh workflow run --ref <tag>. No personal
+# access token is needed for the release path to run.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # A tag and a draft release carrying the changelog exist only when
+      # release-please just merged a release pull request. Start the release build
+      # for that tag; nothing else in this workflow does.
+      - name: Start the release build for the new tag
+        if: ${{ steps.release.outputs.tag_name != '' && steps.release.outputs.tag_name != null }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          set -eo pipefail
+          echo "release-please created ${TAG}; starting the release build for it"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+

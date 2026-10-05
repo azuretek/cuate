@@ -11,13 +11,16 @@ const condition = (source, github, inputs = {}, runner = { os: 'macOS' }) => {
   // The release job's condition now also waits on the platforms gate, so the stub
   // carries that result: the test evaluates the repository's own expressions, and
   // a need it does not supply is a condition it cannot evaluate.
-  return Boolean(Function('github', 'inputs', 'runner', 'needs', 'return (' + expression + ')')(github, inputs, runner, { prepare: { outputs: { release: 'true' } }, platforms: { result: 'success' } }));
+  // GitHub expressions use startsWith; the eval helper supplies it so a condition that uses it can be read.
+  const startsWith = (value, prefix) => String(value).startsWith(prefix);
+  return Boolean(Function('github', 'inputs', 'runner', 'needs', 'startsWith', 'return (' + expression + ')')(github, inputs, runner, { prepare: { outputs: { release: 'true' } }, platforms: { result: 'success' } }, startsWith));
 };
 test('publication allows only main push/manual, independent of a shipped-path verdict', () => {
   const release = workflow('release');
   for (const event_name of ['push', 'workflow_dispatch', 'pull_request', 'pull_request_target', 'workflow_run', 'workflow_call']) {
     for (const ref of ['refs/heads/main', 'refs/heads/topic', 'refs/pull/12/merge', 'refs/tags/v1.0.0']) {
-      const allowed = ref === 'refs/heads/main' && ['push', 'workflow_dispatch'].includes(event_name);
+      // A release tag is publication too: the tag lane is started for it with workflow_dispatch.
+      const allowed = (ref === 'refs/heads/main' || /^refs\/tags\/v\d+\.\d+\.\d+$/.test(ref)) && ['push', 'workflow_dispatch'].includes(event_name);
       const env = { GITHUB_REF: ref, GITHUB_EVENT_NAME: event_name };
       assert.equal(publicationAllowed(env), allowed);
       if (!allowed) assert.throws(() => assertPublicationAllowed(env), /requires/);

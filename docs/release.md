@@ -2,6 +2,35 @@
 
 A push to main that changes a shipped path produces a test build: the desktop apps, the server and the Android APK, one version, one GitHub prerelease. A manual workflow dispatch compares the snapshot with the most recent reachable dev tag and refuses if nothing ships. Documentation, Markdown, root scripts, workflow files, hooks, LICENSE and .gitignore do not trigger a release. A server-only change does: the server ships with the clients. Unknown paths ship by default. The sole classifier is scripts/release/changes.mjs.
 
+## Stable releases: the tag lane
+
+A real release is cut only by a `vX.Y.Z` tag, never automatically. The tag is produced by release-please (`release-please-config.json`, `.release-please-manifest.json`, `.github/workflows/release-please.yml`), which watches `main`, keeps ONE pull request open that carries the next version bump and its `CHANGELOG.md` entry together, and, when that pull request merges, bumps every file that carries the version and creates the tag. It is mirrored from chela. The settings that make the tag lane work, missing from the first attempt here (pull request #278), are `draft: true` and `force-tag-creation: true`, beside `include-v-in-tag: true` and `include-component-in-tag: false`.
+
+No personal access token is needed for the release path. The tag is created through the GitHub API with `GITHUB_TOKEN`, and GitHub raises no workflow event for anything pushed with that token, so `release.yml`'s `push: tags` trigger would never fire for it. `workflow_dispatch` IS exempt from that restriction, so `release-please.yml` starts `release.yml` on the new tag with `gh workflow run release.yml --ref <tag>`.
+
+`release.yml` then builds every platform on the tag, attaches the assets to the draft release-please opened, and publishes only once the whole asset set is present. The draft is release-please's and carries the changelog that is the release body, so the publisher keeps it and attaches to it rather than deleting it (`scripts/release/release.mjs`). Two invariants hold before anything is built or uploaded: the tag must agree with every file that owns the version, refused loudly and before the build when it does not, and every required platform must be green on the commit, through the same sole `platforms` gate call the test build uses. Exactly one gate call carries `purpose: publish`; the tag lane folds into it rather than adding a second tagger.
+
+Where cuate differs from chela, and why:
+
+- chela publishes one release carrying a desktop interface and a mobile one; cuate's release carries the desktop apps, the server artifact and the signed Android APK beside a TestFlight build, so the asset checks are cuate's own (`scripts/release/assets.mjs`, `scripts/release/server-artifact.mjs`, `scripts/release/android-artifact.mjs`).
+- cuate's extra-files set is five files (`core/spec/version.json`, `desktop/package.json`, `server/package.json`, `ios/project.yml`, `android/app/build.gradle.kts`), where chela's is one; the tag-versus-files check reads the same five.
+- chela installs iOS over the air from an ad-hoc manifest (`core/release.js`); cuate reaches iOS testers through TestFlight and has no ad-hoc OTA path yet. Chela's model is the model for cuate's own update path, not something mirrored now. cuate's phone update path is `core/app/rules/updates.js` over `core/spec/releases.json`.
+- The dev lane is unchanged; the tag lane is added beside it.
+
+## Per platform, what a test build reaches
+
+| Platform | Test destination | Exists today |
+|---|---|---|
+| Desktop (macOS, Windows, Linux) | the `dev` update channel in the GitHub prerelease: the installers plus their `dev*.yml` metadata | yes |
+| iOS | TestFlight, proven to reach VALID and the tester group it targets, through the platforms gate | yes |
+| Android | the signed APK and its manifest on the same GitHub prerelease, for the app's own updater | yes |
+| Android | a Play Console internal track | no: no Play publishing credential is configured, so nothing is uploaded there |
+| Desktop stable | a `latest*.yml` stable update channel | no: the packaging leg writes and uploads `dev*.yml` only; widening it to a stable channel is follow-up work, named here rather than left silent |
+| macOS, Windows stores | a signed store submission | no: macOS installers are Developer ID signed and Windows installers are unsigned, not store submissions |
+
+The release lane publishes the GitHub release assets (the durable copy) and, where a store destination exists, the store. The destinations that do not exist are named above.
+
+
 ## Snapshot and channels
 
 The version is the root package's next patch followed by -dev.<commit-count>.<first-ten-SHA-characters>. The root version is not rewritten by CI. The exact version is embedded in the desktop package and returned by app.info. All jobs check out the event SHA.

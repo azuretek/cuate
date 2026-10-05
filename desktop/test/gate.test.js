@@ -198,10 +198,17 @@ test('splitList reads a comma separated pipeline list', () => {
 // gate call. A new android.yml or server.yml fails this test until it is added,
 // which is what "a missing platform leg cannot pass silently" means in a file
 // rather than in a promise.
+// ★ A workflow that only maintains the release pull request is not a pipeline.
+// release-please.yml runs on a push to main but builds no platform and publishes
+// nothing, so the publishing gate has nothing to wait on and naming it would make
+// a publish wait on a version pull request. Every workflow that DOES build a
+// platform is still caught.
+const NOT_A_PIPELINE = new Set(['release-please']);
 function pipelines() {
   const found = [];
   for (const file of readdirSync(WORKFLOWS).filter((entry) => /\.ya?ml$/.test(entry))) {
     const doc = readWorkflow(file);
+    if (NOT_A_PIPELINE.has(String(doc.name || file))) continue;
     const triggers = doc.on === undefined ? [] : typeof doc.on === 'string' ? [doc.on] : Array.isArray(doc.on) ? doc.on : Object.keys(doc.on);
     if (!triggers.some((name) => name === 'push' || name === 'pull_request')) continue;
     found.push(String(doc.name || file));
