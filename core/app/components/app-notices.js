@@ -1,6 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
+import { actionButtonLabels } from '../../kit/button.js';
 import { keepScroll } from '../../kit/scroll.js';
 import { closeButtonHtml } from './close-button.js';
 
@@ -29,7 +30,7 @@ class AppNotices extends KitElement {
     return html`<section class="app-notice-stack" aria-label="App notices" aria-live="polite" aria-relevant="additions text">${visible.map((n) => html`<article class="app-notice" data-id=${n.id} data-tone=${n.tone} @click=${(e) => this.onCard(e, n)}>
       <span class="app-notice-icon icon" data-icon=${TONE_ICONS[n.tone] || TONE_ICONS.info} aria-hidden="true"></span>
       <div class="app-notice-body"><span>${n.message}</span>${n.detail ? html`<span class="muted">${n.detail}</span>` : nothing}${n.percent === null ? nothing : html`<progress class="app-notice-progress" aria-label="Download progress" max="1" value=${n.percent}></progress>`}
-      ${n.action ? html`<button type="button" class="app-notice-action" data-command=${n.action.command} @click=${press(() => this.runAction?.(n.action.command))}>${n.action.label}</button>` : nothing}</div>
+      ${n.action ? html`<button type="button" class="action-button app-notice-action" data-command=${n.action.command} @click=${press(() => this.runAction?.(n.action.command))}>${actionButtonLabels({ idle: n.action.label, pending: 'Working\u2026', failure: 'Could not' })}</button>` : nothing}</div>
       <button type="button" class="app-notice-read" data-read=${n.id} aria-label="Mark as read" title="Mark read on every device" @click=${press(() => this.dispatchEvent(new CustomEvent('notice-read', { detail: { id: n.id, revision: n.revision }, bubbles: true, composed: true })))}><span class="icon" data-icon="check" aria-hidden="true"></span></button>
       ${closeButtonHtml({ owner: 'notice', label: 'Dismiss notice', title: 'Dismiss here. Mark read clears it on every device.', onClose: () => this.dispatchEvent(new CustomEvent('notice-dismiss', { detail: { id: n.id, revision: n.revision }, bubbles: true, composed: true })) })}
     </article>`)}</section>`;

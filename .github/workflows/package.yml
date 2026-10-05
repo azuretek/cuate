@@ -72,13 +72,16 @@ jobs:
             platform: linux
             arch: arm64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # The build leg reached forty-four minutes once (run 36888349385) before the job cancelled it; the
+    # packaging download, the packaged smoke and the virtual display all sit inside it here. Sixty minutes
+    # leaves room for a congested queue without dropping the bound.
+    timeout-minutes: 60
     env:
       BUILD_VERSION: ${{ inputs.version }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - name: Refuse untrusted signing request
-        if: ${{ inputs.signed && !(github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
+        if: ${{ inputs.signed && !((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
         run: exit 1
       - uses: actions/checkout@v4
         with:
@@ -149,17 +152,19 @@ jobs:
         env:
           CACHE_HIT: ${{ steps.packaging-cache.outputs.cache-hit }}
         run: bash scripts/ci/state-cache.sh "packaging download cache after packaging" "$CACHE_HIT" "${{ runner.temp }}/packaging-cache"
-      # The smoke bounds its own app at 360 seconds (smoke-packed.mjs); the step deadline is the backstop.
+      # The smoke bounds its own app (SMOKE_TIMEOUT_MS, ten minutes, issue 267) and smoke-packed.mjs sits above
+      # that; this step deadline sits above smoke-packed, so a slow packaged smoke is stopped by the bound that
+      # can say what it measured, never by a bare step timeout.
       - name: Packaged Linux boot smoke
         if: runner.os == 'Linux'
-        timeout-minutes: 8
+        timeout-minutes: 15
         env:
           SHOTS: ${{ runner.temp }}/packaged-smoke
           SMOKE_SOFTWARE_RENDERING: "1"
         run: xvfb-run -a node desktop/scripts/smoke-packed.mjs
       - name: Packaged Windows and macOS boot smoke
         if: runner.os != 'Linux'
-        timeout-minutes: 8
+        timeout-minutes: 15
         env:
           SHOTS: ${{ runner.temp }}/packaged-smoke
         run: node desktop/scripts/smoke-packed.mjs

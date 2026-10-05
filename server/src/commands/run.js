@@ -29,6 +29,7 @@ export default {
     const { startServer } = await import('../app.js');
     const { makeAttachmentId } = await import('../ids.js');
     const { createLogSink } = await import('../syslog.js');
+    const { createDiagnostics } = await import('../diagnostics.js');
     const { createMac } = await import('../mac.js');
     const { createRestarts } = await import('../watchdog.js');
     const { startMacCare } = await import('../mac-care.js');
@@ -36,6 +37,7 @@ export default {
     // every approved line is also shipped to it as syslog, and a line the collector will not take is spilled and
     // reported through this same logger.
     let logger = null;
+    const diagnostics = createDiagnostics();
     const sink = createLogSink({
       spec: logSpec,
       app: naming.slug + '-server',
@@ -43,7 +45,10 @@ export default {
       spillPath: path.join(dataDir, 'log-spill.jsonl'),
       log: { emit: (event, fields) => { if (logger) logger.emit(event, fields); } },
     });
-    logger = createLogger({ spec: logSpec, app: naming.slug + '-server', version: serverVersion, run: randomUUID().slice(0, 8), pid: process.pid, sink, now: Date.now, level: process.env.LOG_LEVEL || config.log.level });
+    // Every line the logger approves is observed for the counters and the last error, then handed to the sink as
+    // it was: the diagnostics has no sink of its own and cannot lose a line.
+    const observed = (line) => { diagnostics.observe(line); sink(line); };
+    logger = createLogger({ spec: logSpec, app: naming.slug + '-server', version: serverVersion, run: randomUUID().slice(0, 8), pid: process.pid, sink: observed, now: Date.now, level: process.env.LOG_LEVEL || config.log.level });
     installCrashHandlers({ log: logger, logger, dataDir });
     if (L) {
       const { recoverStartup } = await import('../updater.js');
@@ -90,7 +95,7 @@ export default {
         return null;
       }
     };
-    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, mac, restarts, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
+    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, mac, restarts, diagnostics, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
     publish = srv.publish;
     let updater = null;
     if (L) {
