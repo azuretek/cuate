@@ -26,9 +26,18 @@ enum AppIcons {
         guard let data = try? BundledSpec.data(at: "spec/app-icons.json"),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let defaultID = object["default"] as? String,
-              let icons = object["icons"] as? [[String: Any]] else { return nil }
-        let ids = icons.compactMap { $0["id"] as? String }
-        let fixed = Set(icons.filter { $0["colors"] != nil }.compactMap { $0["id"] as? String })
+              let families = object["families"] as? [[String: Any]] else { return nil }
+        var ids: [String] = []
+        var fixed = Set<String>()
+        for family in families {
+            guard let variants = family["variants"] as? [String: Any] else { continue }
+            for key in ["light", "dark"] {
+                guard let variant = variants[key] as? [String: Any], let id = variant["id"] as? String else { continue }
+                ids.append(id)
+                if variant["colors"] != nil { fixed.insert(id) }
+            }
+        }
+        if let follow = object["followTheme"] as? [String: Any], let id = follow["id"] as? String { ids.append(id) }
         return Spec(defaultID: defaultID, ids: ids, fixed: fixed)
     }
 
@@ -287,6 +296,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             "build": build.isEmpty ? NSNull() : build,
             "updateChannel": BuildIdentity.channel(of: version) == "dev" ? "dev" : "latest",
             "platform": "ios",
+            "arch": BuildIdentity.arch.isEmpty ? NSNull() : BuildIdentity.arch,
+            "packaged": BuildIdentity.packaged,
+            "installSource": BuildIdentity.installSource,
         ]
     }
 

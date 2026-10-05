@@ -22,6 +22,7 @@ var engine = (() => {
   var engine_exports = {};
   __export(engine_exports, {
     ABOUT_ORDER: () => ABOUT_ORDER,
+    ACTION_STATES: () => ACTION_STATES,
     APP_ICONS: () => APP_ICONS,
     APP_ICON_KEY: () => APP_ICON_KEY,
     ATTACH_ACTIONS: () => ATTACH_ACTIONS,
@@ -52,6 +53,7 @@ var engine = (() => {
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
     OVERLAY_SIZES: () => OVERLAY_SIZES,
+    PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PRESS_STATES: () => PRESS_STATES,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
@@ -93,6 +95,9 @@ var engine = (() => {
     aboutModel: () => aboutModel,
     aboutRows: () => aboutRows,
     aboutUpdate: () => aboutUpdate,
+    actionLabel: () => actionLabel,
+    actionLabels: () => actionLabels,
+    actionStateOf: () => actionStateOf,
     addChatsToGroup: () => addChatsToGroup,
     addGroup: () => addGroup,
     addTerm: () => addTerm,
@@ -103,8 +108,10 @@ var engine = (() => {
     apkAvailableBanner: () => apkAvailableBanner,
     apkManifestProblem: () => apkManifestProblem,
     apkReadyBanner: () => apkReadyBanner,
+    appIconChoiceLabel: () => appIconChoiceLabel,
     appIconChoices: () => appIconChoices,
     appIconFor: () => appIconFor,
+    appIconVariants: () => appIconVariants,
     appUpdateNotice: () => appUpdateNotice,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
@@ -132,6 +139,7 @@ var engine = (() => {
     closedByPress: () => closedByPress,
     coerceSetting: () => coerceSetting,
     colourDistance: () => colourDistance,
+    commitOf: () => commitOf,
     commitState: () => commitState,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
@@ -159,11 +167,13 @@ var engine = (() => {
     emptyListText: () => emptyListText,
     engineLabel: () => engineLabel,
     failedBanner: () => failedBanner,
+    fallbackPhrase: () => fallbackPhrase,
     feedVersions: () => feedVersions,
     fillTemplate: () => fillTemplate,
     filterChats: () => filterChats,
     firstUrl: () => firstUrl,
     fixedPalette: () => fixedPalette,
+    foldReactions: () => foldReactions,
     forgetChats: () => forgetChats,
     forgetRead: () => forgetRead,
     formatListTime: () => formatListTime,
@@ -221,6 +231,7 @@ var engine = (() => {
     normalizeSort: () => normalizeSort,
     noticeEnabled: () => noticeEnabled,
     noticeHoldMs: () => noticeHoldMs,
+    offersReaction: () => offersReaction,
     onGroup: () => onGroup,
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
@@ -232,6 +243,7 @@ var engine = (() => {
     panBy: () => panBy,
     parseColour: () => parseColour,
     parseGlyph: () => parseGlyph,
+    parseReactionText: () => parseReactionText,
     parseTraceparent: () => parseTraceparent,
     payloadMedia: () => payloadMedia,
     phoneUpdate: () => phoneUpdate,
@@ -240,11 +252,16 @@ var engine = (() => {
     pinch: () => pinch,
     placeChat: () => placeChat,
     placeFor: () => placeFor,
+    platformCapabilities: () => platformCapabilities,
+    platformOf: () => platformOf,
+    platformReactionUnsupported: () => platformReactionUnsupported,
+    platformThreadUnsupported: () => platformThreadUnsupported,
     policy: () => policy,
     pressOutside: () => pressOutside,
     progressFor: () => progressFor,
     putNotice: () => putNotice,
     quietCount: () => quietCount,
+    reactionFallbackText: () => reactionFallbackText,
     reactionGlyph: () => reactionGlyph,
     reactionUnsupported: () => reactionUnsupported,
     readyBanner: () => readyBanner,
@@ -262,6 +279,7 @@ var engine = (() => {
     requestDeleteGroup: () => requestDeleteGroup,
     resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
+    runtimeVersions: () => runtimeVersions,
     safeValue: () => safeValue,
     sameTheme: () => sameTheme,
     screenFor: () => screenFor,
@@ -326,6 +344,7 @@ var engine = (() => {
     validate: () => validate,
     verificationCheck: () => verificationCheck,
     wheelFactor: () => wheelFactor,
+    withRuntime: () => withRuntime,
     zoomBy: () => zoomBy,
     zoomFit: () => zoomFit,
     zoomKey: () => zoomKey,
@@ -413,7 +432,9 @@ var engine = (() => {
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
       send: (chatId, { text, file, clientKey, replyTo }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...file ? { file } : {}, clientKey, ...replyTo ? { replyTo } : {} }),
-      react: (chatId, messageId, { emoji, remove = false }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, remove ? { emoji, remove: true } : { emoji }),
+      // `text` is the message being reacted to, carried only so the server can compose the platform's own text
+      // fallback where the conversation is not on the message service (issue 184); it is not sent otherwise.
+      react: (chatId, messageId, { emoji, remove = false, text = "" }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...remove ? { remove: true } : {}, ...text ? { text } : {} }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
@@ -788,6 +809,31 @@ var engine = (() => {
     const m = /(?:^|-)dev\.(\d+)(?:\.|$)/.exec(String(version || ""));
     return m ? m[1] : null;
   }
+  function commitOf(version) {
+    const m = /-dev\.\d+\.([a-f0-9]{10})$/.exec(String(version || ""));
+    return m ? m[1] : null;
+  }
+  function runtimeVersions(env = {}) {
+    const proc = env && env["process"] || {};
+    const versions = proc.versions || {};
+    const ua = String(env && env.navigator && env.navigator.userAgent || "");
+    const from = (re) => {
+      const m = re.exec(ua);
+      return m ? m[1] : null;
+    };
+    return {
+      electron: versions.electron || from(/\bElectron\/([\d.]+)/) || null,
+      chrome: versions.chrome || from(/\b(?:HeadlessChrome|Chrome|Chromium|CriOS)\/([\d.]+)/) || null,
+      node: versions.node || null
+    };
+  }
+  function withRuntime(info = {}, env = {}) {
+    return {
+      ...info,
+      versions: { ...runtimeVersions(env), ...info.versions || {} },
+      commit: info.commit || commitOf(info.version) || null
+    };
+  }
   function compareVersions(a, b) {
     const parse = (v) => {
       const m = /^(\d+)\.(\d+)\.(\d+)(?:-dev\.(\d+)\.[a-f0-9]{10})?$/.exec(String(v));
@@ -825,7 +871,7 @@ var engine = (() => {
       version,
       channel,
       build: buildNumberOf(version),
-      commit: facts.commit || null,
+      commit: facts.commit || commitOf(version) || null,
       builtAt: facts.builtAt || null,
       electron: versions.electron || null,
       chromium: versions.chrome || null,
@@ -868,12 +914,26 @@ var engine = (() => {
     const lines = [(product ? product : "Client") + " bug report"];
     const section = (title, rows) => {
       lines.push("", title);
-      for (const row of rows) lines.push("  " + row.label + ": " + row.value);
+      for (const row of rows) if (row.value !== UNKNOWN) lines.push("  " + row.label + ": " + row.value);
     };
     section("Client", reportRows(spec, "client", report || {}));
     section("Server", reportRows(spec, "server", serverReport || {}));
     lines.push("", "Compare", "  " + commitState(report, serverReport).text);
     return lines.join("\n") + "\n";
+  }
+
+  // core/kit/rules/button.js
+  var ACTION_STATES = ["idle", "pending", "success", "failure"];
+  function actionLabel(labels = {}, state) {
+    const idle = labels.idle || "";
+    if (state === "idle") return idle;
+    return labels[state] || idle;
+  }
+  function actionLabels(labels = {}) {
+    return ACTION_STATES.map((state) => ({ state, text: actionLabel(labels, state) }));
+  }
+  function actionStateOf(press) {
+    return ACTION_STATES.includes(press) ? press : "idle";
   }
 
   // core/app/rules/build-spec.js
@@ -986,117 +1046,192 @@ var engine = (() => {
 
   // core/app/rules/app-icons-spec.js
   var APP_ICONS = {
-    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto in its dark rendering; Paper is the light one. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
-    "default": "orange",
-    "icons": [
+    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167, 189, 246 and PR 257). Every colour is one family with two variants: a paper variant labelled Light and the bright variant labelled Dark, drawn from the Flor de muerto masters (issue 189) through iconPalette and renderIcon, so a variant is the same glyph in other colours and never a second drawing. Each variant names the seven tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme it is drawn in; a colour family's two variants share one name and differ only in their colours. Barro first: its Dark variant is the original terracotta Flor de muerto (the default theme light palette from core/spec/tokens.json, a white glyph on the filled terracotta tile), so the picker, the About picture and every generated asset draw the one colour (PR 257), and Barro Dark is the default; its Light variant is the paper counterpart. Follow theme is not a colour: it draws the icon from the active theme's tokens and takes the Light or Dark rendering from the appearance in force, switching when the appearance does; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. desktop/scripts/icons.mjs draws every variant for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+    "default": "naranja_dark",
+    "followTheme": {
+      "id": "theme",
+      "label": "Follow theme"
+    },
+    "families": [
       {
-        "id": "orange",
-        "label": "Orange",
-        "scheme": "dark",
-        "colors": {
-          "accent": "#ff5c5c",
-          "accent-fg": "#0e1015",
-          "fg": "#f4f4f5",
-          "bg": "#0e1015",
-          "bg-raised": "#161920",
-          "danger": "#f87171",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
-        }
-      },
-      {
-        "id": "paper",
-        "label": "Paper",
-        "scheme": "light",
-        "colors": {
-          "accent": "#efe7d8",
-          "accent-fg": "#8a3324",
-          "fg": "#2b241c",
-          "bg": "#fbf8f2",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "id": "naranja",
+        "label": "Barro",
+        "variants": {
+          "light": {
+            "id": "naranja_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#efe7d8",
+              "accent-fg": "#8a3324",
+              "fg": "#2b241c",
+              "bg": "#fbf8f2",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "naranja_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#bd4531",
+              "accent-fg": "#ffffff",
+              "fg": "#211e1a",
+              "bg": "#faf9f7",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "azul",
         "label": "Azul",
-        "scheme": "light",
-        "colors": {
-          "accent": "#0a84ff",
-          "accent-fg": "#ffffff",
-          "fg": "#0b2545",
-          "bg": "#f5f9ff",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "variants": {
+          "light": {
+            "id": "azul_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#dbeafe",
+              "accent-fg": "#1e3a8a",
+              "fg": "#0b2545",
+              "bg": "#f5f9ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "azul_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#0a84ff",
+              "accent-fg": "#ffffff",
+              "fg": "#0b2545",
+              "bg": "#f5f9ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "rosa",
-        "label": "Rosa mexicano",
-        "scheme": "light",
-        "colors": {
-          "accent": "#e4007c",
-          "accent-fg": "#ffffff",
-          "fg": "#3a0b28",
-          "bg": "#fdf4f9",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "label": "Rosa",
+        "variants": {
+          "light": {
+            "id": "rosa_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#fce7f3",
+              "accent-fg": "#9d174d",
+              "fg": "#3a0b28",
+              "bg": "#fdf4f9",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "rosa_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#e4007c",
+              "accent-fg": "#ffffff",
+              "fg": "#3a0b28",
+              "bg": "#fdf4f9",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "jade",
-        "label": "Jade",
-        "scheme": "light",
-        "colors": {
-          "accent": "#00a36c",
-          "accent-fg": "#ffffff",
-          "fg": "#062b1f",
-          "bg": "#f3fbf8",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
-        }
-      },
-      {
-        "id": "cempasuchil",
-        "label": "Cempas\xFAchil",
-        "scheme": "light",
-        "colors": {
-          "accent": "#ff9f0a",
-          "accent-fg": "#ffffff",
-          "fg": "#3a2400",
-          "bg": "#fdf9f0",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "label": "Nopal",
+        "variants": {
+          "light": {
+            "id": "jade_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#d1fae5",
+              "accent-fg": "#065f46",
+              "fg": "#062b1f",
+              "bg": "#f3fbf8",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "jade_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#00a36c",
+              "accent-fg": "#ffffff",
+              "fg": "#062b1f",
+              "bg": "#f3fbf8",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
       },
       {
         "id": "morado",
         "label": "Morado",
-        "scheme": "light",
-        "colors": {
-          "accent": "#7c3aed",
-          "accent-fg": "#ffffff",
-          "fg": "#22103f",
-          "bg": "#faf7ff",
-          "bg-raised": "#ffffff",
-          "danger": "#b91c1c",
-          "badge": "#dc2626",
-          "badge-fg": "#ffffff"
+        "variants": {
+          "light": {
+            "id": "morado_light",
+            "label": "Light",
+            "scheme": "light",
+            "colors": {
+              "accent": "#ede9fe",
+              "accent-fg": "#5b21b6",
+              "fg": "#22103f",
+              "bg": "#faf7ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          },
+          "dark": {
+            "id": "morado_dark",
+            "label": "Dark",
+            "scheme": "light",
+            "colors": {
+              "accent": "#7c3aed",
+              "accent-fg": "#ffffff",
+              "fg": "#22103f",
+              "bg": "#faf7ff",
+              "bg-raised": "#ffffff",
+              "danger": "#b91c1c",
+              "badge": "#dc2626",
+              "badge-fg": "#ffffff"
+            }
+          }
         }
-      },
-      {
-        "id": "theme",
-        "label": "Follow theme"
       }
     ]
   };
@@ -1108,22 +1243,45 @@ var engine = (() => {
   // core/app/rules/app-icons.js
   var APP_ICON_KEY = "appearance.appIcon";
   var FOLLOW_THEME = "theme";
+  function appIconVariants(spec = APP_ICONS) {
+    return spec.families.flatMap((family) => ["light", "dark"].map((key) => {
+      const variant = family.variants[key];
+      return { id: variant.id, label: variant.label, family: family.id, familyLabel: family.label, scheme: variant.scheme, colors: variant.colors };
+    }));
+  }
+  function appIconChoiceLabel(variant) {
+    return variant.familyLabel;
+  }
   function appIconFor(values, spec = APP_ICONS) {
     const id = values && values[APP_ICON_KEY];
-    return spec.icons.some((i) => i.id === id) ? id : spec.default;
+    const known = id === FOLLOW_THEME || appIconVariants(spec).some((v) => v.id === id);
+    return known ? id : spec.default;
   }
   function fixedPalette(id, spec = APP_ICONS) {
-    const icon = spec.icons.find((i) => i.id === id);
-    return icon && icon.colors ? { scheme: icon.scheme === "dark" ? "dark" : "light", colors: { ...icon.colors } } : null;
+    const variant = appIconVariants(spec).find((v) => v.id === id);
+    return variant && variant.colors ? { scheme: variant.scheme === "dark" ? "dark" : "light", colors: { ...variant.colors } } : null;
   }
   function appIconChoices(values, { themePicture = null } = {}, spec = APP_ICONS) {
     const current = appIconFor(values, spec);
-    return spec.icons.map((i) => ({
-      id: i.id,
-      label: i.label,
-      src: i.colors ? "assets/app-icons/" + i.id + ".png" : themePicture || "assets/app-icon.png",
-      selected: i.id === current
+    const choices = appIconVariants(spec).map((v) => ({
+      id: v.id,
+      label: appIconChoiceLabel(v),
+      family: v.family,
+      familyLabel: v.familyLabel,
+      variantLabel: v.label,
+      src: "assets/app-icons/" + v.id + ".png",
+      selected: v.id === current
     }));
+    choices.push({
+      id: FOLLOW_THEME,
+      label: spec.followTheme.label,
+      family: null,
+      familyLabel: null,
+      variantLabel: null,
+      src: themePicture || "assets/app-icon.png",
+      selected: current === FOLLOW_THEME
+    });
+    return choices;
   }
   function iconToApply(applied, values, spec = APP_ICONS) {
     const next = appIconFor(values, spec);
@@ -1368,16 +1526,14 @@ var engine = (() => {
     return { message: what + " is downloaded and verified.", detail: "Install hands it to Android, which asks you to confirm." };
   }
   function aboutUpdate(status) {
-    const idle = { label: "Check for updates", command: null, line: null, percent: null };
+    const idle = { label: "Check for updates", command: null };
     if (!status || !status.state) return idle;
     const banner = updateBanner(status.state, status);
     if (!banner) return idle;
     const action = banner.action && banner.action.command !== DISMISS ? banner.action : null;
     return {
       label: action ? action.label : idle.label,
-      command: action ? action.command : null,
-      line: status.state === "checking" ? null : banner.message,
-      percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null
+      command: action ? action.command : null
     };
   }
 
@@ -1894,6 +2050,103 @@ var engine = (() => {
     return progress >= SETTLE;
   }
 
+  // core/app/rules/platform.js
+  function platformOf(chat) {
+    const s = String(chat && chat.service || "").trim().toLowerCase();
+    if (s === "" || s === "imessage") return "imessage";
+    if (s === "sms") return "sms";
+    if (s === "rcs") return "rcs";
+    return "unknown";
+  }
+  var PLATFORM_CAPABILITIES = {
+    imessage: { tapback: true, fallback: false, thread: true, emoji: true },
+    sms: { tapback: false, fallback: true, thread: false, emoji: false },
+    rcs: { tapback: false, fallback: true, thread: false, emoji: false },
+    unknown: { tapback: false, fallback: false, thread: false, emoji: false }
+  };
+  function platformCapabilities(platform) {
+    return PLATFORM_CAPABILITIES[platform] || PLATFORM_CAPABILITIES.unknown;
+  }
+  function offersReaction(platform) {
+    const c = platformCapabilities(platform);
+    return Boolean(c.tapback || c.fallback);
+  }
+  var PHRASES = [
+    ["love", "Loved"],
+    ["like", "Liked"],
+    ["dislike", "Disliked"],
+    ["laugh", "Laughed at"],
+    ["emphasis", "Emphasized"],
+    ["question", "Questioned"]
+  ];
+  function fallbackPhrase(type) {
+    const hit = PHRASES.find(([t]) => t === type);
+    return hit ? hit[1] : null;
+  }
+  var quoted = (text) => '"' + String(text == null ? "" : text) + '"';
+  function reactionFallbackText(type, original) {
+    const phrase = fallbackPhrase(type);
+    return phrase ? phrase + " " + quoted(original) : null;
+  }
+  var FALLBACK_RE = /^(Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) "([^"]*)"$/;
+  var REACTED_RE = /^Reacted (\S+) to "([^"]*)"$/;
+  function parseReactionText(text) {
+    const t = String(text == null ? "" : text).trim();
+    const m = FALLBACK_RE.exec(t);
+    if (m) {
+      const hit = PHRASES.find(([, phrase]) => phrase === m[1]);
+      return hit ? { type: hit[0], emoji: null, text: m[2] } : null;
+    }
+    const reacted = REACTED_RE.exec(t);
+    return reacted ? { type: "emoji", emoji: reacted[1], text: reacted[2] } : null;
+  }
+  function foldReactions(messages, platform) {
+    const list = messages || [];
+    if (!platformCapabilities(platform).fallback) return list;
+    const out = [];
+    const who = (m) => m.fromMe ? "me" : m.sender || "";
+    for (const m of list) {
+      const parsed = m.text ? parseReactionText(m.text) : null;
+      if (parsed) {
+        let target = null;
+        for (let i = out.length - 1; i >= 0; i -= 1) {
+          const x = out[i];
+          if (x.text && String(x.text).trim() === parsed.text) {
+            target = x;
+            break;
+          }
+        }
+        if (target) {
+          const me = who(m);
+          const reactions = (target.reactions || []).filter((r) => (r.fromMe ? "me" : r.sender || "") !== me);
+          reactions.push({ type: parsed.type, emoji: parsed.emoji, fromMe: m.fromMe, sender: m.fromMe ? null : m.sender || null });
+          out[out.indexOf(target)] = { ...target, reactions };
+          continue;
+        }
+      }
+      out.push(m);
+    }
+    return out;
+  }
+  function platformReactionUnsupported(platform) {
+    if (platformCapabilities(platform).fallback) {
+      return {
+        message: "This conversation carries the six classic reactions, not arbitrary emoji.",
+        detail: "Send one of the six classic reactions instead."
+      };
+    }
+    return {
+      message: "This conversation cannot carry a reaction.",
+      detail: "The message service for this conversation could not be determined."
+    };
+  }
+  function platformThreadUnsupported() {
+    return {
+      message: "This conversation has no threads, so the reply was not sent as one.",
+      detail: "Answer with a message instead."
+    };
+  }
+
   // core/app/rules/messages.js
   var GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
   var TAPBACKS2 = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
@@ -1918,11 +2171,15 @@ var engine = (() => {
   }
   var MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
   var canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
-  function messageActions(m, { sending = false } = {}) {
+  function messageActions(m, { sending = false, platform = "imessage" } = {}) {
     if (!sending || !canTarget(m)) return [];
-    const base = m.fromMe ? ["react"] : ["reply", "react"];
+    const caps = platformCapabilities(platform);
     const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
-    return savable ? ["save", ...base] : base;
+    const actions = [];
+    if (savable) actions.push("save");
+    if (!m.fromMe && caps.thread) actions.push("reply");
+    if (caps.tapback || caps.fallback) actions.push("react");
+    return actions;
   }
   function threadRoot(messages, id) {
     return rootIn(new Map((messages || []).map((m) => [m.id, m])), id);
@@ -2436,6 +2693,7 @@ var engine = (() => {
   }
 
   // core/app/rules/settings.js
+  var APP_ICON_VARIANTS = APP_ICONS.families.flatMap((family) => ["light", "dark"].map((key) => ({ ...family.variants[key], familyLabel: family.label })));
   var SETTINGS_SCHEMA = {
     groups: [
       { id: "appearance", label: "Appearance", description: "How the app looks and how much text it shows." },
@@ -2451,9 +2709,10 @@ var engine = (() => {
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
       "appearance.textScale": { group: "appearance", label: "Text size", type: "scale", options: TEXT_SCALES, default: 100 },
-      // The app icon (issue 167): one of the icons core/spec/app-icons.json names, each drawn as its own picture, held by
-      // the server like every other setting and applied by each shell where its platform can (rules/app-icons.js).
-      "appearance.appIcon": { group: "appearance", label: "App icon", type: "icon", options: APP_ICONS.icons.map((i) => i.id), labels: Object.fromEntries(APP_ICONS.icons.map((i) => [i.id, i.label])), default: APP_ICONS.default },
+      // The app icon (issues 167 and 246): every colour is one family with a paper Light variant and a bright Dark one,
+      // from core/spec/app-icons.json, plus Follow theme. Each is drawn as its own picture, held by the server like every
+      // other setting and applied by each shell where its platform can (rules/app-icons.js).
+      "appearance.appIcon": { group: "appearance", label: "App icon", type: "icon", options: [...APP_ICON_VARIANTS.map((v) => v.id), APP_ICONS.followTheme.id], labels: Object.fromEntries([...APP_ICON_VARIANTS.map((v) => [v.id, v.familyLabel + " " + v.label]), [APP_ICONS.followTheme.id, APP_ICONS.followTheme.label]]), default: APP_ICONS.default },
       // Every notice the client can raise, each on its own switch, in Behavior's Notices section. Turning one off
       // silences only that notice.
       "notifications.newMessage": { group: "behavior", section: "notices", label: "New messages", type: "toggle", default: true },
@@ -2514,13 +2773,14 @@ var engine = (() => {
   var PRODUCT = { key: "product", label: "App" };
   function aboutRows(host, info, spec = BUILD_SPEC) {
     const halves = { client: reportRows(spec, "client", host || {}), server: reportRows(spec, "server", info || {}) };
-    return ABOUT_ORDER.map(([half, key]) => {
+    const rows = ABOUT_ORDER.map(([half, key]) => {
       if (key === PRODUCT.key) {
         const name = host && host.product || info && info.product;
         return { ...PRODUCT, value: name ? String(name) : UNKNOWN };
       }
       return halves[half].find((row) => row.key === key) || { key, label: key, value: UNKNOWN };
     });
+    return rows.filter((row) => row.value !== UNKNOWN);
   }
   function aboutLinks(repository) {
     const base = typeof repository === "string" ? repository.trim().replace(/\.git$/, "").replace(/\/+$/, "") : "";
