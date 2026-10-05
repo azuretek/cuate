@@ -18,9 +18,8 @@ import { makeAttachmentId } from '../src/ids.js';
 const quiet = () => createLogger({ spec: logSpec, app: 'test', run: 'test', sink: () => {}, now: Date.now, level: 'debug', strict: true });
 
 // A sender over the fake engine, with no HTTP in the way. now can be injected so the rate window is testable.
-function sender({ sending = true, perMinute = 20, sendTimeoutMs = 500, now } = {}) {
+function sender({ sending = true, perMinute = 20, sendTimeoutMs = 500, now, log = quiet() } = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'srv-send-'));
-  const log = quiet();
   const config = normalizeConfig({ engine: { kind: 'fake' }, sending: { enabled: sending, perMinute } });
   const store = openStore(path.join(dir, 'state.db'));
   const root = path.join(dir, 'attachments');
@@ -265,7 +264,8 @@ test('a reaction the engine cannot send is refused cleanly, costs no rate budget
   const custom = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F389}' });
   assert.equal(custom.http, 422);
   assert.equal(custom.error[0], 'reaction_unsupported');
-  assert.match(custom.error[1], /engine .*cannot send an emoji reaction yet/, 'the note names the engine as the limit, not the Mac (issue 188)');
+  assert.match(custom.error[1], /six classic reactions, not arbitrary emoji/, 'the note names the limit honestly (issue 241)');
+  assert.match(custom.error[1], /tapback\.emoji version 2/, 'and the version the engine would need');
   assert.equal((await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F44D}\u{1F3FD}' })).error[0], 'reaction_unsupported', 'a skin tone is not the like tapback');
   assert.equal(s.world.attempts, 0);
   s.world.behavior.bridge = 'down';
@@ -369,4 +369,20 @@ test('while an update holds sends, a reaction is held too, and one going out cou
   s.world.crashAll();
   await going;
   assert.equal(s.send.inFlight(), 0);
+});
+
+// The privacy guard end to end: a refusal names the chat, but the engine's chat id is a GUID that carries the handle
+// it belongs to, so a phone number inside it must never reach the record (core/test/log-privacy.test.js holds the
+// logger's own half).
+test('a refusal names the chat by an id that never carries the number inside it', async (t) => {
+  const lines = [];
+  const log = createLogger({ spec: logSpec, app: 'test', run: 'test', sink: (l) => lines.push(l), now: Date.now, level: 'debug', strict: true });
+  const s = sender({ sending: false, log });
+  t.after(() => s.close());
+  await s.start();
+  assert.equal((await s.send('iMessage;-;+15555550123', { text: 'Synthetic off' }, 'key-guid-00001')).http, 403);
+  const rec = lines.find((l) => l.event === 'send.refused');
+  assert.ok(rec, 'the refusal was logged');
+  assert.ok(!JSON.stringify(rec).includes('5555550123'), 'the number in the chat id reached the record: ' + JSON.stringify(rec));
+  assert.equal(rec.chat, 'iMessage;-;[number]');
 });

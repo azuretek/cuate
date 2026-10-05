@@ -6,16 +6,21 @@ import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
 
-export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, features = [] } = {}) {
+export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, capabilities = null, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
   const imagePath = path.join(attachmentsRoot, 'fake', 'sunset.png');
   const png = gradientPng(480, 320);
   writeFileSync(imagePath, png);
+  // A second picture, so the first conversation carries more than one media item and the viewer has a neighbour to
+  // step to (issue 181).
+  const photo2Path = path.join(attachmentsRoot, 'fake', 'hills.png');
+  const photo2 = gradientPng(320, 240);
+  writeFileSync(photo2Path, photo2);
   // A document the conversation can save (issue 219): a small, well-formed PDF under its real name.
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
   writeFileSync(docPath, pdf);
-  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length });
+  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
   let rowid = messages.length;
   let attempts = 0;
   let liveSent = false;
@@ -23,12 +28,19 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // send: how a send answers. sendDelayMs: how long a send takes to answer, so a test can hold one in flight.
   // afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
   // bridge: 'ready', or 'down' to answer the bridge-only calls (a tapback, a reply) the way imsg does with no bridge.
-  // features: the rpc_features the fake's status advertises, so a test can model an engine that sends an arbitrary
-  // emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
+  // capabilities: the block the fake's status advertises, so a test can model an engine that sends an arbitrary
+  // emoji (a tapback.emoji version of 2 or more) and one that must not (the default, an older engine with no
+  // version, and version 1, the first emoji path whose sender target did not survive retainArguments).
+  // features: the rpc_features the fake's status advertises beside the block, so a test can model an engine that
+  // sends an arbitrary emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
   // replyAnswer: 'own' answers a send with the guid of the row it created (what Messages does); 'existing' models the
   // bridge's reply path, which has answered a threaded reply with the id of an existing message in the chat (issue 208),
   // so a test can prove the server does not report that message as the one it created.
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', features, replyAnswer: 'own' };
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} }, features, replyAnswer: 'own' };
+  const tapbackEmojiVersion = () => {
+    const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
+    return Number.isInteger(v) ? v : 0;
+  };
   const tapbacks = [];
   const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
@@ -108,7 +120,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'status':
             // A ready bridge advertises its event stream, as imsg does when the non-launching bridge probe succeeds. The
             // adapter only subscribes when the inbound-typing switch is on (issue 230).
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe'] : [] });
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe'] : [] });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -192,7 +204,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (behavior.send === 'uncertain') return fail(req.id, -32001, 'The tapback may have completed.', { retry_safe: false, disposition: 'may_have_completed', transport: 'bridge', operation: 'tapback', detail: '' });
             if (behavior.send === 'fail') return fail(req.id, -32603, 'Messages refused the tapback.', { retry_safe: true, disposition: 'not_started', transport: 'bridge', operation: 'tapback', detail: '' });
             const emoji = typeof p.emoji === 'string' ? p.emoji : '';
-            if (emoji && !behavior.features.includes('tapback.emoji')) return fail(req.id, -32602, 'unsupported tapback reaction ' + emoji);
+            if (emoji && tapbackEmojiVersion() < 2 && !behavior.features.includes('tapback.emoji')) return fail(req.id, -32602, 'unsupported tapback reaction ' + emoji);
             if (!emoji && !KINDS.has(p.kind)) return fail(req.id, -32602, 'kind must be a standard tapback.');
             const target = messages.find((m) => m.guid === p.message_guid && m.chat_id === p.chat_id && !m.is_reaction);
             if (!target) return fail(req.id, -32602, 'unknown message_guid');

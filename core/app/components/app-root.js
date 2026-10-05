@@ -10,14 +10,22 @@ import {
   groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats,
   requestDelete, requestDeleteGroup, resolveDelete,
 } from '../rules/chats.js';
-import { mergeMessages, applyReaction } from '../rules/messages.js';
+import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
+import { mediaItems, mediaIndex } from '../rules/media.js';
+import { platformOf, foldReactions } from '../rules/platform.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
+
+// The text-fallback reactions a client on another service sends are folded onto the messages they quote, so they
+// show as reactions rather than as new text (issue 184). The platform comes from the chat's own service; a list on a
+// platform with no fallback is returned untouched.
+const foldFor = (list, chats, chatId) => foldReactions(list, platformOf((chats || []).find((c) => c.id === chatId)));
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
 import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
+import { withRuntime } from '../../kit/rules/build.js';
 import './app-notices.js';
 import { screenFor, pageAfterBack } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
@@ -201,7 +209,10 @@ class AppRoot extends KitElement {
     // The shell names its platform and product before the page boots, so the bar is drawn with the first paint and
     // only where a window exists. A phone answers call but installs no event stream, so the bar is desktop only.
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
-      this.bridge('app.info').then((info) => { this.host = info || {}; }, () => {});
+      // The shell's report with the page's own running environment folded in: the runtime rows (Electron, Chromium, Node)
+      // and a commit the shell did not stamp are read from the process the page actually runs in, so a phone's web view
+      // reports what it has rather than Unknown (PR 257).
+      this.bridge('app.info').then((info) => { this.host = withRuntime(info || {}, globalThis); }, () => { this.host = withRuntime({}, globalThis); });
     }
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.on === 'function') {
       this.offUpdate = window.bridge.on('update.state', (data) => this.onUpdate(data || {}));
@@ -502,7 +513,7 @@ class AppRoot extends KitElement {
     if (cached) {
       this.openChatId = chatId;
       this.selecting = null;
-      this.messages = cached.messages;
+      this.messages = foldFor(cached.messages, this.chats, chatId);
       this.hasMore = cached.hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
@@ -527,7 +538,7 @@ class AppRoot extends KitElement {
       this.selecting = null;
       // A page merged over the conversation we held keeps any older messages already loaded, and keeps a message that
       // arrived live while the page was in flight (issue 66).
-      this.messages = mergeMessages(cached ? [...cached.messages, ...arrived] : arrived, messages);
+      this.messages = foldFor(mergeMessages(cached ? [...cached.messages, ...arrived] : arrived, messages), this.chats, chatId);
       this.hasMore = hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
@@ -548,7 +559,7 @@ class AppRoot extends KitElement {
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50, before: this.messages[0].sentAt });
       if (this.openChatId === chatId) {
-        this.messages = mergeMessages(this.messages, messages);
+        this.messages = foldFor(mergeMessages(this.messages, messages), this.chats, chatId);
         this.hasMore = hasMore;
       }
       return true;
@@ -578,7 +589,7 @@ class AppRoot extends KitElement {
       const r = applyMessageToChats(this.chats, m, { openChatId: this.openChatId });
       if (r.known) this.chats = r.chats;
       else this.reload();
-      if (m.chatId === this.openChatId) this.messages = mergeMessages(this.messages, [m]);
+      if (m.chatId === this.openChatId) this.messages = foldFor(mergeMessages(this.messages, [m]), this.chats, m.chatId);
       if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
@@ -698,7 +709,7 @@ class AppRoot extends KitElement {
     const localId = 'local:' + clientKey;
     this.pending.set(clientKey, { localId, chatId, text, messageId: null });
     const local = { id: localId, chatId, fromMe: true, sender: null, senderName: null, text, sentAt: new Date().toISOString(), replyTo: replyTo || null, read: null, attachments: file ? [localAttachment(file)] : [], reactions: [], state: 'sending' };
-    this.messages = mergeMessages(this.messages, [local]);
+    this.messages = foldFor(mergeMessages(this.messages, [local]), this.chats, chatId);
     try {
       const upload = file ? await this.client.upload({ name: file.name || 'file', mime: file.type || undefined, data: toBase64(new Uint8Array(await file.arrayBuffer())) }) : null;
       const r = await this.client.send(chatId, { text, file: upload ? upload.id : undefined, clientKey, replyTo: replyTo || undefined });
@@ -731,18 +742,35 @@ class AppRoot extends KitElement {
     if (!chatId || !this.client || this.reacting) return false;
     this.reacting = messageId;
     this.messageNote = null;
+    // The message being reacted to is carried along so the server can compose the platform's own text fallback
+    // where the conversation is not on the message service (issue 184); it is used for that and never stored.
+    const target = (this.messages || []).find((x) => x.id === messageId);
     try {
-      const r = await this.client.react(chatId, messageId, { emoji, remove });
+      const r = await this.client.react(chatId, messageId, { emoji, remove, text: target ? target.text : '' });
       if (chatId !== this.openChatId) return;
       if (r.status === 'uncertain') this.messageNote = { id: messageId, text: 'The reaction may not have sent.' };
       else this.messages = applyReaction(this.messages, { targetId: messageId, type: r.type, emoji: r.emoji ?? null, add: r.add, fromMe: true, sender: null });
       return r.status !== 'uncertain';
     } catch (e) {
-      if (chatId === this.openChatId) this.messageNote = { id: messageId, text: e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e) };
+      if (chatId === this.openChatId) this.refuseReaction(messageId, e);
       return false;
     } finally {
       this.reacting = null;
     }
+  }
+
+  // A reaction the engine cannot send is said in place, in the app's own notice style: the honest limit under the
+  // message, and a dismissible app notice naming the engine that answered. Never a raw error, never a log line, and
+  // never a silent downgrade to a classic tapback; the emoji panel stays usable and the draft is untouched, so the
+  // same attempt succeeds after an engine upgrade without restarting the app (issue 241).
+  refuseReaction(messageId, e) {
+    if (e.code === 'reaction_unsupported') {
+      const { message, detail } = reactionUnsupported(this.info?.engine);
+      this.messageNote = { id: messageId, text: message };
+      this.appNotices = putNotice(this.appNotices, { id: 'reaction:' + messageId, revision: messageId + ':' + message, message, detail, tone: 'warn' });
+      return;
+    }
+    this.messageNote = { id: messageId, text: e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e) };
   }
 
   // --- Our own typing, relayed between this account's devices (issue 230) ---
@@ -1454,6 +1482,31 @@ class AppRoot extends KitElement {
     aimCarets(this);
   }
 
+  // The media viewer: the picture or video a preview opened, and the conversation's other media, so the viewer steps
+  // through them in conversation order (issue 181). A preview of an attachment names the attachment; the page finds it
+  // among the conversation's media and hands the viewer the whole list and where to start. A staged preview in the
+  // composer has no conversation behind it, so it is a single item with nothing to step to.
+  openViewer(detail) {
+    const d = detail || {};
+    if (!d.src) { this.viewing = null; return; }
+    const items = mediaItems(this.messages || []);
+    const at = d.attachmentId ? mediaIndex(items, d.attachmentId) : -1;
+    if (at < 0) {
+      this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items: [], index: 0 };
+      return;
+    }
+    // The starting item is already loaded (its preview handed the src over), so the viewer shows it at once.
+    items[at] = { ...items[at], src: d.src, alt: d.alt || items[at].alt };
+    this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items, index: at };
+  }
+
+  // The viewer stepped to another item: the page keeps its own idea of the open item, so a re-render does not undo it.
+  viewerNavigate(e) {
+    if (!this.viewing) return;
+    const index = e && e.detail && Number.isFinite(e.detail.index) ? e.detail.index : this.viewing.index;
+    this.viewing = { ...this.viewing, index };
+  }
+
   render() {
     const platform = String(this.host && this.host.platform || '').toLowerCase();
     // No bar, no title and no icon: the app's surfaces run to the top edge of the window. macOS floats its traffic
@@ -1470,7 +1523,7 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} @connect=${(e) => respond(e, this.onConnect(e.detail))}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
-    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => { this.viewing = e.detail && e.detail.src ? e.detail : null; }}>
+    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => this.openViewer(e.detail)}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
         ${this.searchTerms()}
@@ -1493,7 +1546,7 @@ class AppRoot extends KitElement {
       ${this.sheetShowing ? html`<div class="sheet-scrim"><section class="sheet" data-view=${this.view} data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label=${this.view === 'about' ? 'About' : 'Settings'} @animationend=${this.onSheetAnimationEnd}>${this.sheetBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
-      ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
+      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }
 }

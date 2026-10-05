@@ -1,8 +1,10 @@
 // Pure: the conversation's rules.
+import { platformCapabilities } from './platform.js';
+
 const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 
 // The six standard tapbacks, in the order the Mac offers them, as { type, glyph }. These are the reactions every
-// engine can send; one that advertises tapback.emoji sends any other emoji as itself, and one that does not shows it
+// engine can send; one that advertises tapback.emoji version 2 sends any other emoji as itself, and one that does not shows it
 // when it arrives but refuses it when sent (issues 138 and 188).
 export const TAPBACKS = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
 
@@ -14,16 +16,54 @@ export function tapbackType(emoji) {
   return null;
 }
 
+// The `tapback.emoji` capability version an arbitrary emoji reaction needs. The engine names and versions its
+// capabilities, so the client asks for the version it needs rather than trusting a flag; a build advertising an
+// older version, or none, is refused before the bridge is asked, and the refusal names this version.
+export const EMOJI_TAPBACK_VERSION = 2;
+
+// The engine as one line for a reader, e.g. "imsg 0.9.2", or '' when the app does not know the build. The build is
+// named when it is known and never invented.
+export function engineLabel(engine) {
+  if (!engine || typeof engine !== 'object') return '';
+  const kind = typeof engine.kind === 'string' ? engine.kind : '';
+  const version = engine.version == null ? '' : String(engine.version);
+  return [kind, version].filter(Boolean).join(' ');
+}
+
+// What the reader is told when the engine cannot send the reaction they chose: the limit is named honestly, the
+// engine build is named only when it is known, and the version the engine would need is named. It is said in place
+// and in the app's own notice style, never as a raw error or a log line, and never as a silent downgrade to a
+// classic tapback (issue 241).
+export function reactionUnsupported(engine, needed = EMOJI_TAPBACK_VERSION) {
+  const label = engineLabel(engine);
+  return {
+    message: label
+      ? 'The message engine on the Mac (' + label + ') can send the six classic reactions, not arbitrary emoji.'
+      : 'The message engine on the Mac can send the six classic reactions, not arbitrary emoji.',
+    detail: 'An arbitrary emoji reaction needs tapback.emoji version ' + needed + '.',
+  };
+}
+
 // The id the engine can react to or thread a reply to: a message's guid. A message still being sent (local:) or a row
 // the engine gave no guid (row:) has nothing to target yet. The server's routes check the same pattern.
 export const MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
 export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
 
-// What a message's menu offers (issue 169): React on any message the engine can target, and Reply in thread only on
-// someone else's, since a thread is started by answering another person. Sending off on the server offers neither.
-export function messageActions(m, { sending = false } = {}) {
+// What a message's menu offers (issues 169, 181 and 184): React on any message the engine can target and the
+// conversation's own platform carries a reaction for (an engine tapback, or the platform's own text fallback);
+// Reply in thread only on someone else's, and only where the platform carries threads, since a thread is started
+// by answering another person; and Save when the message carries a file that is really there (a picture or a
+// video, or a document) to write to the platform's photo library or downloads folder. Sending off on the server
+// offers nothing to send, and so nothing to save either. A platform the app cannot name offers neither.
+export function messageActions(m, { sending = false, platform = 'imessage' } = {}) {
   if (!sending || !canTarget(m)) return [];
-  return m.fromMe ? ['react'] : ['reply', 'react'];
+  const caps = platformCapabilities(platform);
+  const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
+  const actions = [];
+  if (savable) actions.push('save');
+  if (!m.fromMe && caps.thread) actions.push('reply');
+  if (caps.tapback || caps.fallback) actions.push('react');
+  return actions;
 }
 
 // The first message of the thread a message belongs to, followed up through replyTo (a parent not loaded included).

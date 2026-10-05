@@ -17,6 +17,7 @@ import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { renderIcon } from '../../core/app/rules/icon.js';
+import { fixedPalette } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
@@ -58,12 +59,19 @@ let win = null;
 // redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
 // The launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
 const appIconSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/app-icons.json'), 'utf8'));
+// Every colour is one family with a paper Light and a bright Dark variant (issue 246); Follow theme carries no colours.
+const appIconVariants = appIconSpec.families.flatMap((family) => ['light', 'dark'].map((key) => family.variants[key]));
+const appIconCount = appIconVariants.length + 1;
 let appIconApplied = appIconSpec.default;
 let appIconFixed = null;
 function setAppIcon(icon) {
-  const choice = appIconSpec.icons.find((i) => i.id === icon);
-  if (!choice) return { applied: false, icon };
-  appIconFixed = choice.colors ? { scheme: choice.scheme === 'dark' ? 'dark' : 'light', colors: choice.colors } : null;
+  const choice = appIconVariants.find((i) => i.id === icon);
+  const followTheme = icon === appIconSpec.followTheme.id;
+  if (!choice && !followTheme) return { applied: false, icon };
+  // The choice's palette comes from the one rule the page uses (rules/app-icons.js): a fixed variant's is its own,
+  // and Follow theme (no colours of its own) answers null, clearing the fixed palette so the tray, the window icon
+  // and the Dock draw from the active theme again rather than keeping the last colour picked.
+  appIconFixed = fixedPalette(icon, appIconSpec);
   appIconApplied = icon;
   applyIcons();
   return { applied: true, icon };
@@ -902,8 +910,13 @@ async function runSmoke(w) {
   const unreacted = await js("!document.querySelector('app-composer app-emoji-picker')");
   await reactFrom('party');
   const customPicked = await pick('\u{1F389}');
-  await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('standard tapbacks')`, 10000);
+  await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('six classic reactions, not arbitrary emoji')`, 10000);
   const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
+  // The refusal is also told in the app's own notice style (issue 241). Assert that notice appeared, then dismiss it
+  // so the notice area is clear for the update flow further down, which is the only other notice source.
+  report.reactionRefusalNotice = await js("Boolean(document.querySelector('.app-notice[data-id^=\"reaction:\"]'))");
+  await js("(() => { const b = document.querySelector('.app-notice[data-id^=\"reaction:\"] .close-button'); if (b) b.click(); return true; })()");
+  await waitFor("!document.querySelector('.app-notice[data-id^=\"reaction:\"]')", 5000);
   // Any emoji someone else reacted with arrives as a reaction on the message it names (issue 188): the fixture's raised
   // hands on your own message, drawn at the bubble's corner like a tapback and not marked as yours, on a desktop window
   // and at a phone's width, light and dark.
@@ -1359,6 +1372,98 @@ async function runSmoke(w) {
   };
   report.imageViewer = Object.values(imageViewerChecks).every(Boolean);
   console.log('image viewer: ' + JSON.stringify({ checks: imageViewerChecks, geometry, backdrop, scales: { fit, afterLeft, afterRight, wheelOne, wheelTwo, afterReset, afterPlus, afterMinus, afterPinch, afterDoubleOut, afterDoubleIn }, pan: { smallPan, panScale, panBefore, panAfter, dragScale, mouseFrom, mouseTo, dragFrom, dragTo }, ctx, electronMenus }));
+
+  // The media viewer steps through the conversation's own media (issue 181): the on-screen controls, the left and
+  // right arrow keys at fit (a zoomed picture pans instead) and a finger's horizontal swipe each move one item in the
+  // conversation's order and stop at the ends, rather than wrapping. A long press on a media item opens the one
+  // message menu with Save beside Reply in thread and React, whose Save writes the item's own bytes through the same
+  // control a document's press uses. Captured at a desktop window and a phone's width, in both schemes.
+  const viewerState = () => js("(() => { const v = document.querySelector('app-image-viewer'); if (!v) return null; const el = v.querySelector('.viewer') || v; const p = v.querySelector('.viewer-prev'); const n = v.querySelector('.viewer-next'); return { index: Number(el.dataset.index), count: Number(el.dataset.count), kind: el.dataset.kind, tag: (v.querySelector('.viewer-image') || {}).tagName || '', prevDisabled: p ? p.disabled : null, nextDisabled: n ? n.disabled : null, hasPrev: Boolean(p), hasNext: Boolean(n) }; })()");
+  const openFirstMedia = async () => {
+    await js("document.querySelector('.messages app-attachment .attachment-preview').click()");
+    await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image'))", 10000);
+    await pause(350);
+  };
+  await openFirstMedia();
+  const atFirst = await viewerState();
+  await shot('12d-media-first-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12e-media-first-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  await key('ArrowRight');
+  await pause(400);
+  const afterKeyNext = await viewerState();
+  await js("document.querySelector('app-image-viewer .viewer-prev').click()");
+  await pause(400);
+  const afterButtonPrev = await viewerState();
+  const swipe = (dx) => js("(() => { const v = document.querySelector('app-image-viewer .viewer'); const r = v.getBoundingClientRect(); const x = Math.round(r.left + r.width / 2); const y = Math.round(r.top + r.height / 2); const fire = (t, cx) => v.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 41, pointerType: 'touch', isPrimary: true, clientX: cx, clientY: y, button: 0, buttons: t === 'pointerup' ? 0 : 1 })); fire('pointerdown', x); fire('pointermove', x + " + dx + "); fire('pointermove', x + " + dx + "); fire('pointerup', x + " + dx + "); return true; })()");
+  await swipe(-120);
+  await pause(400);
+  const afterSwipeNext = await viewerState();
+  await swipe(120);
+  await pause(400);
+  const afterSwipeBack = await viewerState();
+  await js("document.querySelector('app-image-viewer .close-button').click()");
+  await waitFor("!document.querySelector('app-image-viewer')", 5000);
+  const mediaRow = '.bubble-row[data-id="FAKE-0011"]';
+  await js("(() => { const b = document.querySelector(" + q(mediaRow + ' .attachment-preview') + "); if (b) b.scrollIntoView({ block: 'center' }); return true; })()");
+  await pause(250);
+  const touchPress = (t) => js("(() => { const b = document.querySelector(" + q(mediaRow + ' .attachment-preview') + "); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent(" + JSON.stringify(t) + ", { bubbles: true, cancelable: true, pointerId: 21, pointerType: 'touch', isPrimary: true, button: 0, buttons: " + (t === 'pointerdown' ? 1 : 0) + ", clientX: r.left + 8, clientY: r.top + 8 })); return true; })()");
+  await touchPress('pointerdown');
+  await pause(700);
+  await touchPress('pointerup');
+  await waitFor("Boolean(document.querySelector(" + q(mediaRow + ' .message-menu') + "))", 10000);
+  const mediaMenu = await js("(() => { const m = document.querySelector(" + q(mediaRow + ' .message-menu') + "); return m ? [...m.querySelectorAll('.message-action')].map((x) => x.getAttribute('aria-label')) : []; })()");
+  await shot('12h-media-menu-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12i-media-menu-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(250);
+  smokeSaves.length = 0;
+  await js("document.querySelector(" + q(mediaRow + ' .message-action[aria-label="Save"]') + ").click()");
+  for (let i = 0; i < 40 && !smokeSaves.length; i += 1) await pause(100);
+  const mediaSave = smokeSaves[0] || null;
+  // The media menu and the viewer at a phone's width, in both schemes. The list's own open state is put back, so the
+  // phone section below finds the drawer as it left it.
+  const listOpenBefore = await js("document.querySelector('app-root').listOpen");
+  await js("(() => { const r = document.querySelector('app-root'); if (r.listOpen) r.closeDrawer(); return true; })()");
+  await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 390', 5000);
+  await pause(300);
+  await shot('12j-media-menu-phone-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12k-media-menu-phone-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(250);
+  await escape();
+  await pause(200);
+  await openFirstMedia();
+  await shot('12l-media-viewer-phone-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(400);
+  await shot('12m-media-viewer-phone-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(250);
+  await js("document.querySelector('app-image-viewer .close-button').click()");
+  await waitFor("!document.querySelector('app-image-viewer')", 5000);
+  await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride', {});
+  await pause(200);
+  await js("(() => { const r = document.querySelector('app-root'); if (r.listOpen !== " + listOpenBefore + ") r.listOpen = " + listOpenBefore + "; return true; })()");
+  const mediaViewerChecks = {
+    controls: Boolean(atFirst) && atFirst.hasPrev && atFirst.hasNext && atFirst.prevDisabled === true && atFirst.nextDisabled === false && atFirst.count === 2,
+    keyNext: Boolean(afterKeyNext) && afterKeyNext.index === atFirst.index + 1 && afterKeyNext.tag === 'IMG',
+    buttonPrev: Boolean(afterButtonPrev) && afterButtonPrev.index === afterKeyNext.index - 1,
+    swipeNext: Boolean(afterSwipeNext) && afterSwipeNext.index === afterButtonPrev.index + 1,
+    swipeBack: Boolean(afterSwipeBack) && afterSwipeBack.index === afterSwipeNext.index - 1,
+    menu: mediaMenu.join('|') === 'Save|Reply in thread|React',
+    saved: Boolean(mediaSave) && mediaSave.name === 'sunset.png' && mediaSave.mime === 'image/png' && mediaSave.bytes > 0,
+  };
+  report.mediaViewer = Object.values(mediaViewerChecks).every(Boolean);
+  console.log('media viewer: ' + JSON.stringify({ checks: mediaViewerChecks, atFirst, afterKeyNext, afterButtonPrev, afterSwipeNext, afterSwipeBack, mediaMenu, mediaSave }));
 
   // Settings: the page reads what the server holds, writes a change back, and redraws when a change arrives on the
   // event stream from anywhere. Values are checked at the server, not from the page's own copy.
@@ -2171,11 +2276,11 @@ async function runSmoke(w) {
   await showTab('appearance');
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
-  const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconSpec.icons.length + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
+  const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconCount + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
   // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
   const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
-  const iconPick = 'rosa';
-  const fixedOf = (id) => ({ scheme: appIconSpec.icons.find((i) => i.id === id).scheme, colors: appIconSpec.icons.find((i) => i.id === id).colors });
+  const iconPick = 'rosa_dark';
+  const fixedOf = (id) => { const c = appIconVariants.find((i) => i.id === id); return { scheme: c.scheme, colors: c.colors }; };
   await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
   await js(iconChoice(iconPick) + '.click()');
   for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== iconPick || appIconApplied !== iconPick); i += 1) await pause(200);
@@ -2405,14 +2510,14 @@ async function runSmoke(w) {
   // The client's own build and the server's, in chela's order, each value copyable, the links, and the one action that
   // copies the lot.
   const aboutOrder = ['product', 'version', 'channel', 'build', 'commit', 'builtAt', 'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt', 'platform', 'arch', 'electron', 'chromium', 'node', 'installSource', 'packaged', 'updateChannel', 'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion'];
-  const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')) }))()");
+  const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')), unknown: [...document.querySelectorAll('app-about .about-row .about-value-text')].some((e) => e.textContent === 'Unknown') }))()");
   // Back from About returns to Settings, the page it was pushed over.
   await js("document.querySelector('app-about .sheet-back').click()");
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
-  report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
+  report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.every((k) => aboutOrder.includes(k)) && aboutSeen.keys.join('|') === aboutOrder.filter((k) => aboutSeen.keys.includes(k)).join('|') && !aboutSeen.unknown && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
   if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
@@ -2435,7 +2540,30 @@ async function runSmoke(w) {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
   await waitFor('window.innerWidth === 375', 5000);
   report.phoneComposer = await js("parseFloat(getComputedStyle(document.querySelector('app-composer textarea')).fontSize) >= 16");
-  report.phoneSend = await js("(() => { const b = document.querySelector('app-composer button.send'); if (!b) return false; const s = getComputedStyle(b); const box = b.getBoundingClientRect(); const size = Math.min(box.width, box.height); const glyph = parseFloat(s.fontSize); return glyph >= 20 && glyph < size && parseInt(s.fontWeight, 10) >= 600 && size >= 36; })()");
+  // The send control is the shared icon set's stroked glyph, not a text arrow (issue 216): --size-send-icon draws it,
+  // the circle keeps the composer row's size with no border or ring of its own, the fill and the glyph's colour are
+  // the role tokens, and no text character stands in for the arrow. The same properties are read at desktop and at
+  // phone width, in light and dark, so a shrunken glyph, a returning border or a text arrow fails at any of them. The
+  // retired text arrow was read at >= 20px and the circle is 36px, so those stay the floors.
+  const sendArrow = "(() => { const b = document.querySelector('app-composer button.send'); if (!b) return { ok: false, why: 'no send button' }; const bs = getComputedStyle(b); const box = b.getBoundingClientRect(); const glyph = [...b.querySelectorAll('.icon')].find((i) => i.dataset.icon === 'arrow-up'); const gs = glyph ? getComputedStyle(glyph) : null; const gbox = glyph ? glyph.getBoundingClientRect() : null; const size = Math.min(box.width, box.height); const drawn = gbox ? Math.min(gbox.width, gbox.height) : 0; const host = b.parentElement || document.body; const probe = document.createElement('span'); probe.style.position = 'absolute'; probe.style.visibility = 'hidden'; probe.style.display = 'block'; probe.style.flex = 'none'; probe.style.width = 'var(--size-send-icon)'; probe.style.background = 'var(--role-button)'; probe.style.color = 'var(--role-button-fg)'; host.appendChild(probe); const ps = getComputedStyle(probe); const token = parseFloat(ps.width); const wantFill = ps.backgroundColor; const wantGlyph = ps.color; probe.remove(); const masked = gs ? ((gs.maskImage || gs.webkitMaskImage || 'none') !== 'none') : false; const noText = b.textContent.trim() === ''; const borderZero = ['Top', 'Right', 'Bottom', 'Left'].every((side) => parseFloat(bs['border' + side + 'Width']) === 0); const flat = bs.backgroundImage === 'none'; const ringless = bs.boxShadow === 'none'; const ok = token >= 20 && drawn >= 20 && drawn <= size && box.width >= 36 && box.height >= 36 && borderZero && flat && ringless && bs.backgroundColor === wantFill && Boolean(gs) && gs.backgroundColor === wantGlyph && masked && noText && b.children.length === 1; return { ok, token, drawn, size, w: box.width, h: box.height, border: bs.borderTopWidth, flat, ringless, fill: bs.backgroundColor, wantFill, glyph: gs && gs.backgroundColor, wantGlyph, masked, noText, children: b.children.length }; })()";
+  const sendReads = [];
+  for (const scheme of ['light', 'dark']) {
+    nativeTheme.themeSource = scheme;
+    await pause(300);
+    await cdp('Emulation.clearDeviceMetricsOverride', {});
+    await pause(200);
+    sendReads.push({ at: 'desktop-' + scheme, ...(await js(sendArrow)) });
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 812, deviceScaleFactor: 1, mobile: false });
+    await waitFor('window.innerWidth === 390', 5000);
+    await pause(200);
+    sendReads.push({ at: '390-' + scheme, ...(await js(sendArrow)) });
+  }
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+  await waitFor('window.innerWidth === 375', 5000);
+  nativeTheme.themeSource = 'light';
+  await pause(200);
+  report.phoneSend = sendReads.length === 4 && sendReads.every((r) => r.ok);
+  if (!report.phoneSend) console.error('phoneSend: ' + JSON.stringify(sendReads));
   // The open drawer is read until it has settled, as the closed one is below. One read straight after the resize failed
   // on the macOS arm64 runner while the screenshot taken next shows the drawer open, and the single boolean could not
   // say which part it was, so each part is reported when the drawer never settles open.

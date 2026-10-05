@@ -232,3 +232,28 @@ test('a document attachment carries no thread mark and its press saves rather th
   const image = words(attachment.render.call({ attachment: png, client: {}, failed: false, src: '' }));
   assert.ok(image.includes('attachment-image'), 'a picture keeps the media viewer');
 });
+
+// Issue 184: the conversation's own platform decides what its message menu offers. An SMS (or RCS) conversation
+// offers React, which the server sends as that platform's own text fallback, and never Reply in thread; a chat whose
+// service the engine did not name offers neither rather than guessing.
+test('an SMS conversation offers React only, never Reply in thread', () => {
+  const m = msg({});
+  const sms = host({ chat: { id: '3', name: '+15555550142', participants: ['+15555550142'], isGroup: false, service: 'SMS' }, pop: { id: m.id, kind: 'menu', side: 'above' } });
+  const markup = words(conversation.menu.call(sms, m));
+  assert.ok(markup.includes('aria-label="React"'), 'React is offered, in the platform own form');
+  assert.ok(!/Reply in thread/.test(markup), 'SMS has no threads, so no threaded reply is offered');
+});
+
+test('a chat whose service the engine did not name offers neither action, rather than guessing', () => {
+  const m = msg({});
+  const unknown = host({ chat: { id: '9', service: 'something-new', participants: [], isGroup: false }, pop: { id: m.id, kind: 'menu', side: 'above' } });
+  const markup = words(conversation.menu.call(unknown, m));
+  assert.ok(!markup.includes('aria-label="React"') && !/Reply in thread/.test(markup));
+});
+
+test('a thread is never opened on a platform that has no threads', () => {
+  const root = msg({ id: 'FAKE-0001', text: 'root' });
+  const sms = host({ messages: [root], chat: { id: '3', service: 'SMS', participants: [], isGroup: false } });
+  conversation.openThread.call(sms, root);
+  assert.equal(sms.replyingTo, null, 'SMS carries no thread, so none is opened');
+});
