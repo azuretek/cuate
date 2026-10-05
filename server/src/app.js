@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
 import { createSender } from './send.js';
+import { platformOf } from '../../core/app/rules/platform.js';
 import { createAttachments } from './attachments.js';
 import { createUploads } from './uploads.js';
 import { createThemeFonts } from './theme-fonts.js';
@@ -57,7 +58,6 @@ function readJson(req, max) {
 
 export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, webhookOptions = {}, themeFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
-  const send = createSender({ engine, store, config, log });
   const previews = new Map();
   const paging = apiSpec.paging;
   const LIST_TTL_MS = 5 * 60 * 1000;
@@ -194,6 +194,20 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       // The first chat list reads them instead.
     }
   };
+
+  // The conversation's own platform, read from the service the engine reports for its chat (issue 184); the sender
+  // chooses the form each platform carries from it. The held chat list answers (and is read if it is not held yet); a
+  // chat it does not know reads as unknown, and the sender refuses in place rather than guess.
+  const platformOfChat = async (chatId) => {
+    let chat = null;
+    try {
+      chat = (await chatList(paging.chats.default)).find((c) => String(c.id) === String(chatId)) || null;
+    } catch {
+      // The list could not be read, so the platform is unknown and the sender refuses rather than guess.
+    }
+    return platformOf(chat);
+  };
+  const send = createSender({ engine, store, config, log, platformOfChat });
 
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const ctx = {

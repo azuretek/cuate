@@ -57,6 +57,12 @@ const CASES = [
   { id: 'validate.problems', call: 'validate', args: [{ id: 1 }, 'Chat', { Chat: { id: 'string' } }] },
   { id: 'time.days-ago', call: 'daysAgo', args: ['2026-01-02T12:00:00.000Z', { now: NOW, timeZone: 'UTC' }] },
   { id: 'time.list-time', call: 'formatListTime', args: ['2026-01-02T12:00:00.000Z', { now: NOW, locale: 'en-US', timeZone: 'UTC' }] },
+  { id: 'platform.of', call: 'platformOf', args: [{ service: 'SMS' }] },
+  { id: 'platform.actions-sms', call: 'messageActions', args: [{ id: 'FAKE-0001', fromMe: false, state: null }, { sending: true, platform: 'sms' }] },
+  { id: 'platform.actions-native', call: 'messageActions', args: [{ id: 'FAKE-0001', fromMe: false, state: null }, { sending: true, platform: 'imessage' }] },
+  { id: 'platform.fallback', call: 'reactionFallbackText', args: ['love', 'the plan stands'] },
+  { id: 'platform.parse', call: 'parseReactionText', args: ['Loved "the plan stands"'] },
+  { id: 'platform.parse-emoji', call: 'parseReactionText', args: ['Reacted \u{1F389} to "the plan stands"'] },
 ];
 
 export function fixtures() {

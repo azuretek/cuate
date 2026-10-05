@@ -6,6 +6,7 @@ import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
+import { platformOf, platformCapabilities } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
 import { typingLabel } from '../rules/typing.js';
@@ -190,6 +191,9 @@ class AppConversation extends KitElement {
   // behind it, and the composer replies into it. A thread is one level deep, as on the Mac: it is named by its first
   // message, so answering a reply joins the same thread (issues 169 and 183).
   openThread(m) {
+    // Only a platform that carries threads offers one (issue 184): on any other, answering is a plain message, so no
+    // thread is opened here and nothing is sent as a reply the recipient cannot read.
+    if (!platformCapabilities(platformOf(this.chat)).thread) return;
     this.pop = null;
     this.reactFor = null;
     this.replyingTo = { id: threadRoot(this.messages, m.id) };
@@ -212,7 +216,7 @@ class AppConversation extends KitElement {
 
   // The menu: when the message arrived (or was sent), then Reply in thread and React as icons from the shared set.
   menu(m) {
-    const actions = messageActions(m, { sending: this.sending });
+    const actions = messageActions(m, { sending: this.sending, platform: platformOf(this.chat) });
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
     return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side} data-popover data-popover-edge=${this.pop.side === 'below' ? 'top' : 'bottom'} data-popover-align=${m.fromMe ? 'end' : 'start'}>
       <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
