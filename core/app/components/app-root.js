@@ -12,13 +12,20 @@ import {
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
+import { platformOf, foldReactions } from '../rules/platform.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
+
+// The text-fallback reactions a client on another service sends are folded onto the messages they quote, so they
+// show as reactions rather than as new text (issue 184). The platform comes from the chat's own service; a list on a
+// platform with no fallback is returned untouched.
+const foldFor = (list, chats, chatId) => foldReactions(list, platformOf((chats || []).find((c) => c.id === chatId)));
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
 import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
+import { withRuntime } from '../../kit/rules/build.js';
 import './app-notices.js';
 import { screenFor, pageAfterBack } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
@@ -202,7 +209,10 @@ class AppRoot extends KitElement {
     // The shell names its platform and product before the page boots, so the bar is drawn with the first paint and
     // only where a window exists. A phone answers call but installs no event stream, so the bar is desktop only.
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
-      this.bridge('app.info').then((info) => { this.host = info || {}; }, () => {});
+      // The shell's report with the page's own running environment folded in: the runtime rows (Electron, Chromium, Node)
+      // and a commit the shell did not stamp are read from the process the page actually runs in, so a phone's web view
+      // reports what it has rather than Unknown (PR 257).
+      this.bridge('app.info').then((info) => { this.host = withRuntime(info || {}, globalThis); }, () => { this.host = withRuntime({}, globalThis); });
     }
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.on === 'function') {
       this.offUpdate = window.bridge.on('update.state', (data) => this.onUpdate(data || {}));
@@ -503,7 +513,7 @@ class AppRoot extends KitElement {
     if (cached) {
       this.openChatId = chatId;
       this.selecting = null;
-      this.messages = cached.messages;
+      this.messages = foldFor(cached.messages, this.chats, chatId);
       this.hasMore = cached.hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
@@ -528,7 +538,7 @@ class AppRoot extends KitElement {
       this.selecting = null;
       // A page merged over the conversation we held keeps any older messages already loaded, and keeps a message that
       // arrived live while the page was in flight (issue 66).
-      this.messages = mergeMessages(cached ? [...cached.messages, ...arrived] : arrived, messages);
+      this.messages = foldFor(mergeMessages(cached ? [...cached.messages, ...arrived] : arrived, messages), this.chats, chatId);
       this.hasMore = hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
@@ -549,7 +559,7 @@ class AppRoot extends KitElement {
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: 50, before: this.messages[0].sentAt });
       if (this.openChatId === chatId) {
-        this.messages = mergeMessages(this.messages, messages);
+        this.messages = foldFor(mergeMessages(this.messages, messages), this.chats, chatId);
         this.hasMore = hasMore;
       }
       return true;
@@ -579,7 +589,7 @@ class AppRoot extends KitElement {
       const r = applyMessageToChats(this.chats, m, { openChatId: this.openChatId });
       if (r.known) this.chats = r.chats;
       else this.reload();
-      if (m.chatId === this.openChatId) this.messages = mergeMessages(this.messages, [m]);
+      if (m.chatId === this.openChatId) this.messages = foldFor(mergeMessages(this.messages, [m]), this.chats, m.chatId);
       if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
@@ -699,7 +709,7 @@ class AppRoot extends KitElement {
     const localId = 'local:' + clientKey;
     this.pending.set(clientKey, { localId, chatId, text, messageId: null });
     const local = { id: localId, chatId, fromMe: true, sender: null, senderName: null, text, sentAt: new Date().toISOString(), replyTo: replyTo || null, read: null, attachments: file ? [localAttachment(file)] : [], reactions: [], state: 'sending' };
-    this.messages = mergeMessages(this.messages, [local]);
+    this.messages = foldFor(mergeMessages(this.messages, [local]), this.chats, chatId);
     try {
       const upload = file ? await this.client.upload({ name: file.name || 'file', mime: file.type || undefined, data: toBase64(new Uint8Array(await file.arrayBuffer())) }) : null;
       const r = await this.client.send(chatId, { text, file: upload ? upload.id : undefined, clientKey, replyTo: replyTo || undefined });
@@ -732,8 +742,11 @@ class AppRoot extends KitElement {
     if (!chatId || !this.client || this.reacting) return false;
     this.reacting = messageId;
     this.messageNote = null;
+    // The message being reacted to is carried along so the server can compose the platform's own text fallback
+    // where the conversation is not on the message service (issue 184); it is used for that and never stored.
+    const target = (this.messages || []).find((x) => x.id === messageId);
     try {
-      const r = await this.client.react(chatId, messageId, { emoji, remove });
+      const r = await this.client.react(chatId, messageId, { emoji, remove, text: target ? target.text : '' });
       if (chatId !== this.openChatId) return;
       if (r.status === 'uncertain') this.messageNote = { id: messageId, text: 'The reaction may not have sent.' };
       else this.messages = applyReaction(this.messages, { targetId: messageId, type: r.type, emoji: r.emoji ?? null, add: r.add, fromMe: true, sender: null });

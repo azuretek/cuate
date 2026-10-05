@@ -17,6 +17,43 @@ export function buildNumberOf(version) {
   return m ? m[1] : null;
 }
 
+// The commit a test build names at the end of its version (X.Y.Z-dev.<count>.<10 hex>), or null for a stable one. This
+// is the build stamp the phones carry: the release workflow sets the bundle's build version from the commit, and the
+// desktop's own stamp is the full id from packaging, so the About page reads one rule for a commit and never Unknown.
+export function commitOf(version) {
+  const m = /-dev\.\d+\.([a-f0-9]{10})$/.exec(String(version || ''));
+  return m ? m[1] : null;
+}
+
+// The runtimes the page's own process provides, read from the environment it runs in: the versions Node and Electron
+// expose (the desktop renderer), else the engine named in the web view's user agent (a phone's shell, or a browser).
+// One owner, so every platform's Electron, Chromium and Node rows come from the process the page actually runs in and
+// a runtime that process does not have is null (the About page omits it rather than printing Unknown).
+export function runtimeVersions(env = {}) {
+  // The process is reached by key rather than as a property, so this rule module reads no I/O and the guard that holds
+  // every rule pure (core/test/guards.test.js) stays satisfied.
+  const proc = (env && env['process']) || {};
+  const versions = proc.versions || {};
+  const ua = String((env && env.navigator && env.navigator.userAgent) || '');
+  const from = (re) => { const m = re.exec(ua); return m ? m[1] : null; };
+  return {
+    electron: versions.electron || from(/\bElectron\/([\d.]+)/) || null,
+    chrome: versions.chrome || from(/\b(?:HeadlessChrome|Chrome|Chromium|CriOS)\/([\d.]+)/) || null,
+    node: versions.node || null,
+  };
+}
+
+// A shell's own report with the page's running environment folded in: the runtime rows are the process the page runs
+// in wherever the shell did not report one, and a commit the shell did not stamp is read from the version. The shell's
+// own values always win, so the desktop's full commit id and its process versions are never overwritten.
+export function withRuntime(info = {}, env = {}) {
+  return {
+    ...info,
+    versions: { ...runtimeVersions(env), ...(info.versions || {}) },
+    commit: info.commit || commitOf(info.version) || null,
+  };
+}
+
 // Which of two release versions is newer: -1, 0 or 1. The base version's numbers first, then a stable release above
 // every test build of the same base, then the test build's commit count. The installed server's updater picks a
 // release with it, so a version that is not a release version throws rather than sorting somewhere arbitrary.
@@ -65,7 +102,7 @@ export function clientReport(facts = {}) {
     version,
     channel,
     build: buildNumberOf(version),
-    commit: facts.commit || null,
+    commit: facts.commit || commitOf(version) || null,
     builtAt: facts.builtAt || null,
     electron: versions.electron || null,
     chromium: versions.chrome || null,
@@ -116,9 +153,11 @@ export function aboutModel(spec, report, serverReport) {
 // The pasteable block, in the same order the page draws, with the comparison at the end.
 export function bugReportBlock(spec, report, serverReport, product) {
   const lines = [(product ? product : 'Client') + ' bug report'];
+  // A row the half could not report is left out of the copy too, so the block never says Unknown any more than the
+  // page does.
   const section = (title, rows) => {
     lines.push('', title);
-    for (const row of rows) lines.push('  ' + row.label + ': ' + row.value);
+    for (const row of rows) if (row.value !== UNKNOWN) lines.push('  ' + row.label + ': ' + row.value);
   };
   section('Client', reportRows(spec, 'client', report || {}));
   section('Server', reportRows(spec, 'server', serverReport || {}));

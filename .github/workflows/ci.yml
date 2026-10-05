@@ -178,6 +178,22 @@ jobs:
           name: window-chrome-proof-${{ matrix.os }}
           path: ${{ runner.temp }}/proof-window-chrome
           if-no-files-found: warn
+      # Issue 190's proof: one action button in its four states (idle, working, done, failed) on the same
+      # button, light and dark, for the default palette and an imported theme, at desktop and phone width. Linux
+      # carries no desktop session, so it runs under the virtual display like the smoke. The captures go up as an
+      # artifact for the pull request.
+      - name: Prove the action buttons' four states (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 6
+        continue-on-error: true
+        run: xvfb-run -a -s "-screen 0 1280x900x24" pnpm --filter desktop exec electron scripts/prove-action-buttons.mjs --shots "${{ runner.temp }}/proof-action-buttons"
+      - name: Keep the action-button proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: action-button-proof-${{ matrix.os }}
+          path: ${{ runner.temp }}/proof-action-buttons
+          if-no-files-found: warn
       - name: Keep the captures
         if: always()
         uses: actions/upload-artifact@v4

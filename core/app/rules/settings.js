@@ -18,6 +18,10 @@ import { reportRows, UNKNOWN } from '../../kit/rules/build.js';
 import { BUILD_SPEC } from './build-spec.js';
 import { APP_ICONS } from './app-icons-spec.js';
 
+// Every app icon variant the spec holds, family by family in its order, each with the colour's label beside its own
+// (issue 246; rules/app-icons.js walks the same list). The picker and this schema read the one spec.
+const APP_ICON_VARIANTS = APP_ICONS.families.flatMap((family) => ['light', 'dark'].map((key) => ({ ...family.variants[key], familyLabel: family.label })));
+
 export const SETTINGS_SCHEMA = {
   groups: [
     { id: 'appearance', label: 'Appearance', description: 'How the app looks and how much text it shows.' },
@@ -33,9 +37,10 @@ export const SETTINGS_SCHEMA = {
   keys: {
     'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'segmented', options: ['system', 'light', 'dark'], labels: { system: 'System', light: 'Light', dark: 'Dark' }, default: 'system' },
     'appearance.textScale': { group: 'appearance', label: 'Text size', type: 'scale', options: TEXT_SCALES, default: 100 },
-    // The app icon (issue 167): one of the icons core/spec/app-icons.json names, each drawn as its own picture, held by
-    // the server like every other setting and applied by each shell where its platform can (rules/app-icons.js).
-    'appearance.appIcon': { group: 'appearance', label: 'App icon', type: 'icon', options: APP_ICONS.icons.map((i) => i.id), labels: Object.fromEntries(APP_ICONS.icons.map((i) => [i.id, i.label])), default: APP_ICONS.default },
+    // The app icon (issues 167 and 246): every colour is one family with a paper Light variant and a bright Dark one,
+    // from core/spec/app-icons.json, plus Follow theme. Each is drawn as its own picture, held by the server like every
+    // other setting and applied by each shell where its platform can (rules/app-icons.js).
+    'appearance.appIcon': { group: 'appearance', label: 'App icon', type: 'icon', options: [...APP_ICON_VARIANTS.map((v) => v.id), APP_ICONS.followTheme.id], labels: Object.fromEntries([...APP_ICON_VARIANTS.map((v) => [v.id, v.familyLabel + ' ' + v.label]), [APP_ICONS.followTheme.id, APP_ICONS.followTheme.label]]), default: APP_ICONS.default },
     // Every notice the client can raise, each on its own switch, in Behavior's Notices section. Turning one off
     // silences only that notice.
     'notifications.newMessage': { group: 'behavior', section: 'notices', label: 'New messages', type: 'toggle', default: true },
@@ -116,13 +121,17 @@ const PRODUCT = { key: 'product', label: 'App' };
 
 export function aboutRows(host, info, spec = BUILD_SPEC) {
   const halves = { client: reportRows(spec, 'client', host || {}), server: reportRows(spec, 'server', info || {}) };
-  return ABOUT_ORDER.map(([half, key]) => {
+  const rows = ABOUT_ORDER.map(([half, key]) => {
     if (key === PRODUCT.key) {
       const name = (host && host.product) || (info && info.product);
       return { ...PRODUCT, value: name ? String(name) : UNKNOWN };
     }
     return halves[half].find((row) => row.key === key) || { key, label: key, value: UNKNOWN };
   });
+  // A value a half could not report is not shown at all: a platform whose runtime has no Electron or Node, or a build
+  // with no stamp, prints no such row rather than a row reading Unknown (PR 257). Every row that is drawn reports
+  // something true, and core/spec/build.json stays the one owner of which fields exist.
+  return rows.filter((row) => row.value !== UNKNOWN);
 }
 
 // The About links, from the repository the server reports on its info route (core/spec/naming.json is the owner of

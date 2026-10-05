@@ -60,9 +60,13 @@ class SettingsPageTest {
     // (core/spec/app-icons.json), the middle of that choice's tile, is on screen, which it only is once Settings has
     // drawn its app icon choices. The tile is a gradient, so the band in that colour is narrow: every pixel is read.
     private fun iconShown(capture: android.graphics.Bitmap): Boolean {
-        val spec = JSONObject(BundledSpec.text(instrumentation.targetContext.assets, "spec/app-icons.json")).getJSONArray("icons")
-        val accent = (0 until spec.length()).map { spec.getJSONObject(it) }
-            .first { it.optString("scheme") == "light" && it.has("colors") }.getJSONObject("colors").getString("accent")
+        val families = JSONObject(BundledSpec.text(instrumentation.targetContext.assets, "spec/app-icons.json")).getJSONArray("families")
+        val variants = (0 until families.length()).flatMap { f ->
+            val v = families.getJSONObject(f).getJSONObject("variants")
+            listOf("light", "dark").map { v.getJSONObject(it) }
+        }
+        val accent = variants.first { it.optString("scheme") == "light" && it.has("colors") }
+            .getJSONObject("colors").getString("accent")
         val tile = android.graphics.Color.parseColor(accent)
         val pixels = IntArray(capture.width * capture.height)
         capture.getPixels(pixels, 0, capture.width, 0, 0, capture.width, capture.height)

@@ -307,6 +307,73 @@
         }
       ],
       "expect": "\"Friday\""
+    },
+    {
+      "id": "platform.of",
+      "call": "platformOf",
+      "args": [
+        {
+          "service": "SMS"
+        }
+      ],
+      "expect": "\"sms\""
+    },
+    {
+      "id": "platform.actions-sms",
+      "call": "messageActions",
+      "args": [
+        {
+          "id": "FAKE-0001",
+          "fromMe": false,
+          "state": null
+        },
+        {
+          "sending": true,
+          "platform": "sms"
+        }
+      ],
+      "expect": "[\"react\"]"
+    },
+    {
+      "id": "platform.actions-native",
+      "call": "messageActions",
+      "args": [
+        {
+          "id": "FAKE-0001",
+          "fromMe": false,
+          "state": null
+        },
+        {
+          "sending": true,
+          "platform": "imessage"
+        }
+      ],
+      "expect": "[\"reply\",\"react\"]"
+    },
+    {
+      "id": "platform.fallback",
+      "call": "reactionFallbackText",
+      "args": [
+        "love",
+        "the plan stands"
+      ],
+      "expect": "\"Loved \\\"the plan stands\\\"\""
+    },
+    {
+      "id": "platform.parse",
+      "call": "parseReactionText",
+      "args": [
+        "Loved \"the plan stands\""
+      ],
+      "expect": "{\"type\":\"love\",\"emoji\":null,\"text\":\"the plan stands\"}"
+    },
+    {
+      "id": "platform.parse-emoji",
+      "call": "parseReactionText",
+      "args": [
+        "Reacted 🎉 to \"the plan stands\""
+      ],
+      "expect": "{\"type\":\"emoji\",\"emoji\":\"🎉\",\"text\":\"the plan stands\"}"
     }
   ]
 }

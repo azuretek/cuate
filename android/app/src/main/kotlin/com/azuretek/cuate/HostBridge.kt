@@ -158,7 +158,10 @@ class HostBridge(
                     .put("channel", Releases.channelOf(version))
                     .put("build", if (build > 0) build.toString() else JSONObject.NULL)
                     .put("updateChannel", if (Releases.channelOf(version) == "dev") "dev" else "latest")
-                    .put("platform", "android"),
+                    .put("platform", "android")
+                    .put("arch", if (Build.SUPPORTED_ABIS.isNotEmpty()) Build.SUPPORTED_ABIS[0] else JSONObject.NULL)
+                    .put("packaged", !BuildConfig.DEBUG)
+                    .put("installSource", installSource()),
             )
             "app.icon" -> success(appIcon(args.optString("icon")))
             "notify" -> success(notify(args))
@@ -196,11 +199,39 @@ class HostBridge(
      * icon. DONT_KILL_APP and the activity itself staying enabled mean the change never closes the app; a launcher may
      * take a moment to redraw. An id the spec does not name is refused and nothing changes.
      */
+    /**
+     * How this copy was obtained: the Play Store, a sideloaded APK, or a debug run from source. Android names the
+     * installer that put the app on the device, so About reports it rather than Unknown (PR 257).
+     */
+    @Suppress("DEPRECATION")
+    private fun installSource(): String {
+        if (BuildConfig.DEBUG) return "source"
+        return try {
+            val pm = context.packageManager
+            val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                pm.getInstallSourceInfo(context.packageName).installingPackageName
+            } else {
+                pm.getInstallerPackageName(context.packageName)
+            }
+            when (installer) {
+                "com.android.vending" -> "Play Store"
+                else -> "APK"
+            }
+        } catch (e: Exception) {
+            "APK"
+        }
+    }
+
     private fun appIcon(icon: String): JSONObject {
         val answer = JSONObject().put("icon", icon)
         val spec = JSONObject(BundledSpec.text(context.assets, "spec/app-icons.json"))
-        val icons = spec.getJSONArray("icons")
-        val ids = (0 until icons.length()).map { icons.getJSONObject(it).getString("id") }
+        val ids = mutableListOf<String>()
+        val families = spec.getJSONArray("families")
+        for (i in 0 until families.length()) {
+            val variants = families.getJSONObject(i).getJSONObject("variants")
+            for (key in listOf("light", "dark")) ids.add(variants.getJSONObject(key).getString("id"))
+        }
+        spec.optJSONObject("followTheme")?.optString("id")?.takeIf { it.isNotEmpty() }?.let { ids.add(it) }
         if (icon !in ids) return answer.put("applied", false)
         val fallback = spec.getString("default")
         val pm = context.packageManager

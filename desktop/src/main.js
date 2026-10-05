@@ -17,6 +17,7 @@ import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { renderIcon } from '../../core/app/rules/icon.js';
+import { fixedPalette } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
@@ -58,12 +59,19 @@ let win = null;
 // redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
 // The launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
 const appIconSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/app-icons.json'), 'utf8'));
+// Every colour is one family with a paper Light and a bright Dark variant (issue 246); Follow theme carries no colours.
+const appIconVariants = appIconSpec.families.flatMap((family) => ['light', 'dark'].map((key) => family.variants[key]));
+const appIconCount = appIconVariants.length + 1;
 let appIconApplied = appIconSpec.default;
 let appIconFixed = null;
 function setAppIcon(icon) {
-  const choice = appIconSpec.icons.find((i) => i.id === icon);
-  if (!choice) return { applied: false, icon };
-  appIconFixed = choice.colors ? { scheme: choice.scheme === 'dark' ? 'dark' : 'light', colors: choice.colors } : null;
+  const choice = appIconVariants.find((i) => i.id === icon);
+  const followTheme = icon === appIconSpec.followTheme.id;
+  if (!choice && !followTheme) return { applied: false, icon };
+  // The choice's palette comes from the one rule the page uses (rules/app-icons.js): a fixed variant's is its own,
+  // and Follow theme (no colours of its own) answers null, clearing the fixed palette so the tray, the window icon
+  // and the Dock draw from the active theme again rather than keeping the last colour picked.
+  appIconFixed = fixedPalette(icon, appIconSpec);
   appIconApplied = icon;
   applyIcons();
   return { applied: true, icon };
@@ -1360,7 +1368,7 @@ async function runSmoke(w) {
   const afterSwipeBack = await viewerState();
   await js("document.querySelector('app-image-viewer .close-button').click()");
   await waitFor("!document.querySelector('app-image-viewer')", 5000);
-  const mediaRow = '.bubble-row[data-id="FAKE-0009"]';
+  const mediaRow = '.bubble-row[data-id="FAKE-0011"]';
   await js("(() => { const b = document.querySelector(" + q(mediaRow + ' .attachment-preview') + "); if (b) b.scrollIntoView({ block: 'center' }); return true; })()");
   await pause(250);
   const touchPress = (t) => js("(() => { const b = document.querySelector(" + q(mediaRow + ' .attachment-preview') + "); const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent(" + JSON.stringify(t) + ", { bubbles: true, cancelable: true, pointerId: 21, pointerType: 'touch', isPrimary: true, button: 0, buttons: " + (t === 'pointerdown' ? 1 : 0) + ", clientX: r.left + 8, clientY: r.top + 8 })); return true; })()");
@@ -2229,11 +2237,11 @@ async function runSmoke(w) {
   await showTab('appearance');
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
-  const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconSpec.icons.length + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
+  const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconCount + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
   // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
   const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
-  const iconPick = 'rosa';
-  const fixedOf = (id) => ({ scheme: appIconSpec.icons.find((i) => i.id === id).scheme, colors: appIconSpec.icons.find((i) => i.id === id).colors });
+  const iconPick = 'rosa_dark';
+  const fixedOf = (id) => { const c = appIconVariants.find((i) => i.id === id); return { scheme: c.scheme, colors: c.colors }; };
   await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
   await js(iconChoice(iconPick) + '.click()');
   for (let i = 0; i < 50 && ((await held())['appearance.appIcon'] !== iconPick || appIconApplied !== iconPick); i += 1) await pause(200);
@@ -2463,14 +2471,14 @@ async function runSmoke(w) {
   // The client's own build and the server's, in chela's order, each value copyable, the links, and the one action that
   // copies the lot.
   const aboutOrder = ['product', 'version', 'channel', 'build', 'commit', 'builtAt', 'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt', 'platform', 'arch', 'electron', 'chromium', 'node', 'installSource', 'packaged', 'updateChannel', 'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion'];
-  const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')) }))()");
+  const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')), unknown: [...document.querySelectorAll('app-about .about-row .about-value-text')].some((e) => e.textContent === 'Unknown') }))()");
   // Back from About returns to Settings, the page it was pushed over.
   await js("document.querySelector('app-about .sheet-back').click()");
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
-  report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.join('|') === aboutOrder.join('|') && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
+  report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.every((k) => aboutOrder.includes(k)) && aboutSeen.keys.join('|') === aboutOrder.filter((k) => aboutSeen.keys.includes(k)).join('|') && !aboutSeen.unknown && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
   report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
   if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));

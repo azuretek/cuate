@@ -207,9 +207,9 @@ function cssHex(v) {
 
 test('the Android About test looks for the chosen icon\'s tile as the palette draws it (issue 246)', () => {
   const spec = JSON.parse(read('core/spec/app-icons.json'));
-  const chosen = spec.icons.find((i) => i.id === 'rosa');
-  assert.ok(chosen && chosen.colors, 'the spec holds the rosa icon');
-  assert.match(read('core/test/about-fixture.js'), /'appearance\.appIcon': 'rosa'/, 'the About fixture picks the rosa icon');
+  const chosen = spec.families.flatMap((f) => ['light', 'dark'].map((k) => f.variants[k])).find((i) => i.id === 'rosa_dark');
+  assert.ok(chosen && chosen.colors, 'the spec holds the rosa Dark variant');
+  assert.match(read('core/test/about-fixture.js'), /'appearance\.appIcon': 'rosa_dark'/, 'the About fixture picks the rosa Dark variant');
   const top = iconPalette(iconColours(tokens.color[chosen.scheme], chosen.colors), chosen.scheme).tile.top;
   const want = 'Color.rgb(' + [1, 3, 5].map((i) => '0x' + top.slice(i, i + 2)).join(', ') + ')';
   const file = readdirSync(new URL('../../android/app/src/androidTest', import.meta.url), { recursive: true }).find((f) => String(f).endsWith('AboutPageTest.kt'));

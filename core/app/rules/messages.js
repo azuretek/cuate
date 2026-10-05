@@ -1,4 +1,6 @@
 // Pure: the conversation's rules.
+import { platformCapabilities } from './platform.js';
+
 const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 
 // The six standard tapbacks, in the order the Mac offers them, as { type, glyph }. These are the reactions every
@@ -47,15 +49,21 @@ export function reactionUnsupported(engine, needed = EMOJI_TAPBACK_VERSION) {
 export const MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
 export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
 
-// What a message's menu offers (issues 169 and 181): React on any message the engine can target, Reply in thread only
-// on someone else's, since a thread is started by answering another person, and Save when the message carries a file
-// that is really there (a picture or a video, or a document) to write to the platform's photo library or downloads
-// folder. Sending off on the server offers nothing to send, and so nothing to save either.
-export function messageActions(m, { sending = false } = {}) {
+// What a message's menu offers (issues 169, 181 and 184): React on any message the engine can target and the
+// conversation's own platform carries a reaction for (an engine tapback, or the platform's own text fallback);
+// Reply in thread only on someone else's, and only where the platform carries threads, since a thread is started
+// by answering another person; and Save when the message carries a file that is really there (a picture or a
+// video, or a document) to write to the platform's photo library or downloads folder. Sending off on the server
+// offers nothing to send, and so nothing to save either. A platform the app cannot name offers neither.
+export function messageActions(m, { sending = false, platform = 'imessage' } = {}) {
   if (!sending || !canTarget(m)) return [];
-  const base = m.fromMe ? ['react'] : ['reply', 'react'];
+  const caps = platformCapabilities(platform);
   const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
-  return savable ? ['save', ...base] : base;
+  const actions = [];
+  if (savable) actions.push('save');
+  if (!m.fromMe && caps.thread) actions.push('reply');
+  if (caps.tapback || caps.fallback) actions.push('react');
+  return actions;
 }
 
 // The first message of the thread a message belongs to, followed up through replyTo (a parent not loaded included).
