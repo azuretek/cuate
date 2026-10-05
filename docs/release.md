@@ -2,6 +2,12 @@
 
 A push to main that changes a shipped path produces a test build: the desktop apps, the server and the Android APK, one version, one GitHub prerelease. A manual workflow dispatch compares the snapshot with the most recent reachable dev tag and refuses if nothing ships. Documentation, Markdown, root scripts, workflow files, hooks, LICENSE and .gitignore do not trigger a release. A server-only change does: the server ships with the clients. Unknown paths ship by default. The sole classifier is scripts/release/changes.mjs.
 
+## Stable releases
+
+Stable releases are driven by release-please (`release-please-config.json`, `.release-please-manifest.json` and `.github/workflows/release-please.yml`). On every push to `main` it maintains one release pull request; merging it bumps the version in every file that carries it, writes `CHANGELOG.md` from the merged commits grouped by type, and tags `vX.Y.Z`. The pull request title is the line the changelog reads, so the `gate` refuses a title that is not `type(scope): a sentence` (`scripts/release/pr-title.mjs`).
+
+The test-build lane above is kept as a **stated exception**, not leftover custom code: a platform requires a build per shipping change for the updater, TestFlight and the Android APK, so `scripts/release/version.mjs` still derives the `X.Y.Z-dev.<count>.<sha>` snapshot and `release.yml` still publishes it. release-please does not build or publish anything; it only decides the next version, the tag and the notes.
+
 ## Snapshot and channels
 
 The version is the root package's next patch followed by -dev.<commit-count>.<first-ten-SHA-characters>. The root version is not rewritten by CI. The exact version is embedded in the desktop package and returned by app.info. All jobs check out the event SHA.
