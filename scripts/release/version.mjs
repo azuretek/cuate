@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, appendFileSync } from 'node:fs';
+import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 /**
  * The marketing version: the version a build reports as its own, which is the
@@ -33,21 +33,96 @@ export function snapshot({ cwd } = {}) {
   return { base, marketing: marketingOf(base), version: versionOf(base, count, sha), count, sha };
 }
 
+/**
+ * The stable version a release tag names. A release tag reads vX.Y.Z with no
+ * prerelease identifier, so the tag and the three-integer marketing version are
+ * the same string. Accepts a full ref (refs/tags/vX.Y.Z) as CI hands it over, or
+ * a bare vX.Y.Z as a person types it.
+ */
+export function stableFromRef(ref) {
+  if (typeof ref !== 'string') throw new Error('Invalid release ref');
+  const bare = ref.startsWith('refs/tags/') ? ref.slice('refs/tags/'.length) : ref;
+  const match = /^v(\d+\.\d+\.\d+)$/.exec(bare);
+  if (!match) throw new Error('Invalid release tag ' + ref + ': a release tag reads vX.Y.Z');
+  return match[1];
+}
+
+/**
+ * Every file that owns the version, and how a value is read back out of it. This
+ * is the same set release-please-config.json bumps together, so a tag that
+ * disagrees with any of them is a release that would ship two versions.
+ */
+export const VERSION_FILES = [
+  { path: 'core/spec/version.json', read: (text) => JSON.parse(text).version },
+  { path: 'desktop/package.json', read: (text) => JSON.parse(text).version },
+  { path: 'server/package.json', read: (text) => JSON.parse(text).version },
+  { path: 'ios/project.yml', read: (text) => (text.match(/^\s*MARKETING_VERSION:\s*"?([^"\s#]+)"?/m) || [])[1] },
+  { path: 'android/app/build.gradle.kts', read: (text) => (text.match(/versionName\s*=\s*[^\n]*?:\s*"([^"]+)"/) || [])[1] },
+];
+
+/**
+ * Assert that a release version agrees with every file that owns it. Returns the
+ * list of disagreements (empty when they agree); the caller refuses loudly with
+ * it. The version is the tag's, and every file must equal it, because
+ * release-please bumps them together and a tag is only a release once they match.
+ */
+export function versionFileProblems(version, { root = new URL('../../', import.meta.url) } = {}) {
+  const problems = [];
+  for (const file of VERSION_FILES) {
+    const url = new URL(file.path, root);
+    if (!existsSync(url)) { problems.push({ path: file.path, found: null, reason: 'missing' }); continue; }
+    const found = file.read(readFileSync(url, 'utf8'));
+    if (found !== version) problems.push({ path: file.path, found: found == null ? null : found, reason: found == null ? 'no version found' : 'says ' + found });
+  }
+  return problems;
+}
+
+export function assertVersionFiles(version, options) {
+  // A dev snapshot is not a release and no file carries it, so only a stable
+  // (three integer) version is checked against the files.
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Not a release version: ' + version);
+  const problems = versionFileProblems(version, options);
+  if (problems.length) {
+    throw new Error('The tag v' + version + ' disagrees with ' + problems.length + ' file(s) that own the version, so nothing is published: '
+      + problems.map((p) => p.path + ' ' + p.reason).join('; ')
+      + '. Run release-please first so every file is bumped to the tag.');
+  }
+  return version;
+}
+
+function emit(pairs) {
+  if (!process.env.GITHUB_OUTPUT) return;
+  for (const [key, value] of Object.entries(pairs)) appendFileSync(process.env.GITHUB_OUTPUT, key + '=' + value + '\n');
+}
+
 export function run({ argv = [] } = {}) {
-  // --marketing prints only what a bundle can carry: an App Store version is three
-  // dot separated integers, so the dev string stays in the app's own build field.
   if (argv.includes('--marketing')) {
     const marketing = marketingOf(baseOf());
     console.log(marketing);
     return marketing;
   }
+  // --stable <ref>: the version a release tag names, for the tag lane.
+  const stableAt = argv.indexOf('--stable');
+  if (stableAt !== -1) {
+    const version = stableFromRef(argv[stableAt + 1] || process.env.GITHUB_REF || '');
+    const count = Number(gitIn()('rev-list', '--count', 'HEAD'));
+    console.log(version);
+    emit({ version, marketing: version, count, tagged: 'true' });
+    return version;
+  }
+  // --check-files <ref>: refuse loudly when the tag and any version file disagree.
+  const checkAt = argv.indexOf('--check-files');
+  if (checkAt !== -1) {
+    const version = stableFromRef(argv[checkAt + 1] || process.env.GITHUB_REF || '');
+    assertVersionFiles(version);
+    console.log('v' + version + ' agrees with every file that owns the version');
+    emit({ version, marketing: version, tagged: 'true' });
+    return version;
+  }
   const { version, marketing, count } = snapshot();
   console.log(version);
-  if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + version + '\n');
-    appendFileSync(process.env.GITHUB_OUTPUT, 'marketing=' + marketing + '\n');
-    appendFileSync(process.env.GITHUB_OUTPUT, 'count=' + count + '\n');
-  }
+  emit({ version, marketing, count });
   return version;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) run({ argv: process.argv.slice(2) });
+
