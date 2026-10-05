@@ -49,15 +49,18 @@ export function reactionUnsupported(engine, needed = EMOJI_TAPBACK_VERSION) {
 export const MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
 export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
 
-// What a message's menu offers (issue 169): React on any message the engine can target, and Reply in thread only on
-// someone else's, since a thread is started by answering another person. Sending off on the server offers neither.
-// The conversation's own platform decides the rest (issue 184): a threaded reply is offered only where the platform
-// carries threads, and React only where the platform carries a reaction (as an engine tapback, or as the platform's
-// own text fallback). A platform the app cannot name offers neither.
+// What a message's menu offers (issues 169, 181 and 184): React on any message the engine can target and the
+// conversation's own platform carries a reaction for (an engine tapback, or the platform's own text fallback);
+// Reply in thread only on someone else's, and only where the platform carries threads, since a thread is started
+// by answering another person; and Save when the message carries a file that is really there (a picture or a
+// video, or a document) to write to the platform's photo library or downloads folder. Sending off on the server
+// offers nothing to send, and so nothing to save either. A platform the app cannot name offers neither.
 export function messageActions(m, { sending = false, platform = 'imessage' } = {}) {
   if (!sending || !canTarget(m)) return [];
   const caps = platformCapabilities(platform);
+  const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
   const actions = [];
+  if (savable) actions.push('save');
   if (!m.fromMe && caps.thread) actions.push('reply');
   if (caps.tapback || caps.fallback) actions.push('react');
   return actions;
