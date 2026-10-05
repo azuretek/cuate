@@ -11,6 +11,7 @@ import {
   requestDelete, requestDeleteGroup, resolveDelete,
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
+import { mediaItems, mediaIndex } from '../rules/media.js';
 import { platformOf, foldReactions } from '../rules/platform.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 
@@ -1530,6 +1531,31 @@ class AppRoot extends KitElement {
     aimCarets(this);
   }
 
+  // The media viewer: the picture or video a preview opened, and the conversation's other media, so the viewer steps
+  // through them in conversation order (issue 181). A preview of an attachment names the attachment; the page finds it
+  // among the conversation's media and hands the viewer the whole list and where to start. A staged preview in the
+  // composer has no conversation behind it, so it is a single item with nothing to step to.
+  openViewer(detail) {
+    const d = detail || {};
+    if (!d.src) { this.viewing = null; return; }
+    const items = mediaItems(this.messages || []);
+    const at = d.attachmentId ? mediaIndex(items, d.attachmentId) : -1;
+    if (at < 0) {
+      this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items: [], index: 0 };
+      return;
+    }
+    // The starting item is already loaded (its preview handed the src over), so the viewer shows it at once.
+    items[at] = { ...items[at], src: d.src, alt: d.alt || items[at].alt };
+    this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items, index: at };
+  }
+
+  // The viewer stepped to another item: the page keeps its own idea of the open item, so a re-render does not undo it.
+  viewerNavigate(e) {
+    if (!this.viewing) return;
+    const index = e && e.detail && Number.isFinite(e.detail.index) ? e.detail.index : this.viewing.index;
+    this.viewing = { ...this.viewing, index };
+  }
+
   render() {
     const platform = String(this.host && this.host.platform || '').toLowerCase();
     // No bar, no title and no icon: the app's surfaces run to the top edge of the window. macOS floats its traffic
@@ -1546,7 +1572,7 @@ class AppRoot extends KitElement {
     if (this.phase === 'onboarding') return html`<app-onboarding .problem=${this.problem} @connect=${(e) => respond(e, this.onConnect(e.detail))}></app-onboarding>`;
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
-    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => { this.viewing = e.detail && e.detail.src ? e.detail : null; }}>
+    return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => this.openViewer(e.detail)}>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
         ${this.searchTerms()}
@@ -1570,7 +1596,7 @@ class AppRoot extends KitElement {
       ${this.aboutSheetShowing ? html`<div class="sheet-scrim about-sheet-scrim" data-sheet="about" ?data-leaving=${this.aboutLeaving}><section class="sheet" data-view="about" data-arrive=${this.aboutMotion || 'none'} data-dismiss="about" role="dialog" aria-modal="true" aria-label="About" @animationend=${this.onAboutAnimationEnd}>${this.aboutBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
-      ${this.viewing ? html`<app-image-viewer .src=${this.viewing.src} .alt=${this.viewing.alt || ''} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
+      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }
 }

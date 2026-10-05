@@ -790,6 +790,17 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer > .close-button { position: absolute; top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); right: calc(var(--inset-right) + var(--space-4)); z-index: 1; }
 .app-window[data-platform="darwin"] .viewer > .close-button { top: calc(var(--inset-top) + var(--size-window-strip) + var(--space-3)); }
 .viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
+/* The media viewer's step controls (issue 181): one each side, drawn from the shared icon set and the same tokens as
+   every other control, pushing the viewer to the previous or next item. The end it cannot go past is drawn dimmed and
+   inert, so the edge of the conversation's media is visible, not a dead press. */
+.viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-sm); cursor: pointer; }
+.viewer-nav:hover, .viewer-nav:focus-visible { background: var(--color-bg-sunken); outline: none; }
+.viewer-nav:disabled { opacity: 0.35; cursor: default; }
+.viewer-prev { left: var(--space-4); }
+.viewer-next { right: var(--space-4); }
+/* A video is drawn like a picture, with the viewer's own rounded edge and shadow; its first frame stands in for the
+   picture until it plays. */
+.viewer video.viewer-image { background: var(--color-bg-sunken); }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }
 
 /* The one close (X) control (issue 213, core/app/components/close-button.js): the image viewer's, the thread card's and

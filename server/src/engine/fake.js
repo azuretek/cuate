@@ -11,11 +11,16 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const imagePath = path.join(attachmentsRoot, 'fake', 'sunset.png');
   const png = gradientPng(480, 320);
   writeFileSync(imagePath, png);
+  // A second picture, so the first conversation carries more than one media item and the viewer has a neighbour to
+  // step to (issue 181).
+  const photo2Path = path.join(attachmentsRoot, 'fake', 'hills.png');
+  const photo2 = gradientPng(320, 240);
+  writeFileSync(photo2Path, photo2);
   // A document the conversation can save (issue 219): a small, well-formed PDF under its real name.
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
   writeFileSync(docPath, pdf);
-  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length });
+  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
   let rowid = messages.length;
   let attempts = 0;
   let liveSent = false;

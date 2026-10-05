@@ -19,6 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sanitizeText } from '../src/smoke-failure.js';
 import { evaluateChecks, formatFailures } from '../src/smoke-checks.js';
+import { resolveSmokeTimeoutMs, summarizeSmokeProgress, describeSmokeTimeout } from '../src/smoke-timeout.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const smokeStartedAt = Date.now();
@@ -36,12 +37,14 @@ const SENT = 'Sent from the desktop smoke';
 // When the app is killed before it can retain its own state (the deadline below), or exits without a
 // report, keep a bounded, sanitized note of how it ended. The app's own failure.json is authoritative and
 // is never overwritten: this only fills the gap when the renderer never got the chance to answer.
-function writeFailureNote(exitCode, applicationOutput) {
+function writeFailureNote(exitCode, applicationOutput, timeout = null) {
   try {
     const file = path.join(out, 'failure.json');
     if (existsSync(file)) return;
     const tail = sanitizeText(String(applicationOutput || '').slice(-4000), [process.env.SMOKE_TOKEN, process.env.SMOKE_SERVER_URL].filter(Boolean));
-    writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), killedBeforeRetention: true, exitCode, outputTail: tail }, null, 1));
+    const note = { at: new Date().toISOString(), killedBeforeRetention: true, exitCode, outputTail: tail };
+    if (timeout) note.timeout = timeout;
+    writeFileSync(file, JSON.stringify(note, null, 1));
   } catch { /* the smoke failure stands without the note */ }
 }
 
@@ -69,6 +72,7 @@ const port = await new Promise((resolve, reject) => {
 const electron = packed || createRequire(path.join(root, 'desktop', 'package.json'))('electron');
 const env = { ...process.env, SMOKE_OUT: out, SMOKE_SERVER_URL: 'http://127.0.0.1:' + port, SMOKE_TOKEN: token, SMOKE_LIVE_TEXT: LIVE, SMOKE_SEND_TEXT: SENT, SMOKE_THEME_FIXTURE: path.join(root, 'core/fixtures/themes/elegant-luxury.json') };
 const appProc = spawn(electron, packed ? [] : [path.join(root, 'desktop')], { env, stdio: ['ignore', 'pipe', 'inherit'] });
+const smokeTimeoutMs = resolveSmokeTimeoutMs();
 let report = null;
 let output = '';
 appProc.stdout.on('data', (d) => {
@@ -78,12 +82,21 @@ appProc.stdout.on('data', (d) => {
   process.stdout.write(d);
 });
 // The bound on the whole run, a failsafe for a smoke that HANGS rather than for one that is merely slow: the
-// outside-dismiss proof (issue 170) opens and closes nine panels at two widths in two schemes, the close-control
-// proof (issue 213) clicks every close control at four sizes, and the text-size walk (issue 253) captures every stop
-// at two widths, two schemes and two themes, so the bound has room for all of them beside every earlier check. The
-// software-rendered Linux runner and the Intel and emulated-ARM legs run that walk far more slowly than the arm64
-// one, and a bound tight enough to kill a runner that is still working is a flaky leg, not a caught hang.
-const killer = setTimeout(() => appProc.kill('SIGKILL'), 600000);
+// outside-dismiss proof (issue 170), the close-control proof (issue 213) and the text-size walk (issue 253) are
+// all part of what it covers, so the bound has room for them beside every earlier check. It is generous enough for
+// a congested queue (smoke-timeout.js says why and what the measured run times are; the software-rendered Linux
+// runner and the Intel and emulated-ARM legs run the walk far more slowly than the arm64 one, so a bound tight
+// enough to kill a runner that is still working is a flaky leg, not a caught hang).
+// SMOKE_TIMEOUT_MS shortens it for a local run, and it is never removed: a hung run still stops. When it fires it
+// records how long the run had lasted, the last step the app reached and every step it had completed, so a timeout
+// is diagnosable rather than a bare kill (issue 267).
+let smokeTimeout = null;
+const killer = setTimeout(() => {
+  const progress = summarizeSmokeProgress(output);
+  smokeTimeout = { elapsedMs: Date.now() - smokeStartedAt, timeoutMs: smokeTimeoutMs, step: progress.step, completed: progress.completed };
+  console.error(describeSmokeTimeout(smokeTimeout));
+  appProc.kill('SIGKILL');
+}, smokeTimeoutMs);
 const code = await new Promise((resolve) => { appProc.on('exit', resolve); appProc.on('error', (error) => { console.error(error.message); resolve(-1); }); });
 try { report = JSON.parse(readFileSync(path.join(out, 'report.json'), 'utf8')); } catch { /* absence fails below */ }
 // The required checks, each naming the bound it enforces, so a failure says the value it read and the
@@ -134,6 +147,7 @@ const checks = [
   { key: 'attachMenu', bound: 'true', value: (report) => report.attachMenu, test: (v) => v === true },
   { key: 'imagePreview', bound: 'true', value: (report) => report.imagePreview, test: (v) => v === true },
   { key: 'imageViewer', bound: 'true', value: (report) => report.imageViewer, test: (v) => v === true },
+  { key: 'mediaViewer', bound: 'true', value: (report) => report.mediaViewer, test: (v) => v === true },
   { key: 'sendOnce', bound: 'true', value: (report) => report.sendOnce, test: (v) => v === true },
   { key: 'importOnce', bound: 'true', value: (report) => report.importOnce, test: (v) => v === true },
   { key: 'pressStates', bound: 'true', value: (report) => report.pressStates, test: (v) => v === true },
@@ -176,7 +190,7 @@ const ok = verdict.ok;
 if (!ok) {
   console.error('smoke failed: exit ' + code + ', report ' + JSON.stringify(report));
   for (const line of formatFailures(verdict.results)) console.error('  ' + line);
-  writeFailureNote(code, output);
+  writeFailureNote(code, output, smokeTimeout);
   process.exit(1);
 }
 // The numbers a passing run measured, kept beside its captures, so a run leaves the values it read and not

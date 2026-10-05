@@ -13,7 +13,7 @@ import { typingLabel } from '../rules/typing.js';
 import { windowControlsHtml } from './window-controls.js';
 import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
-import './app-attachment.js';
+import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
 
 // How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
@@ -187,6 +187,14 @@ class AppConversation extends KitElement {
     return runPress(control, () => this.fire('react', { messageId: m.id, emoji, remove }));
   }
 
+  // Save writes a message's file, a picture or a video or a document, to where the platform keeps it, through the same
+  // control a document's own press uses (app-attachment's saveAttachment): the shell's save dialog on the desktop and
+  // its share or save sheet on a phone, a download in a plain browser (issue 181).
+  save(m) {
+    const a = (m.attachments || []).find((x) => x && !x.local && !x.missing);
+    return a ? saveAttachment(a, { client: this.client }) : false;
+  }
+
   // Reply in thread, or a reply, its line, its thread's ghost original or the reply count, opens the thread as its own conversation over the rest, which blurs
   // behind it, and the composer replies into it. A thread is one level deep, as on the Mac: it is named by its first
   // message, so answering a reply joins the same thread (issues 169 and 183).
@@ -220,6 +228,7 @@ class AppConversation extends KitElement {
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
     return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side} data-popover data-popover-edge=${this.pop.side === 'below' ? 'top' : 'bottom'} data-popover-align=${m.fromMe ? 'end' : 'start'}>
       <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
+      ${actions.includes('save') ? html`<button type="button" class="message-action" aria-label="Save" title="Save" @click=${press(() => this.save(m))}><span class="icon" data-icon="download" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('react') ? html`<button type="button" class="message-action" aria-label="React" title="React" @click=${press(() => this.openReact(m))}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>` : nothing}
     </div>`;

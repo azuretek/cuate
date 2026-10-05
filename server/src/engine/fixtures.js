@@ -10,7 +10,7 @@ const CHATS = [
   { id: 3, name: '+15555550142', display_name: '', contact_name: '', identifier: '+15555550142', guid: 'SMS;-;+15555550142', service: 'SMS', is_group: false, participants: ['+15555550142'], unread_count: 0 },
 ];
 
-// [chat, minutes before the base time, from me, sender, text, has the photo (true) or the document ('doc'), the guid
+// [chat, minutes before the base time, from me, sender, text, has the photos (true) or the document ('doc'), the guid
 // of the message it replies to in a thread]. Messages and its rows are ordered by guid; the thread replies and the
 // document are appended so every earlier guid stays.
 export const SCRIPT = [
@@ -54,13 +54,17 @@ const REACTIONS = {
   12: [{ ...imsgReaction('love'), sender: '+15555550100', is_from_me: false }],
 };
 
-export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes }) {
+export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes, photo2Path, photo2Bytes }) {
   const chats = CHATS.map((c) => ({ ...c, participants: [...c.participants] }));
-  // The fixture's attachments, synthetic only: a photo is a small PNG, and 'doc' is the booking PDF a press saves
-  // rather than opens (issue 219).
+  // The fixture's attachments, synthetic only: a photo message carries two pictures, so the first conversation has
+  // more than one media item and the viewer has a neighbour to step to (issue 181); 'doc' is the booking PDF a press
+  // saves rather than opens (issue 219).
   const attachmentFor = (kind) => {
     if (kind === 'doc') return [{ filename: 'booking.pdf', transfer_name: 'booking.pdf', uti: 'com.adobe.pdf', mime_type: 'application/pdf', total_bytes: docBytes, is_sticker: false, missing: false, original_path: docPath }];
-    if (kind) return [{ filename: 'sunset.png', transfer_name: 'sunset.png', uti: 'public.png', mime_type: 'image/png', total_bytes: imageBytes, is_sticker: false, missing: false, original_path: imagePath }];
+    if (kind) return [
+      { filename: 'sunset.png', transfer_name: 'sunset.png', uti: 'public.png', mime_type: 'image/png', total_bytes: imageBytes, is_sticker: false, missing: false, original_path: imagePath },
+      { filename: 'hills.png', transfer_name: 'hills.png', uti: 'public.png', mime_type: 'image/png', total_bytes: photo2Bytes, is_sticker: false, missing: false, original_path: photo2Path },
+    ];
     return [];
   };
   const messages = SCRIPT.map(([chat, minutes, fromMe, sender, text, photo, threadOf], i) => {

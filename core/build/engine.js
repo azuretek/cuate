@@ -73,6 +73,7 @@ var engine = (() => {
     STALL_MS: () => STALL_MS,
     SWALLOW_MS: () => SWALLOW_MS,
     SWATCH_TOKENS: () => SWATCH_TOKENS,
+    SWIPE_MIN_PX: () => SWIPE_MIN_PX,
     TAPBACKS: () => TAPBACKS2,
     TEXT_SCALES: () => TEXT_SCALES,
     THEME_GROUPS: () => THEME_GROUPS,
@@ -203,6 +204,7 @@ var engine = (() => {
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
+    isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     linkSite: () => linkSite,
     listSections: () => listSections,
@@ -211,6 +213,11 @@ var engine = (() => {
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
     matchesTerm: () => matchesTerm,
+    mediaIndex: () => mediaIndex,
+    mediaItems: () => mediaItems,
+    mediaKind: () => mediaKind,
+    mediaNeighbours: () => mediaNeighbours,
+    mediaStep: () => mediaStep,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     messageActions: () => messageActions,
@@ -305,6 +312,7 @@ var engine = (() => {
     summarizeReactions: () => summarizeReactions,
     swallows: () => swallows,
     swatchVars: () => swatchVars,
+    swipeStep: () => swipeStep,
     tapbackType: () => tapbackType,
     termsSentence: () => termsSentence,
     testFlightBanner: () => testFlightBanner,
@@ -479,7 +487,7 @@ var engine = (() => {
 
   // core/kit/log.js
   var LEVELS = ["debug", "info", "notice", "warn", "error", "fatal"];
-  var FREE_TEXT = /* @__PURE__ */ new Set(["error", "line", "problem"]);
+  var FREE_TEXT = /* @__PURE__ */ new Set(["error", "line", "problem", "chat", "stderr"]);
   function createLogger({ spec, app, version = null, run, pid = null, sink, now, level = "notice", recorderSize = 2e3, strict = false }) {
     const recorder = [];
     const state = { min: LEVELS.indexOf(level) };
@@ -2166,7 +2174,9 @@ var engine = (() => {
   function messageActions(m, { sending = false, platform = "imessage" } = {}) {
     if (!sending || !canTarget(m)) return [];
     const caps = platformCapabilities(platform);
+    const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
     const actions = [];
+    if (savable) actions.push("save");
     if (!m.fromMe && caps.thread) actions.push("reply");
     if (caps.tapback || caps.fallback) actions.push("react");
     return actions;
@@ -2285,6 +2295,62 @@ var engine = (() => {
       counts.set(g, (counts.get(g) || 0) + 1);
     }
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
+  }
+
+  // core/app/rules/media.js
+  function isMediaAttachment(a) {
+    return Boolean(a) && !a.local && !a.missing && !a.sticker && /^(?:image|video)\//i.test(String(a.mime || ""));
+  }
+  function mediaKind(a) {
+    if (!isMediaAttachment(a)) return null;
+    return /^video\//i.test(String(a.mime || "")) ? "video" : "image";
+  }
+  function mediaItems(messages) {
+    const items = [];
+    for (const m of messages || []) {
+      if (!m) continue;
+      for (const a of m.attachments || []) {
+        const kind = mediaKind(a);
+        if (!kind) continue;
+        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ""), mime: String(a.mime || "") });
+      }
+    }
+    return items;
+  }
+  function mediaIndex(items, id) {
+    const list = items || [];
+    const key = String(id);
+    for (let i = 0; i < list.length; i += 1) if (String(list[i].id) === key) return i;
+    return -1;
+  }
+  function mediaStep(items, id, dir) {
+    const list = items || [];
+    const at = mediaIndex(list, id);
+    if (at < 0) return null;
+    const to = dir === "prev" ? at - 1 : dir === "next" ? at + 1 : at;
+    if (to < 0 || to >= list.length) return null;
+    return list[to];
+  }
+  function mediaNeighbours(items, id) {
+    const list = items || [];
+    const at = mediaIndex(list, id);
+    const last = list.length - 1;
+    return {
+      index: at,
+      count: list.length,
+      canPrev: at > 0,
+      canNext: at >= 0 && at < last,
+      prev: at > 0 ? list[at - 1] : null,
+      next: at >= 0 && at < last ? list[at + 1] : null
+    };
+  }
+  var SWIPE_MIN_PX = 56;
+  function swipeStep(dx, dy, { min = SWIPE_MIN_PX } = {}) {
+    const x = Number(dx) || 0;
+    const y = Number(dy) || 0;
+    if (Math.abs(x) < min) return null;
+    if (Math.abs(x) <= Math.abs(y)) return null;
+    return x > 0 ? "prev" : "next";
   }
 
   // core/app/rules/places.js
