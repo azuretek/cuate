@@ -8,6 +8,7 @@ import { BUILD_SPEC } from '../rules/build-spec.js';
 import { aboutRows, aboutLinks } from '../rules/settings.js';
 import { appIconChoices } from '../rules/app-icons.js';
 import { aboutUpdate } from '../rules/updates.js';
+import { durationMs } from '../../kit/rules/press.js';
 import './app-sheet.js';
 
 // The one line the page says about itself, under its title.
@@ -39,7 +40,7 @@ const APP_ICON = 'assets/app-icon.png';
 // go to the source, the licence and the issue tracker, from the repository the server reports; a press is handed to
 // the shell (open.external) by app-root, so it opens in the browser on every platform rather than in the app.
 class AppAbout extends KitElement {
-  static properties = { info: { attribute: false }, host: { attribute: false }, release: { attribute: false }, values: { attribute: false }, themePicture: { attribute: false }, backLabel: {}, copied: { state: true }, copiedKey: { state: true } };
+  static properties = { info: { attribute: false }, host: { attribute: false }, release: { attribute: false }, values: { attribute: false }, themePicture: { attribute: false }, backLabel: {}, copied: { state: true }, copiedKey: { state: true }, copying: { state: true } };
 
   constructor() {
     super();
@@ -51,6 +52,10 @@ class AppAbout extends KitElement {
     this.backLabel = 'Back to app';
     this.copied = '';
     this.copiedKey = '';
+    // The copy button is disabled while a copy is in flight and for a short beat after it, so a double press cannot
+    // fire two copies; the beat's timer is held here.
+    this.copying = false;
+    this.copyBeat = null;
   }
 
   // The page may answer with the work it started, which the press that raised the event shows (core/kit/press.js).
@@ -59,11 +64,25 @@ class AppAbout extends KitElement {
   }
 
   async copy() {
+    // A press that lands while the last copy is still in its beat does nothing, so a double press can never fire two.
+    if (this.copying) return false;
+    this.copying = true;
     const product = (this.host && this.host.product) || (this.info && this.info.product) || '';
     const text = bugReportBlock(BUILD_SPEC, this.host || {}, this.info || {}, product);
     const ok = await copyToClipboard(text);
     this.copied = ok ? 'copied' : 'failed';
+    // Disabled for a short beat after the copy settles, matching the kit press's own hold, so the second half of a
+    // double press is dropped rather than copying again.
+    clearTimeout(this.copyBeat);
+    this.copyBeat = setTimeout(() => { this.copying = false; }, this.copyBeatMs());
     return ok;
+  }
+
+  // How long the copy button stays disabled after a press: the kit press's own hold, so the beat matches the state the
+  // button already shows and a theme can change both together.
+  copyBeatMs() {
+    const style = typeof getComputedStyle === 'function' ? getComputedStyle(this) : null;
+    return durationMs(style ? style.getPropertyValue('--motion-press-hold') : '', 900);
   }
 
   async copyValue(row) {
@@ -103,9 +122,10 @@ class AppAbout extends KitElement {
     const links = aboutLinks(this.info && this.info.repository);
     const name = rows.find((r) => r.key === 'product');
     const version = rows.find((r) => r.key === 'version');
-    // The button and the line under it follow the update state the notice draws (issue 192; held as release, since
-    // update is the element's own render step): the button is the step
-    // the notice offers, or the check; the line and the bar say how far a download has got.
+    // The button follows the update state the notice draws (issue 192; held as release, since update is the element's
+    // own render step): the button is the step the notice offers, or the check. The outcome is reported in ONE place,
+    // the notice banner, never beside the control that triggered it (PR 257), so the page draws no line and no bar
+    // of its own; the button's own states (idle, checking, the disabled beat) are the press the kit draws.
     const update = aboutUpdate(this.release);
     return html`
       <header class="about-head" data-section="identity">
@@ -117,8 +137,6 @@ class AppAbout extends KitElement {
         <h3 class="sheet-section-title">Updates</h3>
         <p class="sheet-section-desc">Look for a newer version now. The answer appears as a notice.</p>
         <button type="button" class="button primary action-button about-check" data-action="check-updates" data-command=${update.command || 'check'} @click=${press(() => this.fire('check-updates', { command: update.command }))}>${actionButtonLabels({ idle: update.label, pending: 'Checking\u2026', success: 'Checked', failure: 'Could not check' })}</button>
-        ${update.line ? html`<p class="about-update-line" role="status" data-update=${this.release.state}>${update.line}</p>` : nothing}
-        ${update.percent !== null ? html`<progress class="about-update-progress" max="1" .value=${update.percent}></progress>` : nothing}
       </section>
       <section class="sheet-section" data-section="build">
         <h3 class="sheet-section-title">This build</h3>
@@ -130,8 +148,7 @@ class AppAbout extends KitElement {
           </div>` : nothing}
         </div>
         <p class="about-compare ${commit.state}">${commit.text}</p>
-        <button type="button" class="text-button about-copy" @click=${press(() => this.copy())}>${this.copied === 'copied' ? 'Copied' : 'Copy for a bug report'}</button>
-        ${this.copied === 'failed' ? html`<p class="problem">The clipboard is not available.</p>` : nothing}
+        <button type="button" class="button about-copy" ?disabled=${this.copying} @click=${press(() => this.copy())}>${this.copied === 'copied' ? 'Copied' : this.copied === 'failed' ? 'Could not copy' : 'Copy for a bug report'}</button>
       </section>`;
   }
 

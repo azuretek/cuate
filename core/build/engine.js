@@ -135,6 +135,7 @@ var engine = (() => {
     closedByPress: () => closedByPress,
     coerceSetting: () => coerceSetting,
     colourDistance: () => colourDistance,
+    commitOf: () => commitOf,
     commitState: () => commitState,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
@@ -259,6 +260,7 @@ var engine = (() => {
     requestDeleteGroup: () => requestDeleteGroup,
     resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
+    runtimeVersions: () => runtimeVersions,
     safeValue: () => safeValue,
     sameTheme: () => sameTheme,
     screenFor: () => screenFor,
@@ -322,6 +324,7 @@ var engine = (() => {
     validate: () => validate,
     verificationCheck: () => verificationCheck,
     wheelFactor: () => wheelFactor,
+    withRuntime: () => withRuntime,
     zoomBy: () => zoomBy,
     zoomFit: () => zoomFit,
     zoomKey: () => zoomKey,
@@ -784,6 +787,31 @@ var engine = (() => {
     const m = /(?:^|-)dev\.(\d+)(?:\.|$)/.exec(String(version || ""));
     return m ? m[1] : null;
   }
+  function commitOf(version) {
+    const m = /-dev\.\d+\.([a-f0-9]{10})$/.exec(String(version || ""));
+    return m ? m[1] : null;
+  }
+  function runtimeVersions(env = {}) {
+    const proc = env && env["process"] || {};
+    const versions = proc.versions || {};
+    const ua = String(env && env.navigator && env.navigator.userAgent || "");
+    const from = (re) => {
+      const m = re.exec(ua);
+      return m ? m[1] : null;
+    };
+    return {
+      electron: versions.electron || from(/\bElectron\/([\d.]+)/) || null,
+      chrome: versions.chrome || from(/\b(?:HeadlessChrome|Chrome|Chromium|CriOS)\/([\d.]+)/) || null,
+      node: versions.node || null
+    };
+  }
+  function withRuntime(info = {}, env = {}) {
+    return {
+      ...info,
+      versions: { ...runtimeVersions(env), ...info.versions || {} },
+      commit: info.commit || commitOf(info.version) || null
+    };
+  }
   function compareVersions(a, b) {
     const parse = (v) => {
       const m = /^(\d+)\.(\d+)\.(\d+)(?:-dev\.(\d+)\.[a-f0-9]{10})?$/.exec(String(v));
@@ -821,7 +849,7 @@ var engine = (() => {
       version,
       channel,
       build: buildNumberOf(version),
-      commit: facts.commit || null,
+      commit: facts.commit || commitOf(version) || null,
       builtAt: facts.builtAt || null,
       electron: versions.electron || null,
       chromium: versions.chrome || null,
@@ -864,7 +892,7 @@ var engine = (() => {
     const lines = [(product ? product : "Client") + " bug report"];
     const section = (title, rows) => {
       lines.push("", title);
-      for (const row of rows) lines.push("  " + row.label + ": " + row.value);
+      for (const row of rows) if (row.value !== UNKNOWN) lines.push("  " + row.label + ": " + row.value);
     };
     section("Client", reportRows(spec, "client", report || {}));
     section("Server", reportRows(spec, "server", serverReport || {}));
@@ -996,20 +1024,20 @@ var engine = (() => {
 
   // core/app/rules/app-icons-spec.js
   var APP_ICONS = {
-    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto in its dark rendering; Paper is the light one. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
+    "description": "The app icon choices Settings offers (appearance.appIcon; issues 167 and 189, rebuilt for 246). Orange, the default, is the original terracotta Flor de muerto: the default theme light palette from core/spec/tokens.json, the same drawing this app shipped as its icon, so the picker, the About picture and every generated asset agree to the one colour: the About page icon is the filled terracotta tile (#bd4531, its gradient #d65a4e at the top down to #a4300b) with a white glyph, which overrules the near-black tile with the coral #ff5c5c glyph the picker drew; Paper is its paper-coloured counterpart. The coloured alternatives carry the Mexican names the palette sheet Abi remembers gave them: Azul, Rosa mexicano, Jade, Cempasuchil and Morado. Follow theme colours the icon from the active theme's tokens, redrawn by the desktop shell whenever the theme changes; on the phones it is the store icon in the default theme, since neither can recolour an installed icon. Every fixed palette is the tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) and the scheme they are drawn in, put through the same iconPalette and renderIcon as the theme's, so a fixed icon is the same glyph in other colours and never a second drawing. desktop/scripts/icons.mjs draws each fixed palette for every platform: the picture Settings shows (core/app/assets/app-icons), an iOS alternate icon set, an Android adaptive icon with its launcher colour, and core/app/rules/app-icons-spec.js, the page's mirror of this file. pnpm run build fails when a generated copy is stale.",
     "default": "orange",
     "icons": [
       {
         "id": "orange",
         "label": "Orange",
-        "scheme": "dark",
+        "scheme": "light",
         "colors": {
-          "accent": "#ff5c5c",
-          "accent-fg": "#0e1015",
-          "fg": "#f4f4f5",
-          "bg": "#0e1015",
-          "bg-raised": "#161920",
-          "danger": "#f87171",
+          "accent": "#bd4531",
+          "accent-fg": "#ffffff",
+          "fg": "#211e1a",
+          "bg": "#faf9f7",
+          "bg-raised": "#ffffff",
+          "danger": "#b91c1c",
           "badge": "#dc2626",
           "badge-fg": "#ffffff"
         }
@@ -1378,16 +1406,14 @@ var engine = (() => {
     return { message: what + " is downloaded and verified.", detail: "Install hands it to Android, which asks you to confirm." };
   }
   function aboutUpdate(status) {
-    const idle = { label: "Check for updates", command: null, line: null, percent: null };
+    const idle = { label: "Check for updates", command: null };
     if (!status || !status.state) return idle;
     const banner = updateBanner(status.state, status);
     if (!banner) return idle;
     const action = banner.action && banner.action.command !== DISMISS ? banner.action : null;
     return {
       label: action ? action.label : idle.label,
-      command: action ? action.command : null,
-      line: status.state === "checking" ? null : banner.message,
-      percent: Number.isFinite(banner.percent) ? Math.max(0, Math.min(1, banner.percent)) : null
+      command: action ? action.command : null
     };
   }
 
@@ -2466,13 +2492,14 @@ var engine = (() => {
   var PRODUCT = { key: "product", label: "App" };
   function aboutRows(host, info, spec = BUILD_SPEC) {
     const halves = { client: reportRows(spec, "client", host || {}), server: reportRows(spec, "server", info || {}) };
-    return ABOUT_ORDER.map(([half, key]) => {
+    const rows = ABOUT_ORDER.map(([half, key]) => {
       if (key === PRODUCT.key) {
         const name = host && host.product || info && info.product;
         return { ...PRODUCT, value: name ? String(name) : UNKNOWN };
       }
       return halves[half].find((row) => row.key === key) || { key, label: key, value: UNKNOWN };
     });
+    return rows.filter((row) => row.value !== UNKNOWN);
   }
   function aboutLinks(repository) {
     const base = typeof repository === "string" ? repository.trim().replace(/\.git$/, "").replace(/\/+$/, "") : "";
