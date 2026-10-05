@@ -9,6 +9,7 @@ import { BUILD_SPEC } from '../app/rules/build-spec.js';
 import { copyToClipboard } from '../app/clipboard.js';
 import {
   UNKNOWN, channelOf, buildNumberOf, clientReport, reportRows, commitState, bugReportBlock, aboutModel,
+  commitOf, runtimeVersions, withRuntime,
 } from '../kit/rules/build.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -111,4 +112,37 @@ test('the one action copies the whole block', async () => {
   assert.equal(await copyToClipboard(block, { clipboard: { writeText: (t) => { copied.push(t); return Promise.resolve(); } } }), true);
   assert.deepEqual(copied, [block]);
   assert.equal(await copyToClipboard(block, { clipboard: null, document: null }), false);
+});
+
+test('the runtime versions come from the process the page runs in, one owner for every platform', () => {
+  assert.deepEqual(runtimeVersions({ process: { versions: { electron: '44.0.0', chrome: '136.0.0', node: '24.1.0' } } }), { electron: '44.0.0', chrome: '136.0.0', node: '24.1.0' });
+  assert.deepEqual(runtimeVersions({ navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/136.0.7103.60 Mobile Safari/537.36' } }), { electron: null, chrome: '136.0.7103.60', node: null }, 'an Android web view is Chromium');
+  assert.deepEqual(runtimeVersions({ navigator: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1' } }), { electron: null, chrome: null, node: null }, 'an iPhone runs WebKit, so it has no Chromium, Electron or Node');
+  assert.deepEqual(runtimeVersions({}), { electron: null, chrome: null, node: null });
+});
+
+test('a commit the shell did not stamp is read from the version, and the shell own stamp wins', () => {
+  assert.equal(commitOf('0.0.1-dev.136.7b6e5070c8'), '7b6e5070c8');
+  assert.equal(commitOf('1.2.3'), null);
+  assert.equal(commitOf(''), null);
+  assert.equal(clientReport({ version: '0.0.1-dev.4.abcdef0123' }).commit, 'abcdef0123', 'a phone build version names its commit');
+  assert.equal(clientReport({ version: '0.0.1-dev.4.abcdef0123', commit: 'f'.repeat(40) }).commit, 'f'.repeat(40), 'the desktop full stamp wins');
+});
+
+test('withRuntime folds the page own environment under the shell report', () => {
+  const info = { product: 'Widget', version: '0.0.1-dev.4.abcdef0123', platform: 'android' };
+  const merged = withRuntime(info, { navigator: { userAgent: 'Chrome/136.0.7103.60' } });
+  assert.equal(merged.versions.chrome, '136.0.7103.60', 'a phone own web view names its Chromium');
+  assert.equal(merged.versions.electron, null);
+  assert.equal(merged.commit, 'abcdef0123', 'the commit comes from the version when the shell stamped none');
+  const desktop = withRuntime({ version: '0.0.1-dev.4.abcdef0123', commit: 'a'.repeat(40), versions: { electron: '44', chrome: '136', node: '24' } }, {});
+  assert.equal(desktop.commit, 'a'.repeat(40), 'the shell stamp is never overwritten');
+  assert.equal(desktop.versions.node, '24');
+});
+
+test('the copied block leaves out a value no half reported, as the page does', () => {
+  const block = bugReportBlock(BUILD_SPEC, { product: 'Widget', version: '1.2.3' }, { serverVersion: '0.0.0' }, 'Widget');
+  assert.ok(block.includes('Client version: 1.2.3'));
+  assert.ok(block.includes('Server version: 0.0.0'));
+  assert.equal(/Unknown/.test(block), false, 'the copy never says Unknown either');
 });

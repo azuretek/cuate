@@ -101,7 +101,7 @@ test('a fixed palette chosen in Settings draws every image whatever the theme an
     assert.deepEqual(at({ scheme: 'dark', colors: elegant.color.dark, fixed }).palette, light.palette, platform + ': the theme no longer colours it');
     assert.deepEqual(light.palette, iconPalette(iconColours(tokens[first.scheme], first.colors), first.scheme), platform + ': the palette is the spec\'s, through the one function');
     assert.notDeepEqual(at({ scheme: 'light', fixed: { scheme: second.scheme, colors: second.colors } }).palette, light.palette);
-    assert.notDeepEqual(at({ scheme: 'light', fixed: null }).palette, light.palette, platform + ': no fixed palette follows the theme again');
+    assert.notDeepEqual(at({ scheme: 'dark', colors: elegant.color.dark, fixed: null }).palette, light.palette, platform + ': no fixed palette follows the theme again');
     assert.equal(at({ scheme: 'light', fixed, unread: 3 }).badgeCount, 3, 'the count still shows');
   }
 });

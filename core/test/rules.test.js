@@ -934,7 +934,9 @@ test('the About section shows every field in chela\'s order, each from its own h
   assert.deepEqual([...shown].sort(), [...declared].sort());
   assert.equal(new Set(shown).size, shown.length, 'no field is shown twice');
   for (const row of rows) assert.ok(typeof row.value === 'string' && row.value.length > 0, row.key + ' has a value to copy');
-  assert.equal(aboutRows({}, {}).find((r) => r.key === 'commit').value, 'Unknown', 'a missing value reads Unknown');
+  const empty = aboutRows({}, {});
+  assert.equal(empty.some((r) => r.key === 'commit'), false, 'a value no half reported draws no row, never Unknown (PR 257)');
+  assert.equal(empty.some((r) => r.value === 'Unknown'), false, 'no row About draws ever reads Unknown (PR 257)');
 });
 
 test('the About links go to the source, the licence and the issues, and only over https', () => {

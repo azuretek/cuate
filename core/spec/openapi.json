@@ -1244,11 +1244,45 @@
           },
           "ready": {
             "type": "boolean"
+          },
+          "restarts": {
+            "type": "number"
+          },
+          "uptimeMs": {
+            "type": "number"
+          },
+          "readyMs": {
+            "type": "number"
+          },
+          "lastExit": {
+            "$ref": "#/components/schemas/EngineExit"
           }
         },
         "required": [
           "kind",
           "ready"
+        ],
+        "additionalProperties": false
+      },
+      "EngineExit": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "number"
+          },
+          "signal": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "uptimeMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "at",
+          "uptimeMs"
         ],
         "additionalProperties": false
       },
