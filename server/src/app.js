@@ -56,7 +56,7 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, webhookOptions = {}, themeFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
@@ -211,7 +211,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
 
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const ctx = {
-    json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform,
+    json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform, diagnostics,
     send, react: send.react, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
