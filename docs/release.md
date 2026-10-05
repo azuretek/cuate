@@ -2,6 +2,10 @@
 
 A push to main that changes a shipped path produces a test build: the desktop apps, the server and the Android APK, one version, one GitHub prerelease. A manual workflow dispatch compares the snapshot with the most recent reachable dev tag and refuses if nothing ships. Documentation, Markdown, root scripts, workflow files, hooks, LICENSE and .gitignore do not trigger a release. A server-only change does: the server ships with the clients. Unknown paths ship by default. The sole classifier is scripts/release/changes.mjs.
 
+## The release body
+
+A release's body is generated from the merged pull requests since the previous tag, never from raw commits: each entry is the pull request's number and link, its title, and the one line its body gives under `## What changed`, grouped by conventional type and newest first, with the issue a pull request closes named where the body says so. `scripts/release/changelog.mjs` writes the notes and the release step passes them to the publisher with `--notes-file`. The version stays single-sourced in `scripts/release/version.mjs`; the notes only read it. A pull request whose title is not `type(scope): summary`, or whose body carries no summary line, fails the `gate`'s conventions leg before it can reach a release, so the notes are never silently poorer for it.
+
 ## Snapshot and channels
 
 The version is the root package's next patch followed by -dev.<commit-count>.<first-ten-SHA-characters>. The root version is not rewritten by CI. The exact version is embedded in the desktop package and returned by app.info. All jobs check out the event SHA.
