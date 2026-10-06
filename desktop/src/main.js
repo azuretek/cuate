@@ -1833,6 +1833,41 @@ async function runSmoke(w) {
   console.log('divider resize: ' + JSON.stringify({ checks: dividerChecks, dividerStart, dividerLeft, dividerRight, dividerDbl, dividerStep, dividerHome, dividerChosen, persistedWidth, dividerReopened, placeStart, placeLeft, placeRight, placeChosen }));
   await putSettings({ 'chats.width': null });
 
+  // The seam must TRACK the pointer THROUGH the drag, not only land where it ended (issue 288). The pointer presses the
+  // seam and moves in steps; at each step the pointer's own x and the seam's drawn centre are read TOGETHER, and the
+  // seam must sit within a couple of pixels of the pointer. A move far past the handle's own 12px box is still tracked
+  // (the drag holds pointer capture), and no transition runs while the pointer is down: reading only where the drag
+  // ended would pass a seam that jumped there, which is exactly the hole the first check left.
+  await pause(250);
+  const trackState = () => js("(() => { const d = document.querySelector('.conv-divider'); const s = document.querySelector('.shell'); if (!d || !s) return null; const dr = d.getBoundingClientRect(); return { seam: dr.left + dr.width / 2, id: d.dataset.capture || '', held: d.dataset.capture ? d.hasPointerCapture(Number(d.dataset.capture)) : false, transition: getComputedStyle(s).transitionDuration, drag: s.dataset.drag || '' }; })()");
+  const trackAt = await trackState();
+  const ty = Math.round((await dividerState()).y);
+  const tx = Math.round(trackAt.seam);
+  const trace = [];
+  await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: tx, y: ty, button: 'left', buttons: 1, clickCount: 1 });
+  for (const step of [24, 48, 72, 96, 120]) {
+    const x = Math.round(tx + step);
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y: ty, button: 'left', buttons: 1 });
+    await pause(25);
+    const s = await trackState();
+    trace.push({ pointer: x, seam: Math.round(s.seam), held: s.held, drag: s.drag, transition: s.transition });
+  }
+  // One move far past the handle's own box: the seam is the pointer's to the end, not a 12px strip's.
+  const far = Math.round(tx + 420);
+  await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: far, y: ty, button: 'left', buttons: 1 });
+  await pause(25);
+  const sFar = await trackState();
+  trace.push({ pointer: far, seam: Math.round(sFar.seam), held: sFar.held, drag: sFar.drag, transition: sFar.transition });
+  await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: far, y: ty, button: 'left', buttons: 0, clickCount: 1 });
+  await pause(250);
+  report.dividerTracks = trace.length === 6
+    && trace.every((t) => Math.abs(t.seam - t.pointer) <= 2)
+    && trace.every((t) => t.held === true)
+    && trace.every((t) => t.drag === 'divider')
+    && trace.every((t) => parseFloat(t.transition) === 0);
+  if (!report.dividerTracks) console.error('divider tracks: ' + JSON.stringify({ start: { tx, ty }, trace }));
+  await putSettings({ 'chats.width': null });
+
   // Switching conversations returns each to the place you left it, at once, without waiting on the server (issue 200).
   // Chat A is scrolled back, we switch to B and back, and A must show the same message at the same height; then, with
   // the server's answer held open, a switch to a conversation we already hold must still draw at once and the search
@@ -2799,17 +2834,45 @@ async function runSmoke(w) {
   await pause(300);
   report.phoneSettle = (await pane()) === 'conversation';
 
-  // A longer edge drag carries the drawer with it. Halfway across the panel it is strictly between the two ends,
-  // which is what "follows the finger" means, and past the threshold it settles open.
+  // A longer edge drag carries the drawer with it. The panel's RENDERED offset is read at several points DURING the
+  // drag and must match the finger's own travel one to one within a couple of pixels at each: reading only where the
+  // drag ended would pass a panel that jumped there (issue 288). The panel is drawn as (progress - 1) * width, where
+  // progress is (x - startX) / width and startX is the edge, so the expected offset for a finger at x is x - 4 - width.
   await down(4);
-  await windowPointer('pointermove', 120, 1);
-  const mid = await sidebarX();
-  await windowPointer('pointermove', 220, 1);
-  await windowPointer('pointerup', 220, 0);
-  await pause(400);
   const drawerWidth = await js("document.querySelector('.shell .sidebar').getBoundingClientRect().width");
-  report.phoneTracks = mid > -drawerWidth && mid < 0;
+  const expectedX = (x) => (x - 4) - drawerWidth;
+  const moveTo = async (x, gap) => { await pause(gap); await windowPointer('pointermove', x, 1); await pause(20); return sidebarX(); };
+  const mid1 = await moveTo(124, 0);
+  const mid2 = await moveTo(164, 20);
+  const mid3 = await moveTo(204, 20);
+  report.phoneTracks = [[mid1, 124], [mid2, 164], [mid3, 204]].every(([m, x]) => Math.abs(m - expectedX(x)) <= 2);
+  if (!report.phoneTracks) console.error('phone tracks: ' + JSON.stringify({ drawerWidth, mid1, mid2, mid3, expected: [expectedX(124), expectedX(164), expectedX(204)] }));
+  // Past the threshold it settles open, and the settle runs on a transition rather than jumping: the panel is between
+  // where the finger left it and its end a moment later.
+  await windowPointer('pointerup', 204, 0);
+  await pause(30);
+  const settleMs = await js("parseFloat(getComputedStyle(document.querySelector('.shell .sidebar')).transitionDuration) * 1000");
+  const settleMid = await sidebarX();
+  report.phoneSettleSmooth = settleMs > 0 && settleMid > mid3 - 1 && settleMid <= 1;
+  if (!report.phoneSettleSmooth) console.error('phone settle smooth: ' + JSON.stringify({ settleMs, settleMid, mid3 }));
+  await pause(400);
   report.phoneEdgeDrag = (await pane()) === 'list' && Math.abs(await sidebarX()) < 1;
+
+  // A quick flick opens the drawer even below half: a fast finger is the finger's own movement, not where it stopped
+  // (issue 288). The travel reaches a third of the panel, so the speed decides; a slow drag to the same place would
+  // settle closed.
+  await js("(() => { document.querySelector('app-root').listOpen = false; return true; })()");
+  await waitFor("document.querySelector('.shell')?.dataset.pane === 'conversation'", 5000);
+  await pause(300);
+  await down(4);
+  await windowPointer('pointermove', 100, 1);
+  await pause(20);
+  await windowPointer('pointermove', 160, 1);
+  await pause(16);
+  await windowPointer('pointerup', 160, 0);
+  await pause(400);
+  report.phoneFling = (await pane()) === 'list';
+  if (!report.phoneFling) console.error('phone fling: ' + JSON.stringify({ pane: await pane() }));
 
   // Reduced motion: the finger still moves the panel, but the settle runs no animation. Emulated here so the path is
   // checked rather than assumed.
