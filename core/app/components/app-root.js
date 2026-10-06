@@ -28,13 +28,13 @@ import { durationMs } from '../../kit/rules/press.js';
 import { withRuntime } from '../../kit/rules/build.js';
 import './app-notices.js';
 import { screenFor } from '../rules/screens.js';
-import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpen } from '../rules/drawer.js';
+import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpenAt, velocityFor } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { ICON_TOKENS, unreadTotal, iconColours, iconPalette, parseGlyph, renderIcon } from '../rules/icon.js';
 import { ICON_MASTERS } from '../rules/app-icons-spec.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
-import { CHATS_DEFAULT, CHATS_MIN, clampChatsWidth, chatsWidthFrom, dividerBounds, dividerKey } from '../rules/divider.js';
+import { CHATS_DEFAULT, CHATS_MIN, clampChatsWidth, chatsWidthFrom, dividerBounds, dividerKey, dragChatsWidth } from '../rules/divider.js';
 import { iconToApply } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
@@ -149,8 +149,10 @@ class AppRoot extends KitElement {
     this.pending = new Map();
     this.client = null;
     this.drag = null;
-    // The divider drag in flight ({ pointerId, x, width, moved }), while the pointer is down on the seam.
+    // The divider drag in flight ({ pointerId, startX, baseWidth, shown, moved }), while the pointer is down on the
+    // seam. baseWidth and startX are fixed for the whole drag, so every step reads the pointer's own travel.
     this.chatDrag = null;
+    this.chatLost = null;
     this.filters = emptyFilters();
     this.filterOpen = false;
     this.sortOpen = false;
@@ -1106,7 +1108,11 @@ class AppRoot extends KitElement {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const open = this.listOpen;
     if (!open && !isEdgeStart(e.clientX)) return;   // only an edge drag opens the list
-    this.drag = { shell: e.currentTarget, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, open, active: false, width: 0 };
+    // Take the pointer for the whole drag: the browser may not claim it back for a scroll or a system gesture mid-way,
+    // and a move off the panel is still delivered. Without it a touch drag is cancelled and the panel snaps, the flash
+    // the finger sees. Inline the base and the finger's origin, fixed for the drag, so every step is its own travel.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a synthetic pointer has nothing to capture */ }
+    this.drag = { shell: e.currentTarget, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, open, startProgress: open ? 1 : 0, active: false, width: 0, progress: open ? 1 : 0, samples: [] };
     window.addEventListener('pointermove', this.onPointerMove, { passive: false });
     window.addEventListener('pointerup', this.onPointerUp);
     window.addEventListener('pointercancel', this.onPointerCancel);
@@ -1125,13 +1131,23 @@ class AppRoot extends KitElement {
       d.shell.dataset.drawer = 'drag';
     }
     e.preventDefault();
-    d.shell.style.setProperty('--drawer-progress', String(progressFor({ open: d.open, startX: d.startX, x: e.clientX, width: d.width })));
+    // One number, written straight onto the shell: the panel and the scrim both read --drawer-progress, so nothing is
+    // redrawn per frame and the two can never disagree about where the finger is.
+    d.progress = progressFor({ open: d.open, startX: d.startX, x: e.clientX, width: d.width });
+    d.samples.push({ x: e.clientX, time: e.timeStamp });
+    if (d.samples.length > 6) d.samples.shift();
+    d.shell.style.setProperty('--drawer-progress', String(d.progress));
   };
 
   onPointerUp = (e) => {
     const d = this.drag;
     if (!d || e.pointerId !== d.pointerId) return;
-    if (d.active) this.settleDrawer(d, Number(d.shell.style.getPropertyValue('--drawer-progress')) || 0);
+    if (d.active) {
+      // The finger's own movement decides: a flick settles in the direction it moved, short of that it settles by where
+      // the finger left the panel, held between the two ends.
+      const travel = Math.abs(d.progress - d.startProgress);
+      this.settleDrawer(d, settlesOpenAt({ progress: d.progress, travel, velocity: velocityFor(d.samples), width: d.width }));
+    }
     this.endDrag();
   };
 
@@ -1139,14 +1155,13 @@ class AppRoot extends KitElement {
     const d = this.drag;
     if (!d || e.pointerId !== d.pointerId) return;
     // A cancelled drag (the browser took the pointer) returns to where it started rather than deciding.
-    if (d.active) this.settleDrawer(d, d.open ? 1 : 0);
+    if (d.active) this.settleDrawer(d, d.open);
     this.endDrag();
   };
 
   // The finger is up: hand the panel's position back to the stylesheet, which animates it from where the finger left
   // it to where it settled. Clearing the drag flag and the inline position together lets the transition run.
-  settleDrawer(d, progress) {
-    const open = settlesOpen(progress);
+  settleDrawer(d, open) {
     d.shell.style.removeProperty('--drawer-progress');
     delete d.shell.dataset.drawer;
     d.shell.dataset.pane = open ? 'list' : 'conversation';
@@ -1636,32 +1651,59 @@ class AppRoot extends KitElement {
 
   onDividerDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
-    this.chatDrag = { pointerId: e.pointerId, x: e.clientX, width: this.chatsShown(), moved: false };
+    // Take the pointer for the whole drag: a fast move that leaves the handle's own 12px box, or runs off the window,
+    // still delivers until the pointer lifts. The width the drag starts at and the pointer's origin are held FIXED for
+    // the drag, so every step is the pointer's own travel and nothing compounds.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a synthetic pointer has nothing to capture */ }
+    const baseWidth = this.chatsShown();
+    this.chatDrag = { pointerId: e.pointerId, startX: e.clientX, baseWidth, shown: baseWidth, moved: false };
     this.chatMove = (ev) => this.onDividerMove(ev);
     this.chatUp = (ev) => this.onDividerUp(ev);
+    this.chatLost = () => this.onDividerLost();
     window.addEventListener('pointermove', this.chatMove);
     window.addEventListener('pointerup', this.chatUp);
     window.addEventListener('pointercancel', this.chatUp);
+    const divider = e.currentTarget;
+    divider.dataset.capture = String(e.pointerId);
+    divider.addEventListener('lostpointercapture', this.chatLost);
+    // Nothing animates the seam while the pointer is down: it is exactly where the pointer put it, never easing toward
+    // it. The flag also names the drag for the check that reads it.
+    const shell = this.querySelector('.shell');
+    if (shell) shell.dataset.drag = 'divider';
     // The press belongs to the seam, not to the phone drawer's own edge drag the shell watches.
     e.stopPropagation();
   }
 
   onDividerMove(e) {
-    if (!this.chatDrag) return;
-    const width = clampChatsWidth(this.chatDrag.width + (e.clientX - this.chatDrag.x), this.dividerViewport());
-    this.chatDrag.width = width;
-    this.chatDrag.moved = true;
+    const d = this.chatDrag;
+    if (!d || e.pointerId !== d.pointerId) return;
+    // One to one from where the pointer went down: the width is the base plus the pointer's own travel, so each step
+    // matches the pointer and never compounds. The bounds clamp only what is drawn; the base and the origin stay fixed,
+    // so a drag past a minimum and back resumes one to one.
+    const width = dragChatsWidth({ baseWidth: d.baseWidth, startX: d.startX, x: e.clientX, viewport: this.dividerViewport() });
+    d.shown = width;
+    d.moved = true;
     this.showChatsWidth(width);
     e.preventDefault();
   }
 
   onDividerUp(e) {
-    if (!this.chatDrag) return;
-    const drag = this.chatDrag;
+    const d = this.chatDrag;
+    if (!d || (e.pointerId !== undefined && e.pointerId !== d.pointerId)) return;
     this.endDividerDrag();
-    // A press that never moved is only a focus, not a width: nothing is written.
-    if (drag.moved) this.setSettings({ 'chats.width': drag.width });
+    // A press that never moved is only a focus, not a width: nothing is written. A drag writes the width it drew once,
+    // on release.
+    if (d.moved) this.setSettings({ 'chats.width': d.shown });
     e.preventDefault();
+  }
+
+  // The pointer was taken from the seam (the element left the document, or the browser dropped the capture): settle the
+  // same width a lift would, so a drag never strands the listeners.
+  onDividerLost() {
+    const d = this.chatDrag;
+    if (!d) return;
+    this.endDividerDrag();
+    if (d.moved) this.setSettings({ 'chats.width': d.shown });
   }
 
   endDividerDrag() {
@@ -1673,6 +1715,14 @@ class AppRoot extends KitElement {
       window.removeEventListener('pointercancel', this.chatUp);
       this.chatUp = null;
     }
+    const divider = this.querySelector('.conv-divider');
+    if (divider) {
+      if (this.chatLost) divider.removeEventListener('lostpointercapture', this.chatLost);
+      delete divider.dataset.capture;
+    }
+    this.chatLost = null;
+    const shell = this.querySelector('.shell');
+    if (shell && shell.dataset.drag === 'divider') delete shell.dataset.drag;
   }
 
   // A double click clears the choice, so the divider returns to the token default as a fresh app would draw it.
@@ -1738,6 +1788,7 @@ class AppRoot extends KitElement {
     const chat = this.chats.find((c) => c.id === this.openChatId) || null;
     const sentence = connectionSentence(this.conn);
     return html`<div class="shell" data-pane=${this.pane()} @pointerdown=${this.onPointerDown} @view-image=${(e) => this.openViewer(e.detail)}>
+      <div class="drawer-edge" aria-hidden="true"></div>
       <aside class="sidebar" aria-label="Conversations">
         ${this.sidebarHead()}
         ${this.searchTerms()}

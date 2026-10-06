@@ -107,6 +107,9 @@ app-root { display: block; height: 100%; }
 .conv-divider:hover::before,
 .conv-divider:focus-visible::before { opacity: 1; }
 .conv-divider:active::before { transform: translate(-50%, -50%) scale(var(--size-grip-press-scale)); }
+/* While the seam is dragged nothing animates the column: it is exactly where the pointer put it, never easing toward
+   it. The page sets the flag on pointerdown and clears it on release, and the same flag the check reads is what draws. */
+.shell[data-drag="divider"] { transition: none; }
 .sidebar-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; flex: none; }
 /* The header's three icons are one kind of control (issue 136): the filter, the sort and the gear share their size,
    their hover and their open state, so the sort reads as one of the set rather than a pill of its own. */
@@ -489,6 +492,8 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 
 /* The scrim behind the phone's drawer. Hidden wherever the sidebar is a column rather than a drawer. */
 .scrim { display: none; }
+/* The screen edge the phone drawer is opened from. Hidden wherever the sidebar is a column rather than a drawer. */
+.drawer-edge { display: none; }
 
 /* The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
    left, the sibling app's slide menu mirrored to this side, scrim behind it, and the conversation's back control
@@ -517,6 +522,14 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
   .shell[data-drawer="drag"] .sidebar,
   .shell[data-drawer="drag"] .scrim { transition: none; }
   .shell[data-drawer="drag"] .scrim { visibility: visible; }
+  /* The edge the drawer is opened from is its own handle, and it takes the whole gesture (touch-action: none) so the
+     browser never claims the horizontal drag first. It sits above the conversation while the list is closed, and takes
+     no pointer events once the list is across, where the panel's own surface owns the drag back to the conversation. */
+  .drawer-edge {
+    display: block; position: absolute; top: calc(var(--size-header) + var(--inset-top)); bottom: 0; left: 0;
+    width: var(--size-drawer-edge); z-index: 3; touch-action: none; -webkit-app-region: no-drag;
+  }
+  .shell[data-pane="list"] .drawer-edge { pointer-events: none; }
   .conv-back { display: inline-flex; }
   .main { grid-column: 1; padding-inline-start: var(--inset-left); }
   /* The same pill on the phone drawer's right edge (issue 217, section D). The shell owns the drag from the screen
