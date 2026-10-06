@@ -81,6 +81,7 @@ class SettingsPageTest {
     // Two captures in a row that draw the same picture with the icon on it, so a frame still arriving, or one
     // the WebView drew before the page, is never kept.
     private fun settledCapture(): android.graphics.Bitmap {
+        SystemSurface.requireOurs()
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         var previous: android.graphics.Bitmap? = null
         do {
@@ -95,7 +96,7 @@ class SettingsPageTest {
                 previous = capture
             }
         } while (System.nanoTime() < deadline)
-        throw AssertionError("The screen never showed Settings with its app icon choices")
+        throw AssertionError("The screen never showed Settings with its app icon choices" + SystemSurface.failureSuffix())
     }
 
     @Test

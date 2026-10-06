@@ -162,6 +162,7 @@ class SystemBarsTest {
      * waiting for the bar icons is never judged; past the deadline the last capture is kept and its problems fail.
      */
     private fun captureHolding(scenario: ActivityScenario<MainActivity>, scheme: String, name: String) {
+        SystemSurface.requireOurs()
         val proof = awaitProof(scenario, scheme)
         val (statusBar, navBar) = bars(scenario)
         assertTrue("the emulator reports a status bar", statusBar > 0)
@@ -179,7 +180,7 @@ class SystemBarsTest {
             if (settled && last.isEmpty()) { kept = capture; break }
         } while (System.nanoTime() < deadline)
         previous?.let { save(it, name) }
-        assertTrue("The $scheme system bars do not wear the surface ($name, proof $proof): " + last.joinToString("; "), kept != null)
+        assertTrue("The $scheme system bars do not wear the surface ($name, proof $proof): " + last.joinToString("; ") + SystemSurface.failureSuffix(), kept != null)
     }
 
     private fun save(capture: Bitmap, name: String) {
@@ -233,6 +234,7 @@ class SystemBarsTest {
      * in sight between the status bar and the keyboard (issue 180).
      */
     private fun keyboardHolds(scenario: ActivityScenario<MainActivity>, scheme: String, kind: String, dpr: Double, statusBar: Int) {
+        SystemSurface.requireOurs()
         if (kind == "settings") evaluate(scenario, "window.systemBarsOpenSettings(); true")
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         var spot = "null"
@@ -292,7 +294,7 @@ class SystemBarsTest {
         shot?.let { save(it, "keys-$kind-$scheme") }
         // And it still holds on the frame that was kept: a view that slid back after passing once fails here.
         if (last.isEmpty()) last = check()
-        assertTrue("With the keyboard up on $kind ($scheme): " + last.joinToString("; "), last.isEmpty())
+        assertTrue("With the keyboard up on $kind ($scheme): " + last.joinToString("; ") + SystemSurface.failureSuffix(), last.isEmpty())
         scenario.onActivity { activity ->
             val view = webView(activity.findViewById(android.R.id.content))!!
             (activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager)
