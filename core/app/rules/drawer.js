@@ -14,6 +14,13 @@ export const SLOP = 6;
 // closed short of it. A fraction rather than a pixel count, because the panel is min(86vw, 320px) wide.
 export const SETTLE = 0.5;
 
+// A flick is the finger's own movement, not where it happened to stop. The panel is flung open (or back) when the
+// finger is moving faster than this many panel-widths a second AND has carried the panel at least FLING_TRAVEL of its
+// width, so a quick tap that barely moves the panel still settles by where it ended rather than being read as a flick.
+export const FLING = 1.5;
+// The share of the panel a drag must cross before a flick may decide it.
+export const FLING_TRAVEL = 1 / 3;
+
 // Whether a pointerdown at x may open the list. Only the left edge does; the middle of the conversation does not.
 export function isEdgeStart(x, edge = EDGE) {
   return x <= edge;
@@ -38,4 +45,26 @@ export function progressFor({ open, startX, x, width }) {
 // where it started.
 export function settlesOpen(progress) {
   return progress >= SETTLE;
+}
+
+// How fast the finger is moving across the panel, in pixels a second, from its last two samples ({ x, time }) where
+// time is the pointer event's own timestamp. Fewer than two samples, or an interval of no length, is no measurable
+// movement: zero. Nothing here reads a clock, so the whole rule is asserted from one array.
+export function velocityFor(samples) {
+  if (!Array.isArray(samples) || samples.length < 2) return 0;
+  const last = samples[samples.length - 1];
+  const prev = samples[samples.length - 2];
+  const dt = (Number(last.time) - Number(prev.time)) / 1000;
+  const dx = Number(last.x) - Number(prev.x);
+  if (!(dt > 0) || !Number.isFinite(dx) || !Number.isFinite(dt)) return 0;
+  return dx / dt;
+}
+
+// Whether the finger's lift settles the panel open. A fast flick decides in the direction it moved, once the drag has
+// crossed FLING_TRAVEL of the panel; short of that, and for any drag too slow to be a flick, it is by where the finger
+// ended, past SETTLE. velocity is in pixels a second across a panel `width` wide.
+export function settlesOpenAt({ progress, travel = 0, velocity = 0, width = 0 }) {
+  const perSecond = width > 0 ? velocity / width : 0;
+  if (travel >= FLING_TRAVEL && Math.abs(perSecond) >= FLING) return perSecond > 0;
+  return settlesOpen(progress);
 }
