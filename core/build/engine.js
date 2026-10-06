@@ -689,7 +689,7 @@ var engine = (() => {
     }
     const webhooks = {};
     for (const [event, model] of Object.entries(apiSpec.events)) {
-      webhooks[event] = { post: { requestBody: { required: true, description: "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/server.md, Hooks).", content: { "application/json": { schema: ref(model) } } }, responses: { 200: { description: "The receiver accepted the event." } } } };
+      webhooks[event] = { post: { requestBody: { required: true, description: "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/SERVER.md, Hooks).", content: { "application/json": { schema: ref(model) } } }, responses: { 200: { description: "The receiver accepted the event." } } } };
     }
     return {
       openapi: "3.1.0",

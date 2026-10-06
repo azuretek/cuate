@@ -468,7 +468,7 @@ async function finishSwitchLocked({ L, dataDir, port, service, log, fetchImpl = 
   const at = iso(now());
   const outcome = back.ok
     ? { state: 'rolled_back', version: p.to, from: p.from, detail: 'Version ' + p.to + ' failed its health check (' + health.error + '), so the server went back to ' + p.from + '.', at }
-    : { state: 'rollback_failed', version: p.to, from: p.from, detail: 'Version ' + p.to + ' failed its health check, and ' + p.from + ' did not come back either (' + back.error + '). Recover it by hand: see docs/server.md.', at };
+    : { state: 'rollback_failed', version: p.to, from: p.from, detail: 'Version ' + p.to + ' failed its health check, and ' + p.from + ' did not come back either (' + back.error + '). Recover it by hand: see docs/SERVER.md.', at };
   updateState(L, (s) => {
     s.bad = { ...(s.bad || {}), [p.to]: { at, error: health.error } };
     // A failed rollback stays in probation and is retried before the next startup opens data.

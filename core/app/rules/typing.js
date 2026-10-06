@@ -3,7 +3,7 @@
 // so a dropped connection can never leave an indicator up.
 //
 // Only our own typing is real here. The other person typing is not drawn: the engine the server uses reports no
-// inbound typing, so nothing is invented for it (issue 230, docs/read-and-typing.md).
+// inbound typing, so nothing is invented for it (issue 230, docs/READ-AND-TYPING.md).
 export const TYPING_TTL_MS = 8000;
 const ELLIPSIS = '\u2026';
 

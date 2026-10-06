@@ -78,8 +78,8 @@ export function publish({ dir, version, sha, apply = false, gh = (args) => execF
     if (!alreadyPublished && !reuseDraft) {
       gh(['release', 'create', tag, ...repo, '--target', sha, '--draft', ...(stable ? [] : ['--prerelease']), '--title', tag, '--notes',
         stable
-          ? 'Release ' + tag + '. See docs/release.md for installation, update channels and verifying the server artifact.'
-          : 'Test build of commit ' + sha + ': the desktop apps, the server and the Android APK, one version. See docs/release.md for installation, update channels and verifying the server artifact.']);
+          ? 'Release ' + tag + '. See docs/RELEASE.md for installation, update channels and verifying the server artifact.'
+          : 'Test build of commit ' + sha + ': the desktop apps, the server and the Android APK, one version. See docs/RELEASE.md for installation, update channels and verifying the server artifact.']);
       created = true;
     }
     if (!alreadyPublished) {

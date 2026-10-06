@@ -10,7 +10,7 @@ import {
 } from '../src/smoke-timeout.js';
 
 test('the smoke bound is at least the documented ten minutes and still a bound', () => {
-  // docs/conventions.md records the figure. If the ceiling shrinks below it, or grows so far it stops
+  // docs/CONVENTIONS.md records the figure. If the ceiling shrinks below it, or grows so far it stops
   // being a bound at all, this fails rather than the number drifting quietly.
   assert.ok(SMOKE_TIMEOUT_MS_DEFAULT >= SMOKE_TIMEOUT_MS_FLOOR, 'default ' + SMOKE_TIMEOUT_MS_DEFAULT);
   assert.ok(SMOKE_TIMEOUT_MS_DEFAULT >= 10 * 60 * 1000, 'the documented floor is ten minutes: ' + SMOKE_TIMEOUT_MS_DEFAULT);
