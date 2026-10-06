@@ -109,6 +109,7 @@ class AboutPageTest {
     // Two captures in a row that draw the same picture with the icon on it, so a frame still arriving, or one
     // the WebView drew before the page, is never kept.
     private fun settledCapture(): android.graphics.Bitmap {
+        SystemSurface.requireOurs()
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         var previous: android.graphics.Bitmap? = null
         do {
@@ -123,7 +124,7 @@ class AboutPageTest {
                 previous = capture
             }
         } while (System.nanoTime() < deadline)
-        throw AssertionError("The screen never showed the About page with its icon")
+        throw AssertionError("The screen never showed the About page with its icon" + SystemSurface.failureSuffix())
     }
 
     // The page has drawn what its DOM now says: two animation frames have run since the call, so a frame carrying the
@@ -138,6 +139,7 @@ class AboutPageTest {
     // icon settledCapture looks for. Two taken back to back are the same picture while the next frame is still being
     // drawn, which kept About's press success mark and the unscrolled page after the DOM had moved on (issue 192).
     private fun steadyCapture(): android.graphics.Bitmap {
+        SystemSurface.requireOurs()
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
         var previous: android.graphics.Bitmap? = null
         do {
@@ -149,7 +151,7 @@ class AboutPageTest {
             last?.recycle()
             previous = capture
         } while (System.nanoTime() < deadline)
-        throw AssertionError("The screen never settled")
+        throw AssertionError("The screen never settled" + SystemSurface.failureSuffix())
     }
 
     private fun keep(capture: android.graphics.Bitmap, name: String) {

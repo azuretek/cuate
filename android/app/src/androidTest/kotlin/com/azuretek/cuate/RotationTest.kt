@@ -98,7 +98,7 @@ class RotationTest {
                 "The $scheme capture did not keep a passing verdict: page says " + after.optString("label") +
                     " (failing " + after.optJSONArray("failing") + ", last fail at sample " + after.optInt("lastFail") +
                     ", passed at sample " + before.optInt("seq") + "), capture shows " + shown +
-                    ", history " + after.optJSONArray("history"),
+                    ", history " + after.optJSONArray("history") + SystemSurface.failureSuffix(),
             )
         }
     }
@@ -133,6 +133,7 @@ class RotationTest {
     }
 
     private fun captureScheme(scenario: ActivityScenario<MainActivity>, scheme: String, passed: JSONObject): android.graphics.Bitmap {
+        SystemSurface.requireOurs()
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         val point = markerPoint(scenario, passed)
         var previous: android.graphics.Bitmap? = null
@@ -165,7 +166,7 @@ class RotationTest {
         throw AssertionError(
             "The screen never showed the passing $scheme conversation: $taken captures, $shown in the scheme with the " +
                 "pass fill, none twice alike, last verdict shown $verdict; page " +
-                evaluate(scenario, "JSON.stringify(window.rotationProof || null)"),
+                evaluate(scenario, "JSON.stringify(window.rotationProof || null)") + SystemSurface.failureSuffix(),
         )
     }
 
