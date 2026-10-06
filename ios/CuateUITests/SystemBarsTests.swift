@@ -59,6 +59,7 @@ final class SystemBarsTests: XCTestCase {
     /// scrolled, the header is still at the top (or the settings sheet still clear of the status bar), and the field is
     /// in sight between the status bar and the keyboard (issue 180).
     private func keyboardHolds(_ app: XCUIApplication, scheme: String, kind: String) {
+        SystemSurface.requireOurs(app)
         if kind == "settings" {
             keysMarker(app).tap()
             let field = app.webViews.descendants(matching: .any)["bars-field"].firstMatch
@@ -100,7 +101,7 @@ final class SystemBarsTests: XCTestCase {
         attachment.name = "keys-" + kind + "-" + scheme
         attachment.lifetime = .keepAlways
         add(attachment)
-        XCTAssertTrue(last.isEmpty, "With the keyboard up on \(kind) (\(scheme)): " + last.joined(separator: "; "))
+        XCTAssertTrue(last.isEmpty, "With the keyboard up on \(kind) (\(scheme)): " + last.joined(separator: "; ") + SystemSurface.failureSuffix(app))
     }
 
     /// A pinch on the conversation leaves the page at scale 1: only the media viewer zooms (issue 180).
@@ -120,6 +121,7 @@ final class SystemBarsTests: XCTestCase {
     /// Captures until two in a row match and the contract holds, so a frame still drawing the previous scheme or
     /// waiting for the status bar is never judged; past the deadline the last capture is kept and its problems fail.
     private func hold(_ app: XCUIApplication, scheme: String, name: String) {
+        SystemSurface.requireOurs(app)
         let deadline = Date().addingTimeInterval(20)
         var previous: [UInt8]?
         var last = ["no capture"]
@@ -145,7 +147,7 @@ final class SystemBarsTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        XCTAssertTrue(held, "The \(scheme) system bars do not wear the surface (\(name)): " + last.joined(separator: "; "))
+        XCTAssertTrue(held, "The \(scheme) system bars do not wear the surface (\(name)): " + last.joined(separator: "; ") + SystemSurface.failureSuffix(app))
     }
 
     /// Every way the capture breaks the contract, empty when it holds.

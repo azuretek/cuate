@@ -16,14 +16,15 @@ final class SettingsPageTests: XCTestCase {
         defer { app.terminate() }
         let proof = app.webViews.staticTexts["settings:pass"].firstMatch
         XCTAssertTrue(proof.waitForExistence(timeout: 30), app.debugDescription)
-        let attachment = XCTAttachment(image: settled())
+        let attachment = XCTAttachment(image: settled(app))
         attachment.name = "settings-" + scheme
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
     // Two screenshots in a row that draw the same picture, so a frame still arriving is never kept.
-    private func settled() -> UIImage {
+    private func settled(_ app: XCUIApplication) -> UIImage {
+        SystemSurface.requireOurs(app)
         let deadline = Date().addingTimeInterval(20)
         var previous: Data?
         repeat {

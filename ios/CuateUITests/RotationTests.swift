@@ -21,11 +21,11 @@ final class RotationTests: XCTestCase {
             // A wait that times out must name the state it saw, never proceed on an element that was not there: the
             // fixture's own diagnosis, and the window against the page, so a red run says which check failed and
             // whether the shell and the page disagree on the orientation (issue 199).
-            XCTAssertTrue(appeared, "the \(scheme) \(label) verdict never read pass: " + diagnosis(app) + " :: " + app.debugDescription)
+            XCTAssertTrue(appeared, "the \(scheme) \(label) verdict never read pass: " + diagnosis(app) + " :: " + app.debugDescription + SystemSurface.failureSuffix(app))
             guard appeared else { return }
             let image = settled(app, proof: proof, landscape: label == "landscape")
             // The verdict must still read pass once the screen has settled, so a capture never keeps a fail label.
-            XCTAssertTrue(proof.exists, "the \(scheme) \(label) verdict stopped reading pass during the capture: " + diagnosis(app) + " :: " + app.debugDescription)
+            XCTAssertTrue(proof.exists, "the \(scheme) \(label) verdict stopped reading pass during the capture: " + diagnosis(app) + " :: " + app.debugDescription + SystemSurface.failureSuffix(app))
             let attachment = XCTAttachment(image: image)
             attachment.name = scheme + "-" + label
             attachment.lifetime = .keepAlways
@@ -47,6 +47,7 @@ final class RotationTests: XCTestCase {
     // screenshot crops a landscape screen by the app's portrait frame, which Xcode saved sideways and cut in half and
     // which read as a clipped layout while the web view filled the window.
     private func settled(_ app: XCUIApplication, proof: XCUIElement, landscape: Bool) -> UIImage {
+        SystemSurface.requireOurs(app)
         let deadline = Date().addingTimeInterval(20)
         var previous: [UInt8]?
         var last = "no sample"
@@ -74,7 +75,7 @@ final class RotationTests: XCTestCase {
             if turned && fills && verdict == "pass" && change < 1.0 && proof.exists { return image }
             previous = current
         } while Date() < deadline
-        XCTFail("Rotation never settled: " + last)
+        XCTFail("Rotation never settled: " + last + SystemSurface.failureSuffix(app))
         return XCUIScreen.main.screenshot().image
     }
 
