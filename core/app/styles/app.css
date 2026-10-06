@@ -59,24 +59,29 @@ app-root { display: block; height: 100%; }
    way a word would. Its size is icon.size unless the control around it sets one. */
 .icon { display: inline-block; flex: none; width: var(--icon-size); height: var(--icon-size); background-color: currentColor; -webkit-mask: var(--icon-glyph) center / contain no-repeat; mask: var(--icon-glyph) center / contain no-repeat; }
 
-.shell { display: grid; grid-template-columns: var(--size-sidebar) 1fr; height: 100%; }
+.shell { display: grid; grid-template-columns: var(--chats-width, var(--size-sidebar)) 1fr; height: 100%; }
 /* The two headers run up behind the status bar and the list runs down behind the home indicator, so the bars take the
    header's and the list's own surface; the content starts below and ends above them (issue 175). */
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--role-sidebar-edge); background: var(--role-sidebar); color: var(--role-sidebar-fg); padding-block-end: var(--inset-bottom); padding-inline-start: var(--inset-left); }
-/* The divider between the chats list and the conversation (issue 217, section D). The grab affordance is a pill the
-   pointer reveals on hover and grows on press; at rest nothing is drawn. Only the pill is drawn: the hit strip
-   straddles the seam as 12px of resize cursor the whole way down, so the edge can be grabbed anywhere along it and
-   not only over the pill. Every length is a token and every colour is a theme role, so an imported theme restyles it. */
+/* The divider between the chats list and the conversation (issues 217 and 215). It sits on the seam at --chats-width,
+   the width the page writes from the chosen setting, over the token's size-sidebar before a choice is made; the grab
+   affordance is a pill the pointer reveals on hover and grows on press, and at rest nothing is drawn. Only the pill is
+   drawn: the hit strip straddles the seam as 12px of resize cursor the whole way down, so the edge can be grabbed
+   anywhere along it and not only over the pill, and the strip takes the pointer itself (touch-action: none) so a drag
+   resizes rather than scrolls. Every length is a token and every colour is a theme role, so an imported theme restyles it. */
 .conv-divider {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--size-sidebar) - var(--size-grip-hit) / 2);
+  left: calc(var(--chats-width, var(--size-sidebar)) - var(--size-grip-hit) / 2);
   width: var(--size-grip-hit);
   /* Below every panel and backdrop, so a press that starts on a sheet's own edge still reaches it. */
   z-index: 1;
   cursor: col-resize;
   background: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   -webkit-app-region: no-drag;
 }
 .conv-divider:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }

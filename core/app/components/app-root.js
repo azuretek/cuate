@@ -34,6 +34,7 @@ import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } f
 import { ICON_TOKENS, unreadTotal, iconColours, iconPalette, parseGlyph, renderIcon } from '../rules/icon.js';
 import { ICON_MASTERS } from '../rules/app-icons-spec.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
+import { CHATS_DEFAULT, CHATS_MIN, clampChatsWidth, chatsWidthFrom, dividerBounds, dividerKey } from '../rules/divider.js';
 import { iconToApply } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
@@ -148,6 +149,8 @@ class AppRoot extends KitElement {
     this.pending = new Map();
     this.client = null;
     this.drag = null;
+    // The divider drag in flight ({ pointerId, x, width, moved }), while the pointer is down on the seam.
+    this.chatDrag = null;
     this.filters = emptyFilters();
     this.filterOpen = false;
     this.sortOpen = false;
@@ -258,6 +261,9 @@ class AppRoot extends KitElement {
       [window, 'gesturechange', refuse, { passive: false, capture: true }],
       [window, 'scroll', pin, { passive: true }],
       [window, 'resize', reveal, { passive: true }],
+      // The chats list may only reach where the conversation keeps its own minimum, so the divider is put back inside
+      // its bounds when the window changes (issue 215); the views' own place across that is kept by the kit (142).
+      [window, 'resize', () => this.applyChatsWidth(), { passive: true }],
       [document, 'focusin', reveal, { passive: true }],
       ...(viewport ? [[viewport, 'resize', reveal, { passive: true }]] : []),
     ];
@@ -268,6 +274,7 @@ class AppRoot extends KitElement {
     super.disconnectedCallback();
     for (const [target, type, fn, options] of this.pageHolds || []) target.removeEventListener(type, fn, options);
     this.pageHolds = null;
+    this.endDividerDrag();
     if (this.schemeQuery && this.onSchemeChange) this.schemeQuery.removeEventListener('change', this.onSchemeChange);
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }
@@ -1579,6 +1586,107 @@ class AppRoot extends KitElement {
     if (this.openChatId && this.client) (this.convos = this.convos || new Map()).set(String(this.openChatId), { messages: this.messages, hasMore: this.hasMore });
     // Every open menu wears the shared caret, aimed at the control that opened it (issue 217).
     aimCarets(this);
+    // The divider's seam follows the width the settings hold, and the separator reports the width a screen reader should
+    // (issue 215). A render is the only moment the shell's column is rebuilt, so it is put back here.
+    this.applyChatsWidth();
+  }
+
+  // The chats list's width in the window as it is now: the size-sidebar token before anyone chooses one, and the choice
+  // held on the server afterwards, always held between the two pane minimums so neither can be dragged to nothing.
+  dividerViewport() {
+    return typeof window === 'undefined' ? CHATS_MIN + CHATS_DEFAULT : window.innerWidth;
+  }
+
+  chatsChosen() {
+    return chatsWidthFrom(this.settings ? this.settings['chats.width'] : null, this.dividerViewport());
+  }
+
+  chatsShown() {
+    const chosen = this.chatsChosen();
+    return clampChatsWidth(chosen === null ? CHATS_DEFAULT : chosen, this.dividerViewport());
+  }
+
+  // Writes the width onto the shell's column and the separator's value. With no choice stored, and the window wide
+  // enough for the token default, nothing is written and the size-sidebar token draws it; a window too narrow to hold
+  // the default writes the clamped width instead, so the conversation still keeps its minimum.
+  applyChatsWidth() {
+    const shell = this.querySelector && this.querySelector('.shell');
+    if (!shell) return;
+    const chosen = this.chatsChosen();
+    const shown = clampChatsWidth(chosen === null ? CHATS_DEFAULT : chosen, this.dividerViewport());
+    if (chosen === null && shown === CHATS_DEFAULT) shell.style.removeProperty('--chats-width');
+    else shell.style.setProperty('--chats-width', shown + 'px');
+    const divider = this.querySelector('.conv-divider');
+    if (divider) {
+      const bounds = dividerBounds(this.dividerViewport());
+      divider.setAttribute('aria-valuemin', String(bounds.min));
+      divider.setAttribute('aria-valuemax', String(bounds.max));
+      divider.setAttribute('aria-valuenow', String(shown));
+    }
+  }
+
+  // A drag in flight, written straight onto the seam so the whole page is not redrawn under the pointer; the choice is
+  // only sent to the server once, when the pointer lifts.
+  showChatsWidth(width) {
+    const shell = this.querySelector('.shell');
+    if (shell) shell.style.setProperty('--chats-width', width + 'px');
+    const divider = this.querySelector('.conv-divider');
+    if (divider) divider.setAttribute('aria-valuenow', String(width));
+  }
+
+  onDividerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    this.chatDrag = { pointerId: e.pointerId, x: e.clientX, width: this.chatsShown(), moved: false };
+    this.chatMove = (ev) => this.onDividerMove(ev);
+    this.chatUp = (ev) => this.onDividerUp(ev);
+    window.addEventListener('pointermove', this.chatMove);
+    window.addEventListener('pointerup', this.chatUp);
+    window.addEventListener('pointercancel', this.chatUp);
+    // The press belongs to the seam, not to the phone drawer's own edge drag the shell watches.
+    e.stopPropagation();
+  }
+
+  onDividerMove(e) {
+    if (!this.chatDrag) return;
+    const width = clampChatsWidth(this.chatDrag.width + (e.clientX - this.chatDrag.x), this.dividerViewport());
+    this.chatDrag.width = width;
+    this.chatDrag.moved = true;
+    this.showChatsWidth(width);
+    e.preventDefault();
+  }
+
+  onDividerUp(e) {
+    if (!this.chatDrag) return;
+    const drag = this.chatDrag;
+    this.endDividerDrag();
+    // A press that never moved is only a focus, not a width: nothing is written.
+    if (drag.moved) this.setSettings({ 'chats.width': drag.width });
+    e.preventDefault();
+  }
+
+  endDividerDrag() {
+    this.chatDrag = null;
+    if (typeof window === 'undefined') return;
+    if (this.chatMove) { window.removeEventListener('pointermove', this.chatMove); this.chatMove = null; }
+    if (this.chatUp) {
+      window.removeEventListener('pointerup', this.chatUp);
+      window.removeEventListener('pointercancel', this.chatUp);
+      this.chatUp = null;
+    }
+  }
+
+  // A double click clears the choice, so the divider returns to the token default as a fresh app would draw it.
+  onDividerDblClick(e) {
+    e.preventDefault();
+    this.setSettings({ 'chats.width': null });
+  }
+
+  // The two arrows step the divider and Home or Enter resets it (issue 215), each held between the pane minimums.
+  onDividerKey(e) {
+    const out = dividerKey(e.key, this.chatsShown(), this.dividerViewport());
+    if (!out) return;
+    e.preventDefault();
+    this.setSettings({ 'chats.width': out.reset ? null : out.width });
   }
 
   // The media viewer: the picture or video a preview opened, and the conversation's other media, so the viewer steps
@@ -1647,7 +1755,7 @@ class AppRoot extends KitElement {
           @chatsettings=${(e) => respond(e, this.setSettings(e.detail.patch))}></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
-      <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0"></div>
+      <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0" @pointerdown=${(e) => this.onDividerDown(e)} @dblclick=${(e) => this.onDividerDblClick(e)} @keydown=${(e) => this.onDividerKey(e)}></div>
       <main class="main">${this.mainView(chat)}</main>
       ${this.settingsSheetShowing ? html`<div class="sheet-scrim" data-sheet="settings" ?data-leaving=${this.sheetLeaving}><section class="sheet" data-view="settings" data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.settingsBody()}</section></div>` : nothing}
       ${this.aboutSheetShowing ? html`<div class="sheet-scrim about-sheet-scrim" data-sheet="about" ?data-leaving=${this.aboutLeaving}><section class="sheet" data-view="about" data-arrive=${this.aboutMotion || 'none'} data-dismiss="about" role="dialog" aria-modal="true" aria-label="About" @animationend=${this.onAboutAnimationEnd}>${this.aboutBody()}</section></div>` : nothing}

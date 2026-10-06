@@ -29,6 +29,7 @@ export * from './rules/emoji.js';
 export * from './rules/emoji-data.js';
 export * from './rules/connection.js';
 export * from './rules/drawer.js';
+export * from './rules/divider.js';
 export * from './rules/engine-imsg.js';
 export * from './rules/messages.js';
 export * from './rules/media.js';

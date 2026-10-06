@@ -153,6 +153,7 @@ const checks = [
   { key: 'importOnce', bound: 'true', value: (report) => report.importOnce, test: (v) => v === true },
   { key: 'pressStates', bound: 'true', value: (report) => report.pressStates, test: (v) => v === true },
   { key: 'resizeKeeps', bound: 'true', value: (report) => report.resizeKeeps, test: (v) => v === true },
+  { key: 'dividerResize', bound: 'true', value: (report) => report.dividerResize, test: (v) => v === true },
   { key: 'switchPlace', bound: 'true', value: (report) => report.switchPlace, test: (v) => v === true },
   { key: 'switchInstant', bound: 'true', value: (report) => report.switchInstant, test: (v) => v === true },
   { key: 'headerPinned', bound: 'true', value: (report) => report.headerPinned, test: (v) => v === true },

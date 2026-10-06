@@ -9,6 +9,7 @@ import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js
 import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
+import { CHATS_MIN, CONVERSATION_MIN, CHATS_DEFAULT, KEY_STEP } from '../../core/app/rules/divider.js';
 import { contrastRatio } from '../../core/app/rules/theme.js';
 import { settingsTabs, settingsFields } from '../../core/app/rules/settings.js';
 import { tokenMismatches, expectedTokens } from './surface.js';
@@ -1736,6 +1737,101 @@ async function runSmoke(w) {
   };
   report.resizeKeeps = Object.values(resizeChecks).every(Boolean);
   console.log('resize keeps: ' + JSON.stringify({ checks: resizeChecks, start, steps }));
+
+  // The divider between the chats list and the conversation resizes both panes (issue 215). The pointer drags the seam
+  // across its whole range and far past both ends: the chats list stops at CHATS_MIN and the conversation stops at
+  // CONVERSATION_MIN, so neither pane is ever dragged to nothing. A resize moves neither pane's place: the conversation,
+  // at its end, keeps its bottom message, and the chat list keeps its top row, both within 2px, the tolerance the resize
+  // check above uses. A double click and the Home key reset the divider to the default, and the width a person chose is
+  // held on the server and read back when the app opens afresh (its own boot reads the settings again, a restart with no
+  // page load, which issue 142's rule keeps from happening).
+  await cdp('Emulation.clearDeviceMetricsOverride', {});
+  w.setSize(1100, 720);
+  await pause(500);
+  const dividerState = () => js("(() => { const d = document.querySelector('.conv-divider'); const s = document.querySelector('.shell'); if (!d || !s) return null; const dr = d.getBoundingClientRect(); const list = document.querySelector('.sidebar').getBoundingClientRect(); const conv = document.querySelector('.main').getBoundingClientRect(); return { x: dr.left + dr.width / 2, y: dr.top + dr.height / 2, viewport: window.innerWidth, chatW: Math.round(list.width), convW: Math.round(conv.width), role: d.getAttribute('role'), label: d.getAttribute('aria-label'), orientation: d.getAttribute('aria-orientation'), tabindex: d.getAttribute('tabindex'), cursor: getComputedStyle(d).cursor, valueNow: Number(d.getAttribute('aria-valuenow')), valueMin: Number(d.getAttribute('aria-valuemin')), valueMax: Number(d.getAttribute('aria-valuemax')) }; })()");
+  const dividerPlace = () => js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const last = rows[rows.length - 1]; const l = document.querySelector('app-chat-list'); const ltop = l.getBoundingClientRect().top; const first = [...l.querySelectorAll('.chat-row')].find((r) => r.getBoundingClientRect().bottom - ltop > 0); return { bottom: last ? { id: last.dataset.id, gap: Math.round(m.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom) } : null, listTop: first ? { chat: first.dataset.chat, offset: Math.round(first.getBoundingClientRect().top - ltop) } : null }; })()");
+  const dragDivider = async (dx) => {
+    const at = await dividerState();
+    const x0 = Math.round(at.x), y0 = Math.round(at.y);
+    await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: x0, y: y0, button: 'left', buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= 5; i += 1) {
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x0 + (dx * i) / 5), y: y0, button: 'left', buttons: 1 });
+      await pause(40);
+    }
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x0 + dx), y: y0, button: 'left', buttons: 0, clickCount: 1 });
+    await pause(300);
+  };
+  const keyDivider = async (key) => {
+    await js("(() => { const d = document.querySelector('.conv-divider'); d.focus(); d.dispatchEvent(new KeyboardEvent('keydown', { key: " + JSON.stringify(key) + ", bubbles: true, cancelable: true })); return true; })()");
+    await pause(250);
+  };
+  // The conversation is left at its end (what was at the bottom stays there) and the list scrolled back, so each pane's
+  // anchor has something to hold across every drag below.
+  await js("(() => { const m = document.querySelector('.messages'); m.scrollTop = m.scrollHeight; const l = document.querySelector('app-chat-list'); l.scrollTop = Math.round((l.scrollHeight - l.clientHeight) / 2); return true; })()");
+  await pause(400);
+  const dividerStart = await dividerState();
+  const placeStart = await dividerPlace();
+  const movedApart = (a, b) => Boolean(a && b) && a.chatW !== b.chatW;
+  const sameBottom = (a, b) => Boolean(a && b) && a.id === b.id && Math.abs(a.gap - b.gap) <= 2;
+  const sameListTop = (a, b) => Boolean(a && b) && a.chat === b.chat && Math.abs(a.offset - b.offset) <= 2;
+  await dragDivider(-2000);
+  const dividerLeft = await dividerState();
+  const placeLeft = await dividerPlace();
+  await shot('17-divider-min-light.png');
+  await dragDivider(2000);
+  const dividerRight = await dividerState();
+  const placeRight = await dividerPlace();
+  await shot('17-divider-wide-light.png');
+  nativeTheme.themeSource = 'dark';
+  await pause(300);
+  await shot('17-divider-wide-dark.png');
+  await dragDivider(-2000);
+  await shot('17-divider-min-dark.png');
+  nativeTheme.themeSource = 'light';
+  await pause(300);
+  // Reset by double click, a step and a reset by key, then a chosen width to reopen on.
+  await js("(() => { const d = document.querySelector('.conv-divider'); d.focus(); d.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return true; })()");
+  await pause(250);
+  const dividerDbl = await dividerState();
+  await keyDivider('ArrowRight');
+  const dividerStep = await dividerState();
+  await keyDivider('Home');
+  const dividerHome = await dividerState();
+  await dragDivider(160);
+  const dividerChosen = await dividerState();
+  const placeChosen = await dividerPlace();
+  // A width change must not leave the composer short (issue 139): its field watches its own width, so a three-line draft
+  // over the new width grows the box and hides nothing behind a bar.
+  const composerEmpty = await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return t.offsetHeight; })()");
+  const composerThree = await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = 'one\\ntwo\\nthree'; t.dispatchEvent(new Event('input', { bubbles: true })); return { h: t.offsetHeight, hidden: t.scrollHeight - t.clientHeight }; })()");
+  await pause(200);
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  const storedWidth = async () => Number((await held())['chats.width']);
+  let persistedWidth = await storedWidth();
+  for (let i = 0; i < 25 && persistedWidth !== dividerChosen.chatW; i += 1) { await pause(100); persistedWidth = await storedWidth(); }
+  // Reopen: the page's own boot reads the settings from the server again, the way a restart does, so the chosen width
+  // must come back with no page load (issue 142's rule keeps the page from being built again from nothing).
+  await js("(async () => { const root = document.querySelector('app-root'); const token = await root.bridge('storage.get', { key: 'server.token' }); await root.start(root.serverUrl, token); return true; })()");
+  await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.bubble-row').length > 0", 20000);
+  await pause(500);
+  const dividerReopened = await dividerState();
+  const dividerChecks = {
+    separator: dividerStart.role === 'separator' && /resize/i.test(dividerStart.label || '') && dividerStart.orientation === 'vertical' && dividerStart.tabindex === '0' && dividerStart.cursor === 'col-resize',
+    // The divider reports the width and the two bounds it holds to, so a screen reader can read the separator.
+    values: Number.isFinite(dividerStart.valueNow) && dividerStart.valueMin === CHATS_MIN && dividerStart.valueMax === dividerStart.viewport - CONVERSATION_MIN && dividerStart.valueNow === dividerStart.chatW,
+    chatsMinimum: dividerLeft.chatW === CHATS_MIN && dividerLeft.chatW === dividerLeft.valueMin && dividerLeft.convW >= CONVERSATION_MIN,
+    conversationMinimum: dividerRight.convW === CONVERSATION_MIN && dividerRight.chatW === dividerRight.valueMax && dividerRight.chatW >= CHATS_MIN,
+    keepsPlace: [placeLeft, placeRight, placeChosen].every((p) => sameBottom(p.bottom, placeStart.bottom) && sameListTop(p.listTop, placeStart.listTop)),
+    moved: movedApart(dividerStart, dividerLeft) && movedApart(dividerLeft, dividerRight),
+    doubleClickResets: dividerDbl.chatW === CHATS_DEFAULT && dividerDbl.valueNow === CHATS_DEFAULT,
+    keyResets: dividerHome.chatW === CHATS_DEFAULT,
+    keySteps: dividerStep.chatW === CHATS_DEFAULT + KEY_STEP,
+    composerFit: composerThree.h > composerEmpty && composerThree.hidden <= 0,
+    persists: persistedWidth === dividerChosen.chatW && dividerReopened.chatW === dividerChosen.chatW && dividerReopened.valueNow === dividerChosen.chatW,
+  };
+  report.dividerResize = Object.values(dividerChecks).every(Boolean);
+  console.log('divider resize: ' + JSON.stringify({ checks: dividerChecks, dividerStart, dividerLeft, dividerRight, dividerDbl, dividerStep, dividerHome, dividerChosen, persistedWidth, dividerReopened, placeStart, placeLeft, placeRight, placeChosen }));
+  await putSettings({ 'chats.width': null });
 
   // Switching conversations returns each to the place you left it, at once, without waiting on the server (issue 200).
   // Chat A is scrolled back, we switch to B and back, and A must show the same message at the same height; then, with

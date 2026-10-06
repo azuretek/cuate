@@ -29,6 +29,9 @@ var engine = (() => {
     BADGE_APART: () => BADGE_APART,
     BADGE_TEXT_FLOOR: () => BADGE_TEXT_FLOOR,
     BUILD_SPEC: () => BUILD_SPEC,
+    CHATS_DEFAULT: () => CHATS_DEFAULT,
+    CHATS_MIN: () => CHATS_MIN,
+    CONVERSATION_MIN: () => CONVERSATION_MIN,
     DELETE_STEPS: () => DELETE_STEPS,
     DISMISS: () => DISMISS,
     EDGE: () => EDGE,
@@ -41,6 +44,7 @@ var engine = (() => {
     ICON_MASTERS: () => ICON_MASTERS,
     ICON_TOKENS: () => ICON_TOKENS,
     INSTALL: () => INSTALL,
+    KEY_STEP: () => KEY_STEP,
     LETTER_OTHER: () => LETTER_OTHER,
     LEVELS: () => LEVELS,
     LINK_BOUNDS: () => LINK_BOUNDS,
@@ -130,10 +134,12 @@ var engine = (() => {
     channelOf: () => channelOf,
     chatPreview: () => chatPreview,
     chatTitle: () => chatTitle,
+    chatsWidthFrom: () => chatsWidthFrom,
     checkAnswer: () => checkAnswer,
     checkedCount: () => checkedCount,
     checksumMatches: () => checksumMatches,
     chroma: () => chroma,
+    clampChatsWidth: () => clampChatsWidth,
     clampPan: () => clampPan,
     clampScale: () => clampScale,
     clearGroupPlacement: () => clearGroupPlacement,
@@ -161,6 +167,8 @@ var engine = (() => {
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
     dismissNotice: () => dismissNotice,
+    dividerBounds: () => dividerBounds,
+    dividerKey: () => dividerKey,
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
     durationMs: () => durationMs,
@@ -290,6 +298,7 @@ var engine = (() => {
     reportRows: () => reportRows,
     requestDelete: () => requestDelete,
     requestDeleteGroup: () => requestDeleteGroup,
+    resizeChatsWidth: () => resizeChatsWidth,
     resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
     runtimeVersions: () => runtimeVersions,
@@ -2153,6 +2162,40 @@ var engine = (() => {
   }
   function settlesOpen(progress) {
     return progress >= SETTLE;
+  }
+
+  // core/app/rules/divider.js
+  var CHATS_MIN = 220;
+  var CHATS_DEFAULT = 320;
+  var CONVERSATION_MIN = 320;
+  var KEY_STEP = 24;
+  function dividerBounds(viewport, { chatsMin = CHATS_MIN, conversationMin = CONVERSATION_MIN } = {}) {
+    const view = Number(viewport);
+    const width = Number.isFinite(view) ? view : chatsMin + conversationMin;
+    return { min: chatsMin, max: Math.max(chatsMin, Math.round(width) - conversationMin) };
+  }
+  function clampChatsWidth(width, viewport, options) {
+    const { min, max } = dividerBounds(viewport, options);
+    const n = Math.round(Number(width));
+    if (!Number.isFinite(n)) return min;
+    return Math.min(max, Math.max(min, n));
+  }
+  function chatsWidthFrom(stored, viewport, options) {
+    if (stored === null || stored === void 0 || stored === "") return null;
+    const n = Number(stored);
+    if (!Number.isFinite(n)) return null;
+    return clampChatsWidth(n, viewport, options);
+  }
+  function resizeChatsWidth(width, delta, viewport, options) {
+    const base = Number.isFinite(Number(width)) ? Number(width) : CHATS_DEFAULT;
+    const step = Number.isFinite(Number(delta)) ? Number(delta) : 0;
+    return clampChatsWidth(base + step, viewport, options);
+  }
+  function dividerKey(key, width, viewport, options) {
+    if (key === "ArrowLeft") return { width: resizeChatsWidth(width, -KEY_STEP, viewport, options), reset: false };
+    if (key === "ArrowRight") return { width: resizeChatsWidth(width, KEY_STEP, viewport, options), reset: false };
+    if (key === "Home" || key === "Enter") return { width: clampChatsWidth(CHATS_DEFAULT, viewport, options), reset: true };
+    return null;
   }
 
   // core/app/rules/platform.js
