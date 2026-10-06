@@ -58,7 +58,7 @@ let win = null;
 // The app icon chosen in Settings (issue 167): Follow theme, the default, leaves the icons to the theme (applyIcons,
 // below); a fixed palette from core/spec/app-icons.json stands in for the theme's colours in every image the shell
 // redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
-// The launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
+// The launcher's or the installed bundle's own icon is the platform's, and docs/FEATURES.md says so.
 const appIconSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/app-icons.json'), 'utf8'));
 // Every colour is one family with a paper Light and a bright Dark variant (issue 246); Follow theme carries no colours.
 const appIconVariants = appIconSpec.families.flatMap((family) => ['light', 'dark'].map((key) => family.variants[key]));

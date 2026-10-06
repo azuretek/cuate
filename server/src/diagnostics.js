@@ -9,7 +9,7 @@
 // What a person reads during a problem: the quiet failures (a refused or failed or uncertain send, an engine exit
 // and restart, a refused socket, a refused request, a crash, a spilled log line) and the last error. Deliberately
 // NOT measured here: the success path (a send that worked, a request that answered), which belongs to traces and
-// metrics rather than to a counter read on the Server screen. docs/observability.md records that omission.
+// metrics rather than to a counter read on the Server screen. docs/OBSERVABILITY.md records that omission.
 
 // The declared events that move a counter, and the counter each moves. A new failure event is added here, not at
 // the call site, so there is one list rather than one increment per file.

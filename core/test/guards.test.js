@@ -609,8 +609,8 @@ test('placeholder text is dimmed from its token, on every field', () => {
 // The conventions catalogue (issue 185) stays true: every rule names the issue it came from, every test it says
 // holds it exists under that name, and every smoke check it cites is one the smoke requires. A test renamed or a
 // smoke key dropped fails here, so the document cannot quietly claim enforcement that is gone.
-test('docs/conventions.md names a source for every rule, and every test and smoke check it cites exists', () => {
-  const doc = read('docs/conventions.md');
+test('docs/CONVENTIONS.md names a source for every rule, and every test and smoke check it cites exists', () => {
+  const doc = read('docs/CONVENTIONS.md');
   const rules = doc.split('\n').filter((l) => l.startsWith('- **'));
   assert.ok(rules.length >= 60, 'the catalogue holds the rules: ' + rules.length);
   for (const r of rules) assert.match(r, /#\d+/, 'a rule with no issue or pull request: ' + r.slice(0, 100));
@@ -625,6 +625,6 @@ test('docs/conventions.md names a source for every rule, and every test and smok
   const keys = [...doc.matchAll(/`smoke:(\w+)`/g)].map((m) => m[1]);
   assert.ok(keys.length >= 15, 'the catalogue names the smoke checks that hold its rules');
   for (const k of keys) assert.ok(required.has(k), 'the smoke does not require report.' + k);
-  for (const f of ['docs/design.md', 'docs/contributing.md', 'CONVENTIONS.md', '.github/pull_request_template.md']) assert.ok(read(f).includes('conventions.md'), f + ' does not point at the conventions');
-  assert.match(read('.github/pull_request_template.md'), /[Cc]onventions/, 'the PR template asks which conventions a UI change follows or changes');
+  for (const f of ['docs/DESIGN.md', 'docs/CONTRIBUTING.md', 'CONVENTIONS.md', '.github/PULL_REQUEST_TEMPLATE.md']) assert.ok(read(f).includes('CONVENTIONS.md'), f + ' does not point at the conventions');
+  assert.match(read('.github/PULL_REQUEST_TEMPLATE.md'), /[Cc]onventions/, 'the PR template asks which conventions a UI change follows or changes');
 });

@@ -6,7 +6,7 @@
 // is not a colour: it draws the icon from the active theme's tokens and takes the Light or Dark rendering from the
 // appearance in force, switching when the appearance does. The value is held by the server under appearance.appIcon
 // like any other setting, so a choice made on one device reaches every device; each shell applies it where its platform
-// can (the bridge's app.icon), and docs/features.md says where a platform cannot.
+// can (the bridge's app.icon), and docs/FEATURES.md says where a platform cannot.
 import { APP_ICONS } from './app-icons-spec.js';
 
 export const APP_ICON_KEY = 'appearance.appIcon';
