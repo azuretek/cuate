@@ -31,7 +31,7 @@ final class AboutPageTests: XCTestCase {
             let value = values[key] ?? ""
             XCTAssertFalse(value.isEmpty || value == "Unknown", "About shows this build's \(key): " + reported.label)
         }
-        keep(settled(), name: "about-" + scheme)
+        keep(settled(app), name: "about-" + scheme)
         // The build report, scrolled into view inside the sheet, so a capture shows the channel and the build. Each drag
         // is slow and held at its end, so the sheet's body moves by the drag alone and never flings past the rows; the
         // loop ends when the Build row is on screen, and the count only bounds it.
@@ -45,8 +45,8 @@ final class AboutPageTests: XCTestCase {
                 .press(forDuration: 0.1, thenDragTo: page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)), withVelocity: .slow, thenHoldForDuration: 0.3)
             drags += 1
         }
-        XCTAssertLessThanOrEqual(buildRow.frame.maxY, visibleBottom, "the Build row never scrolled into view: \(buildRow.frame)")
-        keep(settled(), name: "about-build-" + scheme)
+        XCTAssertLessThanOrEqual(buildRow.frame.maxY, visibleBottom, "the Build row never scrolled into view: \(buildRow.frame)" + SystemSurface.failureSuffix(app))
+        keep(settled(app), name: "about-build-" + scheme)
     }
 
     private func keep(_ image: UIImage, name: String) {
@@ -57,7 +57,8 @@ final class AboutPageTests: XCTestCase {
     }
 
     // Two screenshots in a row that draw the same picture, so a frame still arriving is never kept.
-    private func settled() -> UIImage {
+    private func settled(_ app: XCUIApplication) -> UIImage {
+        SystemSurface.requireOurs(app)
         let deadline = Date().addingTimeInterval(20)
         var previous: Data?
         repeat {
