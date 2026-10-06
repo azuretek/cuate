@@ -34,6 +34,18 @@ export function clampChatsWidth(width, viewport, options) {
   return Math.min(max, Math.max(min, n));
 }
 
+// The width the chats list takes for a pointer that has moved to `x` mid-drag: the width the drag started at plus the
+// pointer's OWN travel from where it went down, held between the two minimums. The base and the origin are passed in
+// unchanged on every move, so each step is exactly the distance the pointer moved and nothing accumulates; the bounds
+// clamp only what is drawn, so a drag past a minimum and back resumes one to one rather than being left short.
+export function dragChatsWidth({ baseWidth, startX, x, viewport }, options) {
+  const base = Number(baseWidth);
+  const from = Number(startX);
+  const to = Number(x);
+  const travel = Number.isFinite(from) && Number.isFinite(to) ? to - from : 0;
+  return clampChatsWidth((Number.isFinite(base) ? base : CHATS_DEFAULT) + travel, viewport, options);
+}
+
 // The width a stored setting means: null when there is no choice, so the token default stands, else the stored width
 // clamped into the window the app is opening in.
 export function chatsWidthFrom(stored, viewport, options) {

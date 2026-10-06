@@ -38,6 +38,8 @@ var engine = (() => {
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
     EMOJI_TAPBACK_VERSION: () => EMOJI_TAPBACK_VERSION,
+    FLING: () => FLING,
+    FLING_TRAVEL: () => FLING_TRAVEL,
     FOLLOW_THEME: () => FOLLOW_THEME,
     GLYPH_FLOOR: () => GLYPH_FLOOR,
     ICON_KINDS: () => ICON_KINDS,
@@ -171,6 +173,7 @@ var engine = (() => {
     dividerKey: () => dividerKey,
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
+    dragChatsWidth: () => dragChatsWidth,
     durationMs: () => durationMs,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
@@ -318,6 +321,7 @@ var engine = (() => {
     settingsGroups: () => settingsGroups,
     settingsTabs: () => settingsTabs,
     settlesOpen: () => settlesOpen,
+    settlesOpenAt: () => settlesOpenAt,
     sheetLeaveDeadline: () => sheetLeaveDeadline,
     sizeLabel: () => sizeLabel,
     slideConfirms: () => slideConfirms,
@@ -364,6 +368,7 @@ var engine = (() => {
     updateNotice: () => updateNotice,
     updateNoticeKey: () => updateNoticeKey,
     validate: () => validate,
+    velocityFor: () => velocityFor,
     verificationCheck: () => verificationCheck,
     wheelFactor: () => wheelFactor,
     withNoticeState: () => withNoticeState,
@@ -2149,6 +2154,8 @@ var engine = (() => {
   var EDGE = 24;
   var SLOP = 6;
   var SETTLE = 0.5;
+  var FLING = 1.5;
+  var FLING_TRAVEL = 1 / 3;
   function isEdgeStart(x, edge = EDGE) {
     return x <= edge;
   }
@@ -2162,6 +2169,20 @@ var engine = (() => {
   }
   function settlesOpen(progress) {
     return progress >= SETTLE;
+  }
+  function velocityFor(samples) {
+    if (!Array.isArray(samples) || samples.length < 2) return 0;
+    const last = samples[samples.length - 1];
+    const prev = samples[samples.length - 2];
+    const dt = (Number(last.time) - Number(prev.time)) / 1e3;
+    const dx = Number(last.x) - Number(prev.x);
+    if (!(dt > 0) || !Number.isFinite(dx) || !Number.isFinite(dt)) return 0;
+    return dx / dt;
+  }
+  function settlesOpenAt({ progress, travel = 0, velocity = 0, width = 0 }) {
+    const perSecond = width > 0 ? velocity / width : 0;
+    if (travel >= FLING_TRAVEL && Math.abs(perSecond) >= FLING) return perSecond > 0;
+    return settlesOpen(progress);
   }
 
   // core/app/rules/divider.js
@@ -2179,6 +2200,13 @@ var engine = (() => {
     const n = Math.round(Number(width));
     if (!Number.isFinite(n)) return min;
     return Math.min(max, Math.max(min, n));
+  }
+  function dragChatsWidth({ baseWidth, startX, x, viewport }, options) {
+    const base = Number(baseWidth);
+    const from = Number(startX);
+    const to = Number(x);
+    const travel = Number.isFinite(from) && Number.isFinite(to) ? to - from : 0;
+    return clampChatsWidth((Number.isFinite(base) ? base : CHATS_DEFAULT) + travel, viewport, options);
   }
   function chatsWidthFrom(stored, viewport, options) {
     if (stored === null || stored === void 0 || stored === "") return null;
