@@ -2838,6 +2838,9 @@ async function runSmoke(w) {
   // drag and must match the finger's own travel one to one within a couple of pixels at each: reading only where the
   // drag ended would pass a panel that jumped there (issue 288). The panel is drawn as (progress - 1) * width, where
   // progress is (x - startX) / width and startX is the edge, so the expected offset for a finger at x is x - 4 - width.
+  // Motion is asked for explicitly, the way the press states above do: a runner whose platform has animations switched
+  // off (the Windows and macOS ones) otherwise reports reduced motion, and the settle under it is rightly a straight cut.
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   await down(4);
   const drawerWidth = await js("document.querySelector('.shell .sidebar').getBoundingClientRect().width");
   const expectedX = (x) => (x - 4) - drawerWidth;
