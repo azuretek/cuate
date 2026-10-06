@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   CHATS_MIN, CHATS_DEFAULT, CONVERSATION_MIN, KEY_STEP,
-  dividerBounds, clampChatsWidth, chatsWidthFrom, resizeChatsWidth, dividerKey,
+  dividerBounds, clampChatsWidth, chatsWidthFrom, resizeChatsWidth, dividerKey, dragChatsWidth,
 } from '../app/rules/divider.js';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
@@ -86,6 +86,38 @@ test('the divider is a focusable separator that resizes by pointer, key and doub
   assert.match(t, /@pointerdown=/, 'the divider resizes by pointer');
   assert.match(t, /@keydown=/, 'the divider resizes by keyboard');
   assert.match(t, /@dblclick=/, 'a double click resets the divider');
+});
+
+test('the seam tracks the pointer one to one through a drag, and never compounds (issue 288)', () => {
+  const viewport = 1100;
+  const base = 480;
+  const startX = 500;
+  // Every step reads the pointer's own travel from where it went down, so the same pointer answers the same width
+  // whether it arrived in one move or many. A drag that added each step to the width it drew last would overshoot.
+  assert.equal(dragChatsWidth({ baseWidth: base, startX, x: startX, viewport }), base, 'no travel is no move');
+  assert.equal(dragChatsWidth({ baseWidth: base, startX, x: startX + 30, viewport }), base + 30);
+  const steps = [30, 60, 90, 120].map((t) => dragChatsWidth({ baseWidth: base, startX, x: startX + t, viewport }));
+  assert.deepEqual(steps, [base + 30, base + 60, base + 90, base + 120], 'a step never carries the last into the next');
+  // The bounds clamp only what is drawn; the base and the origin stay fixed, so a drag past a minimum and back resumes
+  // one to one rather than being left short.
+  assert.equal(dragChatsWidth({ baseWidth: base, startX, x: startX + 5000, viewport }), viewport - CONVERSATION_MIN);
+  assert.equal(dragChatsWidth({ baseWidth: base, startX, x: startX + 40, viewport }), base + 40, 'dragging back resumes from the origin, not from the clamped width');
+  assert.equal(dragChatsWidth({ baseWidth: base, startX, x: startX - 5000, viewport }), CHATS_MIN);
+  assert.equal(dragChatsWidth({ baseWidth: base, startX, x: startX - 20, viewport }), base - 20, 'and it resumes from the left minimum too');
+});
+
+test('the drag never feeds the width it drew back into the next step (issue 288)', () => {
+  const src = read('../app/components/app-root.js');
+  const move = /onDividerMove\(e\)\s*\{([\s\S]*?)\n {2}\}/.exec(src);
+  assert.ok(move, 'the divider has a move handler');
+  assert.match(move[1], /dragChatsWidth\(/, 'the move reads the width from the pointer origin');
+  assert.equal(/this\.chatDrag\.width\s*=/.test(move[1]), false, 'the move never feeds its own drawn width into the next step');
+});
+
+test('the divider drag takes the pointer and stops the seam animating while it moves (issue 288)', () => {
+  const src = read('../app/components/app-root.js');
+  assert.match(src, /setPointerCapture\(e\.pointerId\)/, 'the drag takes the pointer for its whole length');
+  assert.match(rule(css(), '.shell[data-drag="divider"]'), /transition:\s*none/, 'nothing animates the seam while the pointer is down');
 });
 
 test('the chosen width is held by the server and read back when the app opens (issue 215)', () => {
