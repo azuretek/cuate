@@ -4,6 +4,32 @@ import { press } from '../../kit/press.js';
 import { isMediaAttachment, mediaKind } from '../rules/media.js';
 
 const needsJpeg = (a) => /heic|heif/i.test(a.mime);
+
+// The pictures and videos already fetched, held in memory for the life of the page by attachment id (and the form it
+// was asked for), most recently used last. A conversation's rows are reused as it re-renders (a refetch, a switch to
+// another conversation and back, older messages landing above), so a row's attachment changes under it; drawing the
+// held bytes at once, rather than a placeholder until the server answers again, is what keeps every row the height it
+// was and the conversation where the person left it. Bounded, and the oldest is let go when it is full.
+export const HELD_MEDIA_MAX = 400;
+const held = new Map();
+const heldKey = (a) => String(a.id) + (needsJpeg(a) ? ':jpeg' : '');
+export function heldMedia(a) {
+  if (!a || !isMediaAttachment(a)) return '';
+  const key = heldKey(a);
+  const url = held.get(key);
+  if (!url) return '';
+  held.delete(key);
+  held.set(key, url);
+  return url;
+}
+export function holdMedia(a, url) {
+  held.set(heldKey(a), url);
+  while (held.size > HELD_MEDIA_MAX) {
+    const [key, old] = held.entries().next().value;
+    held.delete(key);
+    URL.revokeObjectURL(old);
+  }
+}
 const mediaLabel = (kind) => (kind === 'video' ? 'video' : 'image');
 
 // A document (a PDF or any other file that is not a picture or a video) is saved rather than viewed (issue 219): the
@@ -48,21 +74,45 @@ class AppAttachment extends KitElement {
     this.linkUrl = '';
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this.release();
+  // The bytes belong to the held set above, which lets them go, so an element leaving the page keeps nothing to free.
+  // An attachment already held is drawn in the same render that brings it, never a placeholder first.
+  willUpdate(changed) {
+    if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
+      this.failed = false;
+      this.src = heldMedia(this.attachment);
+    }
   }
 
-  release() {
-    if (this.src) URL.revokeObjectURL(this.src);
-    this.src = '';
+  // Only what is seen is fetched: a picture is asked for when its row comes within a screen of the view, so a long
+  // conversation does not pull every picture it holds the moment it opens, and one scrolled toward is there before it
+  // is reached. Where there is no observer (a test, an old engine) it is fetched at once, as before.
+  // A row reused for another message re-arms the watch, so its new picture waits to be seen as a fresh one does.
+  fetchWhenSeen() {
+    if (typeof IntersectionObserver !== 'function' || !this.isConnected) {
+      this.load();
+      return;
+    }
+    if (!this.watch) {
+      this.watch = new IntersectionObserver((entries) => {
+        if (!entries.some((x) => x.isIntersecting)) return;
+        this.watch.disconnect();
+        if (!this.src && !this.failed) this.load();
+      }, { rootMargin: '100% 0px' });
+    }
+    this.watch.disconnect();
+    this.watch.observe(this);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.watch) this.watch.disconnect();
   }
 
   updated(changed) {
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
-      this.release();
       this.failed = false;
-      this.load();
+      this.src = heldMedia(this.attachment);
+      if (!this.src) this.fetchWhenSeen();
     }
   }
 
@@ -74,7 +124,9 @@ class AppAttachment extends KitElement {
     if (!isMediaAttachment(a) || !this.client) return;
     try {
       const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined });
-      if (this.attachment?.id === a.id) this.src = URL.createObjectURL(blob);
+      const url = heldMedia(a) || URL.createObjectURL(blob);
+      holdMedia(a, url);
+      if (this.attachment?.id === a.id) this.src = url;
     } catch {
       if (this.attachment?.id === a.id) this.failed = true;
     }

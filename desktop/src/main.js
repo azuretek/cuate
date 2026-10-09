@@ -1042,7 +1042,7 @@ async function runSmoke(w) {
   const sameRow = (a, b) => Boolean(a.key) && a.key === b.key && Math.abs(a.offset - b.offset) <= 2;
   const [w0, h0] = w.getSize();
   const BACK = ['Typed while', 'scrolled back', 'and a last line long enough that a narrower window has to wrap it onto more lines than the wide window needed, so the field must grow again'];
-  await js("(() => { const m = document.querySelector('.messages'); m.scrollTop = Math.round((m.scrollHeight - m.clientHeight) / 2); document.querySelector('app-composer textarea').focus(); return true; })()");
+  await js("(() => { const m = document.querySelector('.messages'); m.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 })); m.scrollTop = Math.round((m.scrollHeight - m.clientHeight) / 2); document.querySelector('app-composer textarea').focus(); return true; })()");
   await pause(400);
   const backBefore = await growPlace();
   await typeKeys(BACK);
@@ -1886,8 +1886,9 @@ async function runSmoke(w) {
   await clickRow(SWITCH_A);
   await waitFor(showsName(SWITCH_A), 10000);
   await pause(300);
-  // A scrolled back, a few messages down, so it sits at neither end.
-  await js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const r = rows[Math.min(3, rows.length - 1)]; m.scrollTop = r.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 6; m.dispatchEvent(new Event('scroll')); return true; })()");
+  // A scrolled back, a few messages down, so it sits at neither end. The person's wheel comes first: a view at its end
+  // leaves it only for the person (core/kit/scroll.js).
+  await js("(() => { const m = document.querySelector('.messages'); m.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 })); const rows = [...m.querySelectorAll('.bubble-row')]; const r = rows[Math.min(3, rows.length - 1)]; m.scrollTop = r.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 6; m.dispatchEvent(new Event('scroll')); return true; })()");
   await pause(250);
   const placeA = await firstRow();
   const switchT0 = Date.now();
