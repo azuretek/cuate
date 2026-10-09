@@ -788,6 +788,11 @@ app-slide-confirm { display: block; }
    viewer. Every value is a token. */
 .attachment-preview { display: block; max-width: 100%; padding: 0; border: var(--size-border) solid var(--color-image-edge); border-radius: var(--radius-lg); background: var(--color-bg-sunken); box-shadow: var(--shadow-image); overflow: hidden; cursor: zoom-in; transition: box-shadow var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
 .attachment-preview:hover { box-shadow: var(--shadow-md); }
+/* A video or a Live Photo is its picture with a small play mark in the corner, drawn as the viewer's own round controls
+   are (a raised disc in the page's colours), so it reads as playable on any picture and in either scheme. */
+.attachment-preview[data-moves] { position: relative; }
+.media-play { position: absolute; left: var(--space-2); bottom: var(--space-2); display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-sm); pointer-events: none; }
+.media-play .icon { --icon-size: calc(var(--size-message-action) / 2); margin-left: calc(var(--size-border) * 2); }
 .attachment-preview:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .attachment-preview .attachment-image { border-radius: 0; }
 app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }

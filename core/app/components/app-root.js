@@ -1759,9 +1759,11 @@ class AppRoot extends KitElement {
       this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items: [], index: 0 };
       return;
     }
-    // The starting item is already loaded (its preview handed the src over), so the viewer shows it at once.
-    items[at] = { ...items[at], src: d.src, alt: d.alt || items[at].alt };
-    this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items, index: at };
+    // The starting item is already loaded (its preview handed the src over), so the viewer shows it at once. A Live
+    // Photo's preview is its still, not the motion the viewer plays, so that one is loaded rather than handed over.
+    const handed = items[at].part ? {} : { src: d.src };
+    items[at] = { ...items[at], ...handed, alt: d.alt || items[at].alt };
+    this.viewing = { src: handed.src || '', alt: d.alt || '', kind: items[at].kind || d.kind || 'image', items, index: at };
   }
 
   // The viewer stepped to another item: the page keeps its own idea of the open item, so a re-render does not undo it.
