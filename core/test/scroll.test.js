@@ -100,7 +100,8 @@ test('a scroll the browser makes while a turn relays the view out never moves th
   const host = { addController() {}, matches: () => false, querySelector: () => el };
   const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row', follow: true });
   keep.hostUpdated();
-  // The person scrolls to message 50.
+  // The person scrolls to message 50, with their own wheel.
+  keep.onInput();
   el.scrollTop = 50 * 80;
   keep.record();
   keep.restore();
@@ -126,6 +127,7 @@ test('a scroll made while the view only changed height is still the person\'s, s
   const host = { addController() {}, matches: () => false, querySelector: () => el };
   const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row', follow: true });
   keep.hostUpdated();
+  keep.onInput();
   el.scrollTop = 10 * 80;
   keep.record();
   keep.restore();
@@ -135,4 +137,35 @@ test('a scroll made while the view only changed height is still the person\'s, s
   el.scrollTop = el.scrollHeight;
   keep.record();
   assert.deepEqual(keep.anchor, { end: true });
+});
+
+// The view at its newest message stays there through what happens to it with nobody scrolling (reported from use: a
+// conversation at its end came to rest a screen or more above it). Two things moved it. The scroll event a restore
+// raises arrives after the restore, and a picture that landed in between had already grown the conversation, so the
+// event read as the person's; and the browser clamping a view whose content shrank (a row handed a picture still on its
+// way) reads the same. Only the person's own input moves a view off its end.
+test('a view at its end stays there through its own scroll and the browser clamping it, with nobody scrolling', () => {
+  const el = fakeScroller({ heights: Array(40).fill(80), width: 674, height: 300 });
+  const host = { addController() {}, matches: () => false, querySelector: () => el };
+  const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row', follow: true });
+  keep.hostUpdated();
+  assert.equal(el.scrollTop, 40 * 80 - 300, 'it opens at its end');
+  // A picture lands near the end before the restore's own scroll event is heard: the content is a screen taller.
+  el.heights = [...Array(39).fill(80), 80 + 400];
+  keep.record();
+  assert.deepEqual(keep.anchor, { end: true }, 'the restore\'s own scroll is not the person\'s');
+  // The resize that the picture raises puts the view back at its end.
+  keep.restore();
+  assert.equal(el.scrollTop, 40 * 80 + 400 - 300, 'and the view is back at its end');
+  // The browser clamps the view after a row shrank, then a picture grows it again before the event is heard.
+  el.scrollTop = 40 * 80 - 300 - 120;
+  el.heights = [...Array(39).fill(80), 80 + 600];
+  keep.record();
+  assert.deepEqual(keep.anchor, { end: true }, 'a clamp is not the person scrolling');
+  assert.equal(el.scrollTop, 40 * 80 + 600 - 300);
+  // The person scrolls up with their own wheel: now it is theirs.
+  keep.onInput();
+  el.scrollTop = 10 * 80;
+  keep.record();
+  assert.deepEqual(keep.anchor, { key: 'm10', offset: 0 });
 });

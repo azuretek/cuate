@@ -89,6 +89,17 @@ class AppConversation extends KitElement {
     return emit(this, name, detail);
   }
 
+  // Older messages load as the person scrolls up to them, before they reach the top, so the history reads as one long
+  // conversation rather than a page with a button at its head: within a screen of the top, the next page is asked for
+  // once, and the place the person is on stays where it is while it lands above (the keep's anchor holds the message).
+  // The button stays for a keyboard and for a page that is shorter than its view.
+  nearTop(e) {
+    const el = e.currentTarget;
+    if (!this.hasMore || this.olderPending || !el || el.scrollTop > el.clientHeight) return;
+    this.olderPending = true;
+    Promise.resolve(this.fire('older')).catch(() => {}).finally(() => { this.olderPending = false; });
+  }
+
   // Another conversation starts where it was left, or at its latest message the first time it is opened (issue 200).
   // The conversation being left keeps the place it was last at; the one being entered is put back on its own. Because
   // this runs before the new conversation is drawn, the place read for the old one is still the old one's, never a frame
@@ -315,7 +326,7 @@ class AppConversation extends KitElement {
     // back included: its close control is in the thread card (issue 213).
     return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
-        <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
+        <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
           ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, sms, 'list'), this.threadSummary(it.message)]))}
         </div>
