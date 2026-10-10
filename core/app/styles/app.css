@@ -404,7 +404,10 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .app-icon-choice:hover { background: var(--color-bg-sunken); }
 .app-icon-choice[aria-checked="true"] { border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
 .app-icon-choice:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.app-icon-tile { position: relative; display: block; }
+/* Each picture is half its card's width: at the card's full width it read about twice the size it should,
+   on a phone and on the desktop alike. The tile is what is halved, so the Follow theme disc stays on the picture's
+   corner, and the cards keep the theme grid's columns. */
+.app-icon-tile { position: relative; display: block; width: 50%; margin-inline: auto; }
 .app-icon-picture { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--radius-sm); }
 .app-icon-name { font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Follow theme is not a colour: the same drawing as every other choice, marked by a small half-accent, half-foreground
