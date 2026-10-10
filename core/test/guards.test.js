@@ -628,3 +628,16 @@ test('docs/conventions.md names a source for every rule, and every test and smok
   for (const f of ['docs/design.md', 'docs/contributing.md', 'CONVENTIONS.md', '.github/pull_request_template.md']) assert.ok(read(f).includes('conventions.md'), f + ' does not point at the conventions');
   assert.match(read('.github/pull_request_template.md'), /[Cc]onventions/, 'the PR template asks which conventions a UI change follows or changes');
 });
+
+// The composer's controls sit on the field's last line (docs/conventions.md): lifted by half the difference between the
+// field's one-line height and the control size, with that height worked out from the field's own type, so it holds at
+// every text size.
+test("the composer's controls are lifted onto the field's last line", () => {
+  const css = read('core/app/styles/app.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const composer = /\.composer\s*\{([^}]*)\}/.exec(css);
+  assert.ok(composer, 'the .composer rule exists');
+  assert.match(composer[1], /--composer-one-line:\s*calc\(var\(--composer-type\)\s*\*\s*var\(--font-line\)/, 'the one-line height comes from the field type and the line height');
+  assert.match(composer[1], /align-items:\s*flex-end/, 'the row is bottom-aligned, so the controls follow the last line as the field grows');
+  assert.match(css, /\.composer > \.composer-tools, \.composer > button\.send\s*\{\s*margin-bottom:\s*calc\(\(var\(--composer-one-line\) - var\(--size-tool\)\) \/ 2\)/, 'both sides of the field are lifted by the same amount');
+  assert.match(css, /\.composer textarea\s*\{[^}]*font-size:\s*var\(--composer-type\)[^}]*line-height:\s*var\(--font-line\)/, 'the field draws in the type the lift is worked out from');
+});

@@ -250,8 +250,12 @@ app-link-card { display: inline-block; max-width: var(--size-bubble-max); margin
 .link-card-play:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
 
 app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--role-divider); background: var(--role-composer-bar); padding-block-end: var(--inset-bottom); }
-.composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
-.composer textarea { flex: 1; resize: none; background: var(--role-composer-field); color: var(--role-composer-field-fg); box-shadow: 0 0 0 var(--size-border) var(--role-composer-field-ring); border: var(--size-border) solid var(--role-composer-field-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
+/* The row's controls sit on the field's last line: on one line they are centred on the field, and as the field grows
+   they stay level with its bottom line, as a phone's own message app does. The field's one-line height is worked out
+   from its type, the body line height, its padding and its border, so the lift is right at every text size; the
+   controls were bottom-aligned to the field's border and sat below its middle, more so on a phone's larger type. */
+.composer { --composer-type: var(--font-size-md); --composer-one-line: calc(var(--composer-type) * var(--font-line) + 2 * var(--space-2) + 2 * var(--size-border)); display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
+.composer textarea { flex: 1; font-size: var(--composer-type); line-height: var(--font-line); resize: none; background: var(--role-composer-field); color: var(--role-composer-field-fg); box-shadow: 0 0 0 var(--size-border) var(--role-composer-field-ring); border: var(--size-border) solid var(--role-composer-field-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
 /* The field grows with its text and scrolls only past its maximum, where the composer marks it (issue 139). */
 .composer textarea.scrolls { overflow-y: auto; }
 /* A letter in the field's type, never seen: its size changes with the text size and the font, and the composer sets
@@ -273,6 +277,8 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
    own picker and the emoji control its panel beside the field rather than as a sheet (issue 187). Each is a square from
    the tool size token and draws a glyph from the icon set at the icon size token, like the app's other icon buttons. */
 .composer-tools { display: flex; align-items: flex-end; gap: var(--space-1); }
+/* The lift onto the field's last line, from the composer rule above. */
+.composer > .composer-tools, .composer > button.send { margin-bottom: calc((var(--composer-one-line) - var(--size-tool)) / 2); }
 .tool { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-tool); height: var(--size-tool); padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); cursor: pointer; }
 .tool:hover { background: var(--color-bg-sunken); }
 .tool:disabled { opacity: 0.4; cursor: default; }
@@ -563,7 +569,8 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
   /* iOS zooms the whole page in when a control whose font is below 16px takes focus, and that zoom is what pushed the
      send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
      field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
-  .composer textarea { min-width: 0; font-size: var(--font-size-lg); }
+  .composer { --composer-type: var(--font-size-lg); }
+  .composer textarea { min-width: 0; }
   /* The panel takes the width of the composer rather than spilling off a narrow screen. */
   .emoji-picker { left: var(--space-2); right: var(--space-2); width: auto; }
 }
