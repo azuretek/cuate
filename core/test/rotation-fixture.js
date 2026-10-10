@@ -38,6 +38,9 @@
   field.setSelectionRange(9, 9);
   const scroller = conversation.querySelector('.messages');
   if (scroller.scrollHeight <= scroller.clientHeight || !field) throw new Error('fixture must populate a scrollable conversation');
+  // The person's finger moves the view, so its touch comes first: a view at its end leaves it only for the person's
+  // own input (core/kit/scroll.js), never for a bare scrollTop.
+  scroller.dispatchEvent(new Event('touchstart'));
   scroller.scrollTop = scroller.scrollHeight / 2;
   scroller.dispatchEvent(new Event('scroll'));
   await new Promise(requestAnimationFrame);
