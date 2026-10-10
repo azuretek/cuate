@@ -49,7 +49,10 @@ class SystemBarsTest {
             val view = webView(activity.findViewById(android.R.id.content))!!
             view.evaluateJavascript(script) { value -> result = value; done.countDown() }
         }
-        assertTrue("JavaScript callback timed out", done.await(5, TimeUnit.SECONDS))
+        // The answer waits for the page's main thread, which on the CI emulator is shared with frames of about a second
+        // each and with Play services updating in the background, so a single answer took over 5 s there. The caller's
+        // own deadline bounds the wait; this only catches an answer that will never come.
+        assertTrue("JavaScript callback timed out", done.await(JS_ANSWER_SECONDS, TimeUnit.SECONDS))
         return result
     }
 
@@ -247,6 +250,8 @@ class SystemBarsTest {
         val at = JSONObject(JSONObject("{\"v\":$spot}").getString("v"))
         evaluate(scenario, "window.systemBarsEdge()")
         tap(scenario, at.getDouble("x"), at.getDouble("y"), dpr)
+        val tappedAt = System.nanoTime()
+        var tappedAgain = false
         val top = statusBar / dpr
         var last = listOf("no proof")
         var shot: Bitmap? = null
@@ -269,11 +274,19 @@ class SystemBarsTest {
             }
             return out
         }
+        // The keyboard gets its own time from the tap: the field search above can use most of its deadline, and the
+        // emulator's keyboard can take several seconds to come up the first time it is asked. A tap the keyboard never
+        // answered is tapped once more, as a person would, and the layout checks still have to hold after it.
+        val keyboardBy = tappedAt + TimeUnit.SECONDS.toNanos(30)
         do {
             instrumentation.waitForIdleSync()
             last = check()
             if (last.isEmpty()) break
-        } while (System.nanoTime() < deadline)
+            if (!tappedAgain && keyboardTop(scenario) == null && System.nanoTime() - tappedAt > TimeUnit.SECONDS.toNanos(10)) {
+                tap(scenario, at.getDouble("x"), at.getDouble("y"), dpr)
+                tappedAgain = true
+            }
+        } while (System.nanoTime() < keyboardBy)
         // The screen lags the page on the emulator, and two identical captures can both be the frame from before the
         // keyboard shrank the view. The kept capture is one that shows the fixture's edge strip just above the keyboard,
         // which only the shrunk view draws there, and that the next capture agrees with.

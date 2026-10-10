@@ -1763,9 +1763,14 @@ async function runSmoke(w) {
     await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x0 + dx), y: y0, button: 'left', buttons: 0, clickCount: 1 });
     await pause(300);
   };
+  // Each key is read once the divider has answered it, not after a fixed pause: a Windows runner drew the step later
+  // than 250 ms and the check read the old width. A key that changes nothing still ends after five seconds, and the
+  // check then reports it.
   const keyDivider = async (key) => {
+    const before = await js("document.querySelector('.conv-divider').getAttribute('aria-valuenow')");
     await js("(() => { const d = document.querySelector('.conv-divider'); d.focus(); d.dispatchEvent(new KeyboardEvent('keydown', { key: " + JSON.stringify(key) + ", bubbles: true, cancelable: true })); return true; })()");
-    await pause(250);
+    try { await waitFor("document.querySelector('.conv-divider').getAttribute('aria-valuenow') !== " + JSON.stringify(before), 5000); } catch { /* unchanged: reported by the check */ }
+    await pause(100);
   };
   // The conversation is left at its end (what was at the bottom stays there) and the list scrolled back, so each pane's
   // anchor has something to hold across every drag below.
