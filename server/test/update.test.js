@@ -25,6 +25,11 @@ import { boot, waitFor } from './helpers.js';
 // A test that repoints `current` runs where the installed path does. The installed path is macOS's
 // (assertInstalledPlatform in src/install.js), and these run on Linux too because a rename over a link is the same POSIX
 // rename there; Windows refuses to rename over a link, so they skip it the way the service's own tests skip it.
+// How long a test gives a server it has just started to answer its health check: the candidate after a switch, and the
+// previous version after a rollback. It ends the moment the server answers, so a healthy start costs nothing more, but
+// one second was less than a Node server takes to start on a loaded host: a healthy release was judged unhealthy and
+// rolled back (seen 3 times in 18 parallel runs of this file).
+const HEALTH_WINDOW_SECONDS = 15;
 const SWITCHES = { skip: process.platform === 'win32' && 'the installed path runs on macOS only; Windows cannot rename over a link' };
 
 const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/main.js');
@@ -150,7 +155,7 @@ async function installed(t, { quiesce = null, settings = () => ({}), withService
   const updater = createUpdater({
     L: s.L, dataDir: s.dataDir, log: s.log.child('update'), running: v1.version, runningCommit: v1.commit, repo, slug, fetchImpl: gh.fetchImpl,
     publish: (name, data) => published.push({ name, data }), quiesce, settings,
-    handoff: withService ? async () => { finishing = new Promise((resolve) => setImmediate(resolve)).then(() => finishSwitch({ L: s.L, dataDir: s.dataDir, port, service, log: s.log.child('update'), fetchImpl: globalThis.fetch, seconds: 1, poll: 25 })); } : null,
+    handoff: withService ? async () => { finishing = new Promise((resolve) => setImmediate(resolve)).then(() => finishSwitch({ L: s.L, dataDir: s.dataDir, port, service, log: s.log.child('update'), fetchImpl: globalThis.fetch, seconds: HEALTH_WINDOW_SECONDS, poll: 25 })); } : null,
   });
   t.after(async () => { updater.stop(); await service.kill(); s.cleanup(); });
   // The first install's own server must answer before anything is switched.
@@ -320,7 +325,7 @@ test('a healthy version stays, and the oldest beyond two previous go only after 
       handoff: async () => {},
     });
     assert.equal((await u.check()).state, 'switched');
-    const outcome = await finishSwitch({ L: s.L, dataDir: s.dataDir, port: s.port, service: s.service, log: s.log.child('update'), seconds: 6, poll: 50 });
+    const outcome = await finishSwitch({ L: s.L, dataDir: s.dataDir, port: s.port, service: s.service, log: s.log.child('update'), seconds: HEALTH_WINDOW_SECONDS, poll: 50 });
     assert.equal(outcome.state, 'healthy', 'release ' + n);
     assert.equal((await health(s.port)).version, release(n).version);
   }
