@@ -14,6 +14,9 @@ class AppComposer extends KitElement {
     // null. The composer repeats neither message's text: the conversation shows the thread itself (issue 169).
     replyTo: { attribute: false }, reactFor: { attribute: false },
     emojiOpen: { state: true }, frequent: { state: true }, staged: { state: true }, stageProblem: { state: true },
+    // A phone: its own keyboard carries emoji, so the composer's emoji tool is the desktop's (the panel is still the
+    // one a reaction opens, and that path opens it itself).
+    phone: {},
     // A staged picture's preview, as an object URL the composer owns and revokes when the file leaves.
     preview: { state: true },
   };
@@ -277,6 +280,9 @@ class AppComposer extends KitElement {
 
   render() {
     const s = this.staged;
+    // The emoji panel is the row's SIBLING rather than its child: as a child it is a flex item of the row, so the row
+    // made room for it and the field and the send control moved the moment the panel opened. As a sibling its own box is
+    // empty and it hangs above the row from this element's own edge, which is where the panel's rule already places it.
     // An open thread shows in the conversation and in the field's own Reply placeholder; the composer adds no row of its
     // own, and Escape or the thread's close control leaves it (issue 195).
     return html`${s || this.stageProblem
@@ -289,13 +295,13 @@ class AppComposer extends KitElement {
       <div class="composer-tools">
         <button type="button" class="tool" aria-label="Attach" ?disabled=${this.disabled} @click=${press(() => this.openAttach())}><span class="icon" data-icon="paperclip" aria-hidden="true"></span></button>
         <input type="file" hidden @change=${this.picked}>
-        <button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" data-dismiss-keep="emoji" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>
+        ${this.phone ? nothing : html`<button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" data-dismiss-keep="emoji" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>`}
       </div>
       <span class="composer-ruler" aria-hidden="true">M</span>
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.onInput} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}><span class="icon" data-icon="arrow-up" aria-hidden="true"></span></button>
-      ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .frequent=${this.frequent} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)}></app-emoji-picker>` : nothing}
-    </form>`;
+    </form>
+    ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .frequent=${this.frequent} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)}></app-emoji-picker>` : nothing}`;
   }
 }
 

@@ -1554,13 +1554,19 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 
   // The shell's product and platform; the app draws window chrome only where the platform has a window.
   isDesktop() {
     return ['darwin', 'win32', 'linux'].includes(String(this.host && this.host.platform || '').toLowerCase());
+  }
+
+  // The shell's platform again, for the one control a phone does not need: its own keyboard carries emoji, so the
+  // composer draws the emoji tool only where a window has a physical keyboard.
+  isPhone() {
+    return ['ios', 'android'].includes(String(this.host && this.host.platform || '').toLowerCase());
   }
 
   // The banner's action asks the shell to start a download or apply a downloaded update. The command is the one the

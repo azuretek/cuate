@@ -35,7 +35,7 @@ function marksOf(messages) {
 
 class AppConversation extends KitElement {
   static properties = {
-    chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {},
+    chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {}, phone: {},
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
@@ -321,7 +321,7 @@ class AppConversation extends KitElement {
         </div>
         ${thread ? this.threadView(sms) : nothing}
       </div>
-      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 
