@@ -2,12 +2,19 @@
 // the engine, restarting it with a backoff and resuming the live stream after the last row it saw.
 import os from 'node:os';
 import path from 'node:path';
-import { openSync, readSync, closeSync } from 'node:fs';
+import { openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
+import { annotateLivePhotos } from './live-photo.js';
 import { mapChat, mapMessage, mapReaction } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
+
+// Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
+function motionExists(recorded) {
+  const file = recorded.startsWith('~/') ? path.join(os.homedir(), recorded.slice(2)) : recorded;
+  try { return existsSync(file); } catch { return false; }
+}
 
 // The first bytes of a message's own payload, read without copying the whole file. A payload under a temp path that is
 // already gone reads nothing, which is how a missing one stays missing.
@@ -39,7 +46,7 @@ const omit = (o, keys) => {
 export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
-  const toModel = (raw) => mapMessage(annotatePayloads(raw, readHead), { attachmentId });
+  const toModel = (raw) => mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId });
 
 
   let state = { kind, version: null, ready: false, capabilities: null };

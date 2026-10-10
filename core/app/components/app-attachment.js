@@ -1,7 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
-import { isMediaAttachment, mediaKind } from '../rules/media.js';
+import { isMediaAttachment, mediaKind, isLivePhoto } from '../rules/media.js';
 
 const needsJpeg = (a) => /heic|heif/i.test(a.mime);
 
@@ -142,7 +142,7 @@ class AppAttachment extends KitElement {
       this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || 'Video', linkUrl: this.linkUrl, kind: 'video' } }));
       return;
     }
-    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: mediaKind(this.attachment) || 'image' } }));
+    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: isLivePhoto(this.attachment) ? 'video' : mediaKind(this.attachment) || 'image' } }));
   }
 
   // Pressing a document offers to save it under its real name. The press stops here, so the message it sits in never
@@ -165,7 +165,11 @@ class AppAttachment extends KitElement {
       const media = kind === 'video'
         ? html`<video class="attachment-image" src=${this.src} muted playsinline preload="metadata" aria-label=${a.name}></video>`
         : html`<img class="attachment-image" src=${this.src} alt=${a.name}>`;
-      return html`<button type="button" class="attachment-preview" aria-label=${'Open ' + a.name} @click=${press(() => this.open())}>${media}</button>`;
+      // Anything that moves, a video or a Live Photo, is drawn as its picture with a small play mark in its corner, so it
+      // reads as something that plays before it is pressed; pressing it plays it in the viewer.
+      const moves = kind === 'video' || isLivePhoto(a);
+      const label = (moves ? 'Play ' : 'Open ') + a.name;
+      return html`<button type="button" class="attachment-preview" aria-label=${label} data-moves=${moves ? 'true' : nothing} @click=${press(() => this.open())}>${media}${moves ? html`<span class="media-play" aria-hidden="true"><span class="icon" data-icon="play"></span></span>` : nothing}</button>`;
     }
     if (a.missing || a.local || !this.client) return html`<div class="attachment-file"><span class="attachment-name">${a.name}</span>${a.missing ? html`<span class="muted small"> Not on the Mac</span>` : nothing}</div>`;
     return html`<button type="button" class="attachment-file" aria-label=${'Save ' + a.name} title=${'Save ' + a.name} @click=${press((e) => this.save(e))}><span class="icon" data-icon="download" aria-hidden="true"></span><span class="attachment-name">${a.name}</span></button>`;
