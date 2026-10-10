@@ -38,6 +38,9 @@ const needsJpeg = (item) => /heic|heif/i.test(String(item && item.mime || ''));
 class AppImageViewer extends KitElement {
   static properties = {
     src: {}, alt: {}, kind: {}, view: { state: true }, moving: { state: true },
+    // A Live Photo shows its still, and its motion plays over it on the play control: the motion's URL, and whether it is
+    // playing or could not be loaded.
+    motion: { state: true }, playing: { state: true }, motionFailed: { state: true },
     // The conversation's media, in order, and the one on screen. The page hands them in; the viewer steps between them.
     items: { attribute: false }, index: { attribute: false }, client: { attribute: false },
   };
@@ -53,6 +56,9 @@ class AppImageViewer extends KitElement {
     this.view = zoomFit();
     this.moving = false;
     this.failed = false;
+    this.motion = '';
+    this.playing = false;
+    this.motionFailed = false;
     this.pointers = new Map();
     this.gesture = null;
     this.lastTap = null;
@@ -139,6 +145,9 @@ class AppImageViewer extends KitElement {
     const list = Array.isArray(this.items) ? this.items : [];
     this.view = zoomFit();
     this.failed = false;
+    this.motion = '';
+    this.playing = false;
+    this.motionFailed = false;
     if (!list.length) return;
     const at = Math.max(0, Math.min(list.length - 1, Number(i) || 0));
     this.index = at;
@@ -169,6 +178,29 @@ class AppImageViewer extends KitElement {
       const current = this.items[this.index];
       if (current && current.id === item.id) this.failed = true;
     }
+  }
+
+  // A Live Photo's play control: the motion plays once over the still, muted and inline, and the still is back when it
+  // ends or the control is pressed again. The motion is the attachment's live part, which the server serves as an MP4
+  // every platform can play; it is fetched on the first press only, and kept for the viewer's life like any other item.
+  async playMotion() {
+    const item = this.items[this.index];
+    if (!item || !item.live) return;
+    if (this.playing) { this.playing = false; return; }
+    const key = item.id + ':live';
+    if (!this.urls.has(key)) {
+      try {
+        const blob = await this.client.attachment(item.attachmentId, { part: 'live' });
+        this.urls.set(key, URL.createObjectURL(blob));
+      } catch {
+        if (this.items[this.index] === item) this.motionFailed = true;
+        return;
+      }
+    }
+    if (this.items[this.index] !== item) return;
+    this.motion = this.urls.get(key);
+    this.motionFailed = false;
+    this.playing = true;
   }
 
   // Move one item in the conversation's media, staying put at the ends. The page hears the move so its own idea of the
@@ -310,15 +342,21 @@ class AppImageViewer extends KitElement {
     const at = Math.max(0, Math.min(list.length ? list.length - 1 : 0, Number(this.index) || 0));
     const label = this.alt || (this.kind === 'video' ? 'Video' : 'Image');
     const hasNav = list.length > 1;
+    const live = Boolean(list[at] && list[at].live) && this.kind === 'image';
     const media = this.kind === 'video'
       ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
-      : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
+      : live && this.playing && this.motion
+        ? html`<video class="viewer-image viewer-motion" src=${this.motion} aria-label=${label} autoplay muted playsinline @ended=${() => { this.playing = false; }}></video>`
+        : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
+    const playLabel = this.motionFailed ? 'The motion could not be loaded' : this.playing ? 'Show the photo' : 'Play the Live Photo';
+    const play = live ? html`<button type="button" class="viewer-play" aria-label=${playLabel} title=${playLabel} aria-pressed=${this.playing ? 'true' : 'false'} ?disabled=${this.motionFailed} @click=${press(() => this.playMotion())}><span class="icon" data-icon="play" aria-hidden="true"></span></button>` : nothing;
     return html`<div class="sheet-scrim viewer" data-dismiss="viewer" role="dialog" aria-modal="true" aria-label=${label}
         data-scale=${String(this.view.scale)} data-zoomed=${this.view.scale > 1.001 ? 'true' : 'false'} data-gesture=${this.moving ? 'on' : 'off'}
         data-index=${at} data-count=${list.length} data-kind=${this.kind}
         @pointerdown=${this.onDown} @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${this.onCancel}
         @contextmenu=${this.onContext} @wheel=${this.onWheel}>
       ${media}
+      ${play}
       ${hasNav ? html`<button type="button" class="viewer-nav viewer-prev" aria-label="Previous item" title="Previous item" ?disabled=${at <= 0} @click=${press(() => this.go('prev'))}><span class="icon" data-icon="chevron-left" aria-hidden="true"></span></button>` : nothing}
       ${hasNav ? html`<button type="button" class="viewer-nav viewer-next" aria-label="Next item" title="Next item" ?disabled=${at >= list.length - 1} @click=${press(() => this.go('next'))}><span class="icon" data-icon="chevron-right" aria-hidden="true"></span></button>` : nothing}
       ${closeButtonHtml({ owner: 'viewer', label: 'Close', size: 'lg', onClose: () => this.close() })}

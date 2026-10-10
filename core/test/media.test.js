@@ -11,16 +11,16 @@ const msg = (o) => ({ id: 'm' + n++, chatId: '1', fromMe: false, sender: '+15555
 const png = (id, o) => ({ id, name: 'sunset.png', mime: 'image/png', bytes: 10, sticker: false, missing: false, ...o });
 const mp4 = (id, o) => ({ id, name: 'clip.mp4', mime: 'video/mp4', bytes: 10, sticker: false, missing: false, ...o });
 
-// A Live Photo is a picture the server found its motion beside: its preview is the still, and the viewer plays the
-// motion, so it is a video item that loads the attachment's live part.
-test('a Live Photo is a picture marked live, and it opens in the viewer as its motion', () => {
+// A Live Photo is a picture the server found its motion beside: its preview and the viewer show the still, so it is a
+// picture item marked live, and the viewer plays the attachment's live part over it on request.
+test('a Live Photo is a picture marked live, and it opens in the viewer as its still with its motion on offer', () => {
   assert.equal(isLivePhoto(png('a', { live: true })), true);
   assert.equal(isLivePhoto(png('b')), false, 'a plain picture');
   assert.equal(isLivePhoto(mp4('c', { live: true })), false, 'only a picture is live');
   assert.equal(isLivePhoto(png('d', { live: true, missing: true })), false, 'not on the Mac');
   assert.equal(mediaKind(png('e', { live: true })), 'image', 'its kind as an attachment stays a picture');
   const items = mediaItems([msg({ id: 'L1', attachments: [png('att-live', { live: true }), png('att-still')] })]);
-  assert.deepEqual(items.map((x) => [x.id, x.kind, x.part]), [['att-live', 'video', 'live'], ['att-still', 'image', undefined]]);
+  assert.deepEqual(items.map((x) => [x.id, x.kind, x.live]), [['att-live', 'image', true], ['att-still', 'image', undefined]]);
 });
 
 test('a media item is a picture or a video that is really there, never a document, a sticker, a local or a missing file', () => {

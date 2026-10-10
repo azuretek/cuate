@@ -5,12 +5,18 @@
 import os from 'node:os';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
-import { mkdir, access, realpath, stat } from 'node:fs/promises';
+import { mkdir, access, realpath, stat, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { motionPath } from './engine/live-photo.js';
 
-export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform }) {
+// A Live Photo's motion is HEVC in a QuickTime file, which only Apple's own players decode; Chromium on Windows, Linux
+// and Android cannot, and iOS refused it from the viewer. On a Mac it is converted once with the system's own avconvert
+// to H.264 in an MP4, which every client plays, with its index first so playback starts before the file is read. The
+// conversion is injectable so it is tested without a Mac.
+const avconvert = (src, out) => new Promise((resolve, reject) => execFile('avconvert', ['--source', src, '--preset', 'Preset1280x720', '--output', out, '--replace'], { timeout: 60000 }, (err) => (err ? reject(err) : resolve())));
+
+export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform, convertMotion = avconvert }) {
   // The recorded path is real, and inside the attachments folder, or there is nothing to serve.
   async function inside(recorded) {
     const root = await realpath(attachmentsRoot).catch(() => null);
@@ -34,6 +40,26 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
     return out;
   }
 
+  // The motion as an MP4 in the data folder's cache, made once and reused. It is written beside its final name and
+  // renamed into place, so a request arriving mid-conversion never serves half a file. A conversion that fails leaves
+  // the original to be served, which Apple's players still play.
+  const converting = new Map();
+  async function toMp4(src, id) {
+    const dir = path.join(dataDir, 'cache');
+    const out = path.join(dir, id + '.live.mp4');
+    try { await access(out); return out; } catch { /* not converted yet */ }
+    if (!converting.has(out)) {
+      converting.set(out, (async () => {
+        await mkdir(dir, { recursive: true });
+        const part = out + '.part.mp4';
+        await convertMotion(src, part);
+        await rename(part, out);
+        return out;
+      })().finally(() => converting.delete(out)));
+    }
+    return converting.get(out);
+  }
+
   return {
     async resolve(rec, format, part = null) {
       if (part === 'live') {
@@ -41,6 +67,10 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
         const motion = motionPath(expanded, (p) => existsSync(p));
         const real = motion ? await inside(motion) : null;
         if (!real) return null;
+        if (platform === 'darwin') {
+          const mp4 = await toMp4(real, rec.id).catch(() => null);
+          if (mp4) return { file: mp4, mime: 'video/mp4', size: (await stat(mp4)).size };
+        }
         const st = await stat(real);
         return { file: real, mime: 'video/quicktime', size: st.size };
       }
