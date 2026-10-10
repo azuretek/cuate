@@ -62,3 +62,33 @@ test('a Live Photo reaches the client as one picture marked live, and its motion
   if (sunset) assert.equal((await s.get('/api/v1/attachments/' + sunset.id + '?part=live', s.tokens.device)).status, 404, 'a picture with no motion has no live part');
   assert.equal((await s.get('/api/v1/attachments/' + found.id + '?part=other', s.tokens.device)).status, 400, 'live is the only part');
 });
+
+// On a Mac the motion is converted once to an MP4 every client plays, cached in the data folder; a conversion that fails
+// leaves the original QuickTime file to be served. The conversion here is a stand-in, so this runs on any host.
+test('on a Mac a Live Photo motion is served as an MP4, converted once, and the original stays the fallback', async (t) => {
+  const { createAttachments } = await import('../src/attachments.js');
+  const { mkdtempSync, mkdirSync, rmSync, readFileSync: rf, existsSync: ex } = await import('node:fs');
+  const os = await import('node:os');
+  const base = mkdtempSync(path.join(os.tmpdir(), 'live-mp4-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, 'Attachments');
+  const dataDir = path.join(base, 'data');
+  mkdirSync(path.join(root, 'ab'), { recursive: true });
+  writeFileSync(path.join(root, 'ab', 'IMG_9.HEIC'), 'still');
+  writeFileSync(path.join(root, 'ab', 'IMG_9.MOV'), 'motion');
+  const rec = { id: 'att-9', path: path.join(root, 'ab', 'IMG_9.HEIC'), mime: 'image/heic' };
+  let conversions = 0;
+  const convertMotion = async (src, out) => { conversions += 1; assert.ok(src.endsWith('IMG_9.MOV')); writeFileSync(out, 'mp4 of ' + rf(src, 'utf8')); };
+  const mac = createAttachments({ attachmentsRoot: root, dataDir, platform: 'darwin', convertMotion });
+  const [a, b] = await Promise.all([mac.resolve(rec, null, 'live'), mac.resolve(rec, null, 'live')]);
+  assert.equal(a.mime, 'video/mp4');
+  assert.equal(rf(a.file, 'utf8'), 'mp4 of motion');
+  assert.equal(b.file, a.file);
+  assert.equal((await mac.resolve(rec, null, 'live')).file, a.file);
+  assert.equal(conversions, 1, 'converted once, however many ask at the same moment');
+  assert.ok(!ex(a.file + '.part.mp4'), 'no half-written file is left behind');
+  const broken = createAttachments({ attachmentsRoot: root, dataDir: path.join(base, 'data2'), platform: 'darwin', convertMotion: async () => { throw new Error('no avconvert'); } });
+  const fallback = await broken.resolve(rec, null, 'live');
+  assert.equal(fallback.mime, 'video/quicktime');
+  assert.equal(rf(fallback.file, 'utf8'), 'motion');
+});

@@ -2495,7 +2495,7 @@ var engine = (() => {
         const kind = mediaKind(a);
         if (!kind) continue;
         const live = isLivePhoto(a);
-        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind: live ? "video" : kind, name: String(a.name || ""), mime: String(a.mime || ""), ...live ? { part: "live" } : {} });
+        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ""), mime: String(a.mime || ""), ...live ? { live: true } : {} });
       }
     }
     return items;
