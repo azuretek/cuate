@@ -89,7 +89,7 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
       return res.arrayBuffer();
     },
     async attachment(id, o = {}) {
-      const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
+      const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format, part: o.part }), { headers: auth });
       if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
       return res.blob();
     },

@@ -220,6 +220,7 @@ var engine = (() => {
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
     isHorizontal: () => isHorizontal,
+    isLivePhoto: () => isLivePhoto,
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
@@ -478,7 +479,7 @@ var engine = (() => {
         return res.arrayBuffer();
       },
       async attachment(id, o = {}) {
-        const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
+        const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format, part: o.part }), { headers: auth });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
         return res.blob();
       },
@@ -1760,11 +1761,13 @@ var engine = (() => {
       bytes: Number.isFinite(a.total_bytes) ? a.total_bytes : 0,
       sticker: Boolean(a.is_sticker),
       missing: Boolean(a.missing) || !a.original_path,
-      payload: isPayloadName(name)
+      payload: isPayloadName(name),
+      // A Live Photo: a picture whose motion the server found beside it (server/src/engine/live-photo.js).
+      live: Boolean(a.live_photo) && /^image\//i.test(String(a.mime_type || ""))
     };
   }
   function modelAttachment(v, name) {
-    return { id: v.id, name: name === void 0 ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing };
+    return { id: v.id, name: name === void 0 ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing, ...v.live ? { live: true } : {} };
   }
   var payloadTitle = (m) => typeof m.payload_title === "string" && m.payload_title.trim() ? m.payload_title.trim() : null;
   function mapInlineReaction(r) {
@@ -2477,6 +2480,9 @@ var engine = (() => {
   function isMediaAttachment(a) {
     return Boolean(a) && !a.local && !a.missing && !a.sticker && /^(?:image|video)\//i.test(String(a.mime || ""));
   }
+  function isLivePhoto(a) {
+    return Boolean(a && a.live) && mediaKind(a) === "image";
+  }
   function mediaKind(a) {
     if (!isMediaAttachment(a)) return null;
     return /^video\//i.test(String(a.mime || "")) ? "video" : "image";
@@ -2488,7 +2494,8 @@ var engine = (() => {
       for (const a of m.attachments || []) {
         const kind = mediaKind(a);
         if (!kind) continue;
-        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ""), mime: String(a.mime || "") });
+        const live = isLivePhoto(a);
+        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind: live ? "video" : kind, name: String(a.name || ""), mime: String(a.mime || ""), ...live ? { part: "live" } : {} });
       }
     }
     return items;
