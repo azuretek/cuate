@@ -1699,6 +1699,8 @@ async function runSmoke(w) {
     const m = document.querySelector('.messages');
     const rows = [...m.querySelectorAll('.bubble-row')];
     const row = rows[Math.min(2, rows.length - 1)];
+    // The person's wheel first: a view at its end leaves it only for the person (core/kit/scroll.js).
+    m.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
     m.scrollTop = row.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 7;
     const l = document.querySelector('app-chat-list');
     const room = l.scrollHeight - l.clientHeight;
