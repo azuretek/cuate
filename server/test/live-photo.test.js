@@ -14,6 +14,9 @@ test('the motion is the .mov beside the still, under the same name', () => {
   assert.equal(motionPath('/a/b/IMG_1.heic', disk(['/a/b/IMG_1.mov'])), '/a/b/IMG_1.mov');
   assert.equal(motionPath('/a/b/IMG_1.heic', disk(['/a/c/IMG_1.mov', '/a/b/IMG_2.mov'])), null, 'another folder or another name is not its motion');
   assert.equal(motionPath('', disk([])), null);
+  // A recorded path keeps its own separators whatever the server runs on, so a Windows server finds a Windows motion
+  // and a Mac path alike.
+  assert.equal(motionPath('C:\\att\\IMG_1.HEIC', disk(['C:\\att\\IMG_1.MOV'])), 'C:\\att\\IMG_1.MOV');
 });
 
 test('a picture with its motion on the disk is marked live, and only a picture', () => {

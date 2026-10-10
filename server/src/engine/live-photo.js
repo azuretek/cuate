@@ -4,14 +4,14 @@
 // the model's live flag, and the server serves the motion from beside the still when a client asks for it. Should an
 // engine ever report the motion as an attachment of its own as well, it is folded into the still rather than shown
 // twice. Pure apart from the injected exists, so it is tested without a disk.
-import path from 'node:path';
-
 const MOTION_EXTS = ['.mov', '.MOV'];
 
 const recordedOf = (a) => String((a && (a.original_path || a.filename)) || '');
 const isImage = (a) => /^image\//i.test(String((a && a.mime_type) || ''));
 const isVideo = (a) => /^video\//i.test(String((a && a.mime_type) || ''));
-const stemOf = (p) => (p ? path.join(path.dirname(p), path.basename(p, path.extname(p))) : '');
+// The recorded path less its extension, by string: rebuilding it with path.join rewrote a recorded path's separators
+// to the server's own, so on a Windows server '/a/IMG_1.HEIC' became '\\a\\IMG_1' and no motion was ever found.
+const stemOf = (p) => (p ? p.replace(/(?<=[^/\\])\.[^./\\]*$/, '') : '');
 
 // Where the motion for a still recorded at `recorded` is, or null when there is none. exists answers for one path.
 export function motionPath(recorded, exists) {
