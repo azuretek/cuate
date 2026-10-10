@@ -825,6 +825,10 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-nav:hover, .viewer-nav:focus-visible { background: var(--color-bg-sunken); outline: none; }
 .viewer-nav:disabled { opacity: 0.35; cursor: default; }
 .viewer-prev { left: var(--space-4); }
+/* A Live Photo's play control sits in the stage's lower left, clear of the zoom label, drawn as the stepping controls are. */
+.viewer-play { position: absolute; left: var(--space-4); bottom: var(--space-4); z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--role-menu); color: var(--role-menu-fg); cursor: pointer; }
+.viewer-play[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); }
+.viewer-play:disabled { opacity: 0.35; cursor: default; }
 .viewer-next { right: var(--space-4); }
 /* A video is drawn like a picture, with the viewer's own rounded edge and shadow; its first frame stands in for the
    picture until it plays. */

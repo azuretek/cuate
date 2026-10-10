@@ -10,7 +10,8 @@ export function isMediaAttachment(a) {
   return Boolean(a) && !a.local && !a.missing && !a.sticker && /^(?:image|video)\//i.test(String(a.mime || ''));
 }
 
-// A Live Photo: a picture the server found its motion beside. Its preview is the still, and the viewer plays the motion.
+// A Live Photo: a picture the server found its motion beside. Its preview and the viewer show the still, and the viewer
+// plays the motion over it on request.
 export function isLivePhoto(a) {
   return Boolean(a && a.live) && mediaKind(a) === 'image';
 }
@@ -32,9 +33,9 @@ export function mediaItems(messages) {
     for (const a of m.attachments || []) {
       const kind = mediaKind(a);
       if (!kind) continue;
-      // A Live Photo opens as its motion: the viewer plays the live part of the attachment rather than the still.
+      // A Live Photo opens as its still, and the viewer offers its motion (the attachment's live part) on a play control.
       const live = isLivePhoto(a);
-      items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind: live ? 'video' : kind, name: String(a.name || ''), mime: String(a.mime || ''), ...(live ? { part: 'live' } : {}) });
+      items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ''), mime: String(a.mime || ''), ...(live ? { live: true } : {}) });
     }
   }
   return items;
