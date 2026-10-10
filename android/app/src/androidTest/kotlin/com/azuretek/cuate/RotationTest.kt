@@ -34,7 +34,10 @@ class RotationTest {
             val view = webView(activity.findViewById(android.R.id.content))!!
             view.evaluateJavascript(script) { value -> result = value; done.countDown() }
         }
-        assertTrue("JavaScript callback timed out", done.await(5, TimeUnit.SECONDS))
+        // The answer waits for the page's main thread, which on the CI emulator is shared with frames of about a second
+        // each and with Play services updating in the background, so a single answer took over 5 s there. The caller's
+        // own deadline bounds the wait; this only catches an answer that will never come.
+        assertTrue("JavaScript callback timed out", done.await(JS_ANSWER_SECONDS, TimeUnit.SECONDS))
         return result
     }
 
