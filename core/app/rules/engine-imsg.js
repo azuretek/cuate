@@ -45,13 +45,15 @@ function attachmentView(a, attachmentId) {
     sticker: Boolean(a.is_sticker),
     missing: Boolean(a.missing) || !a.original_path,
     payload: isPayloadName(name),
+    // A Live Photo: a picture whose motion the server found beside it (server/src/engine/live-photo.js).
+    live: Boolean(a.live_photo) && /^image\//i.test(String(a.mime_type || '')),
   };
 }
 
 // One attachment in the model. The caller names a payload that is media we show (a Photo, a Video), so a raw payload
 // filename can never reach the screen.
 function modelAttachment(v, name) {
-  return { id: v.id, name: name === undefined ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing };
+  return { id: v.id, name: name === undefined ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing, ...(v.live ? { live: true } : {}) };
 }
 
 // The title a payload carried, when one did, else null.

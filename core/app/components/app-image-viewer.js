@@ -156,7 +156,7 @@ class AppImageViewer extends KitElement {
       // and never the site; every other item is one of our own attachments.
       const blob = item.linkUrl
         ? await this.client.linkMedia(item.linkUrl)
-        : await this.client.attachment(item.attachmentId, { format: needsJpeg(item) ? 'jpeg' : undefined });
+        : await this.client.attachment(item.attachmentId, item.part ? { part: item.part } : { format: needsJpeg(item) ? 'jpeg' : undefined });
       const url = URL.createObjectURL(blob);
       this.urls.set(item.id, url);
       const current = this.items[this.index];

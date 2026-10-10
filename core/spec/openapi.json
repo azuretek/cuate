@@ -614,6 +614,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "part",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       }
@@ -1617,6 +1625,9 @@
             "type": "boolean"
           },
           "missing": {
+            "type": "boolean"
+          },
+          "live": {
             "type": "boolean"
           }
         },

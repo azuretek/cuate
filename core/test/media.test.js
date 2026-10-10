@@ -3,13 +3,25 @@
 // without a browser or an engine.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isMediaAttachment, mediaKind, mediaItems, mediaIndex, mediaStep, mediaNeighbours, swipeStep, SWIPE_MIN_PX } from '../app/rules/media.js';
+import { isMediaAttachment, mediaKind, isLivePhoto, mediaItems, mediaIndex, mediaStep, mediaNeighbours, swipeStep, SWIPE_MIN_PX } from '../app/rules/media.js';
 import { messageActions } from '../app/rules/messages.js';
 
 let n = 0;
 const msg = (o) => ({ id: 'm' + n++, chatId: '1', fromMe: false, sender: '+15555550100', text: '', sentAt: '2026-01-15T10:00:00.000Z', replyTo: null, attachments: [], reactions: [], ...o });
 const png = (id, o) => ({ id, name: 'sunset.png', mime: 'image/png', bytes: 10, sticker: false, missing: false, ...o });
 const mp4 = (id, o) => ({ id, name: 'clip.mp4', mime: 'video/mp4', bytes: 10, sticker: false, missing: false, ...o });
+
+// A Live Photo is a picture the server found its motion beside: its preview is the still, and the viewer plays the
+// motion, so it is a video item that loads the attachment's live part.
+test('a Live Photo is a picture marked live, and it opens in the viewer as its motion', () => {
+  assert.equal(isLivePhoto(png('a', { live: true })), true);
+  assert.equal(isLivePhoto(png('b')), false, 'a plain picture');
+  assert.equal(isLivePhoto(mp4('c', { live: true })), false, 'only a picture is live');
+  assert.equal(isLivePhoto(png('d', { live: true, missing: true })), false, 'not on the Mac');
+  assert.equal(mediaKind(png('e', { live: true })), 'image', 'its kind as an attachment stays a picture');
+  const items = mediaItems([msg({ id: 'L1', attachments: [png('att-live', { live: true }), png('att-still')] })]);
+  assert.deepEqual(items.map((x) => [x.id, x.kind, x.part]), [['att-live', 'video', 'live'], ['att-still', 'image', undefined]]);
+});
 
 test('a media item is a picture or a video that is really there, never a document, a sticker, a local or a missing file', () => {
   assert.equal(isMediaAttachment(png('a')), true);
@@ -102,11 +114,16 @@ test('the viewer draws a video as a video, with the step controls between the co
   assert.ok(image.includes('viewer-prev') && image.includes('viewer-next') && image.includes('aria-label="Previous item"') && image.includes('aria-label="Next item"'), 'the step controls are drawn when there is more than one item');
 });
 
-test('a video attachment is a media preview that opens the viewer, never a save button', () => {
+test('a video attachment is a media preview that opens the viewer, never a save button, and anything that moves wears the play mark', () => {
   const attachment = components['app-attachment'].prototype;
   const video = words(attachment.render.call({ attachment: { id: 'att-v', name: 'clip.mp4', mime: 'video/mp4', missing: false }, client: {}, failed: false, src: 'blob:v' }));
-  assert.ok(video.includes('attachment-preview') && video.includes('Open clip.mp4'), 'a video opens the viewer');
+  assert.ok(video.includes('attachment-preview') && video.includes('Play clip.mp4'), 'a video opens the viewer, and says it plays');
   assert.ok(video.includes('<video class="attachment-image"'), 'drawn as a video');
+  assert.ok(video.includes('class="media-play"') && video.includes('data-icon="play"'), 'a video wears the play mark in its corner');
+  const live = words(attachment.render.call({ attachment: { id: 'att-l', name: 'IMG_1.HEIC', mime: 'image/heic', missing: false, live: true }, client: {}, failed: false, src: 'blob:l' }));
+  assert.ok(live.includes('<img class="attachment-image"') && live.includes('class="media-play"') && live.includes('Play IMG_1.HEIC'), 'a Live Photo is its still with the play mark');
+  const still = words(attachment.render.call({ attachment: { id: 'att-s', name: 'sunset.png', mime: 'image/png', missing: false }, client: {}, failed: false, src: 'blob:s' }));
+  assert.ok(!still.includes('media-play') && still.includes('Open sunset.png'), 'a plain picture wears no play mark');
   const file = words(attachment.render.call({ attachment: { id: 'att-d', name: 'booking.pdf', mime: 'application/pdf', missing: false }, client: {}, failed: false, src: '' }));
   assert.ok(file.includes('attachment-file') && file.includes('Save booking.pdf') && !file.includes('attachment-preview'), 'a document is still saved, not shown');
 });
