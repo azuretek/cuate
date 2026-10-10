@@ -7,23 +7,48 @@ import { EMOJI_CATEGORIES } from '../rules/emoji-data.js';
 import { emojiInCategory, searchEmoji, frequentEmoji, emojiPickerSections, pickerSide, isEmoji } from '../rules/emoji.js';
 
 // The recently used list is the shell's storage, shared by every place the picker opens (the composer, and a
-// message's reaction), so an emoji used in one is recent in the other. A plain browser keeps it for the page, and a
-// missing bridge or a rejected read leaves the list empty rather than failing.
+// message's reaction), so an emoji used in one is recent in the other, and it outlives a restart. Every shell stores
+// text only (core/spec/host-bridge.json): the list was handed over as an array, which the desktop's keychain encryption
+// threw on, iOS refused and Android kept as a string the load then discarded, so it never outlived the app. It goes
+// as JSON now, trimmed from its oldest end to fit the smallest shell's limit (iOS, 8 KB), and a value that is not a
+// JSON list, such as one from before, reads as empty. A plain browser keeps it for the page, and a missing bridge or a
+// rejected read leaves the list empty rather than failing.
 const FREQUENT_KEY = 'emoji.frequent';
+const FREQUENT_MAX = 200;
+const FREQUENT_BYTES = 8000;
+
+export function encodeFrequent(list) {
+  let kept = list.slice(-FREQUENT_MAX);
+  let text = JSON.stringify(kept);
+  while (kept.length && new TextEncoder().encode(text).length > FREQUENT_BYTES) {
+    kept = kept.slice(Math.max(1, Math.ceil(kept.length / 10)));
+    text = JSON.stringify(kept);
+  }
+  return text;
+}
+
+export function decodeFrequent(text) {
+  if (typeof text !== 'string') return [];
+  try {
+    const list = JSON.parse(text);
+    return Array.isArray(list) ? list.filter((c) => typeof c === 'string' && isEmoji(c)) : [];
+  } catch {
+    return [];
+  }
+}
 
 export async function loadRecentEmoji() {
   try {
-    const saved = await window.bridge?.call('storage.get', { key: FREQUENT_KEY });
-    return Array.isArray(saved) ? saved.filter(isEmoji) : [];
+    return decodeFrequent(await window.bridge?.call('storage.get', { key: FREQUENT_KEY }));
   } catch {
     return [];
   }
 }
 
 export async function rememberEmoji(list, char) {
-  const next = [...list, char].slice(-200);
+  const next = [...list, char].slice(-FREQUENT_MAX);
   try {
-    await window.bridge?.call('storage.set', { key: FREQUENT_KEY, value: next });
+    await window.bridge?.call('storage.set', { key: FREQUENT_KEY, value: encodeFrequent(next) });
   } catch {
     /* page only */
   }
