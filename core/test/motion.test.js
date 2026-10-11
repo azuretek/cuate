@@ -51,6 +51,13 @@ test('every motion runs on the shared tokens and stops for reduced motion', () =
   for (const f of files) assert.ok(!/\.animate\(/.test(read('../app/components/' + f)), f + ' animates through core/kit/motion.js, not on its own');
 });
 
+test('a line typed in grows the field smoothly, revealed upward on the grow token, and nothing else animates it', () => {
+  const composer = read('../app/components/app-composer.js');
+  assert.match(composer, /if \(e\.type === 'input' && before > 0 && grew > 0\)/, 'only typing that grows the field animates it');
+  assert.match(composer, /play\(t, \[\{ clipPath: 'inset\(' \+ \(grew - 2\) \+ 'px/, 'it is revealed from its old height, so its layout height is exact at once');
+  assert.match(composer, /duration: 'grow'/, 'on the shared grow token');
+});
+
 test('a sent message rises from the composer, a received one slides up, and another conversation slides in', () => {
   const conv = read('../app/components/app-conversation.js');
   assert.match(conv, /growFrom\(bubble, \{ left: r\.left, top:/, 'our message grows out of the field it was typed in');
