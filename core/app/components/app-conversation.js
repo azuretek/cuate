@@ -15,6 +15,17 @@ import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
 import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
+import { splitLinks, messageLinks } from '../rules/links.js';
+import { copyToClipboard } from '../clipboard.js';
+
+// The link a press or a right click landed on, or null.
+const linkAt = (target) => (target && target.closest ? target.closest('a.message-link')?.dataset.href || null : null);
+
+// A message's text with each web address in it a link (core/app/rules/links.js). The text parts stay plain text, so
+// nothing in a message is ever read as markup.
+const linkedText = (text, open) => splitLinks(text).map((p) => (p.href
+  ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${p.text}</a>`
+  : p.text));
 
 // How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
 const LONG_PRESS_MS = 500;
@@ -39,6 +50,8 @@ class AppConversation extends KitElement {
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
+    // A note of the conversation's own under one message, such as Link copied: { id, text }, cleared after a moment.
+    ownNote: { state: true },
     // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, or the
     // contact when the engine can report it. Drawn in the header, cleared by the page when it goes stale.
     typing: { attribute: false },
@@ -67,6 +80,8 @@ class AppConversation extends KitElement {
     this.keepThread = keepScroll(this, { scroller: '.thread-view', items: '.bubble-row' });
     this.reacting = null;
     this.note = null;
+    this.ownNote = null;
+    this.pressLink = null;
     this.typing = null;
     this.pop = null;
     this.replyingTo = null;
@@ -134,9 +149,30 @@ class AppConversation extends KitElement {
   }
 
   // The one menu a message has: its time on any message, and whatever messageActions offers on it.
+  // A menu opened on a link (a right click on it, or a press held on it) copies that link; opened anywhere else on the
+  // message it copies the message's first link.
   openMenu(m, e) {
     if (e) e.preventDefault();
-    this.pop = { id: m.id, kind: 'menu', side: 'above' };
+    const on = e ? linkAt(e.target) : this.pressLink;
+    this.pop = { id: m.id, kind: 'menu', side: 'above', link: on };
+  }
+
+  // A link in a message opens in the platform's browser through the shell, never in the app; app-root hands it on. A
+  // click that only ends a long press is swallowed before it reaches here (swallow), so holding a link never opens it.
+  openLink(e, href) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent('open-external', { bubbles: true, composed: true, detail: { url: href } }));
+  }
+
+  // Copy link puts the address on the clipboard and says so under the message for a moment.
+  async copyLink(m, href) {
+    this.pop = null;
+    const ok = await copyToClipboard(href);
+    clearTimeout(this.ownNoteTimer);
+    this.ownNote = { id: m.id, text: ok ? 'Link copied' : 'The link could not be copied.' };
+    this.ownNoteTimer = setTimeout(() => { this.ownNote = null; }, 2500);
+    return ok;
   }
 
   // React chooses from the composer's own emoji panel, the one used for typing, rather than a second picker. The list
@@ -165,6 +201,7 @@ class AppConversation extends KitElement {
     if (!held || e.target?.closest?.('.message-pop')) return;
     clearTimeout(this.pressTimer);
     this.held = false;
+    this.pressLink = linkAt(e.target);
     this.pressAt = { x: e.clientX, y: e.clientY };
     this.pressTimer = setTimeout(() => { this.held = true; this.openMenu(m); }, LONG_PRESS_MS);
   }
@@ -237,8 +274,11 @@ class AppConversation extends KitElement {
   menu(m) {
     const actions = messageActions(m, { sending: this.sending, platform: platformOf(this.chat) });
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
+    const links = messageLinks(m);
+    const link = this.pop.link && links.includes(this.pop.link) ? this.pop.link : links[0] || null;
     return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side} data-popover data-popover-edge=${this.pop.side === 'below' ? 'top' : 'bottom'} data-popover-align=${m.fromMe ? 'end' : 'start'}>
       <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
+      ${link ? html`<button type="button" class="message-action" aria-label="Copy link" title="Copy link" data-link=${link} @click=${press(() => this.copyLink(m, link))}><span class="icon" data-icon="link" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('save') ? html`<button type="button" class="message-action" aria-label="Save" title="Save" @click=${press(() => this.save(m))}><span class="icon" data-icon="download" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('react') ? html`<button type="button" class="message-action" aria-label="React" title="React" @click=${press(() => this.openReact(m))}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>` : nothing}
@@ -281,13 +321,13 @@ class AppConversation extends KitElement {
     const ownGlyph = own ? reactionGlyph(own) : null;
     const busy = this.reacting === m.id;
     const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
-    const note = this.note && this.note.id === m.id ? this.note.text : '';
+    const note = this.ownNote && this.ownNote.id === m.id ? this.ownNote.text : this.note && this.note.id === m.id ? this.note.text : '';
     return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
-        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${m.text}</div>` : nothing}
+        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href))}</div>` : nothing}
         ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
