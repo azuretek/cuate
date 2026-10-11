@@ -179,8 +179,15 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble-body { position: relative; display: flex; flex-direction: column; align-items: flex-start; max-width: var(--size-bubble-max); }
 .bubble-row.mine .bubble-body { align-items: flex-end; }
 .bubble-body > .bubble, .bubble-body > app-attachment { max-width: 100%; }
-.message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: var(--space-1); z-index: 3; }
-.message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; }
+/* A menu or panel grows out of the message it opened on (issue 316): from its edge nearest the message, on the
+   shared grow timing, so it reads as coming from there rather than appearing. It grows on the vertical axis only,
+   which leaves every horizontal measure, the caret's aim included, exactly where it lands. */
+@keyframes pop-grow { from { opacity: 0; transform: scaleY(0.85); } to { opacity: 1; transform: none; } }
+.message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: var(--space-1); z-index: 3; transform-origin: left bottom; animation: pop-grow var(--motion-grow) var(--motion-ease) both; }
+.message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; transform-origin: left top; }
+.bubble-row.mine .message-pop { transform-origin: right bottom; }
+.bubble-row.mine .message-pop[data-side="below"] { transform-origin: right top; }
+@media (prefers-reduced-motion: reduce) { .message-pop { animation: none; } }
 .bubble-row.mine .message-pop { left: auto; right: 0; }
 .message-menu { display: flex; align-items: center; gap: var(--space-2); min-width: max-content; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-pill); box-shadow: var(--role-menu-shadow); }
 .message-time { font-size: var(--font-size-xs); color: var(--color-fg-muted); white-space: nowrap; }
