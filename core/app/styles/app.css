@@ -823,7 +823,11 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* The viewer draws on the sheet's own backdrop (.sheet-scrim, above), so the blur and the dim are that one treatment.
    The picture fits the stage, and the zoom is a transform the component sets as plain numbers. While a finger or a
    drag moves it there is no transition, so it stays under the pointer; a click, a key or a double tap animates. */
+/* The viewer is the shared scrim, but never a bottom sheet: on a phone the scrim's own rule pushes its content to the
+   bottom edge, which put the picture at the foot of the screen and off the centre the zoom rules measure from. The
+   picture is laid out in the middle of the safe area and the rules lift it to the top (issue 315). */
 .viewer { z-index: 7; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.sheet-scrim.viewer { align-items: center; justify-content: center; padding: var(--inset-top) var(--inset-right) var(--inset-bottom) var(--inset-left); }
 .viewer-image { --zoom-x: 0; --zoom-y: 0; --zoom-scale: 1; flex: none; display: block; max-width: 100%; max-height: 100%; min-width: 0; min-height: 0; object-fit: contain; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); transform: translate(calc(var(--zoom-x) * 1px), calc(var(--zoom-y) * 1px)) scale(var(--zoom-scale)); transform-origin: center; transition: transform var(--motion-normal) var(--motion-ease); cursor: zoom-in; -webkit-user-drag: none; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
 .viewer[data-zoomed="true"] .viewer-image { cursor: grab; }
 .viewer[data-gesture="on"] .viewer-image { transition: none; cursor: grabbing; }

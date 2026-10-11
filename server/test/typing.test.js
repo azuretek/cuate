@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTyping } from '../src/typing.js';
+import { normalizeConfig } from '../src/config.js';
 import { boot, openSocket, waitFor } from './helpers.js';
 
 const typed = (frames) => frames.filter((f) => f.type === 'event' && f.name === 'typing');
@@ -97,4 +98,57 @@ test('with the switch on, a bridge typing event is relayed as the contact typing
     assert.equal(typed(one.frames)[1].data.typing, false);
     one.ws.close();
   } finally { await b.close(); }
+});
+
+// Our typing reaches the other person (issue 319): the server hands it to the engine once per conversation and takes
+// it down when the last of our devices stops, and it never asks an engine that cannot.
+test('outbound typing is told once per conversation, refreshed while it lasts, and taken down by the last device', () => {
+  let clock = 0;
+  const told = [];
+  const typing = createTyping({ publish: () => {}, outbound: (chatId, on) => told.push([chatId, on]), refreshMs: 1000, now: () => clock, ttlMs: 60000 });
+  typing.relay({ chatId: '1', from: 'a', typing: true });
+  typing.relay({ chatId: '1', from: 'a', typing: true });
+  typing.relay({ chatId: '1', from: 'b', typing: true });
+  assert.deepEqual(told, [['1', true]], 'one start for the conversation, however many devices and relays');
+  clock = 1500;
+  typing.relay({ chatId: '1', from: 'a', typing: true });
+  assert.deepEqual(told.at(-1), ['1', true], 'refreshed once the refresh interval passes');
+  assert.equal(told.length, 2);
+  typing.relay({ chatId: '1', from: 'a', typing: false });
+  assert.equal(told.length, 2, 'another device is still typing there, so nothing is taken down');
+  typing.stopFrom('b');
+  assert.deepEqual(told.at(-1), ['1', false], 'the last device leaving takes it down');
+  typing.relay({ chatId: '2', from: 'a', typing: false });
+  assert.equal(told.length, 3, 'a stop for a conversation never started tells nothing');
+  typing.stopAll();
+});
+
+test('outbound typing taken down when a device goes quiet, and an engine refusal is harmless', async () => {
+  const told = [];
+  const typing = createTyping({ publish: () => {}, outbound: (chatId, on) => { told.push([chatId, on]); return Promise.reject(new Error('refused')); }, ttlMs: 30 });
+  typing.relay({ chatId: '3', from: 'a', typing: true });
+  await new Promise((r) => setTimeout(r, 70));
+  assert.deepEqual(told, [['3', true], ['3', false]], 'the expiry takes it down');
+});
+
+test('a device typing shows on the other person side through the engine, and stopping takes it down', async () => {
+  const b = await boot();
+  try {
+    assert.equal((await b.post('/api/v1/chats/1/typing', b.tokens.device, { typing: true })).status, 200);
+    await waitFor(() => b.world.typings.length === 1);
+    assert.deepEqual(b.world.typings[0], { chatId: 1, typing: true });
+    assert.equal((await b.post('/api/v1/chats/1/typing', b.tokens.device, { typing: false })).status, 200);
+    await waitFor(() => b.world.typings.length === 2);
+    assert.deepEqual(b.world.typings[1], { chatId: 1, typing: false });
+  } finally { await b.close(); }
+});
+
+test('outbound typing stays home with the switch off, or where the engine cannot show it', async () => {
+  const off = await boot({ typingOutgoing: false });
+  try {
+    assert.equal((await off.post('/api/v1/chats/1/typing', off.tokens.device, { typing: true })).status, 200);
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(off.world.typings.length, 0, 'the switch off');
+  } finally { await off.close(); }
+  assert.ok(normalizeConfig({}).typing.outgoing, 'on by default');
 });

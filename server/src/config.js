@@ -17,7 +17,9 @@ export const DEFAULTS = Object.freeze({
   // Inbound typing is present and OFF: the ordinary database watch reports none, and the only source is an injected
   // v2 bridge (imsg bridge.events.subscribe). Turning this on needs an already-running bridge and is not something
   // this server starts (issue 230).
-  typing: { incoming: false },
+  // Outgoing typing is ON: while one of our devices types in a conversation, the engine shows the other person the
+  // indicator, where it can (issue 319).
+  typing: { incoming: false, outgoing: true },
   attachmentsRoot: null,
   sending: { enabled: false, perMinute: 20 },
   previews: 40,
@@ -64,6 +66,7 @@ export function normalizeConfig(raw = {}) {
   if (c.engine.live !== null && typeof c.engine.live !== 'string') problems.push('engine.live must be text or null');
   if (c.attachmentsRoot !== null && typeof c.attachmentsRoot !== 'string') problems.push('attachmentsRoot must be a path or null');
   if (typeof c.typing.incoming !== 'boolean') problems.push('typing.incoming must be true or false');
+  if (typeof c.typing.outgoing !== 'boolean') problems.push('typing.outgoing must be true or false');
   if (typeof c.sending.enabled !== 'boolean') problems.push('sending.enabled must be true or false');
   if (!Number.isInteger(c.sending.perMinute) || c.sending.perMinute < 1 || c.sending.perMinute > 600) problems.push('sending.perMinute must be from 1 to 600');
   if (!Number.isInteger(c.previews) || c.previews < 0 || c.previews > 500) problems.push('previews must be from 0 to 500');

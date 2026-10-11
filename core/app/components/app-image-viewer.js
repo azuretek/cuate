@@ -5,7 +5,7 @@ import { press } from '../../kit/press.js';
 import { growFrom, play } from '../../kit/motion.js';
 import { closeButtonHtml } from './close-button.js';
 import { pressOutside } from '../../kit/rules/dismiss.js';
-import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey } from '../rules/zoom.js';
+import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey, drawnY } from '../rules/zoom.js';
 import { swipeStep } from '../rules/media.js';
 
 // The image viewer: one picture or video, large, over the app. It draws on the settings sheet's own backdrop (the same
@@ -89,6 +89,7 @@ class AppImageViewer extends KitElement {
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('gesturestart', this.onGesture);
     document.removeEventListener('gesturechange', this.onGesture);
+    this.resized?.disconnect();
     for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();
     // Focus goes back to the preview that opened the viewer, so a keyboard reader is where they were.
@@ -97,6 +98,11 @@ class AppImageViewer extends KitElement {
 
   firstUpdated() {
     this.querySelector('.close-button')?.focus();
+    // The top lift depends on the stage's height, so a resize (a rotation, a window drag) redraws the picture's place.
+    if (typeof ResizeObserver === 'function' && this.stage()) {
+      this.resized = new ResizeObserver(() => this.updated());
+      this.resized.observe(this.stage());
+    }
     // The item the page asked for: a single picture or video it handed over (a staged preview), or one of the media
     // items in the conversation, resolved by id.
     if (this.items.length) this.show(this.index);
@@ -106,7 +112,8 @@ class AppImageViewer extends KitElement {
     const img = this.picture();
     if (!img) return;
     img.style.setProperty('--zoom-x', String(this.view.x));
-    img.style.setProperty('--zoom-y', String(this.view.y));
+    // The picture opens at the top of the stage (issue 315), lifted by the rules until a zoom makes it fill the stage.
+    img.style.setProperty('--zoom-y', String(drawnY(this.view, this.box())));
     img.style.setProperty('--zoom-scale', String(this.view.scale));
   }
 
@@ -154,8 +161,21 @@ class AppImageViewer extends KitElement {
   // What the rules need: the fitted picture (its layout size, which the transform does not change) and the stage.
   box() {
     const img = this.picture();
+    const area = this.area();
+    return { width: img ? img.offsetWidth : 0, height: img ? img.offsetHeight : 0, stageWidth: area.width, stageHeight: area.height, anchor: 'top' };
+  }
+
+  // The stage's content box on screen: the room inside its safe-area padding, where the picture is laid out and
+  // where the rules' centre is, so a point and the top lift are measured from the same place the picture sits.
+  area() {
     const stage = this.stage();
-    return { width: img ? img.offsetWidth : 0, height: img ? img.offsetHeight : 0, stageWidth: stage ? stage.clientWidth : 0, stageHeight: stage ? stage.clientHeight : 0 };
+    if (!stage) return { left: 0, top: 0, width: 0, height: 0 };
+    const r = stage.getBoundingClientRect();
+    const cs = getComputedStyle(stage);
+    const px = (v) => parseFloat(v) || 0;
+    const left = r.left + px(cs.paddingLeft);
+    const top = r.top + px(cs.paddingTop);
+    return { left, top, width: Math.max(0, r.width - px(cs.paddingLeft) - px(cs.paddingRight)), height: Math.max(0, r.height - px(cs.paddingTop) - px(cs.paddingBottom)) };
   }
 
   max() {
@@ -163,9 +183,9 @@ class AppImageViewer extends KitElement {
     return zoomMax(img && img.offsetWidth ? img.naturalWidth / img.offsetWidth : 1);
   }
 
-  // A point on the screen, measured from the stage's centre, which is where the rules measure from.
+  // A point on the screen, measured from the centre of the stage's content box, which is where the rules measure from.
   point(e) {
-    const r = this.stage().getBoundingClientRect();
+    const r = this.area();
     return { x: e.clientX - (r.left + r.width / 2), y: e.clientY - (r.top + r.height / 2) };
   }
 
