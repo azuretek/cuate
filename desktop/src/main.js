@@ -1588,6 +1588,11 @@ async function runSmoke(w) {
     console.error('chat arrangement reset: ' + JSON.stringify({ page, held: await held() }));
     throw e;
   }
+  // Starting the group left it as the conversation open, and it holds no messages; every later step reads a
+  // conversation's messages, so the first listed conversation is opened again, as it was before this step.
+  // Opened as the boot opens it, with the list still showing, so the phone-width steps later find the drawer open.
+  await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
+  await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
 
   // The Edit control stays one line (it replaced Add group, which issue 122 held to this): at the smallest window the
   // shell allows and at every text size from 50% to 300%, its label renders as one line, in full. The line count is
