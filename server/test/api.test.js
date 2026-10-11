@@ -772,3 +772,44 @@ test('a conversation read on another device is told to every client as chat.read
     sock.ws.close();
   } finally { await t.close(); }
 });
+
+// Conversations and groups are Messages' own (issue ISSUE): created, renamed and changed through the engine, and every
+// client hears the change as chat.changed.
+test('a new conversation with several people is an iMessage group, named, and every client hears it', async () => {
+  const t = await boot();
+  try {
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    const r = await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550199', 'friend@example.com'], name: 'Picnic' });
+    assert.equal(r.status, 200);
+    const chat = await r.json();
+    conforms(chat, 'Chat');
+    assert.equal(chat.isGroup, true);
+    assert.equal(chat.name, 'Picnic');
+    assert.deepEqual([...chat.participants].sort(), ['+15555550199', 'friend@example.com']);
+    assert.ok(t.world.requests.includes('chats.create'));
+    await waitFor(() => sock.frames.some((f) => f.name === 'chat.changed' && f.data.id === chat.id));
+    const one = await (await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550100'] })).json();
+    assert.equal(one.id, '1', 'one address opens the existing conversation with that person');
+    assert.equal((await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550100'], name: 'x' })).status, 400, 'a direct chat takes no name');
+    assert.equal((await t.post('/api/v1/chats', t.tokens.device, { addresses: ['not an address'] })).status, 400);
+    sock.ws.close();
+  } finally { await t.close(); }
+});
+
+test('a group is renamed and its members changed through Messages; a direct chat refuses it', async () => {
+  const t = await boot();
+  try {
+    const g = await (await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550199', '+15555550188'] })).json();
+    const call = (method, path, body) => fetch(t.base + path, { method, headers: { authorization: 'Bearer ' + t.tokens.device, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const renamed = await (await call('PUT', '/api/v1/chats/' + g.id + '/name', { name: 'Book club' })).json();
+    assert.equal(renamed.name, 'Book club');
+    const added = await (await call('POST', '/api/v1/chats/' + g.id + '/members', { address: 'reader@example.com' })).json();
+    assert.ok(added.participants.includes('reader@example.com'));
+    const removed = await (await call('DELETE', '/api/v1/chats/' + g.id + '/members/' + encodeURIComponent('+15555550188'))).json();
+    assert.ok(!removed.participants.includes('+15555550188'));
+    for (const m of ['group.rename', 'group.addParticipant', 'group.removeParticipant']) assert.ok(t.world.requests.includes(m), m);
+    assert.equal((await call('PUT', '/api/v1/chats/1/name', { name: 'x' })).status, 400, 'a direct chat is not a group');
+  } finally { await t.close(); }
+});

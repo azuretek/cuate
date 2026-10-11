@@ -176,6 +176,18 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     held.chats.splice(at, 1);
     held.chats.unshift({ ...chat, lastMessageAt: m.sentAt });
   };
+  // After a conversation is created or a group changes, the list is read fresh (a read already in flight may predate the
+  // change, so it is let finish and the list read again) and the changed chat is told to every client (issue ISSUE).
+  const freshChats = async () => {
+    if (listing) await listing.catch(() => {});
+    await readChats(held ? held.limit : paging.chats.default);
+    return held.chats;
+  };
+  const chatChanged = async (match) => {
+    const chat = (await freshChats()).find(match) || null;
+    if (chat) publish('chat.changed', chat);
+    return chat;
+  };
   // A conversation read on one device clears here too: the held list drops its count and every client is told,
   // so the number a client shows is the server's, never its own idea.
   const markRead = (chatId) => {
@@ -229,7 +241,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform, diagnostics,
-    send, react: send.react, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
+    send, react: send.react, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm, chatChanged,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),
