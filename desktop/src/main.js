@@ -1752,8 +1752,11 @@ async function runSmoke(w) {
   await pause(500);
   const dividerState = () => js("(() => { const d = document.querySelector('.conv-divider'); const s = document.querySelector('.shell'); if (!d || !s) return null; const dr = d.getBoundingClientRect(); const list = document.querySelector('.sidebar').getBoundingClientRect(); const conv = document.querySelector('.main').getBoundingClientRect(); return { x: dr.left + dr.width / 2, y: dr.top + dr.height / 2, viewport: window.innerWidth, chatW: Math.round(list.width), convW: Math.round(conv.width), role: d.getAttribute('role'), label: d.getAttribute('aria-label'), orientation: d.getAttribute('aria-orientation'), tabindex: d.getAttribute('tabindex'), cursor: getComputedStyle(d).cursor, valueNow: Number(d.getAttribute('aria-valuenow')), valueMin: Number(d.getAttribute('aria-valuemin')), valueMax: Number(d.getAttribute('aria-valuemax')) }; })()");
   const dividerPlace = () => js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const last = rows[rows.length - 1]; const l = document.querySelector('app-chat-list'); const ltop = l.getBoundingClientRect().top; const first = [...l.querySelectorAll('.chat-row')].find((r) => r.getBoundingClientRect().bottom - ltop > 0); return { bottom: last ? { id: last.dataset.id, gap: Math.round(m.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom) } : null, listTop: first ? { chat: first.dataset.chat, offset: Math.round(first.getBoundingClientRect().top - ltop) } : null }; })()");
+  // A drag is read once the divider has answered it, as a key is below: a Windows runner drew the drag's last width
+  // after the 300 ms pause, so the check read the width before it while the stored and reopened width was the new one.
   const dragDivider = async (dx) => {
     const at = await dividerState();
+    const before = await js("document.querySelector('.conv-divider').getAttribute('aria-valuenow')");
     const x0 = Math.round(at.x), y0 = Math.round(at.y);
     await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: x0, y: y0, button: 'left', buttons: 1, clickCount: 1 });
     for (let i = 1; i <= 5; i += 1) {
@@ -1761,6 +1764,7 @@ async function runSmoke(w) {
       await pause(40);
     }
     await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x0 + dx), y: y0, button: 'left', buttons: 0, clickCount: 1 });
+    try { await waitFor("document.querySelector('.conv-divider').getAttribute('aria-valuenow') !== " + JSON.stringify(before), 5000); } catch { /* unchanged, as a drag past a limit can be: reported by the check */ }
     await pause(300);
   };
   // Each key is read once the divider has answered it, not after a fixed pause: a Windows runner drew the step later
