@@ -115,7 +115,7 @@ class AppImageViewer extends KitElement {
   // With nothing to animate (reduced motion, or a page that cannot) it closes at once.
   close() {
     if (this.closing) return undefined;
-    const done = () => this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+    const done = () => { this.closing = false; this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true })); };
     const img = this.picture();
     const to = img ? this.returnRect() : null;
     const fade = play(this.stage(), [{ opacity: 1 }, { opacity: 0 }], { duration: 'screen', easing: 'sheet-ease', fill: 'forwards' });
