@@ -1,4 +1,4 @@
-// The most used emoji survive a restart (issue ISSUE). Every shell's storage holds text only: the desktop encrypts the
+// The most used emoji survive a restart (issue 301). Every shell's storage holds text only: the desktop encrypts the
 // value as a string, iOS refuses anything that is not a string under 8 KB, and Android stores it as a string and hands a
 // string back. The stand-in here behaves the same way, and a fresh load stands for the app starting again.
 import { test } from 'node:test';
