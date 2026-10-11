@@ -32,6 +32,7 @@ export * from './rules/drawer.js';
 export * from './rules/divider.js';
 export * from './rules/engine-imsg.js';
 export * from './rules/messages.js';
+export * from './rules/links.js';
 export * from './rules/media.js';
 export * from './rules/link-media.js';
 export * from './rules/platform.js';

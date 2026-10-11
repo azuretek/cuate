@@ -84,7 +84,7 @@ test('a long press with a finger or a long click with the mouse opens the menu, 
       mock.timers.tick(499);
       assert.equal(h.pop, null, pointerType + ': not before the hold');
       mock.timers.tick(1);
-      assert.deepEqual(h.pop, { id: m.id, kind: 'menu', side: 'above' }, pointerType + ' opens the menu');
+      assert.deepEqual(h.pop, { id: m.id, kind: 'menu', side: 'above', link: null }, pointerType + ' opens the menu');
       const moved = host();
       moved.openMenu = conversation.openMenu;
       moved.pressEnd = conversation.pressEnd;
@@ -256,4 +256,78 @@ test('a thread is never opened on a platform that has no threads', () => {
   const sms = host({ messages: [root], chat: { id: '3', service: 'SMS', participants: [], isGroup: false } });
   conversation.openThread.call(sms, root);
   assert.equal(sms.replyingTo, null, 'SMS carries no thread, so none is opened');
+});
+
+// Links in a message (issue 311): each web address in the text is a link that opens in the browser through the shell,
+// and the menu copies a link, the one pressed or right clicked when there is one, else the message's first.
+test('a web address in a message is drawn as a link, and the rest of the text as text', () => {
+  const m = msg({ text: 'see https://example.com/a and <b>this</b>' });
+  const markup = words(conversation.bubble.call(host({ messages: [m] }), { message: m, first: true, last: true }, null, false, 'list'));
+  assert.ok(markup.includes('<a class="message-link" href=https://example.com/a '), 'the address is a link');
+  assert.ok(markup.includes('>https://example.com/a</a>'), 'shown as it was written');
+  assert.ok(markup.includes('see ') && markup.includes(' and <b>this</b>'), 'the text around it is drawn as text');
+  assert.equal((markup.match(/<a /g) || []).length, 1, 'markup in a message is never a link of its own');
+});
+
+test('pressing a link opens it in the browser through the shell, and never in the app', () => {
+  const sent = [];
+  const h = host({ dispatchEvent: (ev) => sent.push(ev) });
+  let prevented = false;
+  let stopped = false;
+  conversation.openLink.call(h, { preventDefault: () => { prevented = true; }, stopPropagation: () => { stopped = true; } }, 'https://example.com/a');
+  assert.ok(prevented, 'the app does not navigate');
+  assert.ok(stopped, 'the press does not also open a thread');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].type, 'open-external');
+  assert.equal(sent[0].detail.url, 'https://example.com/a');
+  assert.ok(sent[0].bubbles && sent[0].composed, 'app-root hears it');
+  assert.match(readFileSync(new URL('../app/components/app-root.js', import.meta.url), 'utf8'), /<app-conversation [^>]*@open-external=\$\{\(e\) => this\.openExternal\(e\.detail\.url\)\}/, 'app-root hands it to the shell');
+});
+
+test('a press held on a link opens the menu with Copy link for that link; anywhere else, for the first link', () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const m = msg({ text: 'first https://a.example then https://b.example' });
+    const onLink = { closest: (s) => (s === 'a.message-link' ? { dataset: { href: 'https://b.example/' } } : null) };
+    const h = host();
+    h.openMenu = conversation.openMenu;
+    conversation.pressStart.call(h, m, { pointerType: 'touch', button: 0, clientX: 5, clientY: 5, target: onLink });
+    mock.timers.tick(500);
+    assert.deepEqual(h.pop, { id: m.id, kind: 'menu', side: 'above', link: 'https://b.example/' });
+    const held = words(conversation.menu.call(h, m));
+    assert.ok(held.includes('aria-label="Copy link"') && held.includes('data-link=https://b.example/ ') && held.includes('data-icon="link"'), 'Copy link copies the link held');
+    const right = host();
+    conversation.openMenu.call(right, m, { preventDefault() {}, target: { closest: () => null } });
+    assert.ok(words(conversation.menu.call(right, m)).includes('data-link=https://a.example/ '), 'elsewhere it copies the first link');
+    const card = msg({ text: '', link: { url: 'https://card.example/p' } });
+    assert.ok(words(conversation.menu.call(host({ pop: { id: card.id, kind: 'menu', side: 'above', link: null } }), card)).includes('data-link=https://card.example/p '), 'a link card is copied too');
+    const plain = msg({});
+    assert.ok(!words(conversation.menu.call(host({ pop: { id: plain.id, kind: 'menu', side: 'above', link: null } }), plain)).includes('Copy link'), 'no Copy link without a link');
+    const off = msg({ text: 'https://a.example' });
+    assert.ok(words(conversation.menu.call(host({ sending: false, pop: { id: off.id, kind: 'menu', side: 'above', link: null } }), off)).includes('Copy link'), 'copying needs no sending');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('Copy link puts the address on the clipboard and says so under the message, then the note goes', async () => {
+  const written = [];
+  const before = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async (t) => { written.push(t); } }, language: 'en-US' }, configurable: true });
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const m = msg({ text: 'https://a.example' });
+    const h = host({ pop: { id: m.id, kind: 'menu', side: 'above', link: null }, ownNote: null });
+    assert.equal(await conversation.copyLink.call(h, m, 'https://a.example/'), true);
+    assert.deepEqual(written, ['https://a.example/']);
+    assert.equal(h.pop, null, 'the menu closes');
+    assert.deepEqual(h.ownNote, { id: m.id, text: 'Link copied' });
+    const markup = words(conversation.bubble.call(h, { message: m, first: true, last: true }, null, false, 'list'));
+    assert.ok(markup.includes('Link copied'), 'the note shows under the message');
+    mock.timers.tick(2500);
+    assert.equal(h.ownNote, null);
+  } finally {
+    mock.timers.reset();
+    if (before) Object.defineProperty(globalThis, 'navigator', before); else delete globalThis.navigator;
+  }
 });

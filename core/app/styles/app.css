@@ -156,6 +156,10 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble-row.mine { align-items: flex-end; }
 .sender { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: 0 var(--space-3) var(--space-1); }
 .bubble { max-width: var(--size-bubble-max); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A link in a message is the bubble's own text colour, underlined, so it reads on either side's bubble in any theme;
+   a long address wraps anywhere rather than widening the bubble. Holding it opens the message menu, so the platform's
+   own link callout and drag are off. */
+.message-link { color: inherit; text-decoration: underline; overflow-wrap: anywhere; cursor: pointer; -webkit-touch-callout: none; -webkit-user-drag: none; }
 .bubble.them { background: var(--role-received); color: var(--role-received-fg); }
 .bubble.me { background: var(--role-sent); color: var(--role-sent-fg); }
 .bubble.sms { background: var(--color-bubble-sms); color: var(--color-bubble-sms-fg); }
