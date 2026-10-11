@@ -295,3 +295,28 @@ export function upsertChat(chats = [], chat) {
   const out = i < 0 ? [...chats, chat] : chats.map((c, k) => (k === i ? { ...c, ...chat } : c));
   return orderChats(out);
 }
+
+// A messaging link another app hands us when this app is the default for messages (issue 333): sms:, smsto:, mms:,
+// mmsto:, im: and imessage:, each naming one or more people (commas between them) and maybe a body. The platform's own
+// link is parsed here once, for every shell; a link naming nobody, or anything that is not a phone number or an email,
+// is not a messaging link.
+const LINK = /^(sms|smsto|mms|mmsto|im|imessage):(?:\/\/)?([^?]*)(?:\?(.*))?$/i;
+export function parseMessagingLink(url) {
+  const m = LINK.exec(String(url || '').trim());
+  if (!m) return null;
+  let people;
+  try { people = decodeURIComponent(m[2]); } catch { return null; }
+  const addresses = [...new Set(people.split(/[,;]/).map((p) => p.trim()).filter(Boolean))];
+  if (!addresses.length || !addresses.every(isAddress)) return null;
+  let body = '';
+  if (m[3]) { try { body = new URLSearchParams(m[3]).get('body') || ''; } catch { body = ''; } }
+  return { addresses, body };
+}
+
+// Where a messaging link lands: the conversation already held with exactly those people, or a new one started with them.
+export function linkTarget(chats = [], link) {
+  if (!link) return null;
+  const want = [...link.addresses].sort().join('\n');
+  const hit = orderChats(chats).find((c) => Array.isArray(c.participants) && c.isGroup === link.addresses.length > 1 && [...c.participants].sort().join('\n') === want);
+  return hit ? { open: hit.id } : { compose: link.addresses };
+}

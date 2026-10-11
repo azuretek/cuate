@@ -64,6 +64,9 @@ class MainActivity : Activity() {
     /** The in-app updater the bridge owns, told when the activity returns to the front. */
     private var updater: ApkUpdater? = null
 
+    /** The bridge, for a messaging link that reopens the running activity (issue 333). */
+    private var shellBridge: HostBridge? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -83,6 +86,8 @@ class MainActivity : Activity() {
             script = { js -> runOnUiThread { if (::webView.isInitialized) webView.evaluateJavascript(js, null) } },
         )
         updater = bridge.updater
+        shellBridge = bridge
+        bridge.handOverLink(intent?.dataString)
         ApkUpdater.live = bridge.updater
         Diagnostics.remember(this)
 
@@ -236,6 +241,13 @@ class MainActivity : Activity() {
     }
 
     /** Back from the setting that allows installs: an update waiting on it continues (issue 192). */
+    /** A messaging link that opens the activity already running reaches the page here (issue 333). */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        shellBridge?.handOverLink(intent.dataString)
+    }
+
     override fun onResume() {
         super.onResume()
         updater?.resumed()
