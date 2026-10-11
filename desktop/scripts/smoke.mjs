@@ -167,6 +167,7 @@ const checks = [
   { key: 'icons', bound: 'true', value: (report) => report.icons, test: (v) => v === true },
   { key: 'overlayIcon', bound: 'true', value: (report) => report.overlayIcon, test: (v) => v === true },
   { key: 'editMode', bound: 'true', value: (report) => report.editMode, test: (v) => v === true },
+  { key: 'noticeOpens', bound: 'true', value: (report) => report.noticeOpens, test: (v) => v === true },
   { key: 'editLine', bound: 'true', value: (report) => report.editLine, test: (v) => v === true },
   { key: 'react', bound: 'true', value: (report) => report.react, test: (v) => v === true },
   { key: 'reply', bound: 'true', value: (report) => report.reply, test: (v) => v === true },

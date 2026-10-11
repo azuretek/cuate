@@ -21,7 +21,7 @@ import { localAttachment, toBase64 } from '../rules/attach.js';
 const foldFor = (list, chats, chatId) => foldReactions(list, platformOf((chats || []).find((c) => c.id === chatId)));
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
-import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
+import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, messageTarget, noticeTarget, serverUpdateNotice } from '../rules/notifications.js';
 import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
@@ -66,6 +66,9 @@ function readOnMac(page, chatId) {
     if (typeof page.client?.markRead === 'function') page.client.markRead(id).catch(() => {});
   }, READ_COALESCE_MS));
 }
+// How many earlier pages a pressed notice may load looking for its message (issue 331): fifty messages a page, so a
+// notice for anything newer than a thousand messages back lands on it, and an older one opens its conversation.
+const REVEAL_PAGES = 20;
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
 const normalizeUrl = (u) => {
   const s = String(u || '').trim().replace(/\/+$/, '');
@@ -76,6 +79,8 @@ class AppRoot extends KitElement {
   static properties = {
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
     conn: { state: true }, problem: { state: true }, hasMore: { state: true }, sending: { state: true },
+    // The message a pressed notice leads to, handed to the conversation to bring into view (issue 331).
+    revealing: { state: true },
     // The live typing state of the open conversation (issue 230): { chatId, kind, at } for another of our signed-in
     // devices, or null. Held here so the page clears a stale one and never shows another conversation's.
     typing: { state: true },
@@ -259,6 +264,8 @@ class AppRoot extends KitElement {
       this.offWindow = window.bridge.on('window.state', (data) => { this.maximized = Boolean(data && data.maximized); });
       this.offOpen = window.bridge.on('app.open', (data) => this.openScreen(data && data.screen));
       this.offLink = window.bridge.on('app.link', () => this.takeLink());
+      // A notice was pressed (issue 331): the shell holds which one, and the page takes it.
+      this.offNotice = window.bridge.on('notify.opened', () => this.takeNotice());
     }
     if (typeof window !== 'undefined') this.holdPage();
     // A messaging link may arrive while the app is away, and a phone has no event to say so: it is asked for whenever
@@ -318,6 +325,7 @@ class AppRoot extends KitElement {
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }
     if (this.offOpen) { this.offOpen(); this.offOpen = null; }
+    if (this.offNotice) { this.offNotice(); this.offNotice = null; }
     clearTimeout(this.noticeHold);
     this.noticeHold = null;
     clearTimeout(this.sheetDeadline);
@@ -492,6 +500,9 @@ class AppRoot extends KitElement {
       this.releaseHeldScreen();
       if (this.chats.length) await this.open(this.chats[0].id);
       this.dataset.state = 'ready';
+      // A notice pressed while the app was closed launched it (issue 331): the shell held the press, so it is taken now
+      // the conversations are here, and opens over the first conversation.
+      this.takeNotice();
     } catch (e) {
       client.close();
       this.phase = 'onboarding';
@@ -615,6 +626,40 @@ class AppRoot extends KitElement {
     }
   }
 
+// The notice the person pressed, taken from the shell (issue 331). Taking it clears it, so a press is answered once
+  // however many times the page asks; before the app is ready the shell keeps holding it for the boot to take.
+  async takeNotice() {
+    if (this.phase !== 'ready') return false;
+    let target;
+    try {
+      target = noticeTarget(await this.bridge('notify.take', {}));
+    } catch {
+      return false;
+    }
+    if (!target) return false;
+    return this.openMessage(target);
+  }
+
+  // Opens a conversation at one message (issue 331): any sheet or viewer over it goes, the conversation opens, earlier
+  // pages load until the message is among them, and the conversation is told to bring it into view and mark it. A
+  // message that cannot be found still leaves its conversation open, which is the nearest true answer.
+  async openMessage({ chatId, messageId }) {
+    if (!this.chats.some((c) => c.id === chatId)) await this.reload();
+    if (!this.chats.some((c) => c.id === chatId)) return false;
+    this.viewing = null;
+    if (this.sheetShowing) this.closeView();
+    this.view = 'messages';
+    this.revealing = null;
+    await this.open(chatId, { show: true });
+    if (this.openChatId !== chatId || !messageId) return false;
+    for (let page = 0; page < REVEAL_PAGES && !this.messages.some((m) => m.id === messageId) && this.hasMore; page += 1) {
+      if (!(await this.loadOlder()) || this.openChatId !== chatId) break;
+    }
+    if (!this.messages.some((m) => m.id === messageId)) return false;
+    this.revealing = { id: messageId, seq: (this.revealing?.seq || 0) + 1 };
+    return true;
+  }
+
   // The Load earlier press shows itself working and drops a second press (core/kit/press.js), so no flag is kept here.
   async loadOlder() {
     if (!this.hasMore || !this.messages.length) return undefined;
@@ -660,7 +705,7 @@ class AppRoot extends KitElement {
       if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
-        this.bridge('notify', messageNotice(title, m)).catch(() => {});
+        this.bridge('notify', { ...messageNotice(title, m), ...messageTarget(m) }).catch(() => {});
       }
     } else if (name === 'reaction') {
       if (data.chatId === this.openChatId) this.messages = applyReaction(this.messages, data);
@@ -1573,7 +1618,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 

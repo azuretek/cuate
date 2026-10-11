@@ -102,6 +102,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
     /// The hook the shell calls to settle a pending call.
     static let resolveHook = "__cuateResolve"
 
+    /// The hook the shell calls to send the page an event its window.bridge.on listeners hear.
+    static let emitHook = "__cuateEmit"
+
     /// Storage keys are lower-case words joined by dots, the same shape the
     /// desktop enforces, so a key is a name and not an arbitrary string.
     private static let keyPattern = "^[a-z][a-z0-9.]{0,63}$"
@@ -120,6 +123,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
     init(store: KeychainSecureStore, commands: Set<String>) {
         self.store = store
         self.commands = commands
+        super.init()
+        // A pressed message notice is told to the page through this bridge (issue 331).
+        NoticeRouter.shared.bridge = self
     }
 
     /// The command names the bundled spec declares.
@@ -140,6 +146,10 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         script += "  if (window.bridge) { return; }\n"
         script += "  window.__cuatePending = {};\n"
         script += "  window.__cuateSeq = 0;\n"
+        script += "  var listeners = {};\n"
+        script += "  window.\(emitHook) = function (name, payload) {\n"
+        script += "    (listeners[name] || []).slice().forEach(function (handler) { try { handler(payload || {}); } catch (e) {} });\n"
+        script += "  };\n"
         script += "  window.\(resolveHook) = function (payload) {\n"
         script += "    var pending = window.__cuatePending[payload.id];\n"
         script += "    if (!pending) { return; }\n"
@@ -154,6 +164,10 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         script += "        window.__cuatePending[id] = { resolve: resolve, reject: reject };\n"
         script += "        window.webkit.messageHandlers.\(messageName).postMessage({ id: id, name: name, args: args || {} });\n"
         script += "      });\n"
+        script += "    },\n"
+        script += "    on: function (name, handler) {\n"
+        script += "      (listeners[name] = listeners[name] || []).push(handler);\n"
+        script += "      return function () { listeners[name] = (listeners[name] || []).filter(function (h) { return h !== handler; }); };\n"
         script += "    }\n"
         script += "  };\n"
         script += "})();\n"
@@ -196,6 +210,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             settle(id: id, ok: true, value: notify(args))
         case "notify.permission":
             notifyPermission(id: id, request: args["request"] as? Bool ?? false)
+        case "notify.take":
+            // The notice last pressed (issue 331), taken once.
+            settle(id: id, ok: true, value: NoticeRouter.shared.take() ?? NSNull())
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
         case "file.save":
@@ -362,6 +379,8 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        // A message notice carries where it leads (issue 331), handed back by NoticeRouter when it is pressed.
+        if let target = NoticeRouter.target(args) { content.userInfo = target }
         // Authorization is asked for on the first notification rather than at
         // launch, so a fresh install is not greeted by a permission dialog
         // before it has drawn anything.
@@ -401,6 +420,17 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             UIApplication.shared.open(url)
         }
         return true
+    }
+
+    /// An event the page hears through window.bridge.on, sent on the main thread the web view requires.
+    func emit(_ name: String, _ payload: [String: Any] = [:]) {
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8),
+              let nameData = try? JSONSerialization.data(withJSONObject: [name]),
+              let nameJson = String(data: nameData, encoding: .utf8) else { return }
+        let call = "window.\(Self.emitHook) && window.\(Self.emitHook)(\(nameJson)[0], \(json));"
+        DispatchQueue.main.async { [weak self] in self?.webView?.evaluateJavaScript(call) }
     }
 
     /// Settle the page's pending call. The whole payload is one JSON object, so
