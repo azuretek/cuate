@@ -473,6 +473,9 @@ class AppRoot extends KitElement {
       this.chats = orderChats(chats);
       this.phase = 'ready';
       client.connect();
+      // Signed in, so notifications are asked for now, on every platform, rather than on the first message (issue
+      // 327). The system asks only once; after that the shell answers where it stands.
+      this.bridge('notify.permission', { request: true }).then((state) => { this.notifyPermission = state; }).catch(() => {});
       this.releaseHeldUpdate();
       this.launchCheck();
       this.noticeServerUpdate(info.serverUpdate);
