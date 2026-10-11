@@ -1,4 +1,4 @@
-// Remove a person from an iMessage group through Messages (issue ISSUE).
+// Remove a person from an iMessage group through Messages (issue 326).
 import { addressOk } from './chat-create.js';
 
 export default {

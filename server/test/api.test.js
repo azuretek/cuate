@@ -773,7 +773,7 @@ test('a conversation read on another device is told to every client as chat.read
   } finally { await t.close(); }
 });
 
-// Conversations and groups are Messages' own (issue ISSUE): created, renamed and changed through the engine, and every
+// Conversations and groups are Messages' own (issue 326): created, renamed and changed through the engine, and every
 // client hears the change as chat.changed.
 test('a new conversation with several people is an iMessage group, named, and every client hears it', async () => {
   const t = await boot();

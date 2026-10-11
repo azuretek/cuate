@@ -353,7 +353,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return { ok: Boolean(r && r.ok) };
   }
 
-  // Conversations and groups are Messages' own (issue ISSUE): a new conversation with one address is a direct chat and
+  // Conversations and groups are Messages' own (issue 326): a new conversation with one address is a direct chat and
   // with several a group, optionally named, and a group's name and members change through the same IMCore bridge. The
   // engine answers the new chat's guid; the server rereads the list to learn its id.
   async function createChat(addresses, { name = '', text = '' } = {}) {

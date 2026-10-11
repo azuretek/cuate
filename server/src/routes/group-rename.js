@@ -1,4 +1,4 @@
-// Rename an iMessage group through Messages (issue ISSUE), so every member and every device sees the new name. An
+// Rename an iMessage group through Messages (issue 326), so every member and every device sees the new name. An
 // empty name clears it, and Messages names the group by its members again.
 export default {
   id: 'group-rename',

@@ -76,6 +76,12 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     react: (chatId, messageId, { emoji, remove = false, text = '' }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...(remove ? { remove: true } : {}), ...(text ? { text } : {}) }),
     upload: ({ name, mime, data }) => call('POST', '/api/v1/attachments', { name, mime, data }),
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+    // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
+    // a group conversation, and a group's name and people change through the Mac. Each answers the chat as it now is.
+    createChat: ({ addresses, name, text }) => call('POST', '/api/v1/chats', { addresses, ...(name ? { name } : {}), ...(text ? { text } : {}) }),
+    renameGroup: (chatId, name) => call('PUT', `/api/v1/chats/${encodeURIComponent(chatId)}/name`, { name }),
+    addMember: (chatId, address) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/members`, { address }),
+    removeMember: (chatId, address) => call('DELETE', `/api/v1/chats/${encodeURIComponent(chatId)}/members/${encodeURIComponent(address)}`),
     // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
     // devices; nothing is sent to anyone else and nothing is written to history (issue 230).
     typing: (chatId, typing) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/typing`, { typing }),

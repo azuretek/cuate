@@ -1474,9 +1474,10 @@ async function runSmoke(w) {
   const cdp = (method, params) => wc.debugger.sendCommand(method, params);
   const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
 
-  // Edit is a small text control at the left of the row above the list (issue 137); the pencil, the New group field and
-  // the Add group button are gone. Edit shows a checkbox on every row; two chats are grouped with no name and take the
-  // default; then one chat is deleted, and only carrying the slider to the end deletes it: a press on the thumb and a
+  // Edit is a small text control at the left of the row above the list (issue 137), and the new-conversation control sits
+  // at the row's right end (issue 326). Edit shows a checkbox on every row; Group on two chats opens the compose sheet
+  // with both people in it, and a named group conversation is created through the server, opened, and listed (issue
+  // 326); then one chat is deleted, and only carrying the slider to the end deletes it: a press on the thumb and a
   // drag let go halfway both leave everything as it was. Values are checked at the server.
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   const editTheme = async (name) => {
@@ -1497,6 +1498,7 @@ async function runSmoke(w) {
     return {
       label: t.textContent.trim(), first: row.firstElementChild === t, inset: t.getBoundingClientRect().left - row.getBoundingClientRect().left - pad,
       gone: !document.querySelector('.edit-button') && !document.querySelector('.new-group-name') && !document.querySelector('.add-group-button') && !document.querySelector('.add-group'),
+      newChat: (() => { const n = row.querySelector('.new-chat'); if (!n) return null; const nb = n.getBoundingClientRect(); const rb = row.getBoundingClientRect(); const tb = t.getBoundingClientRect(); return { right: Math.round(rb.right - parseFloat(getComputedStyle(row).paddingRight) - nb.right), sameLine: Math.abs((nb.top + nb.height / 2) - (tb.top + tb.height / 2)) <= 2, label: n.getAttribute('aria-label') }; })(),
       radius: getComputedStyle(t).borderTopLeftRadius,
     };
   })()`);
@@ -1509,18 +1511,16 @@ async function runSmoke(w) {
   const editRowTops = await js("[...document.querySelectorAll('.list-tools.editing > *, .list-tools.editing .edit-actions > *')].map((el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); })");
   await editTheme('15-edit-mode');
   await js("document.querySelector('.edit-group').click()");
-  await waitFor("Boolean(document.querySelector('.group-prompt .group-name-input'))");
+  await waitFor("Boolean(document.querySelector('app-compose .compose .compose-name'))");
   await pause(900);
-  // The prompt sits on the sheet backdrop, centred in the window.
-  const prompt = await js("(() => { const p = document.querySelector('.group-prompt'); const b = p.getBoundingClientRect(); return { backdrop: p.parentElement.classList.contains('sheet-scrim') && getComputedStyle(p.parentElement).position === 'fixed', dx: Math.abs(b.left + b.width / 2 - window.innerWidth / 2), dy: Math.abs(b.top + b.height / 2 - window.innerHeight / 2) }; })()");
-  await editTheme('16-group-prompt');
-  await js("document.querySelector('.group-prompt .group-create').click()");
-  const t1 = Date.now();
-  let groupedHeld = await held();
-  while (!(Array.isArray(groupedHeld['chats.groups']) && groupedHeld['chats.groups'].length === 1) && Date.now() - t1 < 10000) { await pause(200); groupedHeld = await held(); }
-  await waitFor("!document.querySelector('.group-prompt') && document.querySelector('.list-tools .edit-toggle').getAttribute('aria-pressed') === 'false' && [...document.querySelectorAll('.section-name')].some((s) => s.textContent === 'Group 1')");
-  const madeGroup = (groupedHeld['chats.groups'] || [])[0] || {};
-  const grouped = madeGroup.name === 'Group 1' && groupIds.every((id) => (groupedHeld['chats.placement'] || {})[id] === madeGroup.id);
+  // The sheet sits on the sheet backdrop, centred in the window, holding both chosen people.
+  const prompt = await js("(() => { const p = document.querySelector('app-compose .compose'); const b = p.getBoundingClientRect(); return { backdrop: p.parentElement.classList.contains('sheet-scrim') && getComputedStyle(p.parentElement).position === 'fixed', dx: Math.abs(b.left + b.width / 2 - window.innerWidth / 2), dy: Math.abs(b.top + b.height / 2 - window.innerHeight / 2), people: [...p.querySelectorAll('.compose-person')].map((x) => x.dataset.address) }; })()");
+  await editTheme('16-group-compose');
+  await js("(() => { const n = document.querySelector('app-compose .compose-name'); n.value = 'Smoke group'; n.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await js("document.querySelector('app-compose .compose-start').click()");
+  await waitFor("!document.querySelector('app-compose') && document.querySelector('.list-tools .edit-toggle').getAttribute('aria-pressed') === 'false' && document.querySelector('.conv-head .chat-name')?.textContent === 'Smoke group'", 10000);
+  const madeGroup = ((await (await fetch(srv + '/api/v1/chats', { headers: auth })).json()).chats || []).find((c) => c.name === 'Smoke group') || {};
+  const grouped = madeGroup.isGroup === true && prompt.people.length === 2 && [...madeGroup.participants].sort().join() === [...prompt.people].sort().join() && Boolean(await js("Boolean(document.querySelector('.conv-head .conv-info'))"));
   await js("document.querySelector('.list-tools .edit-toggle').click()");
   await waitFor("document.querySelectorAll('.chat-row .chat-check').length > 0");
   const deleteId = await rowCheck('Weekend plans');
@@ -1565,6 +1565,7 @@ async function runSmoke(w) {
     active: activeBg !== 'rgba(0, 0, 0, 0)' && activeBg !== 'transparent',
     oneRow: editRowTops.length >= 5 && Math.max(...editRowTops) - Math.min(...editRowTops) <= 2,
     prompt: prompt.backdrop && prompt.dx < 2 && prompt.dy < 2,
+    newChat: Boolean(editLayout && editLayout.newChat) && Math.abs(editLayout.newChat.right) < 1 && editLayout.newChat.sameLine && editLayout.newChat.label === 'New conversation',
     grouped,
     modal: modal.title === 'Are you sure?' && modal.what === 'Delete 1 conversation?' && modal.backdrop && !modal.button,
     pressIsNotSlide: afterPress.open && !afterPress.hidden.includes(deleteId),
@@ -1577,12 +1578,12 @@ async function runSmoke(w) {
   // has to have answered first: an answer is taken for the keys it wrote (settingsAfterWrite), so one landing after the
   // reset would draw the deleted chat as hidden again.
   await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
-  const reset = await putSettings({ 'chats.hidden': [], 'chats.groups': [], 'chats.placement': {} });
+  const reset = await putSettings({ 'chats.hidden': madeGroup.id ? [madeGroup.id] : [] });
   if (!reset.ok) throw new Error('the server refused the chat arrangement reset: ' + reset.status);
   try {
-    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && !document.querySelector('.section-actions')", 10000);
+    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && ![...document.querySelectorAll('.chat-name')].some((n) => n.textContent === 'Smoke group')", 10000);
   } catch (e) {
-    const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], groups: s['chats.groups'], placement: s['chats.placement'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
+    const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
     console.error('chat arrangement reset: ' + JSON.stringify({ page, held: await held() }));
     throw e;
   }
@@ -1672,11 +1673,16 @@ async function runSmoke(w) {
   // Resizing keeps your place (issue 142). The conversation and the chat list are scrolled back, text is typed in the
   // composer with the caret inside it, and then the window is resized several times and the text size changed: each
   // view must still show the same message or row at the same height, and the composer the same text and caret. The
-  // list is made long enough to scroll with groups, which are put back afterwards.
+  // list is made long enough to scroll with group conversations made for it, which are hidden afterwards.
   const keptBefore = await held();
-  const smokeGroups = Array.from({ length: 8 }, (_, i) => ({ id: 'smoke-g' + i, name: 'Smoke group ' + (i + 1) }));
-  await putSettings({ 'chats.groups': smokeGroups, 'chats.placement': { 1: 'smoke-g1', 2: 'smoke-g4', 3: 'smoke-g7' }, 'appearance.textScale': 200 });
-  await waitFor("document.querySelectorAll('.chat-section').length >= 8 && document.documentElement.style.getPropertyValue('--font-size-md') !== ''", 10000);
+  const smokeGroups = [];
+  for (let i = 0; i < 12; i += 1) {
+    const made = await fetch(srv + '/api/v1/chats', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ addresses: ['+1555555' + String(2000 + i * 2), '+1555555' + String(2001 + i * 2)], name: 'Scroll group ' + (i + 1) }) });
+    if (!made.ok) throw new Error('the server refused a scroll group: ' + made.status);
+    smokeGroups.push((await made.json()).id);
+  }
+  await putSettings({ 'appearance.textScale': 200 });
+  await waitFor("document.querySelectorAll('.chat-row').length >= 15 && document.documentElement.style.getPropertyValue('--font-size-md') !== ''", 10000);
   await pause(400);
   const COMPOSED = 'Kept through\nevery resize';
   const place = () => js(`(() => {
@@ -2015,8 +2021,8 @@ async function runSmoke(w) {
   const blank = await js('(() => { window.__blankWatch.disconnect(); return window.__blank; })()');
   report.noBlank = blank.bubbles > 0 && blank.rows > 0 && !blank.splash && blank.busy.length === 0 && connStates.includes('reconnecting');
   console.log('no blank: ' + JSON.stringify({ blank, connStates }));
-  await putSettings({ 'chats.groups': keptBefore['chats.groups'] ?? [], 'chats.placement': keptBefore['chats.placement'] ?? {}, 'appearance.textScale': 100 });
-  await waitFor("document.querySelectorAll('.section-actions').length === 0", 10000);
+  await putSettings({ 'chats.hidden': [...(keptBefore['chats.hidden'] ?? []), ...smokeGroups], 'appearance.textScale': 100 });
+  await waitFor("![...document.querySelectorAll('.chat-name')].some((n) => n.textContent.startsWith('Scroll group'))", 10000);
 
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
@@ -2919,8 +2925,8 @@ async function runSmoke(w) {
     { name: 'emoji', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()", panel: 'app-composer .emoji-picker' },
     { name: 'message-menu', pane: 'conversation', open: '(() => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); return true; })()', panel: DISMISS_ROW + ' .message-menu' },
     { name: 'thread', pane: 'conversation', open: '(async () => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); const sel = ' + dq(DISMISS_ROW + ' .message-action[aria-label="Reply in thread"]') + '; for (let i = 0; i < 50 && !document.querySelector(sel); i += 1) await new Promise((r) => setTimeout(r, 50)); document.querySelector(sel).click(); return true; })()', panel: '.thread-view .thread-list' },
-    { name: 'group', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-group').click()", panel: '.group-prompt' },
-    { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.group-prompt)' },
+    { name: 'group', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-group').click()", panel: 'app-compose .compose' },
+    { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.compose)' },
     // On a phone Settings is a page that fills the screen (issue 167), so there is no outside to press: its way back is
     // the strip at its top, pressed there with a finger, which must close it and reach nothing underneath.
     { name: 'sheet', pane: 'list', phonePage: true, open: "document.querySelector('.sidebar-head .gear-button').click()", panel: '.sheet' },

@@ -177,7 +177,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     held.chats.unshift({ ...chat, lastMessageAt: m.sentAt });
   };
   // After a conversation is created or a group changes, the list is read fresh (a read already in flight may predate the
-  // change, so it is let finish and the list read again) and the changed chat is told to every client (issue ISSUE).
+  // change, so it is let finish and the list read again) and the changed chat is told to every client (issue 326).
   const freshChats = async () => {
     if (listing) await listing.catch(() => {});
     await readChats(held ? held.limit : paging.chats.default);

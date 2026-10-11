@@ -1,4 +1,4 @@
-// Start a conversation through Messages itself (issue ISSUE): one address is a direct chat, several are an iMessage
+// Start a conversation through Messages itself (issue 326): one address is a direct chat, several are an iMessage
 // group, optionally named, and an optional first message goes with it. Messages owns the conversation, so it is the
 // same one on the phone and the Mac; the answer is the chat as the list now holds it.
 const ADDRESS = /^(\+?[0-9][0-9 ().-]{2,30}|[^\s@]{1,64}@[^\s@]{1,190})$/;
