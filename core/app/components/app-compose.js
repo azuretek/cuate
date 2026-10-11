@@ -46,7 +46,9 @@ class AppCompose extends KitElement {
     this.querySelector('.compose-to')?.focus();
   }
 
-  remove(address) {
+  // Never named remove(): that is the element's own Element.remove(), which the page's renderer calls to take this sheet
+  // away, and an override drops a person instead and leaves the sheet up (issue 326).
+  dropPerson(address) {
     this.recipients = this.recipients.filter((a) => a !== address);
   }
 
@@ -64,7 +66,7 @@ class AppCompose extends KitElement {
 
   onKey(e) {
     if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); this.commit(); }
-    else if (e.key === 'Backspace' && !this.draft && this.recipients.length) this.remove(this.recipients[this.recipients.length - 1]);
+    else if (e.key === 'Backspace' && !this.draft && this.recipients.length) this.dropPerson(this.recipients[this.recipients.length - 1]);
   }
 
   async start() {
@@ -89,7 +91,7 @@ class AppCompose extends KitElement {
         <h2 id="compose-title">${title}</h2>
         <div class="compose-field" role="group" aria-label="To">
           <span class="compose-label" aria-hidden="true">To</span>
-          ${this.recipients.map((a) => html`<span class="active-chip compose-person" data-address=${a}>${this.nameOf(a)}<button type="button" class="chip-clear" aria-label=${'Remove ' + this.nameOf(a)} @click=${press(() => this.remove(a))}>×</button></span>`)}
+          ${this.recipients.map((a) => html`<span class="active-chip compose-person" data-address=${a}>${this.nameOf(a)}<button type="button" class="chip-clear" aria-label=${'Remove ' + this.nameOf(a)} @click=${press(() => this.dropPerson(a))}>×</button></span>`)}
           <input class="compose-to" type="text" autocomplete="off" placeholder=${this.recipients.length ? 'Add someone' : 'Name, number or email'} aria-label="Add a person by name, number or email"
             .value=${this.draft} @input=${(e) => { this.draft = e.currentTarget.value; this.problem = ''; }} @keydown=${(e) => this.onKey(e)}>
         </div>

@@ -46,7 +46,8 @@ class AppGroupInfo extends KitElement {
     return this.run(() => this.client.addMember(this.chat.id, address), 'The Mac did not add the person.').then(() => { this.adding = ''; });
   }
 
-  remove(address) {
+  // Never named remove(): see app-compose.js; an override of Element.remove() keeps the sheet on the page.
+  removePerson(address) {
     return this.run(() => this.client.removeMember(this.chat.id, address), 'The Mac did not remove the person.');
   }
 
@@ -66,7 +67,7 @@ class AppGroupInfo extends KitElement {
         <h3 class="group-info-heading">${people.length} ${people.length === 1 ? 'person' : 'people'}</h3>
         <ul class="group-info-people">
           ${people.map((a) => html`<li class="group-info-person" data-address=${a}><span>${a}</span>
-            <button type="button" class="text-button danger group-info-remove" aria-label=${'Remove ' + a} ?disabled=${people.length <= 2} @click=${press(() => this.remove(a))}>Remove</button></li>`)}
+            <button type="button" class="text-button danger group-info-remove" aria-label=${'Remove ' + a} ?disabled=${people.length <= 2} @click=${press(() => this.removePerson(a))}>Remove</button></li>`)}
         </ul>
         <div class="group-info-row">
           <input class="group-info-add" type="text" placeholder="Add a number or email" aria-label="Add a person by number or email" .value=${this.adding}

@@ -641,3 +641,14 @@ test("the composer's controls are lifted onto the field's last line", () => {
   assert.match(css, /\.composer > \.composer-tools, \.composer > button\.send\s*\{\s*margin-bottom:\s*calc\(\(var\(--composer-one-line\) - var\(--size-tool\)\) \/ 2\)/, 'both sides of the field are lifted by the same amount');
   assert.match(css, /\.composer textarea\s*\{[^}]*font-size:\s*var\(--composer-type\)[^}]*line-height:\s*var\(--font-line\)/, 'the field draws in the type the lift is worked out from');
 });
+
+// A component method named like one of the element's own DOM methods replaces it, and the renderer calls those to add
+// and take away nodes: app-compose's remove(address) kept the new-conversation sheet on the page after it closed
+// (issue 326).
+test('no component overrides a DOM method the renderer calls', () => {
+  const reserved = ['remove', 'append', 'prepend', 'before', 'after', 'replaceWith', 'insertBefore', 'appendChild', 'removeChild', 'replaceChildren', 'cloneNode', 'contains', 'focus', 'blur', 'click', 'closest', 'matches', 'querySelector', 'querySelectorAll', 'setAttribute', 'getAttribute', 'removeAttribute', 'dispatchEvent', 'addEventListener', 'removeEventListener', 'attachShadow', 'animate', 'scrollIntoView'];
+  for (const f of walk('core/app/components').filter((f) => CODE.test(f))) {
+    const src = read(f);
+    for (const name of reserved) assert.doesNotMatch(src, new RegExp('^  (?:async )?' + name + '\\(', 'm'), f + ' defines ' + name + '(), which is the element\'s own');
+  }
+});
