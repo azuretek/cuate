@@ -162,7 +162,7 @@ class AppImageViewer extends KitElement {
   box() {
     const img = this.picture();
     const area = this.area();
-    return { width: img ? img.offsetWidth : 0, height: img ? img.offsetHeight : 0, stageWidth: area.width, stageHeight: area.height, anchor: 'top' };
+    return { width: img ? img.offsetWidth : 0, height: img ? img.offsetHeight : 0, stageWidth: area.width, stageHeight: area.height, anchor: 'center' };
   }
 
   // The stage's content box on screen: the room inside its safe-area padding, where the picture is laid out and
@@ -294,10 +294,12 @@ class AppImageViewer extends KitElement {
   }
 
   onDown = (e) => {
-    // The page's own drag (the phone's drawer, from the left edge) must not start under the viewer. A press on the
-    // close control, a step control or a video's own controls is theirs, not a pan's.
+    // The page's own drag (the phone's drawer, from the left edge) must not start under the viewer. A press on any of
+    // the viewer's controls or a video's own controls is theirs, not a pan's: the stage captures the pointer for a pan,
+    // and a captured pointer's click lands on the stage, so a control it captured never heard its own press (the Live
+    // Photo play control did nothing, issue 325).
     e.stopPropagation();
-    if (e.target.closest && (e.target.closest('.close-button') || e.target.closest('.viewer-nav') || e.target.closest('video'))) return;
+    if (e.target.closest && e.target.closest('button, video, .viewer-bar')) return;
     try { this.stage().setPointerCapture(e.pointerId); } catch { /* a synthetic pointer has nothing to capture */ }
     const p = this.point(e);
     this.pointers.set(e.pointerId, p);
@@ -416,18 +418,21 @@ class AppImageViewer extends KitElement {
         ? html`<video class="viewer-image viewer-motion" src=${this.motion} aria-label=${label} autoplay muted playsinline @ended=${() => { this.playing = false; }}></video>`
         : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
     const playLabel = this.motionFailed ? 'The motion could not be loaded' : this.playing ? 'Show the photo' : 'Play the Live Photo';
-    const play = live ? html`<button type="button" class="viewer-play" aria-label=${playLabel} title=${playLabel} aria-pressed=${this.playing ? 'true' : 'false'} ?disabled=${this.motionFailed} @click=${press(() => this.playMotion())}><span class="icon" data-icon="play" aria-hidden="true"></span></button>` : nothing;
+    // The controls are one family (issue 325): the step controls either side, the close control in its corner, and one
+    // bar centred at the foot holding the Live Photo's play control, where the item sits in the conversation's media
+    // and the zoom. The play control is the bar's widest, labelled, so it is not missed.
+    const play = live ? html`<button type="button" class="viewer-control viewer-play" aria-label=${playLabel} title=${playLabel} aria-pressed=${this.playing ? 'true' : 'false'} ?disabled=${this.motionFailed} @click=${press(() => this.playMotion())}><span class="icon" data-icon="play" aria-hidden="true"></span><span class="viewer-play-label">Live</span></button>` : nothing;
+    const count = hasNav ? html`<span class="viewer-count">${at + 1} of ${list.length}</span>` : nothing;
     return html`<div class="sheet-scrim viewer" data-dismiss="viewer" role="dialog" aria-modal="true" aria-label=${label}
         data-scale=${String(this.view.scale)} data-zoomed=${this.view.scale > 1.001 ? 'true' : 'false'} data-gesture=${this.moving ? 'on' : 'off'}
         data-index=${at} data-count=${list.length} data-kind=${this.kind}
         @pointerdown=${this.onDown} @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${this.onCancel}
         @contextmenu=${this.onContext} @wheel=${this.onWheel}>
       ${media}
-      ${play}
       ${hasNav ? html`<button type="button" class="viewer-nav viewer-prev" aria-label="Previous item" title="Previous item" ?disabled=${at <= 0} @click=${press(() => this.go('prev'))}><span class="icon" data-icon="chevron-left" aria-hidden="true"></span></button>` : nothing}
       ${hasNav ? html`<button type="button" class="viewer-nav viewer-next" aria-label="Next item" title="Next item" ?disabled=${at >= list.length - 1} @click=${press(() => this.go('next'))}><span class="icon" data-icon="chevron-right" aria-hidden="true"></span></button>` : nothing}
       ${closeButtonHtml({ owner: 'viewer', label: 'Close', size: 'lg', onClose: () => this.close() })}
-      <p class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</p>
+      <div class="viewer-bar" role="toolbar" aria-label="Media controls">${play}${count}<span class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</span></div>
     </div>`;
   }
 }

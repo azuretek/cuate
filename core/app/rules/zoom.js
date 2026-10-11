@@ -8,7 +8,7 @@
 // picture is drawn as translate(x, y) scale(scale) about its own centre, which is what makes the maths below hold.
 //
 // The box is what the viewer measured: { width, height } is the fitted picture, { stageWidth, stageHeight } the space
-// it sits in. With anchor 'top' (the viewer's own, issue 315), a picture shorter than the stage sits at the stage's
+// it sits in. With anchor 'top' (which the viewer used from issue 315 until it went back to the middle in issue 325), a picture shorter than the stage sits at the stage's
 // top rather than its middle, as Photos opens a tall screenshot or a wide photo: drawnY adds that lift to y, and the
 // zoom keeps the point under a pointer or between two fingers where it is while the lift shrinks to nothing as the
 // picture grows to fill the stage.

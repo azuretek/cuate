@@ -839,19 +839,30 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    backdrop under it is no-drag too (issue 213), so the whole circle answers wherever it lands. */
 .viewer > .close-button { position: absolute; top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); right: calc(var(--inset-right) + var(--space-4)); z-index: 1; }
 .app-window[data-platform="darwin"] .viewer > .close-button { top: calc(var(--inset-top) + var(--size-window-strip) + var(--space-3)); }
-.viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
-/* The media viewer's step controls (issue 181): one each side, drawn from the shared icon set and the same tokens as
-   every other control, pushing the viewer to the previous or next item. The end it cannot go past is drawn dimmed and
-   inert, so the edge of the conversation's media is visible, not a dead press. */
-.viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-sm); cursor: pointer; }
-.viewer-nav:hover, .viewer-nav:focus-visible { background: var(--color-bg-sunken); outline: none; }
-.viewer-nav:disabled { opacity: 0.35; cursor: default; }
-.viewer-prev { left: var(--space-4); }
-/* A Live Photo's play control sits in the stage's lower left, clear of the zoom label, drawn as the stepping controls are. */
-.viewer-play { position: absolute; left: var(--space-4); bottom: var(--space-4); z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--role-menu); color: var(--role-menu-fg); cursor: pointer; }
-.viewer-play[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-fg); }
-.viewer-play:disabled { opacity: 0.35; cursor: default; }
-.viewer-next { right: var(--space-4); }
+/* The viewer's controls are one family (issue 325), so they read as designed rather than as defaults: every one is
+   the close control's height, the same pill, the same frosted raised surface over the picture, the same edge and
+   shadow, and they answer the pointer the same way, on the shared motion tokens. The step controls sit centred on
+   either side; one bar sits centred at the foot and holds the Live Photo's play control, where the item is in the
+   conversation's media and the zoom, so nothing floats on its own in a corner. The play control is the bar's widest
+   and is labelled, in the accent, so it is not missed. */
+.viewer { --viewer-control: var(--size-close-lg); --viewer-glass: color-mix(in srgb, var(--color-bg-raised) 84%, transparent); }
+.viewer > .close-button, .viewer-nav, .viewer-bar { border: var(--size-border) solid var(--color-image-edge); background: var(--viewer-glass); -webkit-backdrop-filter: blur(calc(var(--size-scrim-blur) * 3)) saturate(1.4); backdrop-filter: blur(calc(var(--size-scrim-blur) * 3)) saturate(1.4); box-shadow: var(--shadow-md); animation: surface-scrim-in var(--motion-screen) var(--motion-ease) both; }
+.viewer-nav, .viewer-control { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: var(--viewer-control); min-width: var(--viewer-control); margin: 0; padding: 0; border-radius: var(--radius-pill); color: var(--color-fg); font: inherit; cursor: pointer; transition: background var(--motion-normal) var(--motion-ease), color var(--motion-normal) var(--motion-ease), scale var(--motion-normal) var(--motion-ease), opacity var(--motion-normal) var(--motion-ease); }
+.viewer-nav .icon, .viewer-control .icon { display: block; width: calc(var(--viewer-control) * 0.45); height: calc(var(--viewer-control) * 0.45); pointer-events: none; }
+.viewer-nav:hover, .viewer-control:hover { background: var(--color-bg-raised); }
+.viewer-nav:focus-visible, .viewer-control:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.viewer-nav:active:not(:disabled), .viewer-control:active:not(:disabled) { scale: 0.94; }
+.viewer-nav:disabled, .viewer-control:disabled { opacity: 0.35; cursor: default; }
+.viewer-nav { position: absolute; top: 50%; translate: 0 -50%; z-index: 1; }
+.viewer-prev { left: calc(var(--inset-left) + var(--space-4)); }
+.viewer-next { right: calc(var(--inset-right) + var(--space-4)); }
+.viewer-bar { position: absolute; left: 50%; translate: -50% 0; bottom: calc(var(--inset-bottom) + var(--space-4)); z-index: 1; box-sizing: border-box; display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); white-space: nowrap; }
+.viewer-play { padding: 0 var(--space-4) 0 var(--space-3); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-sm); font-weight: 600; text-transform: uppercase; }
+.viewer-play:hover { background: color-mix(in srgb, var(--color-accent) 88%, var(--color-fg)); }
+.viewer-play[aria-pressed="true"] { background: var(--color-bg-sunken); color: var(--color-fg); }
+.viewer-count, .viewer-zoom { display: inline-flex; align-items: center; height: var(--viewer-control); margin: 0; padding: 0 var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; pointer-events: none; }
+.viewer-count + .viewer-zoom { border-left: var(--size-border) solid var(--color-image-edge); }
+@media (prefers-reduced-motion: reduce) { .viewer > .close-button, .viewer-nav, .viewer-bar { animation: none; } .viewer-nav, .viewer-control { transition: none; } }
 /* A video is drawn like a picture, with the viewer's own rounded edge and shadow; its first frame stands in for the
    picture until it plays. */
 .viewer video.viewer-image { background: var(--color-bg-sunken); }
