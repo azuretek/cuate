@@ -75,6 +75,19 @@ const rect = (e) => { const r = e.getBoundingClientRect(); return { left: Math.r
 const frames = (get, ms) => new Promise((resolve) => { const out = []; const start = performance.now(); const tick = () => { const e = get(); if (e) out.push({ t: Math.round(performance.now() - start), ...rect(e) }); if (performance.now() - start < ms) requestAnimationFrame(tick); else resolve(out); }; requestAnimationFrame(tick); });
 const bubbleOf = (id) => [...el.querySelectorAll('.bubble-row')].find((r) => r.dataset.id === id)?.querySelector('.bubble') || null;
 window.field = () => rect(el.querySelector('app-composer textarea'));
+window.growField = async () => {
+  const t = el.querySelector('app-composer textarea');
+  t.focus(); t.value = 'one'; t.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 400));
+  const before = t.offsetHeight;
+  const out = [];
+  const start = performance.now();
+  t.value = 'one\\ntwo\\nthree'; t.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  const at = t.offsetHeight;
+  await new Promise((resolve) => { const tick = () => { out.push({ t: Math.round(performance.now() - start), clip: getComputedStyle(t).clipPath, h: t.offsetHeight }); if (performance.now() - start < 500) requestAnimationFrame(tick); else resolve(); }; requestAnimationFrame(tick); });
+  t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true }));
+  return { before, at, first: out[0], last: out[out.length - 1], frames: out.length };
+};
 window.send = async () => { const p = frames(() => bubbleOf('local:1'), 1000); el.messages = [...el.messages, msg('A', 6, 'On my way', { id: 'local:1', fromMe: true, sender: null, state: 'sending' })]; return p; };
 window.receive = async () => { const p = frames(() => bubbleOf('A-0007'), 1000); el.messages = [...el.messages, msg('A', 7, 'See you soon')]; return p; };
 window.switchTo = async () => { const p = frames(() => el.querySelector('.messages'), 700); el.chat = chat('B'); el.messages = [1, 2, 3].map((i) => msg('B', i, 'Other ' + i)); return p; };
@@ -103,7 +116,11 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: true, width: 420, height: 800, useContentSize: true, webPreferences: { contextIsolation: true, backgroundThrottling: false } });
   await open(win, '');
   const js = (s) => win.webContents.executeJavaScript(s);
-  const brief = (f) => f.length ? { frames: f.length, first: f[0], last: f[f.length - 1] } : { frames: 0 };
+  const brief = (f) => f.length ? { frames: f.length, first: f[0], last: f[f.length - 1], smallest: f.reduce((a, b) => (b.width < a.width ? b : a)) } : { frames: 0 };
+  const g = await js('window.growField()');
+  const top = (c) => { const m = /inset\(([-\d.]+)px/.exec(c || ''); return m ? Number(m[1]) : null; };
+  say(g.at > g.before && g.first.h === g.at && top(g.first.clip) > 10 && (g.last.clip === 'none' || top(g.last.clip) <= 0), 'a typed line grows the field: its height is exact at once (' + g.before + ' to ' + g.at + ') and its box is revealed upward: ' + JSON.stringify(g));
+  await wait(300);
   const field = await js('window.field()');
   const sent = brief(await js('window.send()'));
   await shot(win, 'motion-sent');
@@ -117,7 +134,7 @@ app.whenReady().then(async () => {
   await wait(300);
   const v = brief(await js('window.view()'));
   await shot(win, 'motion-viewer');
-  say(v.frames > 0 && Math.abs(v.first.width - 120) < 40 && Math.abs(v.first.left - 24) < 40 && v.last.width > 300, 'the viewer grows out of the preview at left 24, 120 wide, to its own size: ' + JSON.stringify(v));
+  say(v.frames > 0 && Math.abs(v.smallest.width - 120) < 40 && Math.abs(v.smallest.left - 24) < 40 && Math.abs(v.smallest.top - 420) < 40 && v.smallest.t < 200 && v.last.width > 300, 'the viewer grows out of the preview at left 24, top 420, 120 wide, to its own size: ' + JSON.stringify(v));
   const c = await js('window.closeViewer()');
   const cb = brief(c.out);
   say(c.closed && cb.frames > 1 && cb.last.width < cb.first.width / 2, 'and closing shrinks it back into the preview before it goes: ' + JSON.stringify({ closed: c.closed, ...cb }));

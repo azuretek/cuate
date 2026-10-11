@@ -395,7 +395,13 @@ class AppImageViewer extends KitElement {
     await this.updateComplete;
     const img = this.picture();
     const from = this.returnRect();
-    if (img && from) growFrom(img, from, { origin: this.layoutCentre(img) });
+    if (!img || !from) return;
+    // The picture's first place (fit, lifted to the top) is drawn at once rather than through the zoom transition, so
+    // the grow is measured against where the picture ends, not a frame of it sliding there.
+    img.style.transition = 'none';
+    this.updated();
+    img.getBoundingClientRect();
+    growFrom(img, from, { origin: this.layoutCentre(img) }).then(() => { img.style.transition = ''; });
   };
 
   render() {
