@@ -4,6 +4,8 @@ import { press, runPress, emit, respond } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
+import { play, growFrom, cssVar } from '../../kit/motion.js';
+import { newArrivals } from '../../kit/rules/motion.js';
 import { chatTitle, initials } from '../rules/chats.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { platformOf, platformCapabilities } from '../rules/platform.js';
@@ -133,6 +135,39 @@ class AppConversation extends KitElement {
     if (changed.has('pop')) this.placePop();
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
     aimCarets(this);
+    this.arrive(changed);
+  }
+
+  // Motion comes from where a thing came from (issue 316, docs/conventions.md). Another conversation slides in from
+  // the side it was chosen from; a message we send rises out of the composer's field into its place; a message that
+  // arrives slides up into the end of the list. A first draw and a page of older history are a place, not news, so
+  // they do not move (newArrivals).
+  arrive(changed) {
+    const chatChanged = changed.has('chat') && changed.get('chat')?.id !== this.chat?.id;
+    if (chatChanged && changed.get('chat')) {
+      const list = this.querySelector('.messages');
+      const step = parseFloat(cssVar(list, '--space-6')) || 0;
+      play(list, [{ opacity: 0, translate: step + 'px 0px' }, { opacity: 1, translate: '0px 0px' }], { duration: 'screen', easing: 'sheet-ease' });
+    }
+    if (!changed.has('messages')) return;
+    const fresh = newArrivals(changed.get('messages'), this.messages, { sameChat: !chatChanged });
+    if (!fresh.length) return;
+    const field = this.querySelector('app-composer textarea');
+    for (const { id, sent } of fresh) {
+      const row = this.rowOf(id);
+      const bubble = row && (row.querySelector('.bubble') || row);
+      if (!bubble) continue;
+      if (sent && field) {
+        // From where its text was typed: the field's start, at the field's line height, then out to its own place.
+        const r = field.getBoundingClientRect();
+        const b = bubble.getBoundingClientRect();
+        const s = b.height > 0 ? Math.min(1, r.height / b.height) : 1;
+        growFrom(bubble, { left: r.left, top: r.top + (r.height - b.height * s) / 2, width: b.width * s, height: b.height * s });
+      } else {
+        const rise = parseFloat(cssVar(bubble, '--space-4')) || 0;
+        play(bubble, [{ opacity: 0, translate: '0px ' + rise + 'px', scale: '0.96' }, { opacity: 1, translate: '0px 0px', scale: '1' }]);
+      }
+    }
   }
 
   // A menu or panel opens above its message, and below it when the list has no room above (the first messages), so

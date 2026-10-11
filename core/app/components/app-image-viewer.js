@@ -2,6 +2,7 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { press } from '../../kit/press.js';
+import { growFrom, play } from '../../kit/motion.js';
 import { closeButtonHtml } from './close-button.js';
 import { pressOutside } from '../../kit/rules/dismiss.js';
 import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey } from '../rules/zoom.js';
@@ -43,6 +44,8 @@ class AppImageViewer extends KitElement {
     motion: { state: true }, playing: { state: true }, motionFailed: { state: true },
     // The conversation's media, in order, and the one on screen. The page hands them in; the viewer steps between them.
     items: { attribute: false }, index: { attribute: false }, client: { attribute: false },
+    // The preview the viewer was opened from: it grows out of it and, closed on the same item, shrinks back into it.
+    from: { attribute: false },
   };
 
   constructor() {
@@ -74,6 +77,8 @@ class AppImageViewer extends KitElement {
   connectedCallback() {
     super.connectedCallback();
     this.opener = document.activeElement;
+    // The item it opened on, which a close shrinks back into its preview only while it is still on screen.
+    this.openedAt = this.index;
     document.addEventListener('keydown', this.onKey);
     document.addEventListener('gesturestart', this.onGesture);
     document.addEventListener('gesturechange', this.onGesture);
@@ -105,8 +110,37 @@ class AppImageViewer extends KitElement {
     img.style.setProperty('--zoom-scale', String(this.view.scale));
   }
 
+  // Closing on the item it opened on shrinks the picture back into its preview while the scrim fades (issue 316);
+  // on another item, or with nowhere visible to go back to, the scrim fades with the picture in it.
+  // With nothing to animate (reduced motion, or a page that cannot) it closes at once.
   close() {
-    this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+    if (this.closing) return undefined;
+    const done = () => this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+    const img = this.picture();
+    const to = img ? this.returnRect() : null;
+    const fade = play(this.stage(), [{ opacity: 1 }, { opacity: 0 }], { duration: 'screen', easing: 'sheet-ease', fill: 'forwards' });
+    if (!fade) return done();
+    this.closing = true;
+    const back = to ? growFrom(img, to, { origin: this.layoutCentre(img), back: true, duration: 'screen', easing: 'sheet-ease' }) : fade.finished.catch(() => {});
+    return back.then(done);
+  }
+
+  // Where the preview is now, if it is still on screen and this is the item it opened: a rectangle to grow from or
+  // shrink back into, or null.
+  returnRect() {
+    const el = this.from;
+    if (!el || !el.isConnected || this.index !== this.openedAt || typeof el.getBoundingClientRect !== 'function') return null;
+    const r = el.getBoundingClientRect();
+    const vh = typeof innerHeight === 'number' ? innerHeight : 0;
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && (!vh || r.top < vh) ? r : null;
+  }
+
+  // The picture's layout centre: its drawn centre less the pan and lift its transform wears.
+  layoutCentre(img) {
+    const r = img.getBoundingClientRect();
+    const x = parseFloat(img.style.getPropertyValue('--zoom-x')) || 0;
+    const y = parseFloat(img.style.getPropertyValue('--zoom-y')) || 0;
+    return { x: r.left + r.width / 2 - x, y: r.top + r.height / 2 - y };
   }
 
   stage() {
@@ -333,8 +367,15 @@ class AppImageViewer extends KitElement {
   };
 
   // The fitted size is known only once the picture has loaded; start from fit against it.
-  onLoad = () => {
+  onLoad = async () => {
     this.view = zoomFit();
+    // The first picture grows out of the preview it was opened from, once it is laid out at fit.
+    if (this.grown) return;
+    this.grown = true;
+    await this.updateComplete;
+    const img = this.picture();
+    const from = this.returnRect();
+    if (img && from) growFrom(img, from, { origin: this.layoutCentre(img) });
   };
 
   render() {
