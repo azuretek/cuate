@@ -38,6 +38,7 @@ class ShellParityTest {
             "app.info",
             "app.icon",
             "notify",
+            "notify.permission",
             "open.external",
             "file.save",
             "updates.check",
