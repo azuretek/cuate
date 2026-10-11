@@ -60,6 +60,15 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const world = {
     sends,
     tapbacks,
+    // A conversation read on another device: its messages turn read in the engine and its count falls, with nothing
+    // said on the message stream, as a read on the phone reaches the Mac's database (issue 323).
+    readElsewhere(chatId) {
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat) return false;
+      for (const m of messages) if (m.chat_id === chatId && !m.is_from_me) m.is_read = true;
+      chat.unread_count = 0;
+      return true;
+    },
     typings,
     behavior,
     messages,

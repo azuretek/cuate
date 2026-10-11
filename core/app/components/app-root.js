@@ -49,6 +49,21 @@ import './app-image-viewer.js';
 import './app-slide-confirm.js';
 
 const API_VERSION = 1;
+// A burst of arrivals in the conversation on screen is one read on the Mac (issue 323).
+const READ_COALESCE_MS = 600;
+const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+// Ask the Mac to mark a conversation read, at most once per READ_COALESCE_MS for the same one, so a burst of arrivals
+// is one read (issue 323). A page with no client that can mark a read (a test's stand-in) asks nothing.
+function readOnMac(page, chatId) {
+  if (!chatId || !page || typeof page.client?.markRead !== 'function') return;
+  const id = String(chatId);
+  if (!page.readTimers) page.readTimers = new Map();
+  if (page.readTimers.has(id)) return;
+  page.readTimers.set(id, setTimeout(() => {
+    page.readTimers.delete(id);
+    if (typeof page.client?.markRead === 'function') page.client.markRead(id).catch(() => {});
+  }, READ_COALESCE_MS));
+}
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
 const newGroupId = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const normalizeUrl = (u) => {
@@ -218,6 +233,16 @@ class AppRoot extends KitElement {
       this.onSchemeChange = () => this.applyTheme();
       this.schemeQuery.addEventListener('change', this.onSchemeChange);
     }
+    // Coming back to the window reads the conversation on screen, which may have taken messages while it was hidden
+    // (issue 323).
+    if (typeof document !== 'undefined') {
+      this.onVisible = () => {
+        if (pageHidden() || !this.openChatId) return;
+        this.chats = this.chats.map((c) => (c.id === this.openChatId && c.unread ? { ...c, unread: 0 } : c));
+        readOnMac(this, this.openChatId);
+      };
+      document.addEventListener('visibilitychange', this.onVisible);
+    }
     // The shell names its platform and product before the page boots, so the bar is drawn with the first paint and
     // only where a window exists. A phone answers call but installs no event stream, so the bar is desktop only.
     if (typeof window !== 'undefined' && window.bridge && typeof window.bridge.call === 'function') {
@@ -274,6 +299,8 @@ class AppRoot extends KitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
+    for (const t of this.readTimers?.values() || []) clearTimeout(t);
     for (const [target, type, fn, options] of this.pageHolds || []) target.removeEventListener(type, fn, options);
     this.pageHolds = null;
     this.endDividerDrag();
@@ -542,10 +569,11 @@ class AppRoot extends KitElement {
       this.selecting = refresh ? null : chatId;
       if (refresh && show) this.listOpen = false;
     }
-    const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
-    // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
-    if (wasUnread && this.client) this.client.markRead(chatId).catch(() => {});
+    // Reading a conversation clears it on the Mac too, so the phone and the next client see the same count. It is asked
+    // every time a conversation opens, not only when this page counted it unread: a count this page had not caught up
+    // with (a message that arrived while it was away) still has to be read on the Mac (issue 323).
+    readOnMac(this, chatId);
     const arrived = [];
     const watch = (m) => { if (m.chatId === chatId) arrived.push(m); };
     if (!this.arrivals) this.arrivals = new Set();
@@ -607,7 +635,11 @@ class AppRoot extends KitElement {
       const m = data.message;
       if (this.arrivals) for (const watch of this.arrivals) watch(m);
       this.reconcile(m);
-      const r = applyMessageToChats(this.chats, m, { openChatId: this.openChatId });
+      // A message that arrives in the conversation on screen is read there and then, on the Mac too (issue 323); one
+      // that arrives while the window is hidden is not, and counts as unread until the window is seen again.
+      const seen = this.openChatId && !pageHidden() ? this.openChatId : null;
+      const r = applyMessageToChats(this.chats, m, { openChatId: seen });
+      if (!m.fromMe && m.chatId === seen) readOnMac(this, m.chatId);
       if (r.known) this.chats = r.chats;
       else this.reload();
       if (m.chatId === this.openChatId) this.messages = foldFor(mergeMessages(this.messages, [m]), this.chats, m.chatId);

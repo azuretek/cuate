@@ -57,11 +57,12 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, readSyncMs = 20000, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
   const LIST_TTL_MS = 5 * 60 * 1000;
+  const READ_SYNC_MS = readSyncMs;
   const events = [];
   const clients = new Set();
   let seq = 0;
@@ -133,10 +134,24 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
   let listing = null;
+  // A conversation read on another device (the phone, Messages on the Mac) lowers its unread count in the engine and
+  // nowhere else (issue 323): each fresh list is compared with the one it replaces, and a count that fell is told to
+  // every client as chat.read, the same event a read in this app sends. A count that rose is a new message, which the
+  // message stream already carries.
   const readChats = (limit) => {
     if (!listing) {
       listing = engine.chats({ limit })
-        .then((chats) => { held = { chats, limit, at: Date.now() }; })
+        .then((chats) => {
+          const before = held ? new Map(held.chats.map((c) => [String(c.id), Number(c.unread) || 0])) : null;
+          held = { chats, limit, at: Date.now() };
+          if (before) {
+            for (const c of chats) {
+              const was = before.get(String(c.id));
+              const now = Number(c.unread) || 0;
+              if (was !== undefined && now < was) publish('chat.read', { chatId: String(c.id), unread: now });
+            }
+          }
+        })
         .finally(() => { listing = null; });
     }
     return listing;
@@ -402,6 +417,13 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     ws.on('error', (e) => log.emit('ws.error', { error: e.message }));
   }
 
+  // While a client is connected the list is read again every READ_SYNC_MS, so a read on another device reaches every
+  // client within that time rather than at the next five-minute refresh (issue 323).
+  const readSync = setInterval(() => {
+    if (held && [...clients].some((c) => c.authed)) readChats(held.limit).catch(() => {});
+  }, READ_SYNC_MS);
+  readSync.unref();
+
   const beat = setInterval(() => {
     for (const c of clients) {
       if (!c.alive) { c.ws.terminate(); continue; }
@@ -445,6 +467,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       webhooks.close();
       typing.stopAll();
       clearInterval(beat);
+      clearInterval(readSync);
       for (const c of clients) {
         try { c.ws.close(1012, 'restarting'); } catch { /* gone */ }
         setTimeout(() => c.ws.terminate(), 1000).unref();
