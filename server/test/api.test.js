@@ -747,3 +747,28 @@ test('the appearance choice survives a server restart', async () => {
     reopened.close();
   }
 });
+
+// A conversation read on another device (the phone, Messages on the Mac) clears here too (issue 323): the engine's
+// count falls with nothing on the message stream, and the server's periodic read of the list tells every client.
+test('a conversation read on another device is told to every client as chat.read', async () => {
+  const t = await boot({ readSyncMs: 60 });
+  try {
+    const list = async () => (await (await t.get('/api/v1/chats', t.tokens.device)).json()).chats;
+    const before = (await list()).find((c) => c.id === '1');
+    assert.ok(before.unread > 0, 'the fixture conversation starts unread');
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    assert.ok(t.world.readElsewhere(1));
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'chat.read'), 3000);
+    const ev = sock.frames.find((f) => f.name === 'chat.read');
+    conforms(ev.data, 'ChatRead');
+    assert.deepEqual(ev.data, { chatId: '1', unread: 0 });
+    assert.equal((await list()).find((c) => c.id === '1').unread, 0, 'the held list follows');
+    assert.ok(!t.world.requests.includes('read'), 'nothing in this app read it');
+    const seen = sock.frames.filter((f) => f.name === 'chat.read').length;
+    await new Promise((r) => setTimeout(r, 250));
+    assert.equal(sock.frames.filter((f) => f.name === 'chat.read').length, seen, 'a count that did not change is not told again');
+    sock.ws.close();
+  } finally { await t.close(); }
+});
