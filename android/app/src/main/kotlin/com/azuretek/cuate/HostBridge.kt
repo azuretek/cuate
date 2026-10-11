@@ -165,6 +165,7 @@ class HostBridge(
             )
             "app.icon" -> success(appIcon(args.optString("icon")))
             "notify" -> success(notify(args))
+            "notify.permission" -> success(notifyPermission(args.optBoolean("request")))
             "open.external" -> success(openExternal(args))
             "file.save" -> success(saveFile(args))
             // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
@@ -250,6 +251,21 @@ class HostBridge(
             }
         }
         return answer.put("applied", true)
+    }
+
+    /**
+     * Where notifications stand (issue 327), asked for once the person has signed in. Before Android 13 posting needs
+     * no permission; from 13 the system asks once, and the answer arrives after this returns, so it says requested.
+     */
+    private fun notifyPermission(request: Boolean): String {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return "unsupported"
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, product, NotificationManager.IMPORTANCE_DEFAULT))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return if (manager.areNotificationsEnabled()) "granted" else "denied"
+        if (context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return "granted"
+        if (!request) return "denied"
+        val activity = context as? Activity ?: return "unsupported"
+        activity.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        return "requested"
     }
 
     private fun notify(args: JSONObject): Boolean {
