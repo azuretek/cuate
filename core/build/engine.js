@@ -224,6 +224,7 @@ var engine = (() => {
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
+    linkHref: () => linkHref,
     linkMediaKey: () => linkMediaKey,
     linkMediaSite: () => linkMediaSite,
     linkSite: () => linkSite,
@@ -241,6 +242,7 @@ var engine = (() => {
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     messageActions: () => messageActions,
+    messageLinks: () => messageLinks,
     messageNotice: () => messageNotice,
     messageSearchText: () => messageSearchText,
     messageSummary: () => messageSummary,
@@ -330,6 +332,7 @@ var engine = (() => {
     slideProgress: () => slideProgress,
     slideRelease: () => slideRelease,
     sortChats: () => sortChats,
+    splitLinks: () => splitLinks,
     springCurve: () => springCurve,
     stackOf: () => stackOf,
     stageCheck: () => stageCheck,
@@ -2474,6 +2477,53 @@ var engine = (() => {
       counts.set(g, (counts.get(g) || 0) + 1);
     }
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
+  }
+
+  // core/app/rules/links.js
+  var FIND = /\b(?:https?:\/\/|www\.)[^\s<>"]+/gi;
+  var TRAIL = /[.,;:!?'\u2019\u201d*_]+$/;
+  function trim(raw) {
+    let s = raw;
+    for (; ; ) {
+      const before = s;
+      s = s.replace(TRAIL, "");
+      for (const [open, close] of [["(", ")"], ["[", "]"], ["{", "}"]]) {
+        while (s.endsWith(close) && s.split(open).length < s.split(close).length) s = s.slice(0, -1);
+      }
+      if (s === before) return s;
+    }
+  }
+  function linkHref(text) {
+    const t = String(text || "");
+    const href = /^www\./i.test(t) ? "https://" + t : t;
+    try {
+      const u = new URL(href);
+      return (u.protocol === "http:" || u.protocol === "https:") && u.hostname.includes(".") ? u.href : null;
+    } catch {
+      return null;
+    }
+  }
+  function splitLinks(text) {
+    const s = String(text || "");
+    const parts = [];
+    let at = 0;
+    for (const m of s.matchAll(FIND)) {
+      const shown = trim(m[0]);
+      const href = linkHref(shown);
+      if (!href) continue;
+      if (m.index > at) parts.push({ text: s.slice(at, m.index) });
+      parts.push({ text: shown, href });
+      at = m.index + shown.length;
+    }
+    if (at < s.length) parts.push({ text: s.slice(at) });
+    return parts;
+  }
+  function messageLinks(m) {
+    const out = [];
+    for (const p of splitLinks(m && m.text)) if (p.href && !out.includes(p.href)) out.push(p.href);
+    const card = m && m.link && linkHref(m.link.url);
+    if (card && !out.includes(card)) out.push(card);
+    return out;
   }
 
   // core/app/rules/media.js
