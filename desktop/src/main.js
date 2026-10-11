@@ -176,6 +176,7 @@ const handlers = createHandlers({
     new Notification({ title, body }).show();
     return true;
   },
+  notifyPermission: () => (Notification.isSupported() ? 'granted' : 'unsupported'),
   // The client's own half of the build report: the version the bundle carries, the runtime versions only the shell
   // knows, and the commit and build date the packaging step stamped into the app. Nothing here reads the server.
   info: () => {

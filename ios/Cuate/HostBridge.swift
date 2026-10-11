@@ -187,6 +187,8 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             }
         case "notify":
             settle(id: id, ok: true, value: notify(args))
+        case "notify.permission":
+            notifyPermission(id: id, request: args["request"] as? Bool ?? false)
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
         case "file.save":
@@ -323,6 +325,27 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         }
         #endif
         return try await Releases.readFeed()
+    }
+
+    /// Where notifications stand (issue 327), asked for once the person has signed in. The system shows its
+    /// dialog only while the answer is not yet given; after that this reports the answer.
+    private func notifyPermission(id: String, request: Bool) {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { [weak self] settings in
+            let state: String
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral: state = "granted"
+            case .denied: state = "denied"
+            default: state = "default"
+            }
+            guard state == "default", request else {
+                DispatchQueue.main.async { self?.settle(id: id, ok: true, value: state == "default" ? "requested" : state) }
+                return
+            }
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                DispatchQueue.main.async { self?.settle(id: id, ok: true, value: granted ? "granted" : "denied") }
+            }
+        }
     }
 
     private func notify(_ args: [String: Any]) -> Bool {
