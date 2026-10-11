@@ -1751,6 +1751,8 @@ class AppRoot extends KitElement {
   // composer has no conversation behind it, so it is a single item with nothing to step to.
   openViewer(detail) {
     const d = detail || {};
+    // The preview it was opened from, which the viewer grows out of and shrinks back into (issue 316).
+    this.viewerFrom = d.from || null;
     // A shared video link (issue 243) is a single item the viewer loads from the server, not one of the conversation's
     // attachments, so it is handed over on its own rather than looked up among the conversation's media.
     if (d.linkUrl) {
@@ -1820,7 +1822,7 @@ class AppRoot extends KitElement {
       ${this.aboutSheetShowing ? html`<div class="sheet-scrim about-sheet-scrim" data-sheet="about" ?data-leaving=${this.aboutLeaving}><section class="sheet" data-view="about" data-arrive=${this.aboutMotion || 'none'} data-dismiss="about" role="dialog" aria-modal="true" aria-label="About" @animationend=${this.onAboutAnimationEnd}>${this.aboutBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.naming ? this.groupPrompt() : nothing}
-      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
+      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} .from=${this.viewerFrom} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }
 }

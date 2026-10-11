@@ -1229,7 +1229,6 @@ async function runSmoke(w) {
   await js("document.querySelector('app-composer .staged-remove').click()");
 
   const scale = () => js("Number(document.querySelector('app-image-viewer .viewer')?.dataset.scale || 0)");
-  const viewerOpen = () => js("Boolean(document.querySelector('app-image-viewer'))");
   const openViewer = async () => {
     await js("document.querySelector('app-attachment .attachment-preview').click()");
     await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image')?.naturalWidth)", 10000);
@@ -1342,16 +1341,17 @@ async function runSmoke(w) {
   await pause(200);
 
   // The three ways out: Escape, the close control and a real click on the backdrop beside the picture.
+  // The viewer shrinks back into its preview before it goes (issue 316), so each way out is read once the viewer has
+  // finished leaving, bounded, rather than after a fixed pause.
+  const closed = async () => { try { await waitFor("!document.querySelector('app-image-viewer')", 3000); return true; } catch { return false; } };
   await key('Escape');
-  await pause(200);
-  const escapeCloses = !(await viewerOpen());
+  const escapeCloses = await closed();
   await openViewer();
   await js("document.querySelector('app-image-viewer .close-button').click()");
-  await pause(200);
-  const closeCloses = !(await viewerOpen());
+  const closeCloses = await closed();
   await openViewer();
   await mouse('left', 6, Math.round(c0.y));
-  const backdropCloses = !(await viewerOpen());
+  const backdropCloses = await closed();
   wc.removeListener('context-menu', onMenu);
   const imageViewerChecks = {
     backdrop: backdrop.sheetClass && backdrop.same.background && backdrop.same.blur && /blur/.test(backdrop.filter),

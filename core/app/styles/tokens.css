@@ -76,9 +76,10 @@
   --motion-normal: 180ms;
   --motion-spin: 900ms;
   --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --motion-drawer: 200ms;
-  --motion-drawer-out: 160ms;
-  --motion-drawer-fade: 140ms;
+  --motion-drawer: 320ms;
+  --motion-drawer-out: 260ms;
+  --motion-drawer-fade: 220ms;
+  --motion-grow: 260ms;
   --motion-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --motion-sheet-in: 500ms;
   --motion-sheet-out: 400ms;

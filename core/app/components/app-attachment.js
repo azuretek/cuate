@@ -136,13 +136,15 @@ class AppAttachment extends KitElement {
   // the attachment and its kind so the viewer can step to the conversation's other media (issue 181).
   open() {
     if (!this.src) return;
+    // The preview itself goes with the press, so the viewer grows out of it and shrinks back into it (issue 316).
+    const from = this.querySelector('img, video') || this;
     // A still that previews a linked video hands the viewer the link, not an attachment of ours, so the viewer plays
     // the video the server holds (issue 243). Otherwise the attachment opens as itself, exactly as before.
     if (this.linkUrl) {
-      this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || 'Video', linkUrl: this.linkUrl, kind: 'video' } }));
+      this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || 'Video', linkUrl: this.linkUrl, kind: 'video', from } }));
       return;
     }
-    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: isLivePhoto(this.attachment) ? 'video' : mediaKind(this.attachment) || 'image' } }));
+    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { from, src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: isLivePhoto(this.attachment) ? 'video' : mediaKind(this.attachment) || 'image' } }));
   }
 
   // Pressing a document offers to save it under its real name. The press stops here, so the message it sits in never
