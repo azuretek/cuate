@@ -174,6 +174,7 @@ var engine = (() => {
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
     dragChatsWidth: () => dragChatsWidth,
+    drawnY: () => drawnY,
     durationMs: () => durationMs,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
@@ -363,6 +364,7 @@ var engine = (() => {
     toggleChecked: () => toggleChecked,
     toggleZoom: () => toggleZoom,
     tokensCss: () => tokensCss,
+    topLift: () => topLift,
     transferDetail: () => transferDetail,
     typingActive: () => typingActive,
     typingLabel: () => typingLabel,
@@ -3171,8 +3173,14 @@ var engine = (() => {
     const next = clampScale(scale, max);
     const k = next / view.scale;
     const p = point || { x: 0, y: 0 };
-    return clampPan({ scale: next, x: p.x - (p.x - view.x) * k, y: p.y - (p.y - view.y) * k }, box);
+    return clampPan({ scale: next, x: p.x - (p.x - view.x) * k, y: p.y - (p.y - drawnY(view, box)) * k - topLift(next, box) }, box);
   }
+  function topLift(scale, box) {
+    if (!box || box.anchor !== "top" || !(Number(box.height) > 0)) return 0;
+    const room = (Number(box.stageHeight) || 0) - (Number(box.height) || 0) * scale;
+    return room > 0 ? -room / 2 : 0;
+  }
+  var drawnY = (view, box) => view.y + topLift(view.scale, box);
   function zoomBy(view, factor, point, box, max) {
     return zoomTo(view, view.scale * factor, point, box, max);
   }
@@ -3193,7 +3201,7 @@ var engine = (() => {
     const c1 = middle(to[0], to[1]);
     const next = clampScale(start.scale * (d1 / d0), max);
     const k = next / start.scale;
-    return clampPan({ scale: next, x: c1.x - (c0.x - start.x) * k, y: c1.y - (c0.y - start.y) * k }, box);
+    return clampPan({ scale: next, x: c1.x - (c0.x - start.x) * k, y: c1.y - (c0.y - drawnY(start, box)) * k - topLift(next, box) }, box);
   }
   function wheelFactor(deltaY, deltaMode = 0, pinching = false) {
     const unit = deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1;

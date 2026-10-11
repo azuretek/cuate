@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ZOOM_FIT, ZOOM_STEP, ZOOM_DOUBLE_TAP, ZOOM_PAN_STEP, zoomFit, zoomMax, clampScale, panBounds, clampPan, zoomTo, zoomBy,
-  panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey,
+  panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey, topLift, drawnY,
 } from '../app/rules/zoom.js';
 import * as engine from '../app/engine.js';
 
@@ -179,4 +179,31 @@ test('the shells reach the zoom rules through the engine', () => {
   for (const name of ['zoomTo', 'zoomBy', 'panBy', 'clampPan', 'pinch', 'toggleZoom', 'wheelFactor', 'zoomKey', 'zoomMax']) {
     assert.equal(typeof engine[name], 'function', name);
   }
+});
+
+// The viewer anchors to the top (issue 315): a picture shorter than the stage opens at its top, not its middle.
+const TOP = { ...BOX, anchor: 'top' };
+test('anchored to the top, a picture shorter than the stage opens at the stage top, and one that fills it is not moved', () => {
+  const fit = zoomFit();
+  close(drawnY(fit, TOP) - TOP.height / 2, -TOP.stageHeight / 2, 'the picture top is the stage top');
+  assert.equal(drawnY(fit, BOX), 0, 'without the anchor it stays centred');
+  assert.equal(topLift(1, { ...TOP, height: 700 }), 0, 'a picture as tall as the stage has no room to move');
+  assert.equal(topLift(1, { ...TOP, height: 0 }), 0, 'a picture not yet loaded is not lifted');
+  assert.equal(topLift(2, TOP), 0, 'zoomed past the stage height there is no lift');
+});
+
+test('anchored to the top, zoom and pinch still keep the point under the pointer once the picture fills the stage', () => {
+  const p = { x: 100, y: 100 };
+  const fit = zoomFit();
+  const under = (p.y - drawnY(fit, TOP)) / fit.scale;
+  const z = zoomTo(fit, 2, p, TOP, MAX);
+  close(drawnY(z, TOP) + under * z.scale, p.y, 'zoom about a point keeps it');
+  const from = [{ x: 50, y: 80 }, { x: 150, y: 120 }];
+  const to = [{ x: 0, y: 60 }, { x: 200, y: 140 }];
+  const mid = (from[0].y + from[1].y) / 2;
+  const pin = pinch(fit, from, to, TOP, MAX);
+  const between = (mid - drawnY(fit, TOP)) / fit.scale;
+  close(drawnY(pin, TOP) + between * pin.scale, (to[0].y + to[1].y) / 2, 'a pinch keeps what was between the fingers');
+  const back = toggleZoom(z, p, TOP, MAX);
+  close(drawnY(back, TOP) - TOP.height / 2, -TOP.stageHeight / 2, 'back to fit is back at the top');
 });
