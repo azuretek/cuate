@@ -41,6 +41,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
     return Number.isInteger(v) ? v : 0;
   };
+  // Every typing call, as { chatId, typing }, so a test sees our indicator shown and taken down (issue 319).
+  const typings = [];
   const tapbacks = [];
   const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
@@ -58,6 +60,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const world = {
     sends,
     tapbacks,
+    typings,
     behavior,
     messages,
     requests: [],
@@ -120,7 +123,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'status':
             // A ready bridge advertises its event stream, as imsg does when the non-launching bridge probe succeeds. The
             // adapter only subscribes when the inbound-typing switch is on (issue 230).
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe'] : [] });
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe', 'typing'] : [] });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -158,6 +161,13 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'watch.unsubscribe':
             subs.delete(p.subscription);
             return reply(req.id, { ok: true });
+          // imsg's typing: our indicator in a chat, shown or taken down, through the bridge.
+          case 'typing': {
+            if (behavior.bridge !== 'ready') return noBridge(req.id);
+            if (!chats.some((c) => c.id === p.chat_id)) return fail(req.id, -32602, 'unknown chat_id ' + p.chat_id);
+            typings.push({ chatId: p.chat_id, typing: p.typing !== false });
+            return reply(req.id, { ok: true });
+          }
           case 'bridge.events.subscribe': {
             nextBridgeSub += 1;
             bridgeSubs.add(nextBridgeSub);

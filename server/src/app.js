@@ -93,7 +93,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     for (const c of clients) if (c.authed && c.ws.readyState === 1 && (!except || c.id !== except)) c.ws.send(frame);
     webhooks.enqueue(name, data);
   };
-  const typing = createTyping({ publish });
+  // Our typing reaches the other person through the engine unless the switch is off (issue 319).
+  const typing = createTyping({ publish, outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
   engine.on((name, data) => {
     if (name === 'message.new') noteMessage(data.message);
     // The engine only reports inbound typing when the switch is on and a bridge is already running; with it off this
