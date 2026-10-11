@@ -73,7 +73,7 @@ import { mediaItems } from '/core/app/rules/media.js';
 import '/core/app/components/app-image-viewer.js';
 const get = async (name) => { const r = await fetch('/fixture/' + name); if (!r.ok) throw new Error(name + ' ' + r.status); return r.blob(); };
 const client = { attachment: (id, o = {}) => get(o.part === 'live' ? ${motion} : 'still.png') };
-const items = mediaItems([{ id: 'm1', attachments: [{ id: 'a1', name: 'IMG_0001.HEIC', mime: 'image/png', missing: false, live: true }] }]);
+const items = mediaItems([{ id: 'm1', attachments: [{ id: 'a1', name: 'IMG_0001.HEIC', mime: 'image/png', missing: false, live: true }] }, { id: 'm2', attachments: [{ id: 'a2', name: 'IMG_0002.HEIC', mime: 'image/png', missing: false, live: true }] }]);
 const el = document.createElement('app-image-viewer');
 el.items = items; el.index = 0; el.client = client;
 document.body.append(el);
@@ -81,7 +81,14 @@ window.state = () => {
   const img = el.querySelector('img.viewer-image'); const v = el.querySelector('video.viewer-image'); const play = el.querySelector('.viewer-play');
   return { img: img ? { loaded: img.complete && img.naturalWidth > 0, w: img.naturalWidth } : null, video: v ? { ready: v.readyState, t: Math.round(v.currentTime * 100) / 100, error: v.error ? v.error.code : null, paused: v.paused } : null, play: play ? { label: play.getAttribute('aria-label'), pressed: play.getAttribute('aria-pressed'), disabled: play.disabled } : null };
 };
-window.press = () => el.querySelector('.viewer-play')?.click();
+// Where the play control is, so the probe presses it with a real pointer as a finger or a mouse does: a scripted
+// click() skips the pointer events, and the stage's pointer capture that swallowed real presses (issue 325).
+window.playAt = () => { const r = el.querySelector('.viewer-play')?.getBoundingClientRect(); return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null; };
+// The controls' geometry and the picture's place, against the stage.
+window.layout = () => {
+  const box = (s) => { const e = el.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), cx: Math.round(r.left + r.width / 2), cy: Math.round(r.top + r.height / 2) }; };
+  return { stage: box('.viewer'), img: box('.viewer-image'), play: box('.viewer-play'), bar: box('.viewer-bar'), close: box('.close-button'), prev: box('.viewer-prev'), next: box('.viewer-next') };
+};
 el.updateComplete.then(() => { window.probeReady = true; });
 `);
 }
@@ -100,12 +107,23 @@ app.whenReady().then(async () => {
   await shot(win, 'live-opened');
   say(Boolean(s.img && s.img.loaded) && !s.video, 'it opens on the still: ' + JSON.stringify(s));
   say(Boolean(s.play) && !s.play.disabled, 'a play control is offered: ' + JSON.stringify(s.play));
+  await wait(500);
+  const L = await win.webContents.executeJavaScript('window.layout()');
+  console.log('     layout ' + JSON.stringify(L));
+  say(Boolean(L.img) && Math.abs(L.img.cy - L.stage.cy) <= 2 && Math.abs(L.img.cx - L.stage.cx) <= 2, 'the picture sits in the middle of the stage: picture centre ' + (L.img && [L.img.cx, L.img.cy]) + ', stage centre ' + [L.stage.cx, L.stage.cy]);
+  say(Boolean(L.play) && L.play.h >= 40 && L.play.w > L.play.h * 1.5, 'the play control is a labelled pill at least 40 px tall: ' + JSON.stringify(L.play));
+  say(Boolean(L.bar) && Math.abs(L.bar.cx - L.stage.cx) <= 1, 'the control bar is centred at the foot: ' + JSON.stringify(L.bar));
+  say(Boolean(L.prev && L.next && L.close) && L.prev.h === L.close.h && L.next.h === L.close.h && L.play.h === L.close.h && Math.abs(L.prev.cy - L.stage.cy) <= 1 && Math.abs(L.next.cy - L.stage.cy) <= 1 && Math.abs((L.prev.l - L.stage.l) - (L.stage.l + L.stage.w - L.next.l - L.next.w)) <= 1, 'every control is the close control\'s height, and the step controls sit centred and evenly inset: ' + JSON.stringify({ prev: L.prev, next: L.next, close: L.close }));
   if (s.play) {
-    await win.webContents.executeJavaScript('window.press()');
+    const at = await win.webContents.executeJavaScript('window.playAt()');
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y });
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    await wait(60);
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: at.x, y: at.y, button: 'left', clickCount: 1 });
     let p = null;
     for (let i = 0; i < 60; i += 1) { p = await state(); if (p.video && (p.video.t > 0.3 || p.video.error)) break; await wait(100); }
     await shot(win, 'live-playing');
-    say(Boolean(p.video) && p.video.error === null && p.video.t > 0.3, 'its motion plays: ' + JSON.stringify(p));
+    say(Boolean(p.video) && p.video.error === null && p.video.t > 0.3, 'a real press on the play control plays its motion: ' + JSON.stringify(p));
     let e = null;
     for (let i = 0; i < 60; i += 1) { e = await state(); if (e.img && !e.video) break; await wait(100); }
     say(Boolean(e.img) && !e.video, 'the still is back when the motion ends: ' + JSON.stringify(e));
