@@ -599,7 +599,7 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
    join it. The search field, the filter menu, the sort and the gear draw in the page header, where the filters live.
    Every colour and length comes from the tokens. */
 .list-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
-.row-group, .group-rename, .group-name-input { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
+.compose-name, .group-info-name, .group-info-add { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
 /* The search field and its mode are one box (issue 133): the mode is a small dropdown at the field's left edge, the
    field takes the rest, and the box takes the accent while either has focus. */
 .search-box { flex: 1; display: flex; align-items: stretch; min-width: 0; background: var(--role-search); color: var(--role-search-fg); border: var(--size-border) solid var(--role-search-border); border-radius: var(--radius-sm); overflow: hidden; }
@@ -625,7 +625,6 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .chat-sections { display: flex; flex-direction: column; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
 .section-name { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
-.section-actions { display: flex; align-items: center; gap: var(--space-1); }
 .icon-button { display: inline-flex; align-items: center; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; padding: 0 var(--space-1); border-radius: var(--radius-sm); }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
 .list-empty, .section-empty { margin: 0; padding: var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
@@ -922,3 +921,28 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 @media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }
 /* Raised surfaces keep the foreground supplied by their theme. */
 .filter-menu, .message-menu, .attachment-file, .emoji-picker, .sheet-rows, .staged-file, .load-older { color: var(--color-bg-raised-fg); }
+
+/* Starting a conversation and a group's details (issue 326). The new-conversation control sits at the right end of
+   the row with Edit, the group details control in the conversation's header, both drawn from the shared icon set at the
+   tool size. The compose sheet is the confirm card: a To field that gathers people as chips, the people this list
+   already talks to offered as they are typed, and a name field once there is more than one. */
+.list-tools .new-chat, .conv-info { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-tool); height: var(--size-tool); padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-accent); cursor: pointer; transition: background var(--motion-normal) var(--motion-ease); }
+.list-tools .new-chat { margin-left: auto; }
+.new-chat .icon, .conv-info .icon { display: block; width: 60%; height: 60%; pointer-events: none; }
+.new-chat:hover, .conv-info:hover { background: var(--color-bg-sunken); }
+.new-chat:focus-visible, .conv-info:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
+.compose-field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); }
+.compose-field:focus-within { border-color: var(--color-accent); }
+.compose-label { color: var(--color-fg-muted); font-size: var(--font-size-sm); padding-right: var(--space-1); }
+.compose-to { flex: 1; min-width: 0; border: 0; background: none; color: inherit; font: inherit; padding: var(--space-1); outline: none; }
+.compose-suggestions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.compose-suggestion { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-2); border: 0; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.compose-suggestion:hover, .compose-suggestion:focus-visible { background: var(--color-bg-sunken); outline: none; }
+.compose-problem { color: var(--color-danger); font-size: var(--font-size-sm); }
+.confirm-modal .compose-problem { color: var(--color-danger); }
+.group-info-row { display: flex; align-items: center; gap: var(--space-2); }
+.group-info-row > input { flex: 1; }
+.group-info-heading { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
+.group-info-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.group-info-person { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) 0; border-bottom: var(--size-border) solid var(--color-border); }
+.group-info-person:last-child { border-bottom: 0; }

@@ -353,6 +353,29 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return { ok: Boolean(r && r.ok) };
   }
 
+  // Conversations and groups are Messages' own (issue 326): a new conversation with one address is a direct chat and
+  // with several a group, optionally named, and a group's name and members change through the same IMCore bridge. The
+  // engine answers the new chat's guid; the server rereads the list to learn its id.
+  async function createChat(addresses, { name = '', text = '' } = {}) {
+    const params = { addresses, service: 'iMessage' };
+    if (name) params.name = name;
+    if (text) params.text = text;
+    const r = await request('chats.create', params, timeoutMs);
+    return { ok: Boolean(r && r.ok), guid: r && r.chat_guid ? String(r.chat_guid) : null };
+  }
+  async function renameGroup(chatId, name) {
+    const r = await request('group.rename', { chat_id: Number(chatId), name }, timeoutMs);
+    return { ok: Boolean(r && r.ok) };
+  }
+  async function addMember(chatId, address) {
+    const r = await request('group.addParticipant', { chat_id: Number(chatId), address }, timeoutMs);
+    return { ok: Boolean(r && r.ok) };
+  }
+  async function removeMember(chatId, address) {
+    const r = await request('group.removeParticipant', { chat_id: Number(chatId), address }, timeoutMs);
+    return { ok: Boolean(r && r.ok) };
+  }
+
   // A reply carries `reply_to`, which imsg sends through its IMCore bridge only. An engine too old to know the key
   // answers -32602, and one with no bridge running -32003; both mean it cannot thread a reply, so both are refused as
   // unsupported rather than sent outside the thread. reply_to is never an optional extra the adapter may drop.
@@ -414,6 +437,10 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     messages,
     after,
     read,
+    createChat,
+    renameGroup,
+    addMember,
+    removeMember,
     sendText,
     sendFile,
     react,

@@ -182,6 +182,29 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             bridgeSubs.add(nextBridgeSub);
             return reply(req.id, { subscription: nextBridgeSub, buffer_limit: p.buffer_limit || 256, resumable: false });
           }
+          case 'chats.create': {
+            const addresses = Array.isArray(p.addresses) ? p.addresses.map(String).filter(Boolean) : [];
+            if (!addresses.length) return fail(req.id, -32602, 'addresses is required');
+            const group = addresses.length > 1;
+            const existing = group ? null : chats.find((c) => !c.is_group && c.identifier === addresses[0]);
+            if (existing) return reply(req.id, { ok: true, chat_guid: existing.guid });
+            const id = Math.max(0, ...chats.map((c) => c.id)) + 1;
+            const identifier = group ? 'chat' + (900000000 + id) : addresses[0];
+            const guid = 'iMessage;' + (group ? '+' : '-') + ';' + identifier;
+            chats.push({ id, name: p.name || (group ? '' : addresses[0]), display_name: p.name || '', contact_name: '', identifier, guid, service: 'iMessage', is_group: group, participants: addresses, unread_count: 0 });
+            return reply(req.id, { ok: true, chat_guid: guid });
+          }
+          case 'group.rename':
+          case 'group.addParticipant':
+          case 'group.removeParticipant': {
+            const chat = chats.find((c) => c.id === p.chat_id);
+            if (!chat) return fail(req.id, -32602, 'unknown chat_id');
+            if (!chat.is_group) return fail(req.id, -32602, 'not a group chat');
+            if (req.method === 'group.rename') { chat.display_name = String(p.name || ''); chat.name = chat.display_name; }
+            else if (req.method === 'group.addParticipant') { if (!chat.participants.includes(p.address)) chat.participants = [...chat.participants, String(p.address)]; }
+            else chat.participants = chat.participants.filter((a) => a !== p.address);
+            return reply(req.id, { ok: true });
+          }
           case 'read': {
             const chat = chats.find((c) => c.id === p.chat_id);
             if (!chat) return fail(req.id, -32602, 'unknown chat_id');

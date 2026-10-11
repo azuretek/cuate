@@ -328,7 +328,7 @@ test('every icon a component draws is one the icon set holds, and no control dra
     for (const m of src.matchAll(/data-icon="([^"]+)"/g)) { used.add(m[1]); assert.ok(glyphs[m[1]], f + ' draws ' + m[1] + ', which the set does not hold'); }
     assert.equal(/>[\u2190\u2191\u2193\u270e\u2715\u2261\u21c5\u2699\u2713]</.exec(src.replace(/class="send"[^>]*>\\u2191/, '')), null, f + ' draws an icon as a text glyph');
   }
-  for (const name of ['list-filter', 'arrow-up-down', 'settings', 'check', 'arrow-left', 'x', 'chevron-up', 'chevron-down', 'pencil', 'paperclip', 'smile-plus']) assert.ok(used.has(name), name + ' is drawn');
+  for (const name of ['list-filter', 'arrow-up-down', 'settings', 'check', 'arrow-left', 'x', 'chevron-down', 'pencil', 'info', 'paperclip', 'smile-plus']) assert.ok(used.has(name), name + ' is drawn');
 });
 
 // The composer's attach and emoji controls are compact icon buttons, and the attach control opens the shell's own
@@ -640,4 +640,15 @@ test("the composer's controls are lifted onto the field's last line", () => {
   assert.match(composer[1], /align-items:\s*flex-end/, 'the row is bottom-aligned, so the controls follow the last line as the field grows');
   assert.match(css, /\.composer > \.composer-tools, \.composer > button\.send\s*\{\s*margin-bottom:\s*calc\(\(var\(--composer-one-line\) - var\(--size-tool\)\) \/ 2\)/, 'both sides of the field are lifted by the same amount');
   assert.match(css, /\.composer textarea\s*\{[^}]*font-size:\s*var\(--composer-type\)[^}]*line-height:\s*var\(--font-line\)/, 'the field draws in the type the lift is worked out from');
+});
+
+// A component method named like one of the element's own DOM methods replaces it, and the renderer calls those to add
+// and take away nodes: app-compose's remove(address) kept the new-conversation sheet on the page after it closed
+// (issue 326).
+test('no component overrides a DOM method the renderer calls', () => {
+  const reserved = ['remove', 'append', 'prepend', 'before', 'after', 'replaceWith', 'insertBefore', 'appendChild', 'removeChild', 'replaceChildren', 'cloneNode', 'contains', 'focus', 'blur', 'click', 'closest', 'matches', 'querySelector', 'querySelectorAll', 'setAttribute', 'getAttribute', 'removeAttribute', 'dispatchEvent', 'addEventListener', 'removeEventListener', 'attachShadow', 'animate', 'scrollIntoView'];
+  for (const f of walk('core/app/components').filter((f) => CODE.test(f))) {
+    const src = read(f);
+    for (const name of reserved) assert.doesNotMatch(src, new RegExp('^  (?:async )?' + name + '\\(', 'm'), f + ' defines ' + name + '(), which is the element\'s own');
+  }
 });

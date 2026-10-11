@@ -4,11 +4,11 @@ import { createApiClient } from '../../kit/api.js';
 import { press, respond } from '../../kit/press.js';
 import { revealField } from '../../kit/scroll.js';
 import {
-  orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS, normalizeSort,
+  orderChats, applyMessageToChats, chatTitle, emptyFilters, SORT_ORDERS, SORT_LABELS, normalizeSort,
   SEARCH_MODES, SEARCH_MODE_LABELS, addTerm, removeTerm, setTermMode,
   sortChats, filterChats, setAllChecked, allChecked, checkedCount,
-  groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats,
-  requestDelete, requestDeleteGroup, resolveDelete,
+  hideChats, forgetChats, groupAddresses, upsertChat,
+  requestDelete, resolveDelete,
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
@@ -42,6 +42,8 @@ import { aimCarets } from '../../kit/popover.js';
 import { pageZoomAttempt } from '../rules/zoom.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
+import './app-compose.js';
+import './app-group-info.js';
 import './app-conversation.js';
 import './app-settings.js';
 import './app-about.js';
@@ -65,7 +67,6 @@ function readOnMac(page, chatId) {
   }, READ_COALESCE_MS));
 }
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
-const newGroupId = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const normalizeUrl = (u) => {
   const s = String(u || '').trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(s) ? s : 'https://' + s;
@@ -111,7 +112,7 @@ class AppRoot extends KitElement {
     // and acts on the count, and the confirm gate names what a delete will remove before it removes anything.
     editing: { state: true }, checked: { state: true }, pendingDelete: { state: true },
     // Group asks for a name in a small prompt before the group is made; the name is optional.
-    naming: { state: true },
+    composing: { state: true }, groupInfo: { state: true },
     // The picture open in the viewer ({ src, alt }), raised by a preview in a message or in the composer.
     viewing: { state: true },
     // The message whose reaction is with the server, and a line said under one message when a reaction did not go.
@@ -175,7 +176,8 @@ class AppRoot extends KitElement {
     this.editing = false;
     this.checked = [];
     this.pendingDelete = null;
-    this.naming = false;
+    this.composing = null;
+    this.groupInfo = null;
     this.viewing = null;
     this.reacting = null;
     this.messageNote = null;
@@ -193,7 +195,6 @@ class AppRoot extends KitElement {
     dismissable(this, { name: 'filter', open: () => this.filterOpen, close: () => { this.filterOpen = false; } });
     dismissable(this, { name: 'sort', open: () => this.sortOpen, close: () => { this.sortOpen = false; } });
     dismissable(this, { name: 'search', open: () => this.searchOpen, close: () => { this.searchOpen = false; } });
-    dismissable(this, { name: 'group', open: () => this.naming, close: () => { this.naming = false; } });
     dismissable(this, { name: 'confirm', open: () => Boolean(this.pendingDelete), close: () => this.cancelDelete() });
     dismissable(this, { name: 'sheet', open: () => this.settingsSheetShowing && !this.sheetLeaving, close: () => this.closeView() });
     dismissable(this, { name: 'about', open: () => this.aboutSheetShowing && !this.aboutLeaving, close: () => this.pageBack() });
@@ -650,6 +651,9 @@ class AppRoot extends KitElement {
       }
     } else if (name === 'reaction') {
       if (data.chatId === this.openChatId) this.messages = applyReaction(this.messages, data);
+    } else if (name === 'chat.changed') {
+      // A conversation started, a group renamed or its people changed, on any device (issue 326).
+      this.chats = upsertChat(this.chats, data);
     } else if (name === 'chat.read') {
       // A chat read on any device clears here too, so the count is the server's and not this page's own idea.
       const id = String(data.chatId);
@@ -1262,16 +1266,6 @@ class AppRoot extends KitElement {
     }
   }
 
-  chatGroups() {
-    const g = this.settings['chats.groups'];
-    return Array.isArray(g) ? g : [];
-  }
-
-  chatPlacement() {
-    const p = this.settings['chats.placement'];
-    return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
-  }
-
   chatOrder() {
     const o = this.settings['chats.order'];
     return Array.isArray(o) ? o : [];
@@ -1296,30 +1290,19 @@ class AppRoot extends KitElement {
     const chips = [];
     if (f.unread) chips.push({ key: 'unread', label: 'Unread' });
     if (f.kind) chips.push({ key: 'kind', label: f.kind === 'direct' ? 'Direct' : 'Group chats' });
-    if (f.group) {
-      const g = this.chatGroups().find((x) => x.id === f.group);
-      chips.push({ key: 'group', label: g ? g.name : 'Ungrouped' });
-    }
     if (!chips.length) return nothing;
     return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${press(() => this.clearFilter(c.key))}>×</button></span>`)}</div>`;
   }
 
-  // The dropdown the filter icon opens: everything filterChats supports, which is unread, direct, group chats and the
-  // person's own groups. A filter that is on reads as pressed, and pressing it again turns it off.
+  // The dropdown the filter icon opens: everything filterChats supports, which is unread, direct and group chats. A filter that is on reads as pressed, and pressing it again turns it off.
   filterMenu() {
     const f = this.filters || emptyFilters();
-    const groups = this.chatGroups();
     const toggle = (key, value) => this.setFilters({ [key]: f[key] === value ? null : value });
     return html`<div class="filter-menu" role="group" aria-label="Filter conversations" data-dismiss="filter" data-popover data-popover-edge="top">
       <div class="filter-menu-row">
         <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${press(() => this.setFilters({ unread: !f.unread }))}>Unread</button>
         <button type="button" class="chip" aria-pressed=${f.kind === 'direct' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'direct'))}>Direct</button>
         <button type="button" class="chip" aria-pressed=${f.kind === 'group' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'group'))}>Group chats</button>
-      </div>
-      <div class="filter-menu-row">
-        <button type="button" class="chip" aria-pressed=${!f.group ? 'true' : 'false'} @click=${press(() => this.setFilters({ group: null }))}>All groups</button>
-        ${groups.map((g) => html`<button type="button" class="chip" aria-pressed=${f.group === g.id ? 'true' : 'false'} @click=${press(() => toggle('group', g.id))}>${g.name}</button>`)}
-        <button type="button" class="chip" aria-pressed=${f.group === UNGROUPED ? 'true' : 'false'} @click=${press(() => toggle('group', UNGROUPED))}>Ungrouped</button>
       </div>
     </div>`;
   }
@@ -1400,7 +1383,7 @@ class AppRoot extends KitElement {
   // The rows an edit action can act on, computed with the same rules the list draws with, so the count and the rows
   // can never disagree.
   selectableIds() {
-    const visible = filterChats(this.visibleChats(), this.filters || emptyFilters(), { placement: this.chatPlacement(), texts: this.loadedTexts() });
+    const visible = filterChats(this.visibleChats(), this.filters || emptyFilters(), { texts: this.loadedTexts() });
     return sortChats(visible, { sort: this.settings['chats.sort'], locale: navigator.language }).map((c) => c.id);
   }
 
@@ -1418,13 +1401,11 @@ class AppRoot extends KitElement {
     this.checked = [];
     this.filterOpen = false;
     this.sortOpen = false;
-    this.naming = false;
   }
 
   exitEdit() {
     this.editing = false;
     this.checked = [];
-    this.naming = false;
   }
 
   setChecked(id, checked) {
@@ -1436,50 +1417,38 @@ class AppRoot extends KitElement {
     this.checked = setAllChecked(this.checked, ids, !allChecked(this.checked, ids));
   }
 
-  // Group asks for a name first. The prompt is the only step: an empty name is allowed, and the group takes the first
-  // free "Group N" (rules/chats.js), so the group exists on the prompt's own press.
-  openGroupPrompt() {
-    if (!this.selectionCount()) return;
-    this.naming = true;
-    this.updateComplete.then(() => { const el = this.querySelector('.group-name-input'); if (el) el.focus(); });
+  // A new conversation, or a group made from the selection in Edit (issue 326): both open the compose sheet, the group
+  // starting from the people of every chosen conversation. The Mac creates it, and the page opens it.
+  openCompose(mode = 'new') {
+    const preset = mode === 'group' ? groupAddresses(this.chats, this.checked) : [];
+    this.filterOpen = false;
+    this.sortOpen = false;
+    this.composing = { mode, preset };
   }
 
-  groupSelection(name) {
-    this.naming = false;
-    if (!this.checked.length) return;
-    const { groups, placement } = groupFromSelection(this.chatGroups(), this.chatPlacement(), this.checked, { id: newGroupId(), name });
-    const work = this.setSettings({ 'chats.groups': groups, 'chats.placement': placement });
-    this.exitEdit();
-    return work;
+  composed(chat) {
+    this.composing = null;
+    if (!chat) return;
+    this.chats = upsertChat(this.chats, chat);
+    if (this.editing) this.exitEdit();
+    this.view = 'messages';
+    this.open(chat.id, { show: true });
   }
 
-  onGroupNameKey(e) {
-    if (e.key === 'Enter') { e.preventDefault(); this.querySelector('.group-create')?.click(); }
+  // A group's own details, opened from its conversation's header (issue 326).
+  openGroupInfo() {
+    const chat = this.chats.find((c) => c.id === this.openChatId);
+    if (chat && chat.isGroup) this.groupInfo = { chatId: chat.id };
   }
 
-  groupPrompt() {
-    const n = this.selectionCount();
-    return html`<div class="sheet-scrim confirm-scrim">
-      <section class="confirm-modal group-prompt" data-dismiss="group" role="dialog" aria-modal="true" aria-labelledby="group-prompt-title">
-        <h2 id="group-prompt-title">Group ${n} conversation${n === 1 ? '' : 's'}</h2>
-        <input class="group-name-input" type="text" placeholder="Name (optional)" aria-label="Group name, optional" @keydown=${this.onGroupNameKey}>
-        <div class="confirm-actions">
-          <button type="button" class="chip" @click=${press(() => { this.naming = false; })}>Cancel</button>
-          <button type="button" class="button primary group-create" @click=${press(() => this.groupSelection(this.querySelector('.group-name-input').value))}>Create group</button>
-        </div>
-      </section>
-    </div>`;
+  groupChanged(chat) {
+    if (chat) this.chats = upsertChat(this.chats, chat);
   }
 
   // The first press opens the gate; only the modal's own press, a second one, resolves it. The modal is drawn only
   // while a delete is pending, so a delete cannot complete without that press.
   requestDeleteSelection() {
     this.pendingDelete = requestDelete(this.checked);
-    this.holdConfirm();
-  }
-
-  requestGroupDelete(id, name) {
-    this.pendingDelete = requestDeleteGroup(id, name);
     this.holdConfirm();
   }
 
@@ -1496,20 +1465,17 @@ class AppRoot extends KitElement {
     const pending = resolveDelete(this.pendingDelete, true);
     this.cancelDelete();
     if (!pending) return undefined;
-    if (pending.kind === 'group') {
-      return this.setSettings({ 'chats.groups': removeGroup(this.chatGroups(), pending.id), 'chats.placement': clearGroupPlacement(this.chatPlacement(), pending.id) });
-    }
-    const forget = forgetChats(this.chatOrder(), this.chatPlacement(), pending.ids);
-    const work = this.setSettings({ 'chats.hidden': hideChats(this.chatHidden(), pending.ids), 'chats.order': forget.order, 'chats.placement': forget.placement });
+    const work = this.setSettings({ 'chats.hidden': hideChats(this.chatHidden(), pending.ids), 'chats.order': forgetChats(this.chatOrder(), pending.ids) });
     this.exitEdit();
     return work;
   }
 
   // The row above the list (issue 137): a small Edit text control at the left. Pressed, it stays highlighted, every row
-  // gains a checkbox, and the row offers select-all, the count, Group, Delete and Done for the selection.
+  // gains a checkbox, and the row offers select-all, the count, Group, Delete and Done for the selection. The new
+  // conversation control sits at the row's right end (issue 326).
   editRow() {
     const toggle = html`<button type="button" class="edit-toggle" aria-pressed=${this.editing ? 'true' : 'false'} @click=${press(() => this.toggleEditing())}>Edit</button>`;
-    if (!this.editing) return html`<div class="list-tools">${toggle}</div>`;
+    if (!this.editing) return html`<div class="list-tools">${toggle}<button type="button" class="new-chat" aria-label="New conversation" title="New conversation" @click=${press(() => this.openCompose('new'))}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button></div>`;
     const ids = this.selectableIds();
     const count = checkedCount(this.checked, ids);
     const all = allChecked(this.checked, ids);
@@ -1518,7 +1484,7 @@ class AppRoot extends KitElement {
       <label class="edit-all"><input type="checkbox" class="select-all" aria-label="Select all" .checked=${all} .indeterminate=${count > 0 && !all} ?disabled=${ids.length === 0} @change=${() => this.toggleAllChecked()}></label>
       <span class="edit-count" role="status">${count} selected</span>
       <span class="edit-actions">
-        <button type="button" class="text-button edit-group" ?disabled=${count === 0} @click=${press(() => this.openGroupPrompt())}>Group</button>
+        <button type="button" class="text-button edit-group" ?disabled=${count === 0} @click=${press(() => this.openCompose('group'))}>Group</button>
         <button type="button" class="text-button danger edit-delete" ?disabled=${count === 0} @click=${press(() => this.requestDeleteSelection())}>Delete</button>
         <button type="button" class="text-button edit-done" @click=${press(() => this.exitEdit())}>Done</button>
       </span>
@@ -1530,12 +1496,9 @@ class AppRoot extends KitElement {
   // the backdrop leave everything as it was.
   confirmModal() {
     const pending = this.pendingDelete;
-    const isGroup = pending.kind === 'group';
-    const n = isGroup ? 1 : pending.ids.length;
-    const title = isGroup ? 'Delete the group "' + pending.name + '"?' : 'Delete ' + n + ' conversation' + (n === 1 ? '' : 's') + '?';
-    const body = isGroup
-      ? "The group leaves this client's list. Its conversations stay, and no message is deleted on the Mac."
-      : "They leave this client's list only. No message is deleted on the Mac.";
+    const n = pending.ids.length;
+    const title = 'Delete ' + n + ' conversation' + (n === 1 ? '' : 's') + '?';
+    const body = "They leave this client's list only. No message is deleted on the Mac.";
     return html`<div class="sheet-scrim confirm-scrim">
       <section class="confirm-modal" data-dismiss="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <h2 id="confirm-title">Are you sure?</h2>
@@ -1581,7 +1544,7 @@ class AppRoot extends KitElement {
   // The About sheet's own body (issue 253).
   aboutBody() {
     return html`<app-about .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : 'Back to app'}
-      .values=${this.settings} .themePicture=${this.themePicture} .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
+      .values=${this.settings} .themePicture=${this.themePicture} .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @groupinfo=${() => this.openGroupInfo()} @back=${() => this.pageBack()}></app-about>`;
   }
 
   mainView(chat) {
@@ -1839,13 +1802,11 @@ class AppRoot extends KitElement {
         ${this.activeFilters()}
         ${this.editRow()}
         <app-chat-list .chats=${this.visibleChats()} .selected=${this.selecting || this.openChatId} .texts=${this.loadedTexts()}
-          .sort=${normalizeSort(this.settings['chats.sort'])} .groups=${this.chatGroups()}
-          .placement=${this.chatPlacement()} .filters=${this.filters}
+          .sort=${normalizeSort(this.settings['chats.sort'])} .filters=${this.filters}
           .editing=${this.editing} .checked=${this.checked}
           @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
           @check=${(e) => this.setChecked(e.detail.id, e.detail.checked)}
-          @groupdelete=${(e) => this.requestGroupDelete(e.detail.id, e.detail.name)}
-          @chatsettings=${(e) => respond(e, this.setSettings(e.detail.patch))}></app-chat-list>
+></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0" @pointerdown=${(e) => this.onDividerDown(e)} @dblclick=${(e) => this.onDividerDblClick(e)} @keydown=${(e) => this.onDividerKey(e)}></div>
@@ -1853,7 +1814,8 @@ class AppRoot extends KitElement {
       ${this.settingsSheetShowing ? html`<div class="sheet-scrim" data-sheet="settings" ?data-leaving=${this.sheetLeaving}><section class="sheet" data-view="settings" data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.settingsBody()}</section></div>` : nothing}
       ${this.aboutSheetShowing ? html`<div class="sheet-scrim about-sheet-scrim" data-sheet="about" ?data-leaving=${this.aboutLeaving}><section class="sheet" data-view="about" data-arrive=${this.aboutMotion || 'none'} data-dismiss="about" role="dialog" aria-modal="true" aria-label="About" @animationend=${this.onAboutAnimationEnd}>${this.aboutBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
-      ${this.naming ? this.groupPrompt() : nothing}
+      ${this.composing ? html`<app-compose .chats=${this.chats} .client=${this.client} .mode=${this.composing.mode} .preset=${this.composing.preset} @created=${(e) => respond(e, this.composed(e.detail))} @close=${() => { this.composing = null; }}></app-compose>` : nothing}
+      ${this.groupInfo && this.chats.find((c) => c.id === this.groupInfo.chatId) ? html`<app-group-info .chat=${this.chats.find((c) => c.id === this.groupInfo.chatId)} .client=${this.client} @changed=${(e) => this.groupChanged(e.detail)} @close=${() => { this.groupInfo = null; }}></app-group-info>` : nothing}
       ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} .from=${this.viewerFrom} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }

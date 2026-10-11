@@ -90,7 +90,6 @@ var engine = (() => {
     TRAY_CROP: () => TRAY_CROP,
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
     TYPING_TTL_MS: () => TYPING_TTL_MS,
-    UNGROUPED: () => UNGROUPED,
     UNKNOWN: () => UNKNOWN,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
     ZOOM_DOUBLE_TAP: () => ZOOM_DOUBLE_TAP,
@@ -107,8 +106,6 @@ var engine = (() => {
     actionLabel: () => actionLabel,
     actionLabels: () => actionLabels,
     actionStateOf: () => actionStateOf,
-    addChatsToGroup: () => addChatsToGroup,
-    addGroup: () => addGroup,
     addTerm: () => addTerm,
     addTheme: () => addTheme,
     admitPress: () => admitPress,
@@ -144,7 +141,6 @@ var engine = (() => {
     clampChatsWidth: () => clampChatsWidth,
     clampPan: () => clampPan,
     clampScale: () => clampScale,
-    clearGroupPlacement: () => clearGroupPlacement,
     clientReport: () => clientReport,
     closedByEscape: () => closedByEscape,
     closedByPress: () => closedByPress,
@@ -165,7 +161,6 @@ var engine = (() => {
     cssVarName: () => cssVarName,
     currentBanner: () => currentBanner,
     daysAgo: () => daysAgo,
-    defaultGroupName: () => defaultGroupName,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
     dismissNotice: () => dismissNotice,
@@ -198,9 +193,8 @@ var engine = (() => {
     frequentEmoji: () => frequentEmoji,
     fromOklch: () => fromOklch,
     graphemes: () => graphemes,
-    groupFromSelection: () => groupFromSelection,
+    groupAddresses: () => groupAddresses,
     groupMessages: () => groupMessages,
-    groupSections: () => groupSections,
     hideChats: () => hideChats,
     holdsAfter: () => holdsAfter,
     hostOf: () => hostOf,
@@ -216,6 +210,7 @@ var engine = (() => {
     insertEmoji: () => insertEmoji,
     installPolicy: () => installPolicy,
     installSource: () => installSource,
+    isAddress: () => isAddress,
     isClick: () => isClick,
     isDoubleTap: () => isDoubleTap,
     isEdgeStart: () => isEdgeStart,
@@ -247,7 +242,6 @@ var engine = (() => {
     messageNotice: () => messageNotice,
     messageSearchText: () => messageSearchText,
     messageSummary: () => messageSummary,
-    moveGroup: () => moveGroup,
     myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
     newestRelease: () => newestRelease,
@@ -271,13 +265,13 @@ var engine = (() => {
     parseGlyph: () => parseGlyph,
     parseOgVideo: () => parseOgVideo,
     parseReactionText: () => parseReactionText,
+    parseRecipients: () => parseRecipients,
     parseTraceparent: () => parseTraceparent,
     payloadMedia: () => payloadMedia,
     phoneUpdate: () => phoneUpdate,
     pick: () => pick,
     pickerSide: () => pickerSide,
     pinch: () => pinch,
-    placeChat: () => placeChat,
     placeFor: () => placeFor,
     platformCapabilities: () => platformCapabilities,
     platformOf: () => platformOf,
@@ -293,18 +287,16 @@ var engine = (() => {
     reactionGlyph: () => reactionGlyph,
     reactionUnsupported: () => reactionUnsupported,
     readyBanner: () => readyBanner,
+    recipientSuggestions: () => recipientSuggestions,
     releaseAssets: () => releaseAssets,
     rememberPlace: () => rememberPlace,
-    removeGroup: () => removeGroup,
     removeTerm: () => removeTerm,
     removeTheme: () => removeTheme,
-    renameGroup: () => renameGroup,
     renderIcon: () => renderIcon,
     replyCountLabel: () => replyCountLabel,
     replyQuote: () => replyQuote,
     reportRows: () => reportRows,
     requestDelete: () => requestDelete,
-    requestDeleteGroup: () => requestDeleteGroup,
     resizeChatsWidth: () => resizeChatsWidth,
     resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
@@ -373,6 +365,7 @@ var engine = (() => {
     updateBanner: () => updateBanner,
     updateNotice: () => updateNotice,
     updateNoticeKey: () => updateNoticeKey,
+    upsertChat: () => upsertChat,
     validate: () => validate,
     velocityFor: () => velocityFor,
     verificationCheck: () => verificationCheck,
@@ -471,6 +464,12 @@ var engine = (() => {
       react: (chatId, messageId, { emoji, remove = false, text = "" }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...remove ? { remove: true } : {}, ...text ? { text } : {} }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+      // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
+      // a group conversation, and a group's name and people change through the Mac. Each answers the chat as it now is.
+      createChat: ({ addresses, name, text }) => call("POST", "/api/v1/chats", { addresses, ...name ? { name } : {}, ...text ? { text } : {} }),
+      renameGroup: (chatId, name) => call("PUT", `/api/v1/chats/${encodeURIComponent(chatId)}/name`, { name }),
+      addMember: (chatId, address) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/members`, { address }),
+      removeMember: (chatId, address) => call("DELETE", `/api/v1/chats/${encodeURIComponent(chatId)}/members/${encodeURIComponent(address)}`),
       // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
       // devices; nothing is sent to anyone else and nothing is written to history (issue 230).
       typing: (chatId, typing) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/typing`, { typing }),
@@ -1840,11 +1839,10 @@ var engine = (() => {
   function normalizeSort(sort) {
     return SORT_ORDERS.includes(sort) ? sort : "recent";
   }
-  var UNGROUPED = "ungrouped";
   var SEARCH_MODES = ["contact", "text"];
   var SEARCH_MODE_LABELS = { contact: "Contact", text: "Full text" };
   function emptyFilters() {
-    return { unread: false, group: null, kind: null, text: "", mode: "contact", terms: [] };
+    return { unread: false, kind: null, text: "", mode: "contact", terms: [] };
   }
   function orderChats(chats) {
     return [...chats].sort(byActivity);
@@ -1897,29 +1895,16 @@ var engine = (() => {
     if (String(f.text || "").trim()) terms.push({ text: String(f.text).trim(), mode: f.mode });
     return terms.length ? "No conversations match " + termsSentence(terms) + "." : "No conversations match these filters.";
   }
-  function filterChats(chats, filters = {}, { placement = {}, texts = {} } = {}) {
+  function filterChats(chats, filters = {}, { texts = {} } = {}) {
     const f = { ...emptyFilters(), ...filters };
     const terms = [...Array.isArray(f.terms) ? f.terms : [], { text: f.text, mode: f.mode }];
     return chats.filter((c) => {
       if (f.unread && !(c.unread > 0)) return false;
-      if (f.group) {
-        const g = placement[c.id] || null;
-        if (f.group === UNGROUPED ? g : g !== f.group) return false;
-      }
       if (f.kind === "direct" && c.isGroup) return false;
       if (f.kind === "group" && !c.isGroup) return false;
       if (!terms.every((t) => matchesTerm(c, t, { texts }))) return false;
       return true;
     });
-  }
-  function groupSections(chats, { groups = [], placement = {} } = {}) {
-    const byGroup = new Map(groups.map((g) => [g.id, []]));
-    const ungrouped = [];
-    for (const c of chats) {
-      const g = placement[c.id];
-      (g && byGroup.has(g) ? byGroup.get(g) : ungrouped).push(c);
-    }
-    return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: "Ungrouped", chats: ungrouped }];
   }
   var LETTER_OTHER = "#";
   var sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -1950,32 +1935,6 @@ var engine = (() => {
       s.chats.push(c);
     }
     return sections;
-  }
-  function defaultGroupName(groups = []) {
-    const taken = new Set(groups.map((g) => g.name));
-    let n = 1;
-    while (taken.has("Group " + n)) n += 1;
-    return "Group " + n;
-  }
-  function addGroup(groups, { id, name }) {
-    return [...groups, { id, name: String(name || "").trim() || defaultGroupName(groups) }];
-  }
-  function renameGroup(groups, id, name) {
-    return groups.map((g) => g.id === id ? { ...g, name: String(name || "").trim() || g.name } : g);
-  }
-  function moveGroup(groups, id, delta) {
-    const list = [...groups];
-    const i = list.findIndex((g) => g.id === id);
-    const j = i < 0 ? -1 : i + delta;
-    if (i < 0 || j < 0 || j >= list.length) return list;
-    [list[i], list[j]] = [list[j], list[i]];
-    return list;
-  }
-  function placeChat(placement, chatId, groupId) {
-    const out = { ...placement };
-    if (groupId && groupId !== UNGROUPED) out[chatId] = groupId;
-    else delete out[chatId];
-    return out;
   }
   var CHAT_IDENTIFIER = /^chat[0-9]+$/i;
   function chatTitle(chat) {
@@ -2023,40 +1982,60 @@ var engine = (() => {
   function checkedCount(checked = [], ids = []) {
     return ids.filter((id) => checked.includes(id)).length;
   }
-  function addChatsToGroup(placement = {}, ids = [], groupId) {
-    return ids.reduce((acc, id) => placeChat(acc, id, groupId), { ...placement });
-  }
-  function groupFromSelection(groups = [], placement = {}, ids = [], { id, name } = {}) {
-    return { groups: addGroup(groups, { id, name }), placement: addChatsToGroup(placement, ids, id) };
-  }
-  function removeGroup(groups = [], id) {
-    return groups.filter((g) => g.id !== id);
-  }
-  function clearGroupPlacement(placement = {}, groupId) {
-    const out = {};
-    for (const [chatId, g] of Object.entries(placement)) if (g !== groupId) out[chatId] = g;
-    return out;
-  }
   function hideChats(hidden = [], ids = []) {
     return [.../* @__PURE__ */ new Set([...hidden, ...ids])];
   }
-  function forgetChats(order = [], placement = {}, ids = []) {
+  function forgetChats(order = [], ids = []) {
     const gone = new Set(ids);
-    const outPlacement = {};
-    for (const [chatId, g] of Object.entries(placement)) if (!gone.has(chatId)) outPlacement[chatId] = g;
-    return { order: order.filter((id) => !gone.has(id)), placement: outPlacement };
+    return order.filter((id) => !gone.has(id));
   }
   var DELETE_STEPS = { idle: "idle", confirming: "confirming" };
   function requestDelete(ids = []) {
     const unique = [...new Set(ids)];
     return unique.length ? { ids: unique, step: DELETE_STEPS.confirming } : null;
   }
-  function requestDeleteGroup(id, name) {
-    return id ? { kind: "group", id, name: String(name || "this group"), step: DELETE_STEPS.confirming } : null;
-  }
   function resolveDelete(pending, confirmed) {
     if (!pending || pending.step !== DELETE_STEPS.confirming || confirmed !== true) return null;
     return pending;
+  }
+  var ADDRESS = /^(\+?[0-9][0-9 ().-]{2,30}|[^\s@]{1,64}@[^\s@]{1,190})$/;
+  var isAddress = (a) => typeof a === "string" && ADDRESS.test(a.trim());
+  function parseRecipients(text = "") {
+    const parts = String(text).split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+    const addresses = [];
+    const invalid = [];
+    for (const p of parts) (isAddress(p) ? addresses : invalid).push(p);
+    return { addresses: [...new Set(addresses)], invalid };
+  }
+  function recipientSuggestions(chats = [], query = "", { exclude = [], limit = 8 } = {}) {
+    const q = String(query).trim().toLocaleLowerCase();
+    const seen = new Set(exclude);
+    const out = [];
+    for (const c of orderChats(chats)) {
+      if (c.isGroup || !Array.isArray(c.participants) || c.participants.length !== 1) continue;
+      const address = c.participants[0];
+      if (seen.has(address)) continue;
+      const name = chatTitle(c);
+      if (q && !name.toLocaleLowerCase().includes(q) && !String(address).toLocaleLowerCase().includes(q)) continue;
+      seen.add(address);
+      out.push({ address, name, chatId: c.id });
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+  function groupAddresses(chats = [], ids = []) {
+    const want = new Set(ids);
+    const out = [];
+    for (const c of chats) if (want.has(c.id)) {
+      for (const a of c.participants || []) if (!out.includes(a)) out.push(a);
+    }
+    return out;
+  }
+  function upsertChat(chats = [], chat) {
+    if (!chat || chat.id == null) return chats;
+    const i = chats.findIndex((c) => c.id === chat.id);
+    const out = i < 0 ? [...chats, chat] : chats.map((c, k) => k === i ? { ...c, ...chat } : c);
+    return orderChats(out);
   }
 
   // core/app/rules/emoji-data.js
