@@ -1581,7 +1581,8 @@ async function runSmoke(w) {
   const reset = await putSettings({ 'chats.hidden': madeGroup.id ? [madeGroup.id] : [] });
   if (!reset.ok) throw new Error('the server refused the chat arrangement reset: ' + reset.status);
   try {
-    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && ![...document.querySelectorAll('.chat-name')].some((n) => n.textContent === 'Smoke group')", 10000);
+    // Only the list's rows count: the conversation header draws a .chat-name too, and the group may still be the one open.
+    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && ![...document.querySelectorAll('.chat-row .chat-name')].some((n) => n.textContent === 'Smoke group')", 10000);
   } catch (e) {
     const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
     console.error('chat arrangement reset: ' + JSON.stringify({ page, held: await held() }));
