@@ -54,6 +54,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   let stopping = false;
   let dropExtras = false;
   let canReadStatus = false;
+  // Whether the engine can show our typing to the other person: imsg lists `typing` in status.methods only where it can
+  // (macOS, with its bridge ready), so an engine that cannot is never asked (issue 319).
+  let canType = false;
   // The link's own record, so the log and the diagnostics can say what happened: the generation of the current
   // child, how long it had been up, the last request that failed, and the restart history.
   let gen = 0;
@@ -227,6 +230,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
     if (current !== c) return; // a newer start replaced this one, or the child died
     canReadStatus = Array.isArray(st?.methods) && st.methods.includes('message.send_status');
+    canType = Array.isArray(st?.methods) && st.methods.includes('typing');
     // capabilities is the engine's own block (an older release omits it, so it stays null). The reaction sender
     // reads it through supportsEmojiTapback to decide whether an arbitrary emoji can be sent.
     setState({ version: st && st.version != null ? String(st.version) : null, capabilities: st && typeof st.capabilities === 'object' ? st.capabilities : null });
@@ -374,6 +378,18 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   };
   const supportsEmojiTapback = () => capabilityVersion('tapback.emoji') >= REACTION_TAPBACK_EMOJI_VERSION;
 
+  // Our typing, shown to the other person in a chat or taken down. Resolves false, sending nothing, where the engine
+  // cannot; a refusal is logged by request() and resolves false too, since a missed indicator costs nothing.
+  async function typing(chatId, on) {
+    if (!canType) return false;
+    try {
+      await request('typing', { chat_id: Number(chatId), typing: Boolean(on) }, 10000);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // imsg's bridge `tapback` adds or removes a reaction on a message by its guid, as an arbitrary `emoji` when the
   // engine advertises it, otherwise as one of the six classic `kind`s (issue 188).
   const react = (chatId, targetId, { type = '', emoji = '', remove = false } = {}) => {
@@ -402,6 +418,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     sendFile,
     react,
     supportsEmojiTapback,
+    typing,
+    canType: () => canType,
     capabilityVersion: (name) => capabilityVersion(name),
     emojiTapbackVersion: () => capabilityVersion('tapback.emoji'),
     // The link's state and its restart history, read by /api/v1/info and the diagnostics surface: a person

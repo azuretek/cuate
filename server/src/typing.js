@@ -8,18 +8,40 @@
 // (bridge.events.subscribe, "started-typing"/"stopped-typing"); the ordinary database watch supplies none and the
 // Messages database holds no typing state. That path is off behind config.typing.incoming and only the engine, when
 // that switch is on and a bridge is already running, can feed it.
-export function createTyping({ publish, ttlMs = 8000 }) {
+//
+// Our typing also reaches the other person (issue 319): outbound, when given, is told a conversation started or
+// stopped having one of our devices typing in it, and the server hands that to the engine (imsg's `typing`, which shows
+// the indicator on their side). It is told once per conversation, not per device, and refreshed while the typing
+// lasts, so the indicator never outlives the last device that was typing there.
+export const TYPING_REFRESH_MS = 20000;
+export function createTyping({ publish, ttlMs = 8000, outbound = null, refreshMs = TYPING_REFRESH_MS, now = () => Date.now() }) {
   const active = new Map();
   const key = (chatId, from) => String(chatId) + ':' + String(from);
+  const told = new Map();
+  const typingIn = (chatId) => [...active.values()].some((s) => s.chatId === String(chatId) && s.kind === 'device');
+  const tell = (chatId, on) => {
+    if (typeof outbound !== 'function') return;
+    const id = String(chatId);
+    if (on) {
+      const at = told.get(id);
+      if (at !== undefined && now() - at < refreshMs) return;
+      told.set(id, now());
+    } else {
+      if (!told.has(id) || typingIn(id)) return;
+      told.delete(id);
+    }
+    try { Promise.resolve(outbound(id, on)).catch(() => {}); } catch { /* the engine refused: nothing to show */ }
+  };
   const announce = (state, typing) => publish('typing', { chatId: String(state.chatId), from: String(state.from), kind: state.kind, typing }, typing ? String(state.from) : null);
 
   // Drop a state and, by default, tell the devices it is over. A device's stop is announced to everyone so no client
   // is left holding it; its own start is announced to every other device but the one that sent it.
-  function release(state, { announce: say = true } = {}) {
+  function release(state, { announce: say = true, renew = false } = {}) {
     if (!state) return;
     clearTimeout(state.timer);
     active.delete(key(state.chatId, state.from));
     if (say) announce(state, false);
+    if (state.kind === 'device' && !renew) tell(state.chatId, false);
   }
 
   return {
@@ -27,9 +49,10 @@ export function createTyping({ publish, ttlMs = 8000 }) {
     relay({ chatId, from, typing }) {
       const k = key(chatId, from);
       const existing = active.get(k);
-      if (existing) release(existing, { announce: false });
+      if (existing) release(existing, { announce: false, renew: Boolean(typing) });
       if (!typing) {
         announce({ chatId, from, kind: 'device' }, false);
+        tell(chatId, false);
         return;
       }
       const state = { chatId: String(chatId), from: String(from), kind: 'device', timer: null };
@@ -37,6 +60,7 @@ export function createTyping({ publish, ttlMs = 8000 }) {
       state.timer.unref?.();
       active.set(k, state);
       announce(state, true);
+      tell(chatId, true);
     },
     // Inbound typing from the engine, when the switch is on. Present and, by default, off (issue 230).
     incoming({ chatId, typing }) {

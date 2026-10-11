@@ -63,9 +63,10 @@ These hold on every client (desktop, iPhone, iPad, Android) and every surface, a
 
 ## Typing
 
-Typing has two halves, and only one of them is real for us (issue 230).
+Typing has two halves (issues 230 and 319).
 
 - **Our own typing is relayed between this account's signed-in devices.** While you compose in a conversation the page tells the server (`POST /api/v1/chats/:chatId/typing`), and the server tells this account's other signed-in devices over the event stream (`typing`, carrying the conversation, the device it came from and whether it started or stopped). It is scoped to the conversation and the account, held in memory with a short expiry that ends it, cleared when the draft empties, when the message sends, or when you leave the conversation, and never written to message history. The client draws it in the conversation header (`typingLabel` in `core/app/rules/typing.js`) and clears a stale one on its own, so a dropped connection cannot leave it up.
+- **Our typing also reaches the other person.** The server hands the same state to the engine (imsg's `typing`, through its bridge), once per conversation however many of our devices type there, refreshed every 20 seconds while it lasts and taken down when the last of them stops, goes quiet or disconnects. It is asked only where the engine lists `typing` in its status methods, and `typing.outgoing` in the server config (on by default) turns it off.
 - **The other person typing is not reported by the engine the server uses, so it is not drawn.** imsg reports inbound typing only through an injected v2 bridge's event stream (`bridge.events.subscribe`, `started-typing`/`stopped-typing`); the ordinary database watch the server uses supplies none, and the Messages database holds no typing state. That path is present and OFF behind `typing.incoming` in the server config, with the source cited; the server never starts or injects a bridge, and no indicator is drawn that pretends to know. The rules and what holds each are in [conventions.md](conventions.md#messages-and-the-conversation) and [read-and-typing.md](read-and-typing.md).
 
 ## Threads
