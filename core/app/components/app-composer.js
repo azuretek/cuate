@@ -3,6 +3,7 @@ import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
+import { play } from '../../kit/motion.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACCEPT, sizeLabel, stageCheck } from '../rules/attach.js';
 import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
@@ -179,8 +180,13 @@ class AppComposer extends KitElement {
   // one line, so the composer holds its own height until the field has its new one: a composer that shrank for that
   // moment made the conversation above it taller, the browser pulled a conversation at its end back by the difference,
   // and the conversation took that as the person scrolling away from the end.
+  //
+  // A line typed in grows the field smoothly (issue 321): its layout height changes at once, so the conversation and
+  // every measure of the field stay exact, and the field's own box is revealed upward from its old height on the grow
+  // token, so the eye sees it grow rather than jump. Only typing animates; a draft restored or a field reset does not.
   grow(e) {
     const t = e.currentTarget;
+    const before = t.offsetHeight;
     const box = t.parentElement;
     if (box) box.style.minHeight = box.offsetHeight + 'px';
     t.classList.remove('scrolls');
@@ -189,6 +195,12 @@ class AppComposer extends KitElement {
     t.style.height = want + 'px';
     t.classList.toggle('scrolls', want > parseFloat(getComputedStyle(t).maxHeight));
     if (box) box.style.minHeight = '';
+    const grew = t.offsetHeight - before;
+    if (e.type === 'input' && before > 0 && grew > 0) {
+      // A few pixels past the box on every side keep its focus ring inside the reveal.
+      const r = parseFloat(getComputedStyle(t).borderTopLeftRadius) || 0;
+      play(t, [{ clipPath: 'inset(' + (grew - 2) + 'px -2px -2px -2px round ' + r + 'px)' }, { clipPath: 'inset(-2px -2px -2px -2px round ' + r + 'px)' }], { duration: 'grow', easing: 'ease' });
+    }
   }
 
   toggleEmoji() {
