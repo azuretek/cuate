@@ -7,7 +7,7 @@ import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
 import { annotateLivePhotos } from './live-photo.js';
-import { mapChat, mapMessage, mapReaction } from '../../../core/app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 // Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
@@ -46,7 +46,25 @@ const omit = (o, keys) => {
 export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
-  const toModel = (raw) => mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId });
+  // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
+  // page of history, or a bounded first read of a group's recent history the first time the chat list names it.
+  const groupPhotos = new Map();
+  const notePhoto = (msg) => {
+    if (msg && msg.event && msg.event.kind === 'groupPhoto') {
+      const id = String(msg.chatId);
+      const was = groupPhotos.get(id);
+      if (!was || was.sentAt <= msg.sentAt) groupPhotos.set(id, { sentAt: msg.sentAt, photo: msg.event.photo });
+    }
+    return msg;
+  };
+  const toModel = (raw) => notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId }));
+  const photoScanned = new Set();
+  const PHOTO_SCAN_WAIT_MS = 3000;
+  async function scanPhoto(chatId) {
+    const r = await request('messages.history', { chat_id: Number(chatId), limit: PHOTO_SCAN_ROWS, attachments: true }, timeoutMs, ['attachments']);
+    for (const m of (r && Array.isArray(r.messages) ? r.messages : [])) if (!m.is_reaction && isGroupPhotoRow(m)) toModel(m);
+    photoScanned.add(String(chatId));
+  }
 
 
   let state = { kind, version: null, ready: false, capabilities: null };
@@ -270,9 +288,18 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return starting;
   }
 
-  async function chats({ limit = 200 } = {}) {
+  async function chats({ limit = 200, photos = false } = {}) {
     const r = await request('chats.list', { limit }, timeoutMs);
-    return (r && Array.isArray(r.chats) ? r.chats : []).map(mapChat);
+    const list = (r && Array.isArray(r.chats) ? r.chats : []).map(mapChat);
+    // A group the engine has not looked through yet is read once for its photo, one at a time; the list waits a moment
+    // for those reads and goes out with whatever they found by then, and a later list carries the rest.
+    const unseen = photos ? list.filter((c) => c.isGroup && !photoScanned.has(c.id)) : [];
+    if (unseen.length) {
+      const scans = unseen.reduce((p, c) => p.then(() => scanPhoto(c.id).catch(() => {})), Promise.resolve());
+      await Promise.race([scans, new Promise((resolve) => setTimeout(resolve, PHOTO_SCAN_WAIT_MS).unref?.())]);
+    }
+    if (photos) for (const c of list) if (c.isGroup) c.photo = groupPhotos.get(c.id)?.photo || null;
+    return list;
   }
 
   async function messages(chatId, { limit = 50, before = null } = {}) {

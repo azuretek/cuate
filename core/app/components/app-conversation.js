@@ -6,7 +6,8 @@ import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
 import { play, growFrom, cssVar } from '../../kit/motion.js';
 import { newArrivals } from '../../kit/rules/motion.js';
-import { chatTitle, initials } from '../rules/chats.js';
+import { chatTitle, eventText } from '../rules/chats.js';
+import './app-avatar.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { platformOf, platformCapabilities } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
@@ -374,6 +375,11 @@ class AppConversation extends KitElement {
   // stored pointer does not support (issue 208).
   bubble(it, lastMine, sms, where = 'list') {
     const m = it.message;
+    // An event in the conversation (issue 341), such as a group photo changing, is a quiet line across it rather than a
+    // bubble: who did it and what changed, with the new photo beside the words.
+    if (m.event) {
+      return html`<div class="bubble-row event" data-id=${m.id}><div class="conv-event">${m.event.photo ? html`<app-avatar .photo=${m.event.photo} .client=${this.client}></app-avatar>` : nothing}<span>${eventText(m)}</span></div></div>`;
+    }
     const mine = m.fromMe;
     const front = where === 'thread' || !this.replyingTo;
     const targeted = this.reactFor === m.id;
@@ -429,7 +435,7 @@ class AppConversation extends KitElement {
     // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name">${title}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}

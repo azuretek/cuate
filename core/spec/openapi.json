@@ -1715,6 +1715,9 @@
           },
           "lastMessage": {
             "$ref": "#/components/schemas/Preview"
+          },
+          "photo": {
+            "$ref": "#/components/schemas/Attachment"
           }
         },
         "required": [
@@ -1747,6 +1750,12 @@
           },
           "payloads": {
             "type": "number"
+          },
+          "event": {
+            "$ref": "#/components/schemas/MessageEventKind"
+          },
+          "senderName": {
+            "type": "string"
           }
         },
         "required": [
@@ -1826,6 +1835,9 @@
             "items": {
               "$ref": "#/components/schemas/Reaction"
             }
+          },
+          "event": {
+            "$ref": "#/components/schemas/MessageEventKind"
           }
         },
         "required": [
@@ -2538,6 +2550,21 @@
         "required": [
           "code",
           "message"
+        ],
+        "additionalProperties": false
+      },
+      "MessageEventKind": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "photo": {
+            "$ref": "#/components/schemas/Attachment"
+          }
+        },
+        "required": [
+          "kind"
         ],
         "additionalProperties": false
       }

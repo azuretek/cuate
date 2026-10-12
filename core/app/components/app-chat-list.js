@@ -3,9 +3,10 @@ import { KitElement } from '../../kit/element.js';
 import { emit } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import {
-  chatTitle, chatPreview, initials, sortChats, filterChats, listSections, emptyFilters, emptyListText,
+  chatTitle, chatPreview, sortChats, filterChats, listSections, emptyFilters, emptyListText,
 } from '../rules/chats.js';
 import { formatListTime } from '../rules/time.js';
+import './app-avatar.js';
 
 // The chat list: it draws the chats sorted, filtered and in the sections the sort gives them. A group is the message
 // service's own group conversation and draws as one row like any other (issue 326). It holds no state of its own: the page hands it
@@ -13,6 +14,8 @@ import { formatListTime } from '../rules/time.js';
 // of opening it; the selection itself lives with the page, so the header can select all and act on the count.
 class AppChatList extends KitElement {
   static properties = {
+    // The client the list fetches each group photo with (issue 341).
+    client: { attribute: false },
     chats: { attribute: false }, selected: {}, texts: { attribute: false },
     sort: {},
     filters: { attribute: false }, editing: { attribute: false }, checked: { attribute: false },
@@ -78,7 +81,7 @@ class AppChatList extends KitElement {
     const sel = !editing && c.id === this.selected;
     return html`<li class=${'chat-row' + (sel ? ' selected' : '') + (checked ? ' checked' : '') + (c.unread ? ' unread' : '')} role="option" tabindex="0" aria-selected=${(editing ? checked : sel) ? 'true' : 'false'} data-chat=${c.id} @click=${() => this.activate(c.id)} @keydown=${(e) => this.key(e, c.id)}>
       ${editing ? html`<input type="checkbox" class="chat-check" aria-label=${'Select ' + title} .checked=${checked} @click=${(e) => e.stopPropagation()} @change=${(e) => this.toggleCheck(c.id, e.currentTarget.checked)}>` : nothing}
-      <span class="avatar" aria-hidden="true">${initials(title)}</span>
+      <app-avatar .title=${title} .photo=${c.photo || null} .client=${this.client}></app-avatar>
       <span class="chat-main">
         <span class="chat-top"><span class="chat-name">${title}</span><span class="chat-time">${formatListTime(c.lastMessageAt, { now, locale })}</span></span>
         <span class="chat-preview">${chatPreview(c)}</span>

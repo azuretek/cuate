@@ -129,7 +129,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return Math.min(hi, Math.max(lo, Number(v)));
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
-  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0 });
+  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind }, senderName: m.senderName || null } : {}) });
   // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
@@ -140,7 +140,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // message stream already carries.
   const readChats = (limit) => {
     if (!listing) {
-      listing = engine.chats({ limit })
+      listing = engine.chats({ limit, photos: true })
         .then((chats) => {
           const before = held ? new Map(held.chats.map((c) => [String(c.id), Number(c.unread) || 0])) : null;
           held = { chats, limit, at: Date.now() };
@@ -171,6 +171,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       readChats(held.limit).catch(() => {});
       return;
     }
+    // A group photo that changed live is the group's picture from now on (issue 341).
+    if (m.event && m.event.kind === 'groupPhoto') held.chats[at] = { ...held.chats[at], photo: m.event.photo };
     const chat = held.chats[at];
     if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
     held.chats.splice(at, 1);
