@@ -7,7 +7,9 @@ import { closeButtonHtml } from './close-button.js';
 
 // The sibling's card anatomy, in this document rather than a native overlay view.
 // Each tone draws the sibling's own glyph for it from the shared icon set in core/spec/tokens.json.
-const TONE_ICONS = { ok: 'check', warn: 'alert-triangle', error: 'circle-x', info: 'info' };
+// An error wears the warning triangle, in the danger colour (issue 350): the card's close control is already an X, so
+// a circled X beside it read as a second close.
+const TONE_ICONS = { ok: 'check', warn: 'alert-triangle', error: 'alert-triangle', info: 'info' };
 class AppNotices extends KitElement {
   static properties = { notices: {}, runAction: {} };
   constructor() {
