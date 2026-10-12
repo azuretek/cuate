@@ -72,12 +72,15 @@ test('the settings page draws its sections as tabs: a tablist, one tab and one p
   assert.match(read('core/app/components/app-sheet.js'), /sheet-nav/, 'the sheet draws the tabs above its scrolled body');
 });
 
-test('on a phone Settings and About are a floating sheet over the conversation, not a page that replaces the view (issue 253)', () => {
+test('on a phone Settings and About are a floating card inset from every edge, every corner rounded (issues 253 and 338)', () => {
   const phone = phoneBlock();
   assert.match(phone, /\.sheet\s*\{[^}]*width:\s*100%/, 'the card spans the phone');
   assert.doesNotMatch(phone, /\.sheet\s*\{[^}]*height:\s*100%/, 'the card no longer fills the phone like a page');
   assert.doesNotMatch(phone, /\.sheet\s*\{[^}]*box-shadow:\s*none/, 'the card keeps its shadow, so it reads as floating (issue 253)');
-  assert.match(phone, /\.sheet\s*\{[^}]*border-radius:\s*var\(--radius-lg\) var\(--radius-lg\) 0 0/, 'the card keeps rounded top corners against the bottom edge');
+  assert.match(phone, /\.sheet\s*\{[^}]*border-radius:\s*var\(--radius-sheet\);/, 'every corner of the card is rounded, so it floats rather than resting on the bottom edge');
+  assert.match(phone, /\.sheet-scrim\s*\{[^}]*padding:\s*calc\(var\(--inset-top\) \+ var\(--space-3\)\) calc\(var\(--inset-right\) \+ var\(--space-3\)\) calc\(var\(--inset-bottom\) \+ var\(--space-3\)\) calc\(var\(--inset-left\) \+ var\(--space-3\)\)/, 'the card is inset from every edge, so the conversation shows around it');
+  assert.match(phone, /\.sheet-handle\s*\{\s*display:\s*block/, 'a phone shows the grab handle');
+  assert.match(css, /\.sheet-handle\s*\{\s*display:\s*none/, 'the desktop draws no handle');
   assert.match(phone, /\.sheet-scrim\s*\{[^}]*align-items:\s*flex-end/, 'the card is anchored to the bottom edge');
   assert.doesNotMatch(phone, /\.sheet-scrim\s*\{[^}]*background:\s*var\(--color-bg-raised\)/, 'the backdrop keeps its blur and dim over the conversation (issue 253)');
 });
@@ -322,17 +325,52 @@ test('issue 168: the way back to the chats list is the chats icon, labelled with
   assert.match(back[0], /aria-label="Back to chats"/);
   assert.match(back[0], /data-icon="messages-square"/);
   assert.equal(/\u2190|←|arrow-left/.test(back[0]), false, 'no back arrow on the way to the chats list');
-  // Settings is reached from the chats list on a phone, so its way back there is the same control.
-  const settings = read('core/app/components/app-settings.js');
-  assert.match(settings, /\.narrowLabel=\$\{'Back to chats'\}/);
-  assert.match(settings, /\.narrowIcon=\$\{'messages-square'\}/);
-  const sheet = read('core/app/components/app-sheet.js');
-  assert.match(sheet, /sheet-back-narrow/);
-  const phone = phoneBlock();
-  assert.match(phone, /\.sheet-back-wide\s*\{[^}]*display:\s*none/, 'the phone hides the desktop\'s arrow and label');
-  assert.match(css, /\.sheet-back-narrow\s*\{[^}]*display:\s*none/, 'the desktop hides the phone\'s chats control');
 });
 
+
+test('the sheet\'s ways out are the send button\'s family: a round X on every sheet, a round back arrow only over another (issue 338)', () => {
+  const sheet = read('core/app/components/app-sheet.js');
+  assert.match(sheet, /closeButtonHtml\(\{ owner: 'sheet', label: this\.closeLabel, look: 'solid'/, 'the X is the shared close button in its solid look');
+  assert.match(sheet, /this\.backLabel \? html/, 'the back arrow is drawn only when the sheet has somewhere to go back to');
+  assert.match(sheet, /class="sheet-back"[^>]*aria-label=\$\{this\.backLabel\}[\s\S]*?data-icon="arrow-left"/, 'the back arrow is named for where it goes');
+  assert.doesNotMatch(sheet, /sheet-esc|sheet-back-narrow|sheet-back-wide/, 'the old full-width strip is gone');
+  assert.match(read('core/app/components/app-settings.js'), /\.closeLabel=\$\{'Close settings'\}/);
+  assert.doesNotMatch(read('core/app/components/app-settings.js'), /backLabel/, 'Settings has nothing under it, so only the X');
+  const root = read('core/app/components/app-root.js');
+  assert.match(root, /\.backLabel=\$\{this\.aboutFrom === 'settings' \? 'Back to settings' : ''\}/, 'About over Settings goes back to Settings, and on its own has only the X');
+  assert.equal((root.match(/@close=\$\{\(\) => this\.closeView\(\)\}/g) || []).length, 2, 'the X takes every sheet down, from Settings and from About');
+  // Drawn as the send button: the same role, size, glyph fraction, hover and press.
+  for (const sel of ['\\.sheet-back', '\\.close-button\\[data-look="solid"\\]']) {
+    assert.match(css, new RegExp(sel + ' \\{[^}]*background: var\\(--role-button\\); color: var\\(--role-button-fg\\)'), sel + ' wears the send button\'s fill');
+    assert.match(css, new RegExp(sel + ' \\.icon \\{ width: var\\(--size-send-icon\\)'), sel + ' draws its glyph at the send arrow\'s size');
+    assert.match(css, new RegExp(sel + ':hover \\{ background: var\\(--role-button-hover\\)'), sel + ' hovers as send does');
+    assert.match(css, new RegExp(sel + ':active \\{ background: var\\(--role-button-press\\)'), sel + ' presses as send does');
+  }
+  assert.match(css, /\.send \{[^}]*background: var\(--role-button\); color: var\(--role-button-fg\)/, 'and send is still drawn that way');
+  // With About over Settings, Settings tucks back behind it.
+  assert.match(root, /\?data-under=\$\{this\.aboutSheetShowing && this\.aboutFrom === 'settings'\}/);
+  assert.match(css, /\.sheet-scrim\[data-under\] > \.sheet \{ scale: var\(--size-sheet-tuck-scale\)/);
+});
+
+test('a drag on the sheet\'s handle or header lets it go past a quarter of its height or on a flick, and springs back otherwise (issue 338)', async () => {
+  const { dragOutcome, dragThreshold, DRAG_MIN, DRAG_MAX, FLICK_VELOCITY, FLICK_MIN } = await import('../app/rules/sheet-drag.js');
+  assert.equal(dragThreshold(400), 100, 'a quarter of the card');
+  assert.equal(dragThreshold(100), DRAG_MIN, 'a short card still needs a real pull');
+  assert.equal(dragThreshold(2000), DRAG_MAX, 'a tall card is not a long haul');
+  assert.equal(dragOutcome({ dy: 0, velocity: 5, height: 400 }), 'stay', 'no movement stays');
+  assert.equal(dragOutcome({ dy: -50, velocity: 0, height: 400 }), 'stay', 'an upward pull stays');
+  assert.equal(dragOutcome({ dy: 99, velocity: 0, height: 400 }), 'stay');
+  assert.equal(dragOutcome({ dy: 100, velocity: 0, height: 400 }), 'dismiss');
+  assert.equal(dragOutcome({ dy: FLICK_MIN, velocity: FLICK_VELOCITY, height: 400 }), 'dismiss', 'a short flick lets go');
+  assert.equal(dragOutcome({ dy: FLICK_MIN - 1, velocity: FLICK_VELOCITY * 3, height: 400 }), 'stay', 'a twitch is not a flick');
+  const sheet = read('core/app/components/app-sheet.js');
+  assert.match(sheet, /class="sheet-grip" @pointerdown=/, 'the handle and header are the grip');
+  assert.match(sheet, /e\.target\.closest\('button'\)\) return;/, 'a press on the X or the arrow is never a drag');
+  assert.match(sheet, /dragOutcome\(\{ dy: d\.dy, velocity: d\.v, height: d\.height \}\) === 'dismiss'\) \{\s*this\.back\(\);/, 'a drag that lets go goes back, so About returns to Settings');
+  assert.match(sheet, /play\(card, \[\{ translate: '0 ' \+ d\.dy \+ 'px' \}, \{ translate: '0 0' \}\]/, 'one that does not springs back through the motion kit');
+  assert.match(css, /\.sheet \{ position: relative; z-index: 4; translate: 0 var\(--sheet-drag, 0\);/, 'the card follows the finger through its own translate, which the leaving animation adds to');
+  assert.match(css, /\.sheet-grip \{[^}]*touch-action: none/, 'the grip takes the touch, so the page does not scroll under the drag');
+});
 
 // Issue 253: the About row is the last thing in EVERY tab's own body at every width, and it is drawn from the one
 // schema, so a tab added later cannot land without it. The desktop smoke walks every tab the schema declares, scrolls

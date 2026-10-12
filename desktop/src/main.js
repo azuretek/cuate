@@ -724,7 +724,7 @@ async function runSmoke(w) {
   const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
   trayItem('settings').click();
   const settingsRaised = await visibleWithin(true);
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))", 10000);
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))", 10000);
   w.minimize();
   for (const t0 = Date.now(); !w.isMinimized() && Date.now() - t0 < 3000;) await pause(100);
   const minimised = w.isMinimized();
@@ -2352,7 +2352,7 @@ async function runSmoke(w) {
     && cards.every((c) => c.id === 'default' || ((c.wantAccent === null || c.accent === c.wantAccent) && (c.wantBg === null || c.bg === c.wantBg)))
     && new Set(cards.map((c) => c.bg + ' ' + c.accent)).size === cards.length;
   const reopenSettings = async () => {
-    await js("document.querySelector('app-settings .sheet-back').click()");
+    await js("document.querySelector('app-settings [data-close=sheet]').click()");
     await waitFor("!document.querySelector('.sheet')", 10000);
     await js("document.querySelector('.sidebar-head .gear-button').click()");
     await waitFor("document.querySelectorAll('app-settings .theme-card').length > 0 && !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running')", 10000);
@@ -2488,7 +2488,7 @@ async function runSmoke(w) {
   await js("window.noticeProofNode = document.querySelector('.app-notice-progress'); document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.8,canInstall:true})");
   await waitFor("document.querySelector('.app-notice-progress')?.value === 0.8");
   report.noticeInPlace = await js("window.noticeProofNode === document.querySelector('.app-notice-progress') && document.querySelectorAll('.app-notice').length === 1");
-  await js("document.querySelector('.close-button').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')");
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.9,canInstall:true})");
   report.noticeDismissed = await js("!document.querySelector('.app-notice')");
@@ -2574,7 +2574,7 @@ async function runSmoke(w) {
   // corners rather than the label alone. A press INSIDE the card, and a drag that starts inside and is released over
   // the backdrop, must both leave the page where it is; only a press that both starts and ends on the backdrop
   // returns. This is the desktop smoke's check for what the sibling app proves with its own per-page overflow probes.
-  const sheetHit = (tag) => js('(() => { const b = document.querySelector("' + tag + ' .sheet-back"); if (!b) return false; const r = b.getBoundingClientRect(); const y = r.top + r.height / 2; const pts = [[r.left + 2, y], [r.left + r.width / 2, y], [r.right - 2, y]]; return pts.every(function (q) { const el = document.elementFromPoint(q[0], q[1]); return Boolean(el) && b.contains(el); }); })()');
+  const sheetHit = (tag) => js('(() => { const b = document.querySelector("' + tag + ' [data-close=sheet]"); if (!b) return false; const r = b.getBoundingClientRect(); const cx = r.left + r.width / 2; const cy = r.top + r.height / 2; const k = r.width * 0.35; const pts = [[cx, cy], [cx - k, cy], [cx + k, cy], [cx, cy - k], [cx, cy + k]]; return pts.every(function (q) { const el = document.elementFromPoint(q[0], q[1]); return Boolean(el) && b.contains(el); }); })()');
   const pressSheet = (downSel, upSel) => js('(() => {' +
     ' var down = ' + JSON.stringify(downSel) + '; var up = ' + JSON.stringify(upSel) + ';' +
     ' var scrim = document.querySelector(".sheet-scrim");' +
@@ -2633,7 +2633,7 @@ async function runSmoke(w) {
     report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     report.updates = report.updates && report.noticeReducedMotion;
-    await js("document.querySelector('.close-button').click()");
+    await js("document.querySelector('.app-notice .close-button').click()");
     await waitFor("!document.querySelector('.app-notice')");
     w.setMinimumSize(...originalMinimum);
     w.setSize(...originalSize);
@@ -2642,7 +2642,7 @@ async function runSmoke(w) {
   const sheetVisible = () => js("Boolean(document.querySelector('.sheet'))");
   const sideways = async () => js("(() => { const d = document.documentElement; return { inner: window.innerWidth, doc: d.scrollWidth, body: document.body.scrollWidth }; })()");
 
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))");
   report.sheetHitArea = await sheetHit('app-settings');
   await pressSheet('card', 'card');
   await pause(200);
@@ -2657,7 +2657,7 @@ async function runSmoke(w) {
 
   // Escape is the keyboard's own way back, and the strip names the key that does it.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))");
   await js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
   await waitFor("!document.querySelector('.sheet')", 10000);
   report.sheetEscapeReturns = !(await sheetVisible());
@@ -2665,7 +2665,7 @@ async function runSmoke(w) {
   // The card is only as wide as its content needs: at a narrow window the page and the card must not scroll sideways.
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   await js("document.querySelector('.sidebar-head .gear-button').click()");
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))");
   await cdp('Emulation.setDeviceMetricsOverride', { width: 400, height: 720, deviceScaleFactor: 1, mobile: false });
   await pause(300);
   const narrowSettings = await sideways();
@@ -2676,7 +2676,7 @@ async function runSmoke(w) {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
   await waitFor('window.innerWidth === 375', 5000);
   await pause(400);
-  const phonePage = await js("(() => { const s = document.querySelector('.sheet').getBoundingClientRect(); const b = document.querySelector('app-settings .sheet-back'); const vis = (e) => Boolean(e) && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0; const narrow = b.querySelector('.sheet-back-narrow'); const icon = narrow && narrow.querySelector('.icon'); return { fills: Math.abs(s.left) < 1 && Math.abs(s.width - innerWidth) < 1 && s.top > 1 && s.bottom >= innerHeight - 60, narrow: vis(narrow), wide: vis(b.querySelector('.sheet-back-wide')), esc: vis(b.querySelector('.sheet-esc')), label: narrow ? narrow.querySelector('.sheet-back-label').textContent.trim() : '', icon: icon ? icon.dataset.icon : '', iconDrawn: vis(icon), blur: (() => { const cs = getComputedStyle(document.querySelector('.sheet-scrim')); return /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''); })() }; })()");
+  const phonePage = await js("(() => { const sheet = document.querySelector('.sheet'); const s = sheet.getBoundingClientRect(); const x = document.querySelector('app-settings [data-close=sheet]'); const vis = (e) => Boolean(e) && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0; const icon = x && x.querySelector('.icon'); const cs = getComputedStyle(sheet); return { floats: s.left > 1 && s.right < innerWidth - 1 && s.top > 1 && s.bottom < innerHeight, rounded: parseFloat(cs.borderTopLeftRadius) > 0 && parseFloat(cs.borderBottomLeftRadius) > 0, handle: vis(document.querySelector('app-settings .sheet-handle')), x: vis(x), label: x ? x.getAttribute('aria-label') : '', icon: icon ? icon.dataset.icon : '', iconDrawn: vis(icon), blur: (() => { const sc = getComputedStyle(document.querySelector('.sheet-scrim')); return /blur/.test(sc.backdropFilter || sc.webkitBackdropFilter || ''); })() }; })()");
   const phoneWalk = await tabWalk();
   await showTab('appearance');
   nativeTheme.themeSource = 'light';
@@ -2690,7 +2690,7 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05i-settings-phone-behavior.png');
-  report.phoneSettings = phonePage.fills && phonePage.blur && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
+  report.phoneSettings = phonePage.floats && phonePage.rounded && phonePage.handle && phonePage.blur && phonePage.x && phonePage.label === 'Close settings' && phonePage.icon === 'x' && phonePage.iconDrawn && tabsOk(phoneWalk);
   if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
   // Issue 253: the About row is the last thing in every tab's own body at 390px too, reached by scrolling that tab's
   // body to its end; the walk above runs the same check at the phone's 375.
@@ -2710,7 +2710,7 @@ async function runSmoke(w) {
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
-  const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back-label') || {}).textContent || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
+  const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back') || { getAttribute: () => '' }).getAttribute('aria-label') || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
   const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const panel = s && s.querySelector('.sheet-section:not([hidden])'); const row = panel && panel.lastElementChild; const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.classList.contains('settings-about-row') && row.querySelector('button[data-action=about]') && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
   await js("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()");
   await waitFor(aboutShown);
@@ -2784,15 +2784,35 @@ async function runSmoke(w) {
   const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')), unknown: [...document.querySelectorAll('app-about .about-row .about-value-text')].some((e) => e.textContent === 'Unknown') }))()");
   // Back from About returns to Settings, the page it was pushed over.
   await js("document.querySelector('app-about .sheet-back').click()");
-  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
+  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
   report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.every((k) => aboutOrder.includes(k)) && aboutSeen.keys.join('|') === aboutOrder.filter((k) => aboutSeen.keys.includes(k)).join('|') && !aboutSeen.unknown && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
-  report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
-  if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
-  await js("document.querySelector('app-settings .sheet-back').click()");
+  // A drag on the sheet's header, made with the real pointer (issue 338): a short, slow one springs the card back into
+  // place and leaves it open; one past a quarter of the card's height lets it go.
+  const headDrag = async (fraction) => {
+    const at = await js("(() => { const g = document.querySelector('app-settings .sheet-heading').getBoundingClientRect(); const c = document.querySelector('.sheet').getBoundingClientRect(); return { x: Math.round(g.left + g.width / 2), y: Math.round(g.top + g.height / 2), h: c.height }; })()");
+    const dy = Math.round(at.h * fraction);
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= 8; i += 1) { await pause(40); await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y + Math.round((dy * i) / 8), button: 'left', buttons: 1 }); }
+    await pause(40);
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y + dy, button: 'left', buttons: 0, clickCount: 1 });
+    return dy;
+  };
+  const shortDrag = await headDrag(0.08);
+  await pause(700);
+  report.sheetDragSprings = await js("Boolean(document.querySelector('app-settings')) && !document.querySelector('.sheet').style.getPropertyValue('--sheet-drag') && !document.querySelector('.sheet').hasAttribute('data-dragging')");
+  const longDrag = await headDrag(0.6);
+  report.sheetDragCloses = await waitFor("!document.querySelector('app-settings')", 5000).then(() => true, () => false);
+  if (!report.sheetDragSprings || !report.sheetDragCloses) console.error('sheet drag: ' + JSON.stringify({ shortDrag, longDrag, springs: report.sheetDragSprings, closes: report.sheetDragCloses }));
+  await js("document.querySelector('.sidebar-head .gear-button').click()");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]')) && !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running')", 10000);
+  report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout && report.sheetDragSprings && report.sheetDragCloses;
+  if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout, dragSprings: report.sheetDragSprings, dragCloses: report.sheetDragCloses }));
+  await js("document.querySelector('app-settings [data-close=sheet]').click()");
   await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
 
   // The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
@@ -3102,7 +3122,7 @@ async function runSmoke(w) {
       await pause(300);
       await shot('20-dismiss-' + width + '-' + p.name + '-light.png');
       const target = !opened ? null : phone && p.phonePage
-        ? await js("(() => { const b = document.querySelector('.sheet .sheet-back'); if (!b) return null; const r = b.getBoundingClientRect(); window.dismissHits = 0; return { sel: 'back strip', x: r.left + r.width / 2, y: r.top + r.height / 2, over: 'sheet-back' }; })()")
+        ? await js("(() => { const b = document.querySelector('.sheet [data-close=sheet]'); if (!b) return null; const r = b.getBoundingClientRect(); window.dismissHits = 0; return { sel: 'X', x: r.left + r.width / 2, y: r.top + r.height / 2, over: 'close-button' }; })()")
         : await dismissTarget(p.panel);
       const before = await js(dismissState);
       if (target) await dismissPress(target.x, target.y, phone);

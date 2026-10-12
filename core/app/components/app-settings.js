@@ -377,7 +377,7 @@ class AppSettings extends KitElement {
 
   render() {
     // On a phone Settings is a page reached from the chats list, so its way back is the chats control (issue 168).
-    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .label=${'Back to app'} .narrowLabel=${'Back to chats'} .narrowIcon=${'messages-square'} .nav=${this.nav()} .content=${this.body()}></app-sheet>`;
+    return html`<app-sheet .title=${'Settings'} .description=${INTRO} .closeLabel=${'Close settings'} .nav=${this.nav()} .content=${this.body()}></app-sheet>`;
   }
 }
 customElements.define('app-settings', AppSettings);

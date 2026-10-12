@@ -49,7 +49,7 @@ class AppAbout extends KitElement {
     this.release = null;
     this.values = {};
     this.themePicture = null;
-    this.backLabel = 'Back to app';
+    this.backLabel = '';
     this.copied = '';
     this.copiedKey = '';
     // The copy button is disabled while a copy is in flight and for a short beat after it, so a double press cannot
@@ -153,7 +153,7 @@ class AppAbout extends KitElement {
   }
 
   render() {
-    return html`<app-sheet .title=${'About'} .description=${INTRO} .label=${this.backLabel} .content=${this.body()}></app-sheet>`;
+    return html`<app-sheet .title=${'About'} .description=${INTRO} .backLabel=${this.backLabel} .closeLabel=${'Close about'} .content=${this.body()}></app-sheet>`;
   }
 }
 

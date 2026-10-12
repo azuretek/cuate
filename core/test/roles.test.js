@@ -98,11 +98,8 @@ const PAIRS = [
   ['menu item hover', 'menu-hover-fg', 'menu-hover'], ['menu item press', 'menu-hover-fg', 'menu-press'],
   ['filter chip', 'chip-fg', 'chip'], ['filter chip hover', 'chip-fg', 'chip-hover'], ['filter chip on', 'chip-on-fg', 'chip-on'],
   ['header icon, open', 'head-icon-open-fg', 'head-icon-open'], ['header icon, hover', 'head-icon-hover-fg', 'head-icon-hover'],
+  // The send button, and the sheet's X and back arrow drawn as it is (issue 338).
   ['primary button', 'button-fg', 'button'], ['primary button hover', 'button-fg', 'button-hover'], ['primary button press', 'button-fg', 'button-press'],
-  // The sheet's way back (issue 246): its label, its glyph and its rule read on the strip it is drawn on, and the Esc
-  // key reads inside it, in both schemes of the default palette and an imported theme.
-  ['back strip label', 'back-fg', 'back'], ['back strip glyph', 'back-fg', 'back'], ['back strip hover label', 'back-fg', 'back-hover'],
-  ['back strip rule', 'back-border', 'back'], ['back Esc key', 'back-muted', 'back'],
 ];
 const CHART_TINT = Number(avatarBlock[1]);
 
