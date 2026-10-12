@@ -45,10 +45,13 @@ test('notice glyphs come from the shared icon set, not inline SVG', () => {
   const src = readFileSync(new URL('../app/components/app-notices.js', import.meta.url), 'utf8');
   const tokens = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url)));
   assert.doesNotMatch(src, /<svg/);
-  for (const name of ['check', 'alert-triangle', 'circle-x', 'info']) {
+  for (const name of ['check', 'alert-triangle', 'info']) {
     assert.ok(tokens.icons.glyphs[name], name);
     assert.ok(src.includes("'" + name + "'") || src.includes('"' + name + '"'), name);
   }
+  // An error wears the warning triangle, never a circled X beside the close control's own X (issue 350).
+  assert.match(src, /error: 'alert-triangle'/);
+  assert.equal(src.includes("'circle-x'"), false);
   // The dismiss glyph is the shared close control's (issue 213).
   const close = readFileSync(new URL('../app/components/close-button.js', import.meta.url), 'utf8');
   assert.ok(tokens.icons.glyphs.x && close.includes('data-icon="x"') && src.includes("closeButtonHtml({ owner: 'notice'"), 'x');
