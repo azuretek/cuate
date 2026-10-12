@@ -3,6 +3,7 @@ package com.azuretek.cuate
 import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -55,6 +56,24 @@ class HostBridge(
         /** Storage keys are lower-case words joined by dots, the same shape the desktop enforces. */
         private const val CHANNEL_ID = "cuate.default"
         private const val REQUEST_NOTIFICATIONS = 6601
+
+        /** The extras a message notice's press carries back to the activity (issue 331). */
+        const val EXTRA_CHAT = "cuate.notice.chatId"
+        const val EXTRA_MESSAGE = "cuate.notice.messageId"
+
+        /**
+         * The notice last pressed, as { chatId, messageId }, held until the page takes it with notify.take (issue 331).
+         * Held here rather than on a bridge, because a press that launches the app arrives before the page or its bridge
+         * exists.
+         */
+        @Volatile var pressedNotice: JSONObject? = null
+
+        /** The target a press carried, from the intent it opened the activity with; null for any other intent. */
+        fun noticeFrom(intent: Intent?): JSONObject? {
+            val chat = intent?.getStringExtra(EXTRA_CHAT)?.takeIf { it.isNotEmpty() && it.length <= 200 } ?: return null
+            val message = intent.getStringExtra(EXTRA_MESSAGE)?.takeIf { it.isNotEmpty() && it.length <= 200 }
+            return JSONObject().put("chatId", chat).put("messageId", message ?: JSONObject.NULL)
+        }
 
         /** The command names the bundled spec declares. */
         fun commandNames(assets: android.content.res.AssetManager): Set<String> = try {
@@ -177,6 +196,7 @@ class HostBridge(
             "link.take" -> { val l = pendingLink; pendingLink = null; success(l ?: JSONObject.NULL) }
             "notify" -> success(notify(args))
             "notify.permission" -> success(notifyPermission(args.optBoolean("request")))
+            "notify.take" -> success(takeNotice())
             "open.external" -> success(openExternal(args))
             "file.save" -> success(saveFile(args))
             // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
@@ -301,13 +321,40 @@ class HostBridge(
                 return true
             }
         }
-        val notification = android.app.Notification.Builder(context, CHANNEL_ID)
+        val chat = args.optString("chatId").take(200)
+        val message = args.optString("messageId").take(200)
+        val builder = android.app.Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(body)
-            .build()
-        manager.notify(title.hashCode(), notification)
+            .setAutoCancel(true)
+        // A message notice opens its conversation at its message when pressed (issue 331): the press reopens this
+        // activity with the target as extras, on top of the one already running rather than as a second copy.
+        if (chat.isNotEmpty()) {
+            val open = Intent(context, MainActivity::class.java)
+                .setAction("cuate.notice.open")
+                .putExtra(EXTRA_CHAT, chat)
+                .putExtra(EXTRA_MESSAGE, message)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            builder.setContentIntent(PendingIntent.getActivity(context, chat.hashCode(), open, flags))
+        }
+        // One notice per conversation: a newer message replaces its conversation's notice and the press it leads to.
+        manager.notify(if (chat.isNotEmpty()) chat.hashCode() else title.hashCode(), builder.build())
         return true
+    }
+
+    /** The notice last pressed (issue 331), taken once: the page asks when told of a press and again once it is ready. */
+    private fun takeNotice(): Any {
+        val target = pressedNotice ?: return JSONObject.NULL
+        pressedNotice = null
+        return target
+    }
+
+    /** A press on a message notice reached the activity (issue 331): it is held, and the page is told to take it. */
+    fun noticePressed(target: JSONObject) {
+        pressedNotice = target
+        emit("notify.opened", JSONObject())
     }
 
     /**

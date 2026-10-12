@@ -52,6 +52,9 @@ class AppConversation extends KitElement {
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
+    // The message a pressed notice leads to ({ id, seq }, issue 331), brought into view and marked until the person
+    // presses somewhere in the conversation or another conversation opens.
+    reveal: { attribute: false }, revealedId: { state: true },
     // A note of the conversation's own under one message, such as Link copied: { id, text }, cleared after a moment.
     ownNote: { state: true },
     // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, or the
@@ -128,10 +131,12 @@ class AppConversation extends KitElement {
       this.pop = null;
       this.replyingTo = null;
       this.reactFor = null;
+      this.revealedId = null;
     }
   }
 
   updated(changed) {
+    if (changed.has('reveal') && this.reveal) this.revealMessage(this.reveal.id);
     if (changed.has('pop')) this.placePop();
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
     aimCarets(this);
@@ -232,6 +237,7 @@ class AppConversation extends KitElement {
   // A finger or the main mouse button held on a message opens its menu, as a right click does. Moving or lifting
   // first cancels, so a drag still scrolls and a click is still a click.
   pressStart(m, e) {
+    this.revealedId = null;
     const held = e.pointerType === 'touch' || (e.pointerType === 'mouse' && e.button === 0);
     if (!held || e.target?.closest?.('.message-pop')) return;
     clearTimeout(this.pressTimer);
@@ -288,6 +294,30 @@ class AppConversation extends KitElement {
     this.pop = null;
     this.reactFor = null;
     this.replyingTo = { id: threadRoot(this.messages, m.id) };
+  }
+
+// A pressed notice's message (issue 331), brought into view and marked. A reply in a thread opens its thread, where
+  // it is drawn; any other message is held a third of the way down the conversation, the place the keep holds it at
+  // while pictures above it load, and given focus so a screen reader starts there.
+  async revealMessage(id) {
+    const m = (this.messages || []).find((x) => x.id === id);
+    if (!m) return;
+    const inThread = threadRoot(this.messages, id) !== id && platformCapabilities(platformOf(this.chat)).thread;
+    if (inThread) this.openThread(m);
+    else this.replyingTo = null;
+    this.revealedId = id;
+    await this.updateComplete;
+    const row = this.rowOf(id);
+    if (!row) return;
+    if (inThread) {
+      row.scrollIntoView({ block: 'center' });
+    } else {
+      const list = this.querySelector('.messages');
+      this.keep.anchor = { key: String(id), offset: Math.round((list ? list.clientHeight : 0) / 3) };
+      this.keep.restore();
+    }
+    row.focus({ preventScroll: true });
+    play(row.querySelector('.bubble') || row, [{ scale: '1 1' }, { scale: '1.04 1.04' }, { scale: '1 1' }], { duration: 'screen', easing: 'sheet-ease' });
   }
 
   closeThread() {
@@ -349,7 +379,7 @@ class AppConversation extends KitElement {
     const targeted = this.reactFor === m.id;
     const mark = where === 'list' ? marksOf(this.messages).get(m.id) || null : null;
     const isReply = Boolean(mark && mark.root);
-    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', isReply ? 'thread-reply' : ''].filter(Boolean).join(' ');
+    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', isReply ? 'thread-reply' : '', this.revealedId === m.id ? 'revealed' : ''].filter(Boolean).join(' ');
     const kind = mine ? (sms ? 'sms' : 'me') : 'them';
     const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
     const own = myReaction(m);

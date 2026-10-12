@@ -41,6 +41,19 @@ function buildStamp() {
 const SMOKE = process.env.SMOKE_OUT || '';
 // Every notice the shell is asked to show while smoking, so the smoke can prove one fired and one was suppressed.
 const smokeNotices = [];
+// The notices on screen, and the target of the one last pressed, held until the page takes it (issue 331).
+const liveNotices = new Set();
+let pressedNotice = null;
+function noticePressed(target) {
+  if (!target) return;
+  pressedNotice = target;
+  const w = win && !win.isDestroyed() ? win : createWindow();
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+  // A window still loading boots and takes the press itself; one already up is told now.
+  if (!w.webContents.isLoading()) w.webContents.send('bridge:event:notify.opened', {});
+}
 // Every bridge command the page calls while smoking, so the smoke can prove the banner's action called the command it
 // says it does rather than trusting the button's label.
 const smokeCalls = [];
@@ -180,13 +193,21 @@ const secure = createSecureStore({ file: () => path.join(app.getPath('userData')
 const handlers = createHandlers({
   secure,
   takeLink: () => { const l = pendingLink; pendingLink = null; return l; },
-  notify: (title, body) => {
-    if (SMOKE) smokeNotices.push({ title, body });
+  notify: (title, body, target) => {
+    // Pressing a message notice raises the window and tells the page, which takes the target (issue 331).
+    const pressed = () => noticePressed(target);
+    if (SMOKE) smokeNotices.push({ title, body, target, pressed });
     if (!Notification.isSupported()) return false;
-    new Notification({ title, body }).show();
+    const n = new Notification({ title, body });
+    // Held until it is pressed or closed: a notice nothing references is collected, and its press then reaches nothing.
+    liveNotices.add(n);
+    n.on('click', () => { liveNotices.delete(n); pressed(); });
+    n.on('close', () => liveNotices.delete(n));
+    n.show();
     return true;
   },
   notifyPermission: () => (Notification.isSupported() ? 'granted' : 'unsupported'),
+  takeNotice: () => { const t = pressedNotice; pressedNotice = null; return t; },
   // The client's own half of the build report: the version the bundle carries, the runtime versions only the shell
   // knows, and the commit and build date the packaging step stamped into the app. Nothing here reads the server.
   info: () => {
@@ -2365,6 +2386,52 @@ async function runSmoke(w) {
   report.noticeSuppressed = smokeNotices.length === 0;
   await putSettings({ 'notifications.updateAvailable': true });
   report.notices = report.noticeFired && report.noticeSuppressed;
+
+  // A pressed message notice opens its conversation at its message (issue 331): a notice raised through the bridge for
+  // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
+  // leaves that conversation open with that message in view, marked and focused.
+  const pressFrom = await js("document.querySelector('app-root').openChatId");
+  // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
+  // in force (Settings, for the steps that follow) is put back once the press is checked.
+  const pressView = await js("document.querySelector('app-root').view");
+  const pressList = await js("document.querySelector('app-root').listOpen");
+  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
+  smokeNotices.length = 0;
+  let pressSeen = null;
+  if (pressTo) {
+    await js("window.bridge.call('notify', " + JSON.stringify({ title: 'Smoke notice', body: 'Pressed', ...pressTo }) + ')');
+    const raised = smokeNotices.find((n) => n.title === 'Smoke notice');
+    if (raised) raised.pressed();
+    const rowSel = '.bubble-row.revealed[data-id=' + JSON.stringify(pressTo.messageId) + ']';
+    try {
+      await waitFor("document.querySelector('app-root').openChatId === " + JSON.stringify(pressTo.chatId) + ' && Boolean(document.querySelector(' + JSON.stringify(rowSel) + '))', 10000);
+    } catch { /* measured below */ }
+    pressSeen = await js("(() => { const row = document.querySelector(" + JSON.stringify(rowSel) + "); const open = document.querySelector('app-root').openChatId; if (!row) return { row: false, open }; const view = row.closest('.thread-view') || row.closest('.messages'); const a = row.getBoundingClientRect(); const b = view.getBoundingClientRect(); return { row: true, open, inView: a.top >= b.top - 1 && a.top < b.bottom, focused: document.activeElement === row }; })()");
+  }
+  const pressChecks = {
+    target: Boolean(pressTo),
+    raised: smokeNotices.some((n) => n.title === 'Smoke notice' && n.target && n.target.chatId === pressTo?.chatId && n.target.messageId === pressTo?.messageId),
+    opened: pressSeen?.open === pressTo?.chatId,
+    inView: pressSeen?.inView === true,
+    marked: pressSeen?.row === true,
+    focused: pressSeen?.focused === true,
+    takenOnce: (await js("window.bridge.call('notify.take', {})")) === null,
+  };
+  report.noticeOpens = Object.values(pressChecks).every(Boolean);
+  console.log('notice opens: ' + JSON.stringify({ checks: pressChecks, pressTo, pressSeen }));
+  if (pressFrom) await js("document.querySelector('app-root').open(" + JSON.stringify(pressFrom) + ', { show: true })');
+  // Opening to show a conversation closes the phone's list drawer; the later steps expect it as it was.
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(pressList)));
+  if (pressView && pressView !== 'messages') {
+    // The press took the sheet down with its departure; once it has gone, the gear brings Settings back as a person would.
+    await waitFor("!document.querySelector('.sheet')", 10000);
+    await js("document.querySelector('.sidebar-head .gear-button').click()");
+    const sheetState = () => js("JSON.stringify({ view: document.querySelector('app-root').view, sheet: Boolean(document.querySelector('.sheet')), gear: Boolean(document.querySelector('.sidebar-head .gear-button')), tabs: document.querySelectorAll('app-settings .settings-tab').length, moving: document.querySelector('.sheet') ? document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running') : null })");
+    let back = false;
+    for (const t0 = Date.now(); !back && Date.now() - t0 < 8000;) { back = await js("Boolean(document.querySelector('app-settings .settings-tab')) && !(document.querySelector('.sheet') ? document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running') : false)"); if (!back) await pause(200); }
+    if (!back) console.error('settings back: ' + (await sheetState()));
+    report.settingsBack = back;
+  } else { report.settingsBack = true; }
 
   // The update banner runs the whole flow in the app: an available state offers the download, the button's action
   // calls the bridge command it says it does, the download shows its progress, ready offers the restart, and a failure

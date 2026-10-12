@@ -89,6 +89,9 @@ class MainActivity : Activity() {
         shellBridge = bridge
         bridge.handOverLink(intent?.dataString)
         ApkUpdater.live = bridge.updater
+        // A press on a message notice that launched the app (issue 331): held for the page to take once it is ready.
+        // A recreated activity carries the same intent again, so only a fresh launch counts as a press.
+        if (savedInstanceState == null) HostBridge.noticeFrom(intent)?.let { HostBridge.pressedNotice = it }
         Diagnostics.remember(this)
 
         webView = WebView(this).apply {
@@ -240,14 +243,20 @@ class MainActivity : Activity() {
         applyBarIcons()
     }
 
-    /** Back from the setting that allows installs: an update waiting on it continues (issue 192). */
-    /** A messaging link that opens the activity already running reaches the page here (issue 333). */
-    override fun onNewIntent(intent: android.content.Intent) {
+    /**
+     * An intent that reopens the activity already running: a press on a message notice (issue 331), which the page is
+     * told of and takes, or a messaging link (issue 333), handed to the page the same way. A link carries its address as the
+     * intent's data; a notice press carries none, only its extras.
+     */
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        shellBridge?.handOverLink(intent.dataString)
+        if (intent.dataString != null) { shellBridge?.handOverLink(intent.dataString); return }
+        val notice = HostBridge.noticeFrom(intent) ?: return
+        shellBridge?.noticePressed(notice) ?: run { HostBridge.pressedNotice = notice }
     }
 
+    /** Back from the setting that allows installs: an update waiting on it continues (issue 192). */
     override fun onResume() {
         super.onResume()
         updater?.resumed()
