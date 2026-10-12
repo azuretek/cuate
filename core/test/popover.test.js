@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { caretX } from '../kit/rules/popover.js';
 
-const box = (left, width) => ({ left, right: left + width, width });
+const box = (left, width, height = 36) => ({ left, right: left + width, width, height });
 const anchor = (left, width) => ({ left, right: left + width, width });
 
 test('the caret is aimed at the middle of the control that opened the popover', () => {
@@ -15,6 +15,16 @@ test('a control wider than the popover, or off one side, still puts the caret on
   // The message menu: a wide row under a narrow pill, so the caret points at the control's near edge.
   assert.equal(caretX(anchor(0, 600), box(0, 160), 'start'), 7);
   assert.equal(caretX(anchor(0, 600), box(0, 160), 'end'), 153);
+});
+
+test('the caret stays clear of a rounded corner, on the straight run of the edge (issue 345)', () => {
+  // The message menu is a pill: 40px tall, so its corner is 20px and the caret's centre sits at least 20 + 7 in.
+  assert.equal(caretX(anchor(0, 600), box(0, 160, 40), 'start', 20), 27);
+  assert.equal(caretX(anchor(0, 600), box(0, 160, 40), 'end', 20), 133);
+  // A pill's radius token is far larger than the box; the corner is read as half the height.
+  assert.equal(caretX(anchor(0, 600), box(0, 160, 40), 'start', 9999), 27);
+  // A control near the corner is still aimed at from the straight run, never from the curve.
+  assert.equal(caretX(anchor(80, 10), box(80, 240, 40), 'center', 12), 19);
 });
 
 test('an untargeted placement is refused: a control that is not over the popover answers null', () => {

@@ -26,7 +26,9 @@ export function aimCarets(host) {
   for (const pop of host.querySelectorAll('[data-popover]')) {
     const anchor = caretAnchor(pop);
     const align = pop.dataset.popoverAlign || 'center';
-    const x = anchor ? caretX(anchor.getBoundingClientRect(), pop.getBoundingClientRect(), align) : null;
+    const style = getComputedStyle(pop);
+    const edge = pop.dataset.popoverEdge === 'top' ? style.borderTopLeftRadius : style.borderBottomLeftRadius;
+    const x = anchor ? caretX(anchor.getBoundingClientRect(), pop.getBoundingClientRect(), align, Number.parseFloat(edge) || 0) : null;
     const name = pop.dataset.dismiss || pop.getAttribute('class') || 'popover';
     if (x === null) out.push({ name, ok: false });
     else { pop.style.setProperty('--caret-x', x + 'px'); out.push({ name, ok: true, x }); }
