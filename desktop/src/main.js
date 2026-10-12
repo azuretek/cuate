@@ -2391,6 +2391,9 @@ async function runSmoke(w) {
   // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
   // leaves that conversation open with that message in view, marked and focused.
   const pressFrom = await js("document.querySelector('app-root').openChatId");
+  // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
+  // in force (Settings, for the steps that follow) is put back once the press is checked.
+  const pressView = await js("document.querySelector('app-root').view");
   const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
   smokeNotices.length = 0;
   let pressSeen = null;
@@ -2416,6 +2419,16 @@ async function runSmoke(w) {
   report.noticeOpens = Object.values(pressChecks).every(Boolean);
   console.log('notice opens: ' + JSON.stringify({ checks: pressChecks, pressTo, pressSeen }));
   if (pressFrom) await js("document.querySelector('app-root').open(" + JSON.stringify(pressFrom) + ', { show: true })');
+  if (pressView && pressView !== 'messages') {
+    // The press took the sheet down with its departure; once it has gone, the gear brings Settings back as a person would.
+    await waitFor("!document.querySelector('.sheet')", 10000);
+    await js("document.querySelector('.sidebar-head .gear-button').click()");
+    const sheetState = () => js("JSON.stringify({ view: document.querySelector('app-root').view, sheet: Boolean(document.querySelector('.sheet')), gear: Boolean(document.querySelector('.sidebar-head .gear-button')), tabs: document.querySelectorAll('app-settings .settings-tab').length, moving: document.querySelector('.sheet') ? document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running') : null })");
+    let back = false;
+    for (const t0 = Date.now(); !back && Date.now() - t0 < 8000;) { back = await js("Boolean(document.querySelector('app-settings .settings-tab')) && !(document.querySelector('.sheet') ? document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running') : false)"); if (!back) await pause(200); }
+    if (!back) console.error('settings back: ' + (await sheetState()));
+    report.settingsBack = back;
+  } else { report.settingsBack = true; }
 
   // The update banner runs the whole flow in the app: an available state offers the download, the button's action
   // calls the bridge command it says it does, the download shows its progress, ready offers the restart, and a failure
