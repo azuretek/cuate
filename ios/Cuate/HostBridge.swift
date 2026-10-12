@@ -108,6 +108,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
 
     weak var webView: WKWebView?
 
+    /// The messaging link the system last opened the app with (issue 333), until the page takes it.
+    var pendingLink: String?
+
     /// Keeps the web view on the system's scheme while the window shows the page's; registered on the first call.
     private var systemObserver: UITraitChangeRegistration?
 
@@ -185,6 +188,10 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             AppIcons.apply(args["icon"] as? String ?? "") { [weak self] answer in
                 self?.settle(id: id, ok: true, value: answer)
             }
+        case "link.take":
+            let link = pendingLink
+            pendingLink = nil
+            settle(id: id, ok: true, value: link ?? NSNull())
         case "notify":
             settle(id: id, ok: true, value: notify(args))
         case "notify.permission":

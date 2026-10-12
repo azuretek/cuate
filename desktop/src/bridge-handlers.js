@@ -74,12 +74,14 @@ const noSave = () => false;
 // The colour tokens the page sends for the icon: strings only, a bounded handful, never anything else it might carry.
 const iconColors = (colors) => (colors && typeof colors === 'object' && !Array.isArray(colors) ? Object.fromEntries(Object.entries(colors).filter(([k, v]) => /^[a-z][a-z-]{0,31}$/.test(k) && typeof v === 'string' && v.length <= 120).slice(0, 16)) : {});
 
-export function createHandlers({ secure, notify, notifyPermission = () => 'unsupported', info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
+export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
     'storage.delete': async ({ key }) => secure.delete(key),
     'app.info': async () => info(),
+    // The messaging link the platform last opened this app with (issue 333), answered once.
+    'link.take': async () => takeLink(),
     'app.icon': async ({ icon }) => appIcon(String(icon ?? '')),
     notify: async ({ title, body }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500)),
     // Where notifications stand (issue 327). A desktop shows them without asking; macOS asks on the first one shown.

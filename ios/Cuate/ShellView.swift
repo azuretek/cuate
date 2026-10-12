@@ -18,6 +18,8 @@ struct RootView: View {
             }
         }
         .background(Color("Surface").ignoresSafeArea())
+        // A messaging link (im:, issue 333) is held for the page, which asks for it whenever it is shown.
+        .onOpenURL { url in model.bridge.pendingLink = url.absoluteString }
     }
 }
 

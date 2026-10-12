@@ -46,6 +46,10 @@ xcodebuild test -project Cuate.xcodeproj -scheme Cuate \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
+## Default messaging app
+
+The app answers the `im:` links iOS sends to the default messaging app (issue 333), and the page opens the conversation the link names or starts one. Being listed under Settings, Apps, Default Apps, Messaging needs the `com.apple.developer.messaging-app` entitlement, which Apple grants to a team on request. Until it is granted the build signs with `Cuate/Cuate.entitlements`; once it is, set the build setting `CUATE_ENTITLEMENTS` to `Cuate/CuateMessaging.entitlements` (in `project.yml`, or on the release job's command line) and the same build is offered as a default.
+
 ## The pipeline
 
 `.github/workflows/ios.yml` is the iOS half. On every pull request it generates

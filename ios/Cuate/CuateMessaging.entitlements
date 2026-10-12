@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Keychain group the device token and cache key are stored in. The
+	     prefix is the team's AppIdentifierPrefix, which only signing knows, so
+	     the group is written against the app id from core/spec/naming.json
+	     (ids.ios) rather than a literal. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.azuretek.cuate</string>
+	</array>
+	<!-- Lists the app under Settings, Apps, Default Apps, Messaging (issue 333). Apple grants this capability to a
+	     team; until it does, a signed build carrying it is refused, so the release builds with Cuate.entitlements
+	     unless the build setting CUATE_ENTITLEMENTS names this file (ios/README.md). -->
+	<key>com.apple.developer.messaging-app</key>
+	<true/>
+</dict>
+</plist>
