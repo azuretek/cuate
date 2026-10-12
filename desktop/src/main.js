@@ -2481,7 +2481,9 @@ async function runSmoke(w) {
   smokeCalls.length = 0;
   await js("document.querySelector('.app-notice .close-button').click()");
   await pause(300);
-  report.updateBannerCleared = await js("!document.querySelector('.app-notice')") && smokeCalls.length === 0;
+  // Closing marks the notice read on every device (issue 342): it writes a setting, so the page re-applies its settings to
+  // the shell, but it never runs an update command.
+  report.updateBannerCleared = await js("!document.querySelector('.app-notice')") && !smokeCalls.some((c) => /^updates\.(download|install|check)/.test(c));
   // The same update event updates one card and its progress node, without replaying arrival.
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.2,canInstall:true})");
   await waitFor("Boolean(document.querySelector('.app-notice-progress'))");
@@ -2493,6 +2495,8 @@ async function runSmoke(w) {
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.9,canInstall:true})");
   report.noticeDismissed = await js("!document.querySelector('.app-notice')");
   report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared && report.noticeInPlace && report.noticeDismissed && report.noticeFloor;
+  // A red updates check names the step that failed, and the bridge calls a close made, rather than one bare false.
+  if (!report.updates) console.error('updates: ' + JSON.stringify({ download: report.updateDownloadAction, banner: report.updateBanner, install: report.updateInstallAction, failure: report.updateFailure, cleared: report.updateBannerCleared, inPlace: report.noticeInPlace, dismissed: report.noticeDismissed, floor: report.noticeFloor, calls: smokeCalls }));
 
   // Issue 167: the sections are tabs, one per section the schema declares and in its order, and every setting is
   // reached from one. Each tab is pressed in turn: its section alone shows, and every key it offers is drawn inside
