@@ -27,23 +27,26 @@
   const page = () => document.querySelector('app-settings');
   await until(() => page() && page().querySelector('.settings-tab'), 'the Settings page');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the page to arrive');
-  // The sheet is a floating card over the conversation (issue 253), not a page that replaces the view: it spans the
-  // phone's width, is anchored to the bottom edge, keeps its rounded top corners and its shadow, and its backdrop blurs
-  // what is behind it. Its way back is the chats control.
+  // The sheet is a floating card over the conversation (issues 253 and 338), not a page that replaces the view: inset
+  // from every edge with every corner rounded and its shadow kept, its handle shown, and its backdrop blurring what is
+  // behind it. Its way out is the round X, drawn as the send button is.
   const sheetEl = document.querySelector('.sheet');
   const sheet = sheetEl.getBoundingClientRect();
   const scrim = getComputedStyle(document.querySelector('.sheet-scrim'));
   const width = innerWidth - parseFloat(scrim.paddingLeft) - parseFloat(scrim.paddingRight);
-  if (Math.abs(sheet.width - width) > 1) throw new Error('Settings does not span the phone: ' + sheet.width + ' of ' + width);
-  if (Math.abs(sheet.bottom - (innerHeight - parseFloat(scrim.paddingBottom))) > 1) throw new Error('Settings is not anchored to the bottom edge');
-  if (!parseFloat(getComputedStyle(sheetEl).borderTopLeftRadius)) throw new Error('Settings keeps no rounded top corners, so it reads as a page rather than a card');
+  if (Math.abs(sheet.width - width) > 1) throw new Error('Settings does not span the room the backdrop leaves: ' + sheet.width + ' of ' + width);
+  if (!(sheet.left > 1 && sheet.right < innerWidth - 1)) throw new Error('Settings touches the side of the screen, so it reads as a page');
+  if (Math.abs(sheet.bottom - (innerHeight - parseFloat(scrim.paddingBottom))) > 1) throw new Error('Settings does not rise from the bottom');
+  const card = getComputedStyle(sheetEl);
+  if (!parseFloat(card.borderTopLeftRadius) || !parseFloat(card.borderBottomLeftRadius)) throw new Error('Settings is not rounded at every corner');
   if (!/blur/.test(scrim.backdropFilter || scrim.webkitBackdropFilter || '')) throw new Error('the backdrop does not blur the conversation behind the card');
-  const narrow = page().querySelector('.sheet-back-narrow');
   const shown = (el) => Boolean(el) && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0;
-  if (!shown(narrow) || shown(page().querySelector('.sheet-back-wide'))) throw new Error('the way back is not the chats control');
-  const back = narrow.querySelector('.sheet-back-label').textContent.trim();
-  const icon = narrow.querySelector('.icon').dataset.icon;
-  if (back !== 'Back to chats' || icon !== 'messages-square') throw new Error('the way back reads ' + back + ' with ' + icon);
+  if (!shown(page().querySelector('.sheet-handle'))) throw new Error('the grab handle is not drawn');
+  const close = page().querySelector('.sheet-head .close-button[data-look="solid"]');
+  if (!shown(close)) throw new Error('the way out is not the round X');
+  const back = close.getAttribute('aria-label');
+  const icon = close.querySelector('.icon').dataset.icon;
+  if (back !== 'Close settings' || icon !== 'x') throw new Error('the way out reads ' + back + ' with ' + icon);
   // Every tab, and every setting it offers, inside the screen's width.
   const inside = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5; };
   const walked = [];

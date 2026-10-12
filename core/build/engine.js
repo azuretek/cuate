@@ -34,10 +34,15 @@ var engine = (() => {
     CONVERSATION_MIN: () => CONVERSATION_MIN,
     DELETE_STEPS: () => DELETE_STEPS,
     DISMISS: () => DISMISS,
+    DRAG_FRACTION: () => DRAG_FRACTION,
+    DRAG_MAX: () => DRAG_MAX,
+    DRAG_MIN: () => DRAG_MIN,
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
     EMOJI_TAPBACK_VERSION: () => EMOJI_TAPBACK_VERSION,
+    FLICK_MIN: () => FLICK_MIN,
+    FLICK_VELOCITY: () => FLICK_VELOCITY,
     FLING: () => FLING,
     FLING_TRAVEL: () => FLING_TRAVEL,
     FOLLOW_THEME: () => FOLLOW_THEME,
@@ -169,6 +174,8 @@ var engine = (() => {
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
     dragChatsWidth: () => dragChatsWidth,
+    dragOutcome: () => dragOutcome,
+    dragThreshold: () => dragThreshold,
     drawnY: () => drawnY,
     durationMs: () => durationMs,
     emojiInCategory: () => emojiInCategory,
@@ -3821,6 +3828,22 @@ var engine = (() => {
   }
   function pageAfterBack(view, from) {
     return view === "about" && from === "settings" ? "settings" : null;
+  }
+
+  // core/app/rules/sheet-drag.js
+  var DRAG_FRACTION = 0.25;
+  var DRAG_MIN = 64;
+  var DRAG_MAX = 160;
+  var FLICK_VELOCITY = 0.6;
+  var FLICK_MIN = 24;
+  function dragThreshold(height) {
+    const h = Number(height) > 0 ? Number(height) : 0;
+    return Math.min(DRAG_MAX, Math.max(DRAG_MIN, h * DRAG_FRACTION));
+  }
+  function dragOutcome({ dy = 0, velocity = 0, height = 0 } = {}) {
+    if (!(dy > 0)) return "stay";
+    if (velocity >= FLICK_VELOCITY && dy >= FLICK_MIN) return "dismiss";
+    return dy >= dragThreshold(height) ? "dismiss" : "stay";
   }
   return __toCommonJS(engine_exports);
 })();

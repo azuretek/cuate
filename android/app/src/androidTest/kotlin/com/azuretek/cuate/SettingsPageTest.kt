@@ -121,7 +121,7 @@ class SettingsPageTest {
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             val proof = awaitProof(scenario)
-            assertTrue("The way back to the chats list is the chats icon: " + proof, proof.getString("back") == "Back to chats" && proof.getString("icon") == "messages-square")
+            assertTrue("The way out is the round X: " + proof, proof.getString("back") == "Close settings" && proof.getString("icon") == "x")
             assertTrue("Every tab was walked: " + proof, proof.getString("walked").startsWith("appearance:") && proof.getString("walked").contains("behavior:") && proof.getString("walked").contains("device:"))
             val capture = settledCapture()
             // AGP copies this directory before uninstalling the app and its data.

@@ -351,8 +351,8 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .action-button[data-press]::after { content: none; animation: none; }
 .action-button[data-press="pending"] { cursor: progress; }
 
-/* Settings and About are the two pages of the app's one sheet surface: a top strip that is itself the back control, the
-   page's title and its one-line description, then its sections. Settings ends with the row that opens About, a page of
+/* Settings and About are the two pages of the app's one sheet surface: a header with the page's title and its one-line
+   description, its round X and, over another sheet, its round back arrow (issue 338), then its sections. Settings ends with the row that opens About, a page of
    its own on every platform (issue 171). The chrome is drawn by app-sheet. */
 app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 /* A row that opens another page: the whole row is the control, the value beside its label, and the chevron at its end. */
@@ -373,17 +373,20 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 /* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
 /* Settings and About are the app's two sheets (issue 253), each with its own arrival below; no page fades in place. */
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
-.sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--role-back-border); border-radius: 0; background: var(--role-back); color: var(--role-back-fg); cursor: pointer; text-align: left; flex: none; }
-.sheet-back:hover { background: var(--role-back-hover); color: var(--role-back-fg); }
-.sheet-back:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
-/* The strip draws one of two ways back: the arrow and the page's own label, or below the phone breakpoint, on a page
-   that returns to the chats list, the chats icon and "Back to chats" (issue 168). The phone block picks between them. */
-.sheet-back-wide, .sheet-back-narrow { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.sheet-back-narrow { display: none; }
-.sheet-back-icon { display: inline-flex; width: var(--size-back-icon); height: var(--size-back-icon); }
-.sheet-back-icon .icon { width: 100%; height: 100%; }
-.sheet-esc { margin-left: auto; padding: var(--space-1) var(--space-2); border: var(--size-border) solid var(--role-back-border); border-radius: var(--radius-sm); background: var(--role-back); color: var(--role-back-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); text-transform: uppercase; }
-.sheet-head { flex: none; padding: var(--space-4) var(--space-4) var(--space-2); }
+/* The handle and the header are the sheet's grip (issue 338): a drag that starts on either moves the card, so the page
+   takes no touch scrolling or text selection there. The handle is drawn on a phone only. */
+.sheet-grip { flex: none; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.sheet[data-dragging] .sheet-grip { cursor: grabbing; }
+.sheet-handle { display: none; width: var(--size-sheet-handle-w); height: var(--size-sheet-handle-h); margin: var(--space-2) auto 0; border-radius: var(--radius-pill); background: color-mix(in oklab, var(--color-fg-muted) 55%, transparent); }
+.sheet-head { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-2); }
+.sheet-heading { flex: 1 1 auto; min-width: 0; }
+/* The back arrow is drawn as the send button is, and the X is the shared close button in the same solid look, so the
+   sheet's two ways out and the composer's one action read as one family of controls (issue 338). */
+.sheet-back { flex: none; display: grid; place-items: center; width: var(--size-tool); height: var(--size-tool); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--role-button); color: var(--role-button-fg); cursor: pointer; }
+.sheet-back .icon { width: var(--size-send-icon); height: var(--size-send-icon); }
+.sheet-back:hover { background: var(--role-button-hover); }
+.sheet-back:active { background: var(--role-button-press); }
+.sheet-back:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .sheet-title { margin: 0; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); }
 .sheet-desc { margin: var(--space-1) 0 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
@@ -691,33 +694,33 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 /* The card is only as wide as its content needs, up to a sensible maximum, and it is centred in the backdrop rather
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
-.sheet { position: relative; z-index: 4; display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.sheet { position: relative; z-index: 4; translate: 0 var(--sheet-drag, 0); display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
 /* Either sheet arrives from the bottom edge (issue 253). */
 .sheet[data-arrive="up"] { animation: sheet-up-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* The About sheet is a later layer ABOVE the Settings sheet it is stacked over (issue 253): above the settings
    backdrop and card, and below the notices, which draw above every surface. */
 .sheet-scrim[data-sheet="about"] { z-index: 5; }
 .sheet-scrim[data-sheet="about"] .sheet { z-index: 6; }
+/* With About stacked over it, the Settings card tucks back behind (issue 338): a little smaller and a little higher, so
+   its edge shows above About and the back arrow plainly returns to it. */
+.sheet-scrim[data-under] > .sheet { scale: var(--size-sheet-tuck-scale); translate: 0 calc(var(--space-3) * -1); transform-origin: top center; transition: scale var(--motion-sheet-in) var(--motion-sheet-ease), translate var(--motion-sheet-in) var(--motion-sheet-ease); }
+@media (prefers-reduced-motion: reduce) { .sheet-scrim[data-under] > .sheet { transition: none; } }
 /* On a phone the sheet keeps the card's own treatment (issue 253): the backdrop's blur and dim over the conversation,
-   the card's edge, rounded top corners and shadow, anchored to the bottom edge, with the safe areas kept clear of the
-   strip and the last row. The strip at the top is the way back, and a phone has no Escape key to name on it. This block
-   follows the card's own rules, so it wins over them. */
+   the card's edge and shadow, with the safe areas kept clear. This block follows the card's own rules, so it wins over
+   them. */
 @media (max-width: 640px) {
-  /* On a phone the sheet is the same floating card the desktop draws (issue 253), not a page that replaces the view: the
-     card is anchored to the bottom edge and rises over the conversation, whose blurred, dimmed backdrop is the sheet's
-     own (.sheet-scrim). Only the system bars keep the card clear, and a focused field scrolls into sight with room to
-     spare above the keyboard. */
-  .sheet-scrim { align-items: flex-end; padding: var(--inset-top) var(--inset-right) calc(var(--inset-bottom) + var(--space-3)) var(--inset-left); }
+  /* On a phone the sheet is a floating card (issues 253 and 338), not a page that replaces the view: inset from every
+     edge with every corner rounded, so the conversation shows around it, only as tall as its content, and rising from the
+     bottom over the conversation's blurred, dimmed backdrop (.sheet-scrim). Its handle shows, since a phone closes it by
+     dragging down. A focused field scrolls into sight with room to spare above the keyboard. */
+  .sheet-scrim { align-items: flex-end; padding: calc(var(--inset-top) + var(--space-3)) calc(var(--inset-right) + var(--space-3)) calc(var(--inset-bottom) + var(--space-3)) calc(var(--inset-left) + var(--space-3)); }
   /* The card is capped by the room the two system bars leave as well as the floating ceiling: min(90vh, 100%) of the
      backdrop's padded box, so its top can never rise under the status bar (issue 253). */
-  .sheet { width: 100%; max-width: none; max-height: min(var(--size-sheet-max), 100%); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .sheet { width: 100%; max-width: none; max-height: min(var(--size-sheet-max), 100%); border-radius: var(--radius-sheet); }
+  .sheet-handle { display: block; }
+  .sheet-head { padding-top: var(--space-2); }
   .sheet-body { scroll-padding-block: var(--space-4); }
   app-settings { width: auto; }
-  .sheet-esc { display: none; }
-  /* A page that returns to the chats list says so with the chats icon, as the conversation's own way back does (issue
-     168). */
-  .sheet-back[data-narrow] .sheet-back-wide { display: none; }
-  .sheet-back[data-narrow] .sheet-back-narrow { display: inline-flex; }
 }
 /* Each sheet says leaving for itself, so the sheet and its dim leave together without taking the OTHER sheet with
    them, and each leaves back the way it came (issue 253): both rise from the bottom edge, so both return to it. */
@@ -880,6 +883,12 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .close-button .icon { display: block; width: 50%; height: 50%; pointer-events: none; }
 .close-button:hover { color: var(--color-fg); background: var(--color-bg-sunken); }
 .close-button:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
+/* The solid look is the send button's (issue 338): a filled accent circle at the composer's tool size, the glyph at the
+   send arrow's fraction, and the same hover and press fills. */
+.close-button[data-look="solid"] { --close-size: var(--size-tool); border: 0; background: var(--role-button); color: var(--role-button-fg); }
+.close-button[data-look="solid"] .icon { width: var(--size-send-icon); height: var(--size-send-icon); }
+.close-button[data-look="solid"]:hover { background: var(--role-button-hover); color: var(--role-button-fg); }
+.close-button[data-look="solid"]:active { background: var(--role-button-press); }
 .sheet-scrim, .app-notice { -webkit-app-region: no-drag; }
 
 /* Floating notice geometry: clear header controls and reserve the composer below. The stack scrolls, which clips
