@@ -47,6 +47,7 @@ var engine = (() => {
     FLING_TRAVEL: () => FLING_TRAVEL,
     FOLLOW_THEME: () => FOLLOW_THEME,
     GLYPH_FLOOR: () => GLYPH_FLOOR,
+    GROUP_PHOTO_NAME: () => GROUP_PHOTO_NAME,
     ICON_KINDS: () => ICON_KINDS,
     ICON_MASTERS: () => ICON_MASTERS,
     ICON_TOKENS: () => ICON_TOKENS,
@@ -67,6 +68,7 @@ var engine = (() => {
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
     OVERLAY_SIZES: () => OVERLAY_SIZES,
+    PHOTO_SCAN_ROWS: () => PHOTO_SCAN_ROWS,
     PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PRESS_STATES: () => PRESS_STATES,
     SATURATED: () => SATURATED,
@@ -183,6 +185,7 @@ var engine = (() => {
     emptyFilters: () => emptyFilters,
     emptyListText: () => emptyListText,
     engineLabel: () => engineLabel,
+    eventText: () => eventText,
     failedBanner: () => failedBanner,
     fallbackPhrase: () => fallbackPhrase,
     feedVersions: () => feedVersions,
@@ -223,6 +226,7 @@ var engine = (() => {
     isDoubleTap: () => isDoubleTap,
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
+    isGroupPhotoRow: () => isGroupPhotoRow,
     isHorizontal: () => isHorizontal,
     isLivePhoto: () => isLivePhoto,
     isMediaAttachment: () => isMediaAttachment,
@@ -2317,9 +2321,15 @@ var engine = (() => {
       payloads: link ? 0 : payloads.length - carried.length
     };
   }
+  var GROUP_PHOTO_NAME = "GroupPhotoImage";
+  var PHOTO_SCAN_ROWS = 400;
+  function isGroupPhotoRow(m) {
+    const list = Array.isArray(m && m.attachments) ? m.attachments : [];
+    return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || "") === GROUP_PHOTO_NAME;
+  }
   function mapMessage(m, { attachmentId }) {
     const fromMe = Boolean(m.is_from_me);
-    return {
+    const base = {
       id: m.guid ? String(m.guid) : "row:" + m.id,
       chatId: chatOf(m),
       fromMe,
@@ -2331,7 +2341,15 @@ var engine = (() => {
       // fills it on ordinary rows with the message before it, so reading it marked every consecutive message as a reply
       // to the one above (issue 195).
       replyTo: m.thread_originator_guid ? String(m.thread_originator_guid) : null,
-      read: fromMe || typeof m.is_read !== "boolean" ? null : m.is_read,
+      read: fromMe || typeof m.is_read !== "boolean" ? null : m.is_read
+    };
+    if (isGroupPhotoRow(m)) {
+      const v = attachmentView(m.attachments[0], attachmentId);
+      const photo = v.missing ? null : { ...modelAttachment(v, "Group photo"), mime: /^image\//i.test(v.mime) ? v.mime : "image/*" };
+      return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "groupPhoto", photo } };
+    }
+    return {
+      ...base,
       ...payloadParts(m, { attachmentId }),
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean)
     };
@@ -2467,7 +2485,13 @@ var engine = (() => {
   function chatPreview(chat) {
     const m = chat.lastMessage;
     if (!m) return "";
+    if (m.event) return eventText(m);
     return (m.fromMe ? "You: " : "") + messageSummary({ ...m, text: stripInlineObjects(m.text) });
+  }
+  function eventText(m) {
+    const who = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
+    if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
+    return "";
   }
   function initials(name) {
     const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
@@ -2483,7 +2507,8 @@ var engine = (() => {
     const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
     const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
     const out = chats.slice();
-    out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
+    const photo = message.event && message.event.kind === "groupPhoto" ? { photo: message.event.photo } : {};
+    out[i] = { ...c, ...photo, unread, lastMessageAt: message.sentAt, lastMessage: message.event ? { ...lastMessage, event: { kind: message.event.kind }, senderName: message.senderName || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
   function toggleChecked(checked = [], id) {
