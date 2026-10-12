@@ -31,11 +31,10 @@ import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpenAt, velocityFor } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
-import { ICON_TOKENS, unreadTotal, iconColours, iconPalette, parseGlyph, renderIcon } from '../rules/icon.js';
-import { ICON_MASTERS } from '../rules/app-icons-spec.js';
+import { ICON_TOKENS, unreadTotal } from '../rules/icon.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { CHATS_DEFAULT, CHATS_MIN, clampChatsWidth, chatsWidthFrom, dividerBounds, dividerKey, dragChatsWidth } from '../rules/divider.js';
-import { iconToApply } from '../rules/app-icons.js';
+import { iconToApply, themeMatch } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
@@ -229,7 +228,6 @@ class AppRoot extends KitElement {
     // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
     this.iconApplied = null;
     this.themePicture = null;
-    this.themePictureKey = null;
   }
 
   connectedCallback() {
@@ -364,34 +362,17 @@ class AppRoot extends KitElement {
     this.drawThemePicture();
   }
 
-  // Follow theme's picture in Settings is the app icon as the theme in force colours it, drawn by the one renderer the
-  // shells draw with (rules/icon.js) from the masters the icon pipeline mirrors for the page. Drawn once per change of
-  // scheme or colours, after the theme is in place and off the render that applied it; until then, and where the page
-  // has no canvas, Settings shows the default theme's icon (rules/app-icons.js).
+  // The theme's accent as the page resolves it, which Follow theme matches an offered icon against (issue 337).
+  themeAccent() {
+    if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return null;
+    return getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || null;
+  }
+
+  // Follow theme's picture in Settings and About is the offered icon it picks for the theme in force (issue 337), the
+  // same generated picture that icon's own tile shows.
   drawThemePicture() {
-    if (typeof document === 'undefined' || typeof document.createElement !== 'function' || !this.scheme) return;
-    const style = getComputedStyle(document.documentElement);
-    const colors = Object.fromEntries(ICON_TOKENS.map((k) => [k, style.getPropertyValue('--color-' + k).trim()]));
-    const key = JSON.stringify([this.scheme, colors]);
-    if (key === this.themePictureKey) return;
-    this.themePictureKey = key;
-    const scheme = this.scheme;
-    setTimeout(() => {
-      if (key !== this.themePictureKey) return;
-      try {
-        if (!AppRoot.iconMasters) AppRoot.iconMasters = { full: parseGlyph(ICON_MASTERS.full), small: parseGlyph(ICON_MASTERS.small) };
-        const image = renderIcon({ masters: AppRoot.iconMasters, palette: iconPalette(iconColours(colors, colors), scheme), kind: 'app', size: 144 });
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const context = canvas.getContext && canvas.getContext('2d');
-        if (!context) return;
-        context.putImageData(new ImageData(image.data, image.width, image.height), 0, 0);
-        this.themePicture = canvas.toDataURL('image/png');
-      } catch {
-        this.themePicture = null;
-      }
-    }, 0);
+    const accent = this.themeAccent();
+    this.themePicture = accent ? 'assets/app-icons/' + themeMatch(accent) + '.png' : null;
   }
 
   // The app icon chosen in Settings (issue 167), applied by the shell where its platform can: the desktop's window and
@@ -400,7 +381,7 @@ class AppRoot extends KitElement {
   // alert of its own. A shell that could not apply it answers so, and the next change asks again.
   async applyAppIcon() {
     if (!this.settingsRead) return;
-    const next = iconToApply(this.iconApplied, this.settings);
+    const next = iconToApply(this.iconApplied, this.settings, this.themeAccent());
     if (!next) return;
     this.iconApplied = next;
     try {

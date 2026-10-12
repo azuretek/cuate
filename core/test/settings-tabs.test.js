@@ -13,7 +13,7 @@ globalThis.document = { createTreeWalker() { return {}; }, createComment() { ret
 await import('../app/components/app-root.js');
 const AppRoot = defined['app-root'];
 const { settingsFields, settingsGroups, settingsTabs } = await import('../app/rules/settings.js');
-const { appIconFor, appIconChoices, iconToApply, fixedPalette, FOLLOW_THEME } = await import('../app/rules/app-icons.js');
+const { appIconFor, appIconChoices, iconToApply, fixedPalette, themeMatch, iconInForce, appIconVariants, FOLLOW_THEME } = await import('../app/rules/app-icons.js');
 const { TEXT_SCALES } = await import('../app/rules/theme.js');
 const { ICON_TOKENS, cssColour, iconPalette, contrast } = await import('../app/rules/icon.js');
 
@@ -276,10 +276,37 @@ test('the page asks its shell for the chosen icon once the settings are read, an
   assert.deepEqual(calls.at(-1), ['app.icon', { icon: 'naranja_light' }]);
 });
 
-test('Follow theme draws its picture from the theme in force, and a fixed palette is drawn from the spec', () => {
+test('Follow theme picks the offered icon nearest the theme\'s accent, on every platform (issue 337)', () => {
+  const icons = json('core/spec/app-icons.json');
+  const bright = (family) => icons.families.find((f) => f.id === family).variants.dark;
+  // Each family's own bright colour picks that family's bright variant, and a pale one its paper variant.
+  for (const family of icons.families) {
+    assert.equal(themeMatch(family.variants.dark.colors.accent), family.variants.dark.id, family.label + ' Dark picks itself');
+    assert.equal(themeMatch(family.variants.light.colors.accent), family.variants.light.id, family.label + ' Light picks itself');
+  }
+  // The default theme's accents, light and dark, are terracotta and coral: both nearest Barro's bright variant.
+  assert.equal(themeMatch('#bd4531'), bright('naranja').id);
+  assert.equal(themeMatch('#ff5c5c'), bright('naranja').id);
+  // A blue theme picks Azul, a teal one Nopal; an accent that is not a colour picks the default.
+  assert.equal(themeMatch('#1d4ed8'), bright('azul').id);
+  assert.equal(themeMatch('#0f766e').startsWith('jade'), true);
+  assert.equal(themeMatch('not a colour'), icons.default);
+  assert.equal(themeMatch(null), icons.default);
+  // Only an offered variant is ever asked for, so every shell can apply it: Follow theme never reaches the shell.
+  const ids = appIconVariants().map((v) => v.id);
+  for (const accent of ['#bd4531', '#1d4ed8', '#e4007c', '#7c3aed', '#fafafa']) assert.ok(ids.includes(iconInForce({ 'appearance.appIcon': FOLLOW_THEME }, accent)), accent + ' picks an offered icon');
+  assert.equal(iconToApply(null, { 'appearance.appIcon': FOLLOW_THEME }, '#1d4ed8'), bright('azul').id);
+  assert.equal(iconToApply(bright('azul').id, { 'appearance.appIcon': FOLLOW_THEME }, '#1d4ed8'), null, 'a theme change that keeps the match asks nothing');
+  assert.equal(iconInForce({ 'appearance.appIcon': 'rosa_light' }, '#1d4ed8'), 'rosa_light', 'a fixed choice ignores the theme');
   const root = read('core/app/components/app-root.js');
-  assert.match(root, /\.themePicture=\$\{this\.themePicture\}/, 'the page hands Settings the icon in the theme in force');
-  assert.match(root, /renderIcon\(/, 'drawn by the one renderer every platform shares');
+  assert.match(root, /iconToApply\(this\.iconApplied, this\.settings, this\.themeAccent\(\)\)/, 'the page applies the icon the theme picks');
+  assert.match(root, /'assets\/app-icons\/' \+ themeMatch\(accent\) \+ '\.png'/, 'Follow theme shows the picture of the icon it picked');
+  assert.equal(/renderIcon\(/.test(root), false, 'the page no longer draws a second, theme-coloured icon');
+});
+
+test('Follow theme hands its picture to Settings and About, and a fixed palette is drawn from the spec', () => {
+  const root = read('core/app/components/app-root.js');
+  assert.match(root, /\.themePicture=\$\{this\.themePicture\}/, 'the page hands Settings the icon Follow theme picked');
   assert.match(read('core/app/components/app-settings.js'), /appIconChoices\(this\.values, \{ themePicture: this\.themePicture \}\)/);
   const mirror = read('core/app/rules/app-icons-spec.js');
   assert.match(mirror, /export const ICON_MASTERS/, 'the page reads the masters from the generated mirror');
