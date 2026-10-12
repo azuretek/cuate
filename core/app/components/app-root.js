@@ -647,8 +647,11 @@ class AppRoot extends KitElement {
     if (!this.chats.some((c) => c.id === chatId)) await this.reload();
     if (!this.chats.some((c) => c.id === chatId)) return false;
     this.viewing = null;
+    // A sheet over the conversation leaves with its own departure, which lands on the conversation. Setting the view here
+    // as well would drop the sheet at once and leave its departure pending, and that departure would later take down a
+    // Settings sheet opened in the meantime.
     if (this.sheetShowing) this.closeView();
-    this.view = 'messages';
+    else this.view = 'messages';
     this.revealing = null;
     await this.open(chatId, { show: true });
     if (this.openChatId !== chatId || !messageId) return false;
