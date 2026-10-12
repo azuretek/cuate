@@ -2438,7 +2438,8 @@ async function runSmoke(w) {
   await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(pressList)));
   if (pressView && pressView !== 'messages') {
     // The press took the sheet down with its departure; once it has gone, the gear brings Settings back as a person would.
-    await waitFor("!document.querySelector('.sheet')", 10000);
+    // Putting the drawer back re-renders the sidebar, so the gear is waited for too, not assumed (issue 349).
+    await waitFor("!document.querySelector('.sheet') && Boolean(document.querySelector('.sidebar-head .gear-button'))", 10000);
     await js("document.querySelector('.sidebar-head .gear-button').click()");
     const sheetState = () => js("JSON.stringify({ view: document.querySelector('app-root').view, sheet: Boolean(document.querySelector('.sheet')), gear: Boolean(document.querySelector('.sidebar-head .gear-button')), tabs: document.querySelectorAll('app-settings .settings-tab').length, moving: document.querySelector('.sheet') ? document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running') : null })");
     let back = false;
