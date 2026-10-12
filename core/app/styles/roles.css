@@ -48,14 +48,14 @@
   --role-received: color-mix(in oklab, var(--color-chart-2) 14%, var(--color-bg));
   --role-received-fg: var(--color-fg);
 
-  --role-notice: color-mix(in oklab, var(--color-chart-2) 15%, var(--color-bg-raised));
-  --role-notice-fg: var(--color-fg);
-  --role-notice-muted: var(--color-fg);
-  --role-notice-border: color-mix(in oklab, var(--color-chart-2) 45%, var(--color-bg-raised));
-  --role-notice-stripe: var(--color-chart-2);
+  /* A notice wears the sheet's own surface (issue 342): the raised card and its plain border. */
+  --role-notice: var(--color-bg-raised);
+  --role-notice-fg: var(--color-bg-raised-fg);
+  --role-notice-muted: color-mix(in oklab, var(--color-fg-muted) 70%, var(--color-bg-raised-fg));
+  --role-notice-border: var(--color-border);
   --role-notice-icon: var(--color-chart-2);
   --role-notice-action: var(--color-fg);
-  --role-notice-hover: color-mix(in oklab, var(--color-chart-2) 26%, var(--color-bg-raised));
+  --role-notice-hover: var(--color-bg-sunken);
 
   --role-menu: var(--color-popover);
   --role-menu-fg: var(--color-popover-fg);

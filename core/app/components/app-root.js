@@ -762,18 +762,10 @@ class AppRoot extends KitElement {
     return this.appNotices.find((n) => n.id === id)?.revision ?? null;
   }
 
-  // Close: this page only (issue 191). The card is dismissed here, and the dismissal is never a command to the shell,
-  // so closing a notice tells the server and the other devices nothing. A press re-shows only a new outcome.
-  onNoticeDismiss(e) {
-    const { id } = e.detail || {};
-    if (!id) return;
-    this.appNotices = dismissNotice(this.appNotices, id);
-    this.applyNoticeQuiet();
-  }
-
-  // Mark as read: every device (issue 191). The revision is written to the server as a setting, so the card clears here
-  // at once and the server tells every other client through settings.changed; it is read back at start, so it stays
-  // cleared after a reload. The write is optimistic: a refused or offline write still clears this page for the run.
+  // The card's one control, its X (issue 342): closing a notice marks it read on every device. The revision is written
+  // to the server as a setting, so the card clears here at once and the server tells every other client through
+  // settings.changed, and it is read back at start, so it stays cleared after a reload. The write is optimistic: a refused
+  // or offline write still clears this page for the run.
   onNoticeRead(e) {
     const { id, revision } = e.detail || {};
     if (!id) return;
@@ -1836,7 +1828,7 @@ class AppRoot extends KitElement {
     // controls in the contact header instead (see mainView).
     return html`<div class="app-window" data-platform=${platform}>
       <div class="app-body">${this.body()}</div>
-      <app-notices data-dismiss-keep="sheet about" .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-dismiss=${(e) => this.onNoticeDismiss(e)} @notice-read=${(e) => this.onNoticeRead(e)}></app-notices>
+      <app-notices data-dismiss-keep="sheet about" .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-read=${(e) => this.onNoticeRead(e)}></app-notices>
     </div>`;
   }
 
