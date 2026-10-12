@@ -57,7 +57,7 @@ test('notice geometry clears safe areas, controls and composer with directional 
   const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8');
   const tokens = JSON.parse(readFileSync(new URL('../spec/tokens.json', import.meta.url)));
   // The safe areas are the stylesheet's one set of insets (issue 175): env(safe-area-inset-*) on iOS, the shell's on Android.
-  assert.match(css, /app-notices[^}]+var\(--inset-top\)[^}]+size-header/);
+  assert.match(css, /app-notices \{[^}]*top: calc\(var\(--inset-top\) \+ var\(--space-2\)\)/, 'on a phone the stack starts at the top edge, below the status bar');
   assert.match(css, /app-notices[^}]+var\(--inset-right\)[^}]+var\(--inset-left\)/);
   assert.match(tokens.size['notice-stack'], /var\(--inset-top\)[^)]*var\(--inset-bottom\)/);
   assert.match(tokens.size['notice-stack'], /size-composer-max/);
@@ -84,7 +84,7 @@ test('a notice floats above every surface and takes its own press (issue 253)', 
 
 // Issue 191 (the layering half): a notice draws above every surface (sheets, About, Settings, the thread view, a
 // confirm and the media viewer), so an update notice is always seen, and it never covers the desktop window controls.
-test('the notice stack draws above every other surface and starts below the header and its window controls', () => {
+test('the notice stack draws above every other surface and sits as high as it can without covering a window control (issue 342)', () => {
   const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.trim(), body }));
   const z = (body) => { const m = /(?:^|;)\s*z-index:\s*(\d+)/.exec(body); return m ? Number(m[1]) : null; };
@@ -97,9 +97,14 @@ test('the notice stack draws above every other surface and starts below the head
     if (layer !== null) assert.ok(layer < top, r.selector + ' (z-index ' + layer + ') would draw over the notices');
   }
   for (const surface of ['.sheet-scrim', '.sheet', '.confirm-scrim', '.viewer', '.thread-view']) assert.ok(rules.some((r) => r.selector.includes(surface) && z(r.body) !== null), surface + ' is a layered surface the test covers');
-  for (const r of rules.filter((x) => /app-notices$/.test(x.selector) && /(?:^|;)\s*top:\s*calc/.test(x.body))) {
-    assert.match(r.body, /top:\s*calc\([^;]*var\(--size-header\)/, r.selector + ' starts below the header that carries the window controls');
-  }
+  // As high as the window allows without covering a window control (issue 342): below the controls the page draws on
+  // Windows and Linux, and on macOS below the header, which is all drag strip there, so a card inside it would never
+  // take its own press.
+  const win = rules.find((r) => r.selector.includes('[data-platform="win32"] app-notices') && r.selector.includes('[data-platform="linux"] app-notices'));
+  assert.ok(win, 'Windows and Linux place the stack themselves');
+  assert.match(win.body, /top: calc\(var\(--inset-top\) \+ var\(--size-window-control-inset\) \+ var\(--size-window-control-h\) \+ var\(--space-2\)\)/, 'below the window controls');
+  assert.match(css, /\.app-window\[data-platform="darwin"\] app-notices \{ top: calc\(var\(--size-header\) \+ var\(--size-window-strip\) \+ var\(--space-3\)\); \}/, 'a Mac window starts the stack below its drag strip');
+  assert.doesNotMatch(css, /^app-notices \{[^}]*size-header/m, 'a phone, Windows and Linux do not wait below the header');
 });
 
 // Issue 191 (the close and mark-as-read half): a notice no one has acknowledged is visible; marking it read remembers
@@ -136,12 +141,18 @@ test('the read store keeps every id and tolerates a malformed value', () => {
   assert.equal(NOTICE_READ_KEY, 'notice.read');
 });
 
-test('every notice draws a mark-as-read control beside the shared close control', () => {
+test('a notice carries one control, its X, which closes it on every device (issue 342)', () => {
   const src = readFileSync(new URL('../app/components/app-notices.js', import.meta.url), 'utf8');
-  assert.match(src, /class="app-notice-read"/, 'the card draws the mark-as-read control');
-  assert.match(src, /new CustomEvent\('notice-read'/, 'it announces the read');
-  assert.match(src, /closest\('\.app-notice-read'\)/, 'a press on it is never the body action');
   assert.match(src, /closeButtonHtml\(\{ owner: 'notice'/, 'the close control is still the shared one');
+  assert.match(src, /look: 'solid'/, 'drawn as the send button is');
+  assert.match(src, /new CustomEvent\('notice-read'/, 'closing it is the one thing it announces, so every device clears it');
+  assert.equal(/app-notice-read/.test(src), false, 'the mark-as-read control is gone');
+  assert.equal(/notice-dismiss/.test(src), false, 'and the local-only dismissal with it');
+  const root = readFileSync(new URL('../app/components/app-root.js', import.meta.url), 'utf8');
+  assert.equal(/notice-dismiss/.test(root), false, 'the page keeps one handler, not two');
+  assert.match(root, /onNoticeRead\(e\) \{/, 'and it writes the read revision to the server');
+  assert.match(src, /class="action-button app-notice-action"/, 'the one action is a button in the card');
+  assert.match(src, /notice\.action\) return/, 'a card with no action takes no press of its own');
   const rules = readFileSync(new URL('../app/rules/app-notices.js', import.meta.url), 'utf8');
   assert.match(rules, /export const NOTICE_READ_KEY = 'notice\.read'/, 'the read state is a server setting');
   assert.doesNotMatch(rules, /NOTICE_CLOSED_KEY/, 'close is the page\u2019s own dismissal, not a store');

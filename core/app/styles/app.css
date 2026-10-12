@@ -695,6 +695,9 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
 .sheet { position: relative; z-index: 4; translate: 0 var(--sheet-drag, 0); display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+/* Settings keeps one height whichever tab is open (issue 342): the card stands at its full height and a short tab's
+   rows sit at the top, so switching tabs never resizes the card under the pointer. */
+.sheet[data-view="settings"] { height: min(var(--size-sheet-max), 100%); }
 /* Either sheet arrives from the bottom edge (issue 253). */
 .sheet[data-arrive="up"] { animation: sheet-up-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* The About sheet is a later layer ABOVE the Settings sheet it is stacked over (issue 253): above the settings
@@ -896,14 +899,19 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    the card where a 4px inset puts it. */
 /* The stack draws above every other surface (issue 191): the chats, a conversation and its thread view, Settings,
    About and every sheet, a confirm and the media viewer, so an update notice is always seen. Its z-index is the
-   highest in this file, which core/test/app-notices.test.js holds, and it starts below the header, so it never covers
-   the window controls. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet
+   highest in this file, which core/test/app-notices.test.js holds. It sits as high as the window allows without covering
+   a window control, so the height differs by platform: at the top edge on a phone, below the minimise, maximise and
+   close controls the page draws on Windows and Linux, and on macOS below the header, because the whole header there is
+   the window's drag strip and a press on a card inside it would start a window drag instead of reaching the card. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet
    stays up; see the band below for where it sits then. */
-app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 8; }
+app-notices { position: absolute; top: calc(var(--inset-top) + var(--space-2)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 8; }
 .app-window { position: relative; }
+.app-window[data-platform="win32"] app-notices, .app-window[data-platform="linux"] app-notices { top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); }
 .app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
-.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-notice); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: inset var(--space-1) 0 0 var(--role-notice-stripe), var(--shadow-md); font-size: var(--font-size-sm); pointer-events: auto; animation: notice-in var(--motion-normal) var(--motion-ease); }
+.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-lg); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: var(--shadow-lg); font-size: var(--font-size-sm); pointer-events: auto; animation: notice-in var(--motion-normal) var(--motion-ease); }
+/* A notice is drawn as the Settings and About cards are (issue 342): the raised card, its plain border, its corners and
+   its shadow, and its X the solid one drawn as the send button is, so every card over the app reads as one family. */
 .app-notice-body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .app-notice-icon { color: var(--role-notice-icon); flex: none; }
 .app-notice .muted { color: var(--role-notice-muted); }
@@ -912,12 +920,11 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 .app-notice[data-tone="ok"] .app-notice-icon { color: var(--color-bubble-sms); }
 .app-notice .icon { display: block; }
 .app-notice-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
-.app-notice-action { pointer-events: auto; border: 0; border-radius: var(--radius-sm); background: none; color: var(--role-notice-action); cursor: pointer; padding: var(--space-1); }
-.app-notice-action { align-self: flex-start; font-weight: var(--font-weight-medium); }
-.app-notice-action:hover { background: var(--role-notice-hover); }
-.app-notice-read { flex: none; pointer-events: auto; border: 0; border-radius: var(--radius-pill); background: none; color: var(--role-notice-action); cursor: pointer; padding: var(--space-1); }
-.app-notice-read:hover { background: var(--role-notice-hover); }
-.app-notice-read .icon { display: block; }
+/* The notice's one action (issue 342), drawn as the send button is: a filled accent pill under its words, so a card
+   carries one control to close it and, when there is something to do, one to do it. */
+.app-notice-action { pointer-events: auto; align-self: flex-start; border: 0; border-radius: var(--radius-pill); background: var(--role-button); color: var(--role-button-fg); cursor: pointer; padding: var(--space-1) var(--space-3); font-weight: var(--font-weight-medium); }
+.app-notice-action:hover { background: var(--role-button-hover); }
+.app-notice-action:active { background: var(--role-button-press); }
 @keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
@@ -927,7 +934,7 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
    stack around it does not, so the surface behind keeps its gestures everywhere but on a card. */
 @media (max-width: 640px) {
   .app-notice-stack { align-items: stretch; }
-  .app-notice { width: auto; }
+  .app-notice { width: auto; border-radius: var(--radius-sheet); }
 }
 @media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }
 /* Raised surfaces keep the foreground supplied by their theme. */
