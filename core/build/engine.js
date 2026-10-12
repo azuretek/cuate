@@ -243,6 +243,7 @@ var engine = (() => {
     messageNotice: () => messageNotice,
     messageSearchText: () => messageSearchText,
     messageSummary: () => messageSummary,
+    messageTarget: () => messageTarget,
     myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
     newestRelease: () => newestRelease,
@@ -252,6 +253,7 @@ var engine = (() => {
     noticeQuiet: () => noticeQuiet,
     noticeState: () => noticeState,
     noticeStateOf: () => noticeStateOf,
+    noticeTarget: () => noticeTarget,
     offersReaction: () => offersReaction,
     onGroup: () => onGroup,
     openapiDocument: () => openapiDocument,
@@ -3105,6 +3107,17 @@ var engine = (() => {
     if (!outcome || !SERVER_UPDATE_ERRORS.includes(outcome.state)) return null;
     const notice = updateNotice("error", outcome.version, outcome.detail || null);
     return { ...notice, title: "Server update failed", key: "server:" + outcome.state + ":" + (outcome.version || "") + ":" + (outcome.at || "") };
+  }
+  function messageTarget(m) {
+    if (!m || m.chatId == null || m.id == null) return {};
+    return { chatId: String(m.chatId), messageId: String(m.id) };
+  }
+  function noticeTarget(value) {
+    if (!value || typeof value !== "object") return null;
+    const id = (v) => (typeof v === "string" || typeof v === "number") && String(v).length > 0 && String(v).length <= 200 ? String(v) : null;
+    const chatId = id(value.chatId);
+    if (!chatId) return null;
+    return { chatId, messageId: id(value.messageId) };
   }
   function messageNotice(title, m) {
     const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
