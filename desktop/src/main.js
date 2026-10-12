@@ -2394,6 +2394,7 @@ async function runSmoke(w) {
   // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
   // in force (Settings, for the steps that follow) is put back once the press is checked.
   const pressView = await js("document.querySelector('app-root').view");
+  const pressList = await js("document.querySelector('app-root').listOpen");
   const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
   smokeNotices.length = 0;
   let pressSeen = null;
@@ -2419,6 +2420,8 @@ async function runSmoke(w) {
   report.noticeOpens = Object.values(pressChecks).every(Boolean);
   console.log('notice opens: ' + JSON.stringify({ checks: pressChecks, pressTo, pressSeen }));
   if (pressFrom) await js("document.querySelector('app-root').open(" + JSON.stringify(pressFrom) + ', { show: true })');
+  // Opening to show a conversation closes the phone's list drawer; the later steps expect it as it was.
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(pressList)));
   if (pressView && pressView !== 'messages') {
     // The press took the sheet down with its departure; once it has gone, the gear brings Settings back as a person would.
     await waitFor("!document.querySelector('.sheet')", 10000);
