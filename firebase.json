@@ -1,0 +1,13 @@
+{
+  "functions": [
+    {
+      "source": "relay",
+      "codebase": "relay",
+      "runtime": "nodejs22",
+      "ignore": [
+        "test",
+        "node_modules"
+      ]
+    }
+  ]
+}
