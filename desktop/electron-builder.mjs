@@ -14,6 +14,8 @@ const buildCommit = process.env.BUILD_COMMIT || git(['rev-parse', 'HEAD']);
 const buildTime = process.env.BUILD_TIME || new Date().toISOString();
 export default {
   appId: naming.ids.desktop,
+  // The messaging links this app may be the default for (issue 333); main.js registers and answers them.
+  protocols: [{ name: 'Messaging links', schemes: ['sms', 'smsto', 'mms', 'mmsto', 'im', 'imessage'] }],
   productName: naming.product,
   directories: { app: '.', output: 'dist', buildResources: 'build' },
   asar: true,

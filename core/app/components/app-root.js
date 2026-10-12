@@ -7,7 +7,7 @@ import {
   orderChats, applyMessageToChats, chatTitle, emptyFilters, SORT_ORDERS, SORT_LABELS, normalizeSort,
   SEARCH_MODES, SEARCH_MODE_LABELS, addTerm, removeTerm, setTermMode,
   sortChats, filterChats, setAllChecked, allChecked, checkedCount,
-  hideChats, forgetChats, groupAddresses, upsertChat,
+  hideChats, forgetChats, groupAddresses, upsertChat, parseMessagingLink, linkTarget,
   requestDelete, resolveDelete,
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
@@ -258,8 +258,15 @@ class AppRoot extends KitElement {
       // toggle redraw the same glyph.
       this.offWindow = window.bridge.on('window.state', (data) => { this.maximized = Boolean(data && data.maximized); });
       this.offOpen = window.bridge.on('app.open', (data) => this.openScreen(data && data.screen));
+      this.offLink = window.bridge.on('app.link', () => this.takeLink());
     }
     if (typeof window !== 'undefined') this.holdPage();
+    // A messaging link may arrive while the app is away, and a phone has no event to say so: it is asked for whenever
+    // the page is shown (issue 333).
+    if (typeof document !== 'undefined') {
+      this.onShownForLink = () => { if (document.visibilityState !== 'hidden') this.takeLink(); };
+      document.addEventListener('visibilitychange', this.onShownForLink);
+    }
     this.boot();
   }
 
@@ -302,6 +309,8 @@ class AppRoot extends KitElement {
     super.disconnectedCallback();
     if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
     for (const t of this.readTimers?.values() || []) clearTimeout(t);
+    if (this.onShownForLink) document.removeEventListener('visibilitychange', this.onShownForLink);
+    if (typeof this.offLink === 'function') this.offLink();
     for (const [target, type, fn, options] of this.pageHolds || []) target.removeEventListener(type, fn, options);
     this.pageHolds = null;
     this.endDividerDrag();
@@ -473,6 +482,7 @@ class AppRoot extends KitElement {
       this.chats = orderChats(chats);
       this.phase = 'ready';
       client.connect();
+      this.takeLink();
       // Signed in, so notifications are asked for now, on every platform, rather than on the first message (issue
       // 327). The system asks only once; after that the shell answers where it stands.
       this.bridge('notify.permission', { request: true }).then((state) => { this.notifyPermission = state; }).catch(() => {});
@@ -1039,6 +1049,17 @@ class AppRoot extends KitElement {
 
   // A screen the shell asked for (the tray's Settings, About and Check for updates). The shell has already raised the
   // window; rules/screens.js says what the page shows, and the sheets open through the same path the gear does.
+  // The messaging link the platform handed the shell (issue 333): the conversation already held with those people
+  // opens, or the compose sheet starts one with them. Before the app is ready the link waits in the shell.
+  async takeLink() {
+    if (this.phase !== 'ready' || typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function') return;
+    let url;
+    try { url = await this.bridge('link.take'); } catch { return; }
+    const target = linkTarget(this.chats, parseMessagingLink(url));
+    if (!target) return;
+    if (target.open) { this.view = 'messages'; this.open(target.open, { show: true }); } else this.composing = { mode: target.compose.length > 1 ? 'group' : 'new', preset: target.compose };
+  }
+
   openScreen(screen) {
     const target = screenFor(screen, { phase: this.phase });
     if (target === 'hold') { this.heldScreen = screen; return; }

@@ -2,6 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The im: scheme a default messaging app answers (issue 333). The Default Messaging App entitlement, which
+	     lists the app under Settings, Apps, Default Apps, is switched on once Apple grants it to the team
+	     (ios/README.md). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Messaging links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>im</string>
+			</array>
+		</dict>
+	</array>
 	<!-- The home-screen label and the name TestFlight shows. It is the product
 	     name, which is Cuate, and the naming spec owns it; this key restates it
 	     because a plist cannot import anything, and a parity test asserts it

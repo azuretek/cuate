@@ -55,6 +55,15 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
+// The messaging link the platform last opened the app with (issue 333), until the page takes it.
+const LINK_SCHEMES = ['sms', 'smsto', 'mms', 'mmsto', 'im', 'imessage'];
+const linkFrom = (argv) => (argv || []).find((a) => typeof a === 'string' && LINK_SCHEMES.some((s) => a.toLowerCase().startsWith(s + ':'))) || null;
+let pendingLink = linkFrom(process.argv);
+// macOS hands a link over open-url, before or after the app is ready; Windows and Linux hand it as an argument.
+function handOverLink(url) {
+  pendingLink = url;
+  if (win && !win.isDestroyed()) win.webContents.send('bridge:event:app.link', {});
+}
 // The app icon chosen in Settings (issue 167): Follow theme, the default, leaves the icons to the theme (applyIcons,
 // below); a fixed palette from core/spec/app-icons.json stands in for the theme's colours in every image the shell
 // redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
@@ -170,6 +179,7 @@ const lifecycle = createLifecycle({
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
+  takeLink: () => { const l = pendingLink; pendingLink = null; return l; },
   notify: (title, body) => {
     if (SMOKE) smokeNotices.push({ title, body });
     if (!Notification.isSupported()) return false;
@@ -3405,12 +3415,16 @@ app.whenReady().then(() => {
   }
   // The Dock icon, and a second launch, raise the window the tray holds.
   app.on('activate', () => lifecycle.show());
-  app.on('second-instance', () => lifecycle.show());
+  app.on('second-instance', (_e, argv) => { const l = linkFrom(argv); if (l) handOverLink(l); lifecycle.show(); });
+  // This app answers the platform's messaging links (issue 333). A development run registers nothing, so a checkout
+  // never takes the links from the installed app.
+  if (app.isPackaged && !SMOKE) for (const s of LINK_SCHEMES) app.setAsDefaultProtocolClient(s);
 });
 
 // A quit the platform asks for (the Dock's Quit, a log out, an update's restart) lets the window close; the tray's Quit
 // marks it the same way before it asks.
 app.on('before-quit', () => lifecycle.markQuitting());
+app.on('open-url', (e, url) => { e.preventDefault(); handOverLink(url); if (app.isReady()) lifecycle.show(); });
 
 // Closing the window never reaches here, because it hides; the window is only destroyed while quitting. The handler is
 // kept so Electron's default, quitting once every window has closed, can never be the way the app ends.

@@ -39,6 +39,16 @@ class HostBridge(
     /** Updating in the app (issue 192): download, verify and hand the release's APK to the system installer. */
     val updater = ApkUpdater(context) { state -> emit("update.state", state) }
 
+    /** The messaging link the system last opened the app with (issue 333), until the page takes it. */
+    @Volatile var pendingLink: String? = null
+
+    /** A link arrived: it is held, and the page is told so it takes it. */
+    fun handOverLink(url: String?) {
+        if (url.isNullOrEmpty()) return
+        pendingLink = url
+        emit("app.link", JSONObject())
+    }
+
     companion object {
         const val INTERFACE_NAME = "cuateNative"
 
@@ -164,6 +174,7 @@ class HostBridge(
                     .put("installSource", installSource()),
             )
             "app.icon" -> success(appIcon(args.optString("icon")))
+            "link.take" -> { val l = pendingLink; pendingLink = null; success(l ?: JSONObject.NULL) }
             "notify" -> success(notify(args))
             "notify.permission" -> success(notifyPermission(args.optBoolean("request")))
             "open.external" -> success(openExternal(args))

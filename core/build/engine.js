@@ -224,6 +224,7 @@ var engine = (() => {
     linkMediaKey: () => linkMediaKey,
     linkMediaSite: () => linkMediaSite,
     linkSite: () => linkSite,
+    linkTarget: () => linkTarget,
     listSections: () => listSections,
     localAttachment: () => localAttachment,
     mapChat: () => mapChat,
@@ -263,6 +264,7 @@ var engine = (() => {
     panBy: () => panBy,
     parseColour: () => parseColour,
     parseGlyph: () => parseGlyph,
+    parseMessagingLink: () => parseMessagingLink,
     parseOgVideo: () => parseOgVideo,
     parseReactionText: () => parseReactionText,
     parseRecipients: () => parseRecipients,
@@ -2036,6 +2038,34 @@ var engine = (() => {
     const i = chats.findIndex((c) => c.id === chat.id);
     const out = i < 0 ? [...chats, chat] : chats.map((c, k) => k === i ? { ...c, ...chat } : c);
     return orderChats(out);
+  }
+  var LINK = /^(sms|smsto|mms|mmsto|im|imessage):(?:\/\/)?([^?]*)(?:\?(.*))?$/i;
+  function parseMessagingLink(url) {
+    const m = LINK.exec(String(url || "").trim());
+    if (!m) return null;
+    let people;
+    try {
+      people = decodeURIComponent(m[2]);
+    } catch {
+      return null;
+    }
+    const addresses = [...new Set(people.split(/[,;]/).map((p) => p.trim()).filter(Boolean))];
+    if (!addresses.length || !addresses.every(isAddress)) return null;
+    let body = "";
+    if (m[3]) {
+      try {
+        body = new URLSearchParams(m[3]).get("body") || "";
+      } catch {
+        body = "";
+      }
+    }
+    return { addresses, body };
+  }
+  function linkTarget(chats = [], link) {
+    if (!link) return null;
+    const want = [...link.addresses].sort().join("\n");
+    const hit = orderChats(chats).find((c) => Array.isArray(c.participants) && c.isGroup === link.addresses.length > 1 && [...c.participants].sort().join("\n") === want);
+    return hit ? { open: hit.id } : { compose: link.addresses };
   }
 
   // core/app/rules/emoji-data.js
