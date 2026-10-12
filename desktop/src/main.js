@@ -18,7 +18,7 @@ import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { renderIcon } from '../../core/app/rules/icon.js';
-import { fixedPalette } from '../../core/app/rules/app-icons.js';
+import { fixedPalette, themeMatch } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
@@ -2145,19 +2145,33 @@ async function runSmoke(w) {
   await putSettings({ 'appearance.appIcon': 'theme', 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
   await pickSkin('light');
   await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
+  // The shell skips a drawing identical to the last, so what is on screen is the latest drawing, whatever theme it was
+  // reported under; it counts once the icon Follow theme picked for this accent is the one applied.
+  const wantLight = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedPalette(themeMatch('#2a6f4b')) }).palette.mark;
+  for (let i = 0; i < 50 && !(appIconApplied === themeMatch('#2a6f4b') && smokeIcons.length && smokeIcons.at(-1).mark === wantLight); i += 1) await pause(100);
+  const settledLight = { ...(smokeIcons.at(-1) || {}), applied: appIconApplied, seen: smokeIcons.slice(-4).map((i) => i.scheme + ':' + i.mark) };
   report.themeLight = true;
   await pickSkin('dark');
   await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
+  // The shell skips a drawing identical to the last, so what is on screen is the latest drawing, whatever theme it was
+  // reported under; it counts once the icon Follow theme picked for this accent is the one applied.
+  const wantDark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedPalette(themeMatch('#7fd6a8')) }).palette.mark;
+  for (let i = 0; i < 50 && !(appIconApplied === themeMatch('#7fd6a8') && smokeIcons.length && smokeIcons.at(-1).mark === wantDark); i += 1) await pause(100);
+  const settledDark = { ...(smokeIcons.at(-1) || {}), applied: appIconApplied, seen: smokeIcons.slice(-4).map((i) => i.scheme + ':' + i.mark) };
   report.themeDark = true;
   report.theme = report.themeLight && report.themeDark;
   // The app's icons follow the theme and the scheme (issue 189): the page reported each to the shell, which drew the
   // tray again in that theme's colours. macOS's template is a silhouette the menu bar recolours, so there only the
   // palette is compared.
-  const iconFor = (scheme, accent) => smokeIcons.find((i) => i.scheme === scheme && i.accent === accent);
-  for (let i = 0; i < 50 && !(iconFor('light', '#2a6f4b') && iconFor('dark', '#7fd6a8')); i += 1) await pause(100);
-  const lightIcon = iconFor('light', '#2a6f4b');
-  const darkIcon = iconFor('dark', '#7fd6a8');
-  report.trayIcon = Boolean(lightIcon && darkIcon) && lightIcon.mark === '#2a6f4b' && lightIcon.mark !== darkIcon.mark && (process.platform === 'darwin' || lightIcon.tray !== darkIcon.tray);
+  // Each scheme's drawing was read once the icon Follow theme picked for it was in force (above).
+  const matchedMark = (accent) => { const v = fixedPalette(themeMatch(accent)); return shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: v }).palette.mark; };
+  const trayMarks = { light: matchedMark('#2a6f4b'), dark: matchedMark('#7fd6a8'), lightPick: themeMatch('#2a6f4b'), darkPick: themeMatch('#7fd6a8') };
+  const lightIcon = settledLight;
+  const darkIcon = settledDark;
+  // Under Follow theme the shell draws the offered icon nearest the theme's accent (issue 337), so each scheme's mark is
+  // that icon's palette, and a light and a dark theme that pick different icons draw different marks.
+  report.trayIcon = Boolean(lightIcon && darkIcon) && lightIcon.applied === trayMarks.lightPick && darkIcon.applied === trayMarks.darkPick && lightIcon.mark === trayMarks.light && darkIcon.mark === trayMarks.dark && (trayMarks.lightPick === trayMarks.darkPick || (lightIcon.mark !== darkIcon.mark && (process.platform === 'darwin' || lightIcon.tray !== darkIcon.tray)));
+  if (!report.trayIcon) console.error('tray marks: ' + JSON.stringify(trayMarks));
   console.log('tray icon: ' + JSON.stringify({ lightIcon, darkIcon, redraws: smokeIcons.length }));
   // The unread count on the icon (issue 218): the shell drew the badge at a count, exact to 9 then 9+, and kept it
   // beside the report; on Windows that is the taskbar overlay, on macOS and Linux the tray's own badge.
@@ -2516,8 +2530,9 @@ async function runSmoke(w) {
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
   const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconCount + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
-  // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
-  const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
+  // Follow theme shows the picture of the offered icon nearest the theme's accent (issue 337), its own generated picture.
+  const accentNow = await js("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()");
+  const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src')") === 'assets/app-icons/' + themeMatch(accentNow) + '.png';
   const iconPick = 'rosa_dark';
   const fixedOf = (id) => { const c = appIconVariants.find((i) => i.id === id); return { scheme: c.scheme, colors: c.colors }; };
   await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
