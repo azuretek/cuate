@@ -843,12 +843,14 @@ var engine = (() => {
 
   // core/kit/rules/popover.js
   var INSET = 7;
-  function caretX(anchor, box, align = "center") {
+  function caretX(anchor, box, align = "center", radius = 0) {
     if (!anchor || !box || !(box.width > 0)) return null;
     if (anchor.right <= box.left || anchor.left >= box.right) return null;
-    const raw = align === "start" ? anchor.left + INSET : align === "end" ? anchor.right - INSET : anchor.left + anchor.width / 2;
-    const min = Math.min(INSET, box.width / 2);
-    const max = Math.max(box.width - INSET, box.width / 2);
+    const corner = Math.max(0, Math.min(Number(radius) || 0, (box.height || Infinity) / 2));
+    const inset = INSET + corner;
+    const raw = align === "start" ? anchor.left + inset : align === "end" ? anchor.right - inset : anchor.left + anchor.width / 2;
+    const min = Math.min(inset, box.width / 2);
+    const max = Math.max(box.width - inset, box.width / 2);
     return Math.round(Math.min(Math.max(raw - box.left, min), max));
   }
 

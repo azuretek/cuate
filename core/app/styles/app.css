@@ -185,8 +185,10 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
    shared grow timing, so it reads as coming from there rather than appearing. It grows on the vertical axis only,
    which leaves every horizontal measure, the caret's aim included, exactly where it lands. */
 @keyframes pop-grow { from { opacity: 0; transform: scaleY(0.85); } to { opacity: 1; transform: none; } }
-.message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: var(--space-1); z-index: 3; transform-origin: left bottom; animation: pop-grow var(--motion-grow) var(--motion-ease) both; }
-.message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; transform-origin: left top; }
+/* The menu stands off the bubble by its caret's height plus a step, so the caret's tip points at the bubble without
+   crossing the bubble's own outline (issue 345). */
+.message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: calc(var(--size-caret) / 2 + var(--space-1)); z-index: 3; transform-origin: left bottom; animation: pop-grow var(--motion-grow) var(--motion-ease) both; }
+.message-pop[data-side="below"] { bottom: auto; top: 100%; margin: calc(var(--size-caret) / 2 + var(--space-1)) 0 0; transform-origin: left top; }
 .bubble-row.mine .message-pop { transform-origin: right bottom; }
 .bubble-row.mine .message-pop[data-side="below"] { transform-origin: right top; }
 @media (prefers-reduced-motion: reduce) { .message-pop { animation: none; } }
