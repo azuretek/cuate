@@ -1590,14 +1590,14 @@ class AppRoot extends KitElement {
   // the About sheet stacked above it (issues 171, 253).
   settingsBody() {
     return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
-      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}
+      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()} @close=${() => this.closeView()}
       .themePicture=${this.themePicture} .tab=${this.settingsTab} @tab=${(e) => { this.settingsTab = e.detail; }}></app-settings>`;
   }
 
   // The About sheet's own body (issue 253).
   aboutBody() {
-    return html`<app-about .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : 'Back to app'}
-      .values=${this.settings} .themePicture=${this.themePicture} .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @groupinfo=${() => this.openGroupInfo()} @back=${() => this.pageBack()}></app-about>`;
+    return html`<app-about .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : ''}
+      .values=${this.settings} .themePicture=${this.themePicture} .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @groupinfo=${() => this.openGroupInfo()} @back=${() => this.pageBack()} @close=${() => this.closeView()}></app-about>`;
   }
 
   mainView(chat) {
@@ -1864,7 +1864,7 @@ class AppRoot extends KitElement {
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0" @pointerdown=${(e) => this.onDividerDown(e)} @dblclick=${(e) => this.onDividerDblClick(e)} @keydown=${(e) => this.onDividerKey(e)}></div>
       <main class="main">${this.mainView(chat)}</main>
-      ${this.settingsSheetShowing ? html`<div class="sheet-scrim" data-sheet="settings" ?data-leaving=${this.sheetLeaving}><section class="sheet" data-view="settings" data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.settingsBody()}</section></div>` : nothing}
+      ${this.settingsSheetShowing ? html`<div class="sheet-scrim" data-sheet="settings" ?data-leaving=${this.sheetLeaving} ?data-under=${this.aboutSheetShowing && this.aboutFrom === 'settings'}><section class="sheet" data-view="settings" data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.settingsBody()}</section></div>` : nothing}
       ${this.aboutSheetShowing ? html`<div class="sheet-scrim about-sheet-scrim" data-sheet="about" ?data-leaving=${this.aboutLeaving}><section class="sheet" data-view="about" data-arrive=${this.aboutMotion || 'none'} data-dismiss="about" role="dialog" aria-modal="true" aria-label="About" @animationend=${this.onAboutAnimationEnd}>${this.aboutBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.composing ? html`<app-compose .chats=${this.chats} .client=${this.client} .mode=${this.composing.mode} .preset=${this.composing.preset} @created=${(e) => respond(e, this.composed(e.detail))} @close=${() => { this.composing = null; }}></app-compose>` : nothing}

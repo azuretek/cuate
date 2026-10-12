@@ -10,7 +10,8 @@ import { press } from '../../kit/press.js';
 //
 // - owner names the surface it closes (viewer, thread, notice), for the stylesheet and the smoke;
 // - size is 'md' (the default) or 'lg', the raised circle the image viewer floats over a picture;
-// - keep is a dismiss panel name the press leaves to this control's own click (data-dismiss-keep).
-export function closeButtonHtml({ owner, label, title, size = 'md', keep, onClose }) {
-  return html`<button type="button" class="close-button" data-close="${owner}" data-size="${size}" aria-label="${label}" title="${title || label}" data-dismiss-keep=${keep || nothing} @click=${press(() => onClose())}><span class="icon" data-icon="x" aria-hidden="true"></span></button>`;
+// - keep is a dismiss panel name the press leaves to this control's own click (data-dismiss-keep);
+// - look 'solid' draws it as the send button is, a filled accent circle (the sheet's X, issue 338).
+export function closeButtonHtml({ owner, label, title, size = 'md', look, keep, onClose }) {
+  return html`<button type="button" class="close-button" data-close="${owner}" data-size="${size}" data-look=${look || nothing} aria-label="${label}" title="${title || label}" data-dismiss-keep=${keep || nothing} @click=${press(() => onClose())}><span class="icon" data-icon="x" aria-hidden="true"></span></button>`;
 }
