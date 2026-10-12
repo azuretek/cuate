@@ -5,7 +5,8 @@
 import os from 'node:os';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
-import { mkdir, access, realpath, stat, rename } from 'node:fs/promises';
+import { mkdir, access, realpath, stat, rename, open } from 'node:fs/promises';
+import { sniff, UNKNOWN_MIME } from './file-type.js';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { motionPath } from './engine/live-photo.js';
@@ -17,13 +18,30 @@ import { motionPath } from './engine/live-photo.js';
 const avconvert = (src, out) => new Promise((resolve, reject) => execFile('avconvert', ['--source', src, '--preset', 'Preset1280x720', '--output', out, '--replace'], { timeout: 60000 }, (err) => (err ? reject(err) : resolve())));
 
 export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform, convertMotion = avconvert }) {
-  // The recorded path is real, and inside the attachments folder, or there is nothing to serve.
+  // The recorded path is real, and inside the attachments folder or Messages' sticker cache beside it (a sticker's
+  // picture is kept there, issue 341), or there is nothing to serve.
+  const roots = () => [attachmentsRoot, attachmentsRoot ? path.join(path.dirname(attachmentsRoot), 'StickerCache') : null].filter(Boolean);
   async function inside(recorded) {
-    const root = await realpath(attachmentsRoot).catch(() => null);
     const expanded = recorded.startsWith('~/') ? path.join(os.homedir(), recorded.slice(2)) : recorded;
     const real = await realpath(expanded).catch(() => null);
-    if (!root || !real || !(real === root || real.startsWith(root + path.sep))) return null;
-    return real;
+    if (!real) return null;
+    for (const r of roots()) {
+      const root = await realpath(r).catch(() => null);
+      if (root && (real === root || real.startsWith(root + path.sep))) return real;
+    }
+    return null;
+  }
+
+  // A file Messages recorded no type for (a group photo, issue 341) is read for one, and a HEIC is drawn as a JPEG.
+  async function sniffed(file) {
+    const fh = await open(file, 'r');
+    try {
+      const buf = Buffer.alloc(64);
+      const { bytesRead } = await fh.read(buf, 0, 64, 0);
+      return sniff(new Uint8Array(buf.subarray(0, bytesRead)));
+    } finally {
+      await fh.close();
+    }
   }
 
   async function toJpeg(src, id) {
@@ -78,6 +96,13 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
       if (!real) return null;
       let file = real;
       let mime = rec.mime;
+      if (!mime || mime === UNKNOWN_MIME) {
+        mime = (await sniffed(real).catch(() => null)) || UNKNOWN_MIME;
+        if (/heic|heif/i.test(mime) && platform === 'darwin') {
+          file = await toJpeg(real, rec.id);
+          mime = 'image/jpeg';
+        }
+      }
       if (format === 'jpeg' && /heic|heif/i.test(rec.mime) && platform === 'darwin') {
         file = await toJpeg(real, rec.id);
         mime = 'image/jpeg';

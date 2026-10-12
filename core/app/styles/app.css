@@ -957,3 +957,12 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 .group-info-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .group-info-person { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) 0; border-bottom: var(--size-border) solid var(--color-border); }
 .group-info-person:last-child { border-bottom: 0; }
+
+/* A conversation's avatar is its group photo when it has one (issue 341), cropped to the avatar's own circle; the
+   element is only a wrapper, so the avatar keeps its place in the row's layout. */
+app-avatar { display: contents; }
+.avatar.photo { padding: 0; overflow: hidden; }
+.avatar.photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* An event in a conversation (issue 341) is a quiet centred line, the new photo beside the words. */
+.bubble-row.event { justify-content: center; }
+.conv-event { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) auto; color: var(--color-fg-muted); font-size: var(--font-size-xs); }

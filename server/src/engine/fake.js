@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
+import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 
 export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, capabilities = null, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
@@ -141,7 +142,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             let ms = messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction);
             if (p.end) ms = ms.filter((m) => m.created_at < p.end);
             ms = ms.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id).slice(0, p.limit || 50);
-            if (liveText && !liveSent && (p.limit || 50) > 5) {
+            // The live message lands in the first conversation a client opens, never in a group the engine reads for its
+            // photo (issue 341), which is no conversation anyone opened.
+            if (liveText && !liveSent && (p.limit || 50) > 5 && p.limit !== PHOTO_SCAN_ROWS) {
               liveSent = true;
               setTimeout(() => world.incoming(p.chat_id, liveText), liveDelayMs).unref();
             }

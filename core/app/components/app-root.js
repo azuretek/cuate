@@ -1854,7 +1854,7 @@ class AppRoot extends KitElement {
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
         ${this.activeFilters()}
         ${this.editRow()}
-        <app-chat-list .chats=${this.visibleChats()} .selected=${this.selecting || this.openChatId} .texts=${this.loadedTexts()}
+        <app-chat-list .client=${this.client} .chats=${this.visibleChats()} .selected=${this.selecting || this.openChatId} .texts=${this.loadedTexts()}
           .sort=${normalizeSort(this.settings['chats.sort'])} .filters=${this.filters}
           .editing=${this.editing} .checked=${this.checked}
           @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}

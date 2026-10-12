@@ -99,9 +99,20 @@ function payloadParts(m, { attachmentId }) {
   };
 }
 
+// A group's photo changing arrives as a row of its own (issue 341): no text and one attachment Messages names
+// GroupPhotoImage, carrying no type. It is an event in the conversation and the group's new picture, never a file in a
+// bubble. The picture's type is the server's to read from its bytes, so the model says only that it is a picture.
+export const GROUP_PHOTO_NAME = 'GroupPhotoImage';
+// How far back a group's history is read for its photo, once; the fake engine knows that page by its size.
+export const PHOTO_SCAN_ROWS = 400;
+export function isGroupPhotoRow(m) {
+  const list = Array.isArray(m && m.attachments) ? m.attachments : [];
+  return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || '') === GROUP_PHOTO_NAME;
+}
+
 export function mapMessage(m, { attachmentId }) {
   const fromMe = Boolean(m.is_from_me);
-  return {
+  const base = {
     id: m.guid ? String(m.guid) : 'row:' + m.id,
     chatId: chatOf(m),
     fromMe,
@@ -114,6 +125,14 @@ export function mapMessage(m, { attachmentId }) {
     // to the one above (issue 195).
     replyTo: m.thread_originator_guid ? String(m.thread_originator_guid) : null,
     read: fromMe || typeof m.is_read !== 'boolean' ? null : m.is_read,
+  };
+  if (isGroupPhotoRow(m)) {
+    const v = attachmentView(m.attachments[0], attachmentId);
+    const photo = v.missing ? null : { ...modelAttachment(v, 'Group photo'), mime: /^image\//i.test(v.mime) ? v.mime : 'image/*' };
+    return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'groupPhoto', photo } };
+  }
+  return {
+    ...base,
     ...payloadParts(m, { attachmentId }),
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
   };

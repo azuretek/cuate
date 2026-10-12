@@ -170,10 +170,18 @@ import { messageSummary } from './payload.js';
 export function chatPreview(chat) {
   const m = chat.lastMessage;
   if (!m) return '';
+  if (m.event) return eventText(m);
   // A message that carries an inline object reads as the object, not as the placeholder character, and one with nothing
   // readable left is the attachment it actually is (issue #80). A payload reads as the link it is, never as its name
   // (issue 238).
   return (m.fromMe ? 'You: ' : '') + messageSummary({ ...m, text: stripInlineObjects(m.text) });
+}
+
+// The words for an event in a conversation (issue 341): who did it, then what changed.
+export function eventText(m) {
+  const who = m.fromMe ? 'You' : String(m.senderName || m.sender || 'Someone');
+  if (m.event && m.event.kind === 'groupPhoto') return who + ' changed the group photo';
+  return '';
 }
 
 export function initials(name) {
@@ -192,7 +200,8 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
   const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
   const out = chats.slice();
-  out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
+  const photo = message.event && message.event.kind === 'groupPhoto' ? { photo: message.event.photo } : {};
+  out[i] = { ...c, ...photo, unread, lastMessageAt: message.sentAt, lastMessage: message.event ? { ...lastMessage, event: { kind: message.event.kind }, senderName: message.senderName || null } : lastMessage };
   return { chats: orderChats(out), known: true };
 }
 
