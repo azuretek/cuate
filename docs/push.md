@@ -15,6 +15,13 @@ The relay never sees what a notification says, who it is from or which conversat
 
 The relay is a function in our Firebase project. It reaches Firebase as the project's own service account, so no Firebase key file exists, not in a build, a server or this repository. The only secret it holds is the one that signs tickets, kept in the project's Secret Manager. Its code is `relay/`, and its tests are `relay/test/`.
 
+## What the server does
+
+- A phone registers with `POST /api/v1/push` (its push token, `ios` or `android`, and a 32-byte key it made) and stops with `DELETE /api/v1/push`. One registration per signed-in device; revoking the device's token stops its notifications at once.
+- For each new message from someone else, every registered phone with no open connection to the server gets one notification: the sender, up to 600 characters of the text (or that an attachment was sent) and the conversation, sealed with AES-256-GCM under that phone's key. A phone with the app open shows its own notice instead.
+- The **New messages** switch in Settings turns these off too.
+- A phone the relay reports gone is forgotten.
+
 ## Limits
 
 - A server can send only to phones it registered through the relay.
@@ -32,4 +39,4 @@ You need your own relay when you build the iPhone app under your own Apple team 
 1. Create a Firebase project, add an iPhone app and an Android app with your bundle and application ids, and upload your Apple push key under Project settings, Cloud Messaging.
 2. Put the project's `GoogleService-Info.plist` and `google-services.json` in your builds in place of ours.
 3. Create the ticket secret and deploy the relay from this repository: `firebase functions:secrets:set RELAY_TICKET_SECRET`, then `firebase deploy --only functions:relay --project <your project>`. The project needs the Blaze plan.
-4. Point your server at it: `node server/src/main.js config set push.relay <the relay's URL>`.
+4. Point your server at it: set `push.relay` in the server's `config.json` to the relay's URL and restart the server. `null` there switches push off.
