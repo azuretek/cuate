@@ -1,5 +1,6 @@
 // The server's own state, in one SQLite file: tokens (hashed, never stored in the clear), send idempotency records
-// (keys and outcomes, no text), the attachment ids it has handed out, and the settings every device shares.
+// (keys and outcomes, no text), the attachment ids it has handed out, the settings every device shares, and each phone's
+// push registration.
 // Messages stay in the Mac's Messages history.
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
@@ -44,6 +45,7 @@ create table if not exists tokens (id text primary key, name text not null, scop
 create table if not exists sends (client_key text primary key, chat_id text not null, status text not null, message_id text, at text not null);
 create table if not exists attachments (id text primary key, path text not null, mime text not null, name text not null, seen_at text not null);
 create table if not exists settings (key text primary key, value text not null, updated_at text not null);
+create table if not exists push_devices (token_id text primary key, platform text not null, push_token text not null, ticket text not null, seal_key text not null, created_at text not null);
 `;
 const hash = (t) => createHash('sha256').update(t).digest('hex');
 
@@ -104,6 +106,18 @@ export function openStore(file, { now = () => new Date().toISOString() } = {}) {
     putSettings(values) {
       const stmt = q('insert into settings (key, value, updated_at) values (?, ?, ?) on conflict(key) do update set value = excluded.value, updated_at = excluded.updated_at');
       for (const [k, v] of Object.entries(values)) stmt.run(k, JSON.stringify(v), now());
+    },
+    // One push registration per signed-in device (issue 347). A device whose token is revoked is never listed, so its
+    // phone stops getting notifications the moment it is signed out. Adding this table leaves the data format as it
+    // was: an older server opens the folder and ignores it.
+    putPushDevice({ tokenId, platform, pushToken, ticket, sealKey }) {
+      q('insert into push_devices (token_id, platform, push_token, ticket, seal_key, created_at) values (?, ?, ?, ?, ?, ?) on conflict(token_id) do update set platform = excluded.platform, push_token = excluded.push_token, ticket = excluded.ticket, seal_key = excluded.seal_key, created_at = excluded.created_at').run(String(tokenId), platform, pushToken, ticket, sealKey, now());
+    },
+    deletePushDevice(tokenId) {
+      return q('delete from push_devices where token_id = ?').run(String(tokenId)).changes > 0;
+    },
+    listPushDevices() {
+      return q('select p.token_id as tokenId, p.platform, p.push_token as pushToken, p.ticket, p.seal_key as sealKey from push_devices p join tokens t on t.id = p.token_id where t.revoked_at is null').all();
     },
     close() {
       db.close();

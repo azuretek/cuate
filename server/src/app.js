@@ -19,6 +19,7 @@ import { allows as scopeAllows } from './scopes.js';
 import { createExporter } from './export.js';
 import { createWebhooks } from './webhooks.js';
 import { createTyping } from './typing.js';
+import { createPush } from './push.js';
 import { configPath, loadConfig, saveConfig } from './config.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
@@ -57,7 +58,7 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, readSyncMs = 20000, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, readSyncMs = 20000, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
@@ -96,8 +97,10 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   };
   // Our typing reaches the other person through the engine unless the switch is off (issue 319).
   const typing = createTyping({ publish, outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
+  // A phone with the app open shows its own notice, so only phones with no open connection get a push (issue 347).
+  const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
   engine.on((name, data) => {
-    if (name === 'message.new') noteMessage(data.message);
+    if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
     // The engine only reports inbound typing when the switch is on and a bridge is already running; with it off this
     // never fires, so no contact indicator is invented (issue 230).
     if (name === 'typing.incoming') { if (config.typing && config.typing.incoming) typing.incoming(data); return; }
@@ -250,6 +253,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     settings: createSettings({ store }),
     exporter,
     webhooks,
+    push,
     mac,
     restarts,
     // How a theme URL is fetched; injected so a test can stand in for the network.

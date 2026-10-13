@@ -217,6 +217,21 @@
       "returns": "Settings"
     },
     {
+      "id": "push-register",
+      "method": "POST",
+      "path": "/api/v1/push",
+      "scope": "read",
+      "body": "PushRegistration",
+      "returns": "PushState"
+    },
+    {
+      "id": "push-unregister",
+      "method": "DELETE",
+      "path": "/api/v1/push",
+      "scope": "read",
+      "returns": "PushState"
+    },
+    {
       "id": "theme-import",
       "method": "POST",
       "path": "/api/v1/themes",
@@ -572,6 +587,14 @@
     "MessageEventKind": {
       "kind": "string",
       "photo": "Attachment?"
+    },
+    "PushRegistration": {
+      "token": "string",
+      "platform": "string",
+      "key": "string"
+    },
+    "PushState": {
+      "registered": "boolean"
     }
   }
 }

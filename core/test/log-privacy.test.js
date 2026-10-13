@@ -37,6 +37,7 @@ const SAFE_STRINGS = new Map([
   ['signal', 'a POSIX signal name'],
   ['method', 'an engine request method name'],
   ['route', 'a route id from core/spec/api.json'],
+  ['platform', 'ios or android, checked by the push route before it is logged (issue 347)'],
   ['code', 'an error code the server chose'],
   ['endpoint', 'a webhook endpoint id, never its url'],
   ['trigger', 'an event name from core/spec/log-events.json'],
