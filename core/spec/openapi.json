@@ -1033,6 +1033,88 @@
         }
       }
     },
+    "/api/v1/push": {
+      "post": {
+        "operationId": "push-register",
+        "summary": "POST /api/v1/push",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushRegistration"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "push-unregister",
+        "summary": "DELETE /api/v1/push",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/themes": {
       "post": {
         "operationId": "theme-import",
@@ -2565,6 +2647,38 @@
         },
         "required": [
           "kind"
+        ],
+        "additionalProperties": false
+      },
+      "PushRegistration": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "platform",
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "PushState": {
+        "type": "object",
+        "properties": {
+          "registered": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "registered"
         ],
         "additionalProperties": false
       }
