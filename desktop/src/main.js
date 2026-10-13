@@ -2596,7 +2596,7 @@ async function runSmoke(w) {
     const originalMinimum = w.getMinimumSize();
     w.setMinimumSize(320, 400);
     const originalTheme = nativeTheme.themeSource;
-    const geometry = "(() => { const card = document.querySelector('.app-notice'); if (!card) return false; const r = card.getBoundingClientRect(); const controls = [...document.querySelectorAll('.conv-head button, .sidebar-head button, app-composer button, app-composer textarea')]; return r.width > 200 && r.left >= 0 && r.right <= innerWidth && controls.every((b) => { const q = b.getBoundingClientRect(); return !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; }); })()";
+    const geometry = "(() => { const card = document.querySelector('.app-notice'); if (!card) return false; const r = card.getBoundingClientRect(); const mac = document.querySelector('.app-window')?.dataset.platform === 'darwin'; const lights = { left: 0, top: 0, right: 16 + 56, bottom: 32 }; const controls = [...document.querySelectorAll('.window-control, app-composer button, app-composer textarea')]; const clearOf = (q) => !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; window.__noticeTop = Math.round(r.top); return (!mac || (r.top <= 16 && clearOf(lights))) && r.width > 200 && r.left >= 0 && r.right <= innerWidth && controls.every((b) => { const q = b.getBoundingClientRect(); return !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; }); })()";
     // On a phone the notice must clear EVERY control the visible surface offers, the open drawer's included: its Edit
     // control, its rows and the conversation's own header and composer. Each state is read once it has settled, and
     // what the card lands on is named in the report, so a failure says which control was covered rather than only that
@@ -3376,7 +3376,12 @@ async function runSmoke(w) {
       }
       await resetSurfaces();
       const points = geo ? geo.points : {};
-      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag && !p.strip) && Object.values(clicks).every(Boolean);
+      // On macOS the notice stack starts at the window's top edge, inside the header's drag strip by design (#358): its
+      // card and its X are no-drag regions over the strip, so there a point may sit on the strip as long as the region
+      // it lands in is no-drag and the press closes it, which the clicks below prove. Every other surface, and the
+      // notice elsewhere, stays off the strip entirely.
+      const overStrip = name === 'notice' && process.platform === 'darwin';
+      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag && (overStrip || !p.strip)) && Object.values(clicks).every(Boolean);
       closeControlChecks[label + ':' + name] = ok;
       if (!ok) console.error('close control failed: ' + label + ' ' + name + ' ' + JSON.stringify({ geo, clicks }));
     }

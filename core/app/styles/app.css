@@ -914,14 +914,15 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* The stack draws above every other surface (issue 191): the chats, a conversation and its thread view, Settings,
    About and every sheet, a confirm and the media viewer, so an update notice is always seen. Its z-index is the
    highest in this file, which core/test/app-notices.test.js holds. It sits as high as the window allows without covering
-   a window control, so the height differs by platform: at the top edge on a phone, below the minimise, maximise and
-   close controls the page draws on Windows and Linux, and on macOS below the header, because the whole header there is
-   the window's drag strip and a press on a card inside it would start a window drag instead of reaching the card. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet
+   a window control, so the height differs by platform (Abi, 2026-10-13): at the top edge on a phone, which has none;
+   below the minimise, maximise and close controls the page draws at the right on Windows and Linux, which is the side
+   the stack sits on; and at the top edge on macOS, whose traffic lights are at the left, kept clear by holding the
+   stack's left edge past them. The card is no-drag, so inside the Mac's drag strip a press still reaches it. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet
    stays up; see the band below for where it sits then. */
 app-notices { position: absolute; top: calc(var(--inset-top) + var(--space-2)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 8; }
 .app-window { position: relative; }
 .app-window[data-platform="win32"] app-notices, .app-window[data-platform="linux"] app-notices { top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); }
-.app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
+.app-window[data-platform="darwin"] app-notices { left: max(var(--inset-left), var(--size-window-lights)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
 .app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-lg); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: var(--shadow-lg); font-size: var(--font-size-sm); pointer-events: auto; animation: notice-in var(--motion-normal) var(--motion-ease); }
 /* A notice is drawn as the Settings and About cards are (issue 342): the raised card, its plain border, its corners and
