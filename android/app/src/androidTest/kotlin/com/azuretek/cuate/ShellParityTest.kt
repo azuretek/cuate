@@ -41,6 +41,7 @@ class ShellParityTest {
             "notify",
             "notify.permission",
             "notify.take",
+            "push.token",
             "open.external",
             "file.save",
             "updates.check",

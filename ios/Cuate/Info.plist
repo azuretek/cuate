@@ -75,5 +75,9 @@
 	<true/>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleDefault</string>
+	<!-- The app hands Apple's device token to Firebase itself (ios/Cuate/Push.swift), so Firebase does not swizzle the
+	     app delegate (issue 347). -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 </dict>
 </plist>
