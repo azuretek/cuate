@@ -54,7 +54,7 @@ class HostBridge(
         const val INTERFACE_NAME = "cuateNative"
 
         /** Storage keys are lower-case words joined by dots, the same shape the desktop enforces. */
-        private const val CHANNEL_ID = "cuate.default"
+        const val CHANNEL_ID = "cuate.default"
         private const val REQUEST_NOTIFICATIONS = 6601
 
         /** The extras a message notice's press carries back to the activity (issue 331). */
@@ -174,6 +174,16 @@ class HostBridge(
         return PENDING
     }
 
+    /** The push registration (issue 347), found off the bridge's thread because Firebase answers later. */
+    private fun pushToken(id: String): JSONObject {
+        if (id.isEmpty()) return failure("push.token answers later, so it needs a call id")
+        Thread {
+            val reg = try { Push.registration(context, store) } catch (e: Exception) { null }
+            settle(id, true, reg ?: JSONObject.NULL)
+        }.apply { name = "push-token" }.start()
+        return PENDING
+    }
+
     private fun dispatch(name: String, args: JSONObject, id: String): JSONObject {
         if (name !in commands) return failure("undeclared bridge command: " + name)
         return when (name) {
@@ -196,8 +206,8 @@ class HostBridge(
             "link.take" -> { val l = pendingLink; pendingLink = null; success(l ?: JSONObject.NULL) }
             "notify" -> success(notify(args))
             "notify.permission" -> success(notifyPermission(args.optBoolean("request")))
-            // Push with the app closed (issue 347) arrives with the Android half of that work; until then none.
-            "push.token" -> success(JSONObject.NULL)
+            // Push with the app closed (issue 347): the push token and key the page sends its server, or null.
+            "push.token" -> pushToken(id)
             "notify.take" -> success(takeNotice())
             "open.external" -> success(openExternal(args))
             "file.save" -> success(saveFile(args))
