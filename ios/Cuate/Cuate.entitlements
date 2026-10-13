@@ -6,6 +6,9 @@
 	     prefix is the team's AppIdentifierPrefix, which only signing knows, so
 	     the group is written against the app id from core/spec/naming.json
 	     (ids.ios) rather than a literal. -->
+	<!-- Push notifications with the app closed (issue 347): the sandbox for a debug build, production otherwise. -->
+	<key>aps-environment</key>
+	<string>$(CUATE_APS_ENVIRONMENT)</string>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.azuretek.cuate</string>

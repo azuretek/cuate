@@ -95,6 +95,8 @@ export function createHandlers({ secure, takeLink = () => null, notify, notifyPe
     'notify.take': async () => takeNotice(),
     // Where notifications stand (issue 327). A desktop shows them without asking; macOS asks on the first one shown.
     'notify.permission': async () => notifyPermission(),
+    // A desktop keeps its connection open in the tray, so it has no push registration (issue 347).
+    'push.token': async () => null,
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
     // A document is offered for saving under its real name (issue 219): the page hands the bytes and the name, and the
     // shell shows its save dialog (desktop) or share or save sheet (phone).

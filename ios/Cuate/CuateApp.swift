@@ -5,6 +5,9 @@ import UserNotifications
 /// home in a view.
 @main
 struct CuateApp: App {
+    /// The delegate that hears Apple's device token for push notifications (issue 347).
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         // MetricKit delivers a previous launch's crashes and hangs to its
         // subscribers on this one, so the subscriber is registered first. The

@@ -213,6 +213,11 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         case "notify.take":
             // The notice last pressed (issue 331), taken once.
             settle(id: id, ok: true, value: NoticeRouter.shared.take() ?? NSNull())
+        case "push.token":
+            // The push registration the page sends its server (issue 347), or null where push cannot work.
+            Push.shared.registration(store: store) { [weak self] value in
+                DispatchQueue.main.async { self?.settle(id: id, ok: true, value: value ?? NSNull()) }
+            }
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
         case "file.save":

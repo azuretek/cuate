@@ -474,7 +474,7 @@ class AppRoot extends KitElement {
       this.takeLink();
       // Signed in, so notifications are asked for now, on every platform, rather than on the first message (issue
       // 327). The system asks only once; after that the shell answers where it stands.
-      this.bridge('notify.permission', { request: true }).then((state) => { this.notifyPermission = state; }).catch(() => {});
+      this.bridge('notify.permission', { request: true }).then((state) => { this.notifyPermission = state; this.registerPush(); }).catch(() => {});
       this.releaseHeldUpdate();
       this.launchCheck();
       this.noticeServerUpdate(info.serverUpdate);
@@ -525,7 +525,24 @@ class AppRoot extends KitElement {
     return this.phase === 'ready';
   }
 
+  // A phone allowed to show notifications registers for them with the app closed (issue 347): the shell answers its
+  // push token and key, or null where push cannot work, and the server keeps one registration per signed-in device.
+  async registerPush() {
+    const client = this.client;
+    if (!client || this.notifyPermission !== 'granted') return false;
+    try {
+      const reg = await this.bridge('push.token', {});
+      if (!reg || this.client !== client) return false;
+      await client.pushRegister(reg);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async signOut(reason) {
+    // Signing out stops this phone's notifications too; the server also forgets them when the token is revoked.
+    if (this.client) this.client.pushUnregister().catch(() => {});
     if (this.client) this.client.close();
     this.client = null;
     await this.bridge('storage.delete', { key: 'server.token' });

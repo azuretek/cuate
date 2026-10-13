@@ -490,6 +490,9 @@ var engine = (() => {
       // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
       // devices; nothing is sent to anyone else and nothing is written to history (issue 230).
       typing: (chatId, typing) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/typing`, { typing }),
+      // Push notifications with the app closed (issue 347): this phone's push token, platform and key, or stop.
+      pushRegister: ({ token: token2, platform, key }) => call("POST", "/api/v1/push", { token: token2, platform, key }),
+      pushUnregister: () => call("DELETE", "/api/v1/push"),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
       themeImport: ({ url, name }) => call("POST", "/api/v1/themes", name ? { url, name } : { url }),
