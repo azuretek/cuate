@@ -29,6 +29,13 @@ options:
   groupSortPosition: top
   generateEmptyDirectories: false
 
+# Firebase Cloud Messaging gives the phone the push token our relay sends to (issue 347, docs/push.md). Only the
+# messaging product is linked; it brings Firebase's core and installations with it.
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    majorVersion: 12.0.0
+
 settings:
   base:
     # Swift 5 language mode. The sibling shell is on 6.0; this one stays on 5
@@ -67,6 +74,12 @@ targets:
       - path: ../core/fixtures
         type: folder
         buildPhase: resources
+    dependencies:
+      - package: Firebase
+        product: FirebaseMessaging
+      # The notification service extension opens each sealed push (issue 347).
+      - target: CuateNotify
+        embed: true
     postBuildScripts:
       - name: Install rotation fixture in test builds only
         script: |
@@ -82,6 +95,12 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.cuate
+        # The release job names each target's App Store profile through these two settings (issue 347); blank, a
+        # local build signs automatically as before.
+        PROVISIONING_PROFILE_SPECIFIER: $(CUATE_PROFILE_NAME)
+        # Apple's push service a build talks to: the sandbox for a debug build from Xcode, production for TestFlight
+        # and the store. The entitlements files read it.
+        CUATE_APS_ENVIRONMENT: production
         # Blank on purpose: Xcode fills this from the Apple ID that signs in, so
         # a team id committed here would be a second place to keep in step with
         # the account. The release job supplies it on the command line.
@@ -117,6 +136,34 @@ targets:
         # build reports its marketing version; the release workflow overrides
         # this setting with the version it derived from the commit.
         CUATE_BUILD_VERSION: "$(MARKETING_VERSION)"
+
+      configs:
+        Debug:
+          CUATE_APS_ENVIRONMENT: development
+
+  # Opens each sealed push notification with the phone's key before it is shown (issue 347, docs/push.md).
+  CuateNotify:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: CuateNotify
+        excludes:
+          - Info.plist
+          - CuateNotify.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azuretek.cuate.notify
+        CUATE_APP_BUNDLE_ID: com.azuretek.cuate
+        PROVISIONING_PROFILE_SPECIFIER: $(CUATE_NOTIFY_PROFILE_NAME)
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: CuateNotify/CuateNotify.entitlements
+        INFOPLIST_FILE: CuateNotify/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: "0.0.1" # x-release-please-version
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
 
   CuateTests:
     type: bundle.unit-test

@@ -196,6 +196,8 @@ class HostBridge(
             "link.take" -> { val l = pendingLink; pendingLink = null; success(l ?: JSONObject.NULL) }
             "notify" -> success(notify(args))
             "notify.permission" -> success(notifyPermission(args.optBoolean("request")))
+            // Push with the app closed (issue 347) arrives with the Android half of that work; until then none.
+            "push.token" -> success(JSONObject.NULL)
             "notify.take" -> success(takeNotice())
             "open.external" -> success(openExternal(args))
             "file.save" -> success(saveFile(args))
