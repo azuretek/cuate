@@ -178,6 +178,7 @@ const checks = [
   { key: 'closeControls', bound: 'true', value: (report) => report.closeControls, test: (v) => v === true },
   { key: 'settingsTabs', bound: 'true', value: (report) => report.settingsTabs, test: (v) => v === true },
   { key: 'phoneSettings', bound: 'true', value: (report) => report.phoneSettings, test: (v) => v === true },
+  { key: 'noticeIcon', bound: 'true', value: (report) => report.noticeIcon, test: (v) => v === true },
   { key: 'aboutEverywhere', bound: 'true', value: (report) => report.aboutEverywhere, test: (v) => v === true },
   { key: 'aboutRowGap', bound: 'at least 16 (space-4)', value: (report) => report.aboutRowGap, test: (v) => typeof v === 'number' && v >= 16 },
   { key: 'aboutRises', bound: 'true', value: (report) => report.aboutRises, test: (v) => v === true },
