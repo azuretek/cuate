@@ -347,9 +347,15 @@ test('the sheet\'s ways out are the send button\'s family: a round X on every sh
     assert.match(css, new RegExp(sel + ':active \\{ background: var\\(--role-button-press\\)'), sel + ' presses as send does');
   }
   assert.match(css, /\.send \{[^}]*background: var\(--role-button\); color: var\(--role-button-fg\)/, 'and send is still drawn that way');
-  // With About over Settings, Settings tucks back behind it.
-  assert.match(root, /\?data-under=\$\{this\.aboutSheetShowing && this\.aboutFrom === 'settings'\}/);
-  assert.match(css, /\.sheet-scrim\[data-under\] > \.sheet \{ scale: var\(--size-sheet-tuck-scale\)/);
+  // With About over Settings, Settings slides down out of the way and back up as About leaves: travel, never a resize.
+  assert.match(root, /\?data-under=\$\{this\.aboutSheetShowing && this\.aboutFrom === 'settings' && !this\.aboutLeaving\} \?data-returning=\$\{this\.aboutLeaving && this\.aboutFrom === 'settings'\}/);
+  assert.match(css, /\.sheet-scrim\[data-under\] > \.sheet \{ translate: 0 var\(--sheet-travel\);/);
+  // The same travel on every layout: past the bottom edge from the desktop's centred card and the phone's bottom one.
+  assert.match(css, /@keyframes sheet-up-in \{ from \{ transform: translateY\(var\(--sheet-travel\)\)/);
+  assert.match(css, /\n\.sheet \{ --sheet-travel: calc\(50dvh \+ 50% \+ var\(--space-4\)\); \}/);
+  assert.match(css, /\n {2}\.sheet \{ --sheet-travel: calc\(100% \+ var\(--space-3\) \+ var\(--inset-bottom\)\); \}/);
+  assert.match(css, /\.sheet-scrim\[data-returning\] > \.sheet \{ transition: translate var\(--motion-sheet-out\)/);
+  assert.doesNotMatch(css, /sheet-tuck-scale/);
 });
 
 test('a drag on the sheet\'s handle or header lets it go past a quarter of its height or on a flick, and springs back otherwise (issue 338)', async () => {

@@ -62,7 +62,7 @@ app-root { display: block; height: 100%; }
 .shell { display: grid; grid-template-columns: var(--chats-width, var(--size-sidebar)) 1fr; height: 100%; }
 /* The two headers run up behind the status bar and the list runs down behind the home indicator, so the bars take the
    header's and the list's own surface; the content starts below and ends above them (issue 175). */
-.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--role-sidebar-edge); background: var(--role-sidebar); color: var(--role-sidebar-fg); padding-block-end: var(--inset-bottom); padding-inline-start: var(--inset-left); }
+.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--role-sidebar-edge); background: var(--role-sidebar); color: var(--role-sidebar-fg); padding-inline-start: var(--inset-left); }
 /* The divider between the chats list and the conversation (issues 217 and 215). It sits on the seam at --chats-width,
    the width the page writes from the chosen setting, over the token's size-sidebar before a choice is made; the grab
    affordance is a pill the pointer reveals on hover and grows on press, and at rest nothing is drawn. Only the pill is
@@ -125,7 +125,9 @@ app-root { display: block; height: 100%; }
 .banner.problem { color: var(--color-danger); }
 
 app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
-.chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); }
+/* The list scrolls all the way to the screen's bottom edge, so rows pass under it as they scroll; the room for the home
+   indicator is the list's own end padding instead of the panel's, so the last row can still be scrolled clear of it. */
+.chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) calc(var(--space-2) + var(--inset-bottom)); }
 .chat-row { position: relative; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; outline: none; transition: background var(--motion-fast) var(--motion-ease); }
 .chat-row:hover { background: var(--role-row-hover); color: var(--role-row-hover-fg); }
 .chat-row:hover .chat-time, .chat-row:hover .chat-preview { color: var(--role-row-hover-fg); }
@@ -438,6 +440,8 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
    disc so it reads as the theme-following one rather than its own artwork (issue 246). */
 .app-icon-choice[data-icon-id="theme"] .app-icon-follow { position: absolute; right: var(--space-1); bottom: var(--space-1); width: var(--space-3); height: var(--space-3); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-bg-raised); background: linear-gradient(var(--color-accent) 50%, var(--color-fg) 50%); }
 .sheet-section-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
+/* The About row stands apart from the group above it, the same gap the sheet's own groups keep (Abi, 2026-10-12). */
+.settings-about-row { margin-top: var(--space-4); }
 .sheet-section-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-rows { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); overflow: hidden; min-width: 0; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-top: var(--size-border) solid var(--color-border); min-width: 0; }
@@ -685,8 +689,10 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    apps sees one design rather than two. Nothing here names a colour or a length of its own: the dim is the token the
    drawer's scrim already uses, and every duration and curve is a motion token. */
 @keyframes surface-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes sheet-up-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes sheet-down-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+/* A sheet travels from just past the screen's bottom edge, wherever it rests (Abi, 2026-10-13): --sheet-travel is
+   that distance, set per layout below, so the desktop's centred card and the phone's bottom card move the same way. */
+@keyframes sheet-up-in { from { transform: translateY(var(--sheet-travel)); } to { transform: translateY(0); } }
+@keyframes sheet-down-out { from { transform: translateY(0); } to { transform: translateY(var(--sheet-travel)); } }
 @keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 
@@ -701,15 +707,19 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    rows sit at the top, so switching tabs never resizes the card under the pointer. */
 .sheet[data-view="settings"] { height: min(var(--size-sheet-max), 100%); }
 /* Either sheet arrives from the bottom edge (issue 253). */
+/* Centred in the backdrop, the card clears the bottom edge after half the screen and half itself. */
+.sheet { --sheet-travel: calc(50dvh + 50% + var(--space-4)); }
 .sheet[data-arrive="up"] { animation: sheet-up-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* The About sheet is a later layer ABOVE the Settings sheet it is stacked over (issue 253): above the settings
    backdrop and card, and below the notices, which draw above every surface. */
 .sheet-scrim[data-sheet="about"] { z-index: 5; }
 .sheet-scrim[data-sheet="about"] .sheet { z-index: 6; }
-/* With About stacked over it, the Settings card tucks back behind (issue 338): a little smaller and a little higher, so
-   its edge shows above About and the back arrow plainly returns to it. */
-.sheet-scrim[data-under] > .sheet { scale: var(--size-sheet-tuck-scale); translate: 0 calc(var(--space-3) * -1); transform-origin: top center; transition: scale var(--motion-sheet-in) var(--motion-sheet-ease), translate var(--motion-sheet-in) var(--motion-sheet-ease); }
-@media (prefers-reduced-motion: reduce) { .sheet-scrim[data-under] > .sheet { transition: none; } }
+/* With About stacked over it, the Settings card slides down out of the way as About rises, and slides back up as About
+   goes down (Abi, 2026-10-13): one travel each way on the sheet's own timing, never a resize. data-under holds it
+   below while About is up; data-returning carries the slide back up while About leaves. */
+.sheet-scrim[data-under] > .sheet { translate: 0 var(--sheet-travel); transition: translate var(--motion-sheet-in) var(--motion-sheet-ease); }
+.sheet-scrim[data-returning] > .sheet { transition: translate var(--motion-sheet-out) var(--motion-sheet-ease); }
+@media (prefers-reduced-motion: reduce) { .sheet-scrim[data-under] > .sheet, .sheet-scrim[data-returning] > .sheet { transition: none; } }
 /* On a phone the sheet keeps the card's own treatment (issue 253): the backdrop's blur and dim over the conversation,
    the card's edge and shadow, with the safe areas kept clear. This block follows the card's own rules, so it wins over
    them. */
@@ -722,6 +732,8 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
   /* The card is capped by the room the two system bars leave as well as the floating ceiling: min(90vh, 100%) of the
      backdrop's padded box, so its top can never rise under the status bar (issue 253). */
   .sheet { width: 100%; max-width: none; max-height: min(var(--size-sheet-max), 100%); border-radius: var(--radius-sheet); }
+  /* At the bottom of the backdrop, the card clears the edge after its own height and the room below it. */
+  .sheet { --sheet-travel: calc(100% + var(--space-3) + var(--inset-bottom)); }
   .sheet-handle { display: block; }
   .sheet-head { padding-top: var(--space-2); }
   .sheet-body { scroll-padding-block: var(--space-4); }

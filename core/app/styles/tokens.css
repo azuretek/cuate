@@ -75,7 +75,6 @@
   --size-send-icon: calc(var(--size-tool) * 0.62);
   --size-sheet-handle-w: 36px;
   --size-sheet-handle-h: 5px;
-  --size-sheet-tuck-scale: 0.94;
   --motion-fast: 100ms;
   --motion-normal: 180ms;
   --motion-spin: 900ms;

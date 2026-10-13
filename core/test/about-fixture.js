@@ -28,6 +28,59 @@
   root.openSettings();
   await until(() => document.querySelector('app-settings [data-action=about]'), 'the About row in Settings');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the sheet to arrive');
+  // The same slide as the desktop (Abi, 2026-10-13), in this platform's own web view: About rises from below while
+  // Settings slides down out of the way, and the back press slides Settings straight back up as About goes down, never
+  // changing width. A phone emulator draws a frame a second at times, so the motion is read off its own timeline
+  // rather than sampled by frame: each running animation is held at its start and its middle, then let finish. Where
+  // the system asks for reduced motion each is a straight cut by design, so only where each ends up is held.
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const sheet = (view) => document.querySelector('.sheet[data-view=' + view + ']');
+  const topOf = (view) => (sheet(view) ? Math.round(sheet(view).getBoundingClientRect().top) : null);
+  const width = (view) => (sheet(view) ? Math.round(sheet(view).getBoundingClientRect().width) : null);
+  const moving = () => document.getAnimations().filter((x) => x.playState === 'running' && x.effect && x.effect.target && x.effect.target.closest && x.effect.target.closest('.sheet-scrim'));
+  const hold = (all, fraction) => { for (const x of all) { x.pause(); x.currentTime = Number(x.effect.getComputedTiming().duration) * fraction; } };
+  const frame = () => new Promise(requestAnimationFrame);
+  const settingsRest = topOf('settings');
+  const settingsWidth = width('settings');
+  const vh = window.innerHeight;
+  document.querySelector('app-settings [data-action=about]').click();
+  await root.updateComplete;
+  await frame();
+  let rising = moving();
+  let aboutStart = null;
+  let settingsMid = null;
+  if (!reduced) {
+    if (rising.length < 2) throw new Error('motion: opening About runs ' + rising.length + ' animations, not About rising and Settings going down');
+    hold(rising, 0);
+    aboutStart = topOf('about');
+    hold(rising, 0.5);
+    settingsMid = topOf('settings');
+    for (const x of rising) x.finish();
+  }
+  await until(() => !moving().length, 'About to arrive');
+  const aboutRest = topOf('about');
+  const settingsDown = topOf('settings');
+  if (!(settingsDown >= vh - 2)) throw new Error('motion: Settings waits at ' + settingsDown + ', not below the screen (' + vh + ')');
+  if (width('settings') !== settingsWidth) throw new Error('motion: Settings changed width going down');
+  if (!reduced) {
+    if (!(aboutStart - aboutRest >= sheet('about').getBoundingClientRect().height / 2)) throw new Error('motion: About started at ' + aboutStart + ', not below its rest at ' + aboutRest);
+    if (!(settingsMid > settingsRest + 20 && settingsMid < settingsDown - 20)) throw new Error('motion: Settings was at ' + settingsMid + ' halfway, not between ' + settingsRest + ' and ' + settingsDown);
+  }
+  document.querySelector('app-about .sheet-back').click();
+  await root.updateComplete;
+  await frame();
+  const leaving = moving();
+  if (!reduced) {
+    if (leaving.length < 2) throw new Error('motion: back runs ' + leaving.length + ' animations, not About going down and Settings rising together');
+    hold(leaving, 0.5);
+    const halfway = topOf('settings');
+    if (!(halfway < settingsDown - 20 && halfway > settingsRest + 20)) throw new Error('motion: Settings was at ' + halfway + ' halfway back, so it waited for About to leave');
+    if (width('settings') !== settingsWidth) throw new Error('motion: Settings changed width coming back');
+    for (const x of leaving) x.finish();
+  }
+  await until(() => !document.querySelector('app-about') && !moving().length, 'About to close');
+  if (Math.abs(topOf('settings') - settingsRest) > 1 || width('settings') !== settingsWidth) throw new Error('motion: Settings came back to ' + topOf('settings') + ' at ' + width('settings') + ' wide, not ' + settingsRest + ' at ' + settingsWidth);
+  const motionReport = (reduced ? 'cut' : 'slide') + ' settingsRest=' + settingsRest + ' settingsDown=' + settingsDown + ' aboutStart=' + aboutStart;
   // The About row is on every Settings page (issue 244), so no tab has to be picked first.
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
@@ -89,7 +142,12 @@
   reported.textContent = reported.getAttribute('aria-label');
   Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(reported);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: shownLabel(button), command: button.dataset.command, channel, build };
+  const motionMark = document.createElement('output');
+  motionMark.setAttribute('aria-label', 'about:motion ' + motionReport);
+  motionMark.textContent = motionMark.getAttribute('aria-label');
+  Object.assign(motionMark.style, { position: 'fixed', top: '0', left: '0', zIndex: '9999', fontSize: '1px' });
+  document.body.append(motionMark);
+  window.aboutProof = { motion: motionReport, ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: shownLabel(button), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;

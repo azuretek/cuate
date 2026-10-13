@@ -2712,6 +2712,52 @@ async function runSmoke(w) {
   // (issues 244, 253): open it with the last tab in force, so the way back can be checked to land there.
   await showTab('device');
 
+  // The way into About and back out, at a phone's width (Abi, 2026-10-12, 2026-10-13): the About row sits apart from
+  // the section above it, About rises from the bottom edge while the Settings card slides down out of the way, and the
+  // back press slides Settings straight back up while About goes down: one travel each way, never a resize, and
+  // nothing moving once About has gone. Every frame is sampled where each card is drawn.
+  // Motion is measured with motion on: a CI host with animation off reports reduced motion, where a sheet cuts
+  // straight to its place by design, so the earlier preference is put back afterwards.
+  const motionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  // A host with animation off had cut each sheet into place; switching motion on restarts that arrival, so it is let
+  // finish before anything is measured.
+  await js("(() => { for (const a of document.getAnimations()) a.finish(); return true; })()");
+  await pause(300);
+  report.aboutRowGap = await js("(() => { const panel = document.querySelector('app-settings .sheet-section:not([hidden])'); const row = panel && panel.querySelector('.settings-about-row'); const prev = row && row.previousElementSibling; if (!prev) return null; return Math.round(row.getBoundingClientRect().top - prev.getBoundingClientRect().bottom); })()");
+  const settingsRest = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
+  const sampleSheets = "(() => { window.__frames = []; const t0 = performance.now(); const tick = () => { const a = document.querySelector('.sheet[data-view=about]'); const s = document.querySelector('.sheet[data-view=settings]'); const ar = a && a.getBoundingClientRect(); const sr = s && s.getBoundingClientRect(); window.__frames.push({ t: Math.round(performance.now() - t0), about: ar ? Math.round(ar.top) : null, aboutH: ar ? Math.round(ar.height) : null, settings: sr ? Math.round(sr.top) : null, settingsW: sr ? Math.round(sr.width) : null }); if (performance.now() - t0 < 1600) requestAnimationFrame(tick); }; requestAnimationFrame(tick); return true; })()";
+  await js(sampleSheets);
+  await js("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()");
+  await pause(1700);
+  const riseFrames = await js('window.__frames');
+  const riseSeen = riseFrames.filter((f) => f.about !== null);
+  const aboutRest = riseSeen[riseSeen.length - 1];
+  const vh = await js('window.innerHeight');
+  const settingsDown = riseFrames[riseFrames.length - 1].settings;
+  // About rises: first drawn at least half its height below its rest, only ever moving up. Settings goes down: it
+  // ends below the screen, it only ever moves down, and it never changes width.
+  report.aboutRises = Boolean(aboutRest) && riseSeen.length > 3 && riseSeen[0].about - aboutRest.about >= aboutRest.aboutH / 2 && riseSeen.every((f, i) => i === 0 || f.about <= riseSeen[i - 1].about + 1);
+  const settingsOut = riseFrames.filter((f) => f.settings !== null);
+  report.settingsSlidesDown = settingsDown >= vh - 2 && settingsOut.every((f, i) => i === 0 || f.settings >= settingsOut[i - 1].settings - 1) && new Set(settingsOut.map((f) => f.settingsW)).size === 1;
+  if (!report.aboutRises || !report.settingsSlidesDown) console.error('about rises: ' + JSON.stringify({ settingsRest, settingsDown, vh, frames: riseFrames.slice(0, 50) }));
+  await js(sampleSheets);
+  await js("document.querySelector('app-about .sheet-back').click()");
+  await pause(1700);
+  const backFrames = await js('window.__frames');
+  const lastAbout = backFrames.reduce((at, f, i) => (f.about !== null ? i : at), -1);
+  const back = backFrames.filter((f) => f.settings !== null);
+  // One motion: Settings is already on its way up while About is still drawn, it only ever moves up, it arrives where
+  // it rested before, and nothing moves once About has gone.
+  const upEarly = backFrames.slice(0, lastAbout + 1).some((f) => f.settings !== null && f.settings < settingsDown - 20);
+  const onlyUp = back.every((f, i) => i === 0 || f.settings <= back[i - 1].settings + 1);
+  const stillAfter = backFrames.slice(lastAbout + 1).every((f) => f.settings === null || Math.abs(f.settings - settingsRest) <= 1);
+  report.aboutBackSmooth = lastAbout >= 0 && upEarly && onlyUp && stillAfter && new Set(back.map((f) => f.settingsW)).size === 1;
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: motionWas }] });
+  if (!report.aboutBackSmooth) console.error('about back: ' + JSON.stringify({ settingsRest, settingsDown, lastAbout, upEarly, onlyUp, stillAfter, frames: backFrames.slice(0, 60) }));
+  await waitFor("!document.querySelector('app-about')", 5000);
+  await pause(300);
+
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
@@ -2788,7 +2834,24 @@ async function runSmoke(w) {
   const aboutOrder = ['product', 'version', 'channel', 'build', 'commit', 'builtAt', 'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt', 'platform', 'arch', 'electron', 'chromium', 'node', 'installSource', 'packaged', 'updateChannel', 'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion'];
   const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')), unknown: [...document.querySelectorAll('app-about .about-row .about-value-text')].some((e) => e.textContent === 'Unknown') }))()");
   // Back from About returns to Settings, the page it was pushed over.
+  // The same slide on the desktop (Abi, 2026-10-13): Settings waits below the screen while About is up, and the back
+  // press slides it straight up as About goes down, keeping its width, at rest once About has gone.
+  const deskMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await js("(() => { for (const a of document.getAnimations()) a.finish(); return true; })()");
+  await pause(300);
+  const deskVh = await js('window.innerHeight');
+  const deskUnder = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
+  await js(sampleSheets);
   await js("document.querySelector('app-about .sheet-back').click()");
+  await pause(1700);
+  const deskFrames = await js('window.__frames');
+  const deskLast = deskFrames.reduce((at, f, i) => (f.about !== null ? i : at), -1);
+  const deskBack = deskFrames.filter((f) => f.settings !== null);
+  const deskRest = deskBack.length ? deskBack[deskBack.length - 1].settings : null;
+  report.aboutBackDesktop = deskUnder >= deskVh - 2 && deskLast >= 0 && deskFrames.slice(0, deskLast + 1).some((f) => f.settings !== null && f.settings < deskUnder - 20) && deskBack.every((f, i) => i === 0 || f.settings <= deskBack[i - 1].settings + 1) && deskFrames.slice(deskLast + 1).every((f) => f.settings === null || Math.abs(f.settings - deskRest) <= 1) && new Set(deskBack.map((f) => f.settingsW)).size === 1;
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: deskMotionWas }] });
+  if (!report.aboutBackDesktop) console.error('about back desktop: ' + JSON.stringify({ deskVh, deskUnder, deskLast, frames: deskFrames.slice(0, 60) }));
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
@@ -2908,6 +2971,15 @@ async function runSmoke(w) {
   for (const t0 = Date.now(); !drawerOpen(drawer) && Date.now() - t0 < 3000; drawer = await drawerParts()) await pause(100);
   report.phoneDrawer = drawerOpen(drawer);
   if (!report.phoneDrawer) console.error('phone drawer: ' + JSON.stringify(drawer));
+  // The conversation list scrolls to the screen's bottom edge (Abi, 2026-10-12): with a home-indicator inset, the
+  // list's scroller reaches the bottom of the drawer, and scrolled to its end the last row still clears the inset.
+  await js("(() => { document.documentElement.style.setProperty('--shell-inset-bottom', '34px'); return true; })()");
+  await pause(300);
+  const listEdge = await js("(() => { const side = document.querySelector('.sidebar'); const list = document.querySelector('app-chat-list'); const was = list.scrollTop; list.scrollTop = list.scrollHeight; const rows = list.querySelectorAll('.chat-row'); const last = rows[rows.length - 1]; const s = side.getBoundingClientRect(); const l = list.getBoundingClientRect(); const out = { listBottom: Math.round(l.bottom), sideBottom: Math.round(s.bottom), lastBottom: last ? Math.round(last.getBoundingClientRect().bottom) : null }; list.scrollTop = was; return out; })()");
+  report.listToEdge = listEdge.lastBottom !== null && Math.abs(listEdge.listBottom - listEdge.sideBottom) <= 2 && listEdge.lastBottom <= listEdge.sideBottom - 34;
+  if (!report.listToEdge) console.error('list to edge: ' + JSON.stringify(listEdge));
+  await js("(() => { document.documentElement.style.removeProperty('--shell-inset-bottom'); return true; })()");
+  await pause(200);
   await shot('07-phone-list.png');
   // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
