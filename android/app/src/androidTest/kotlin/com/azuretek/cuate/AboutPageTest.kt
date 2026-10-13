@@ -75,7 +75,8 @@ class AboutPageTest {
     }
 
     private fun awaitProof(scenario: ActivityScenario<MainActivity>): JSONObject {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+        // A minute: the fixture opens About and goes back before its notice (the slide, Abi 2026-10-13).
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
         var result = "null"
         do {
             instrumentation.waitForIdleSync()

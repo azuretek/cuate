@@ -131,9 +131,18 @@ const nativeFrom = (reps) => {
   for (const r of reps) image.addRepresentation({ scaleFactor: r.scale, width: r.image.width, height: r.image.height, buffer: encodePng(r.image) });
   return image;
 };
+// The icon a notification wears (Abi, 2026-10-13): the app icon in force, the chosen one or the theme's, redrawn when the
+// palette changes, so a notice never shows an icon the app no longer wears.
+let noticeIcon = null;
+let noticeIconKey = null;
 function applyIcons(next = {}) {
   iconState = { ...iconState, ...next };
   const out = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState, fixed: appIconFixed });
+  const noticeKey = JSON.stringify(out.palette);
+  if (noticeKey !== noticeIconKey) {
+    noticeIcon = nativeFrom([{ scale: 1, image: renderIcon({ masters: iconMasters, palette: out.palette, kind: 'app', size: 256 }) }]);
+    noticeIconKey = noticeKey;
+  }
   // macOS: the Dock wears a fixed palette while the app runs, and the bundle's icon (the default theme's) once the
   // choice is Follow theme again.
   if (process.platform === 'darwin' && app.dock && (appIconFixed || dockIconKey)) {
@@ -196,9 +205,11 @@ const handlers = createHandlers({
   notify: (title, body, target) => {
     // Pressing a message notice raises the window and tells the page, which takes the target (issue 331).
     const pressed = () => noticePressed(target);
-    if (SMOKE) smokeNotices.push({ title, body, target, pressed });
+    if (SMOKE) smokeNotices.push({ title, body, target, pressed, iconKey: noticeIconKey, iconSize: noticeIcon ? noticeIcon.getSize().width : 0 });
     if (!Notification.isSupported()) return false;
-    const n = new Notification({ title, body });
+    // The app icon in force. Windows and Linux draw it as the notice's icon; macOS draws the bundle's own icon at the
+    // left whatever an app asks, and this one beside the text.
+    const n = new Notification(noticeIcon ? { title, body, icon: noticeIcon } : { title, body });
     // Held until it is pressed or closed: a notice nothing references is collected, and its press then reaches nothing.
     liveNotices.add(n);
     n.on('click', () => { liveNotices.delete(n); pressed(); });
@@ -2549,6 +2560,14 @@ async function runSmoke(w) {
   const fixedMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedOf(iconPick) }).palette.mark;
   const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === fixedMark;
   const iconMarked = await js(iconChoice(iconPick) + ".getAttribute('aria-checked') === 'true'");
+  // A notification raised now wears the chosen icon (Abi, 2026-10-13): the palette it was drawn with is the fixed one, at
+  // a size a notification shows, not the bundle's icon from the build.
+  smokeNotices.length = 0;
+  await js("window.bridge.call('notify', { title: 'Smoke icon', body: 'Icon' })");
+  const iconNotice = smokeNotices.find((n) => n.title === 'Smoke icon');
+  const fixedPaletteKey = JSON.stringify(shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState, fixed: fixedOf(iconPick) }).palette);
+  report.noticeIcon = Boolean(iconNotice) && iconNotice.iconSize === 256 && iconNotice.iconKey === fixedPaletteKey;
+  if (!report.noticeIcon) console.error('notice icon: ' + JSON.stringify({ seen: Boolean(iconNotice), size: iconNotice && iconNotice.iconSize, matches: iconNotice && iconNotice.iconKey === fixedPaletteKey }));
   await waitFor('!' + iconChoice(appIconSpec.default) + '.disabled', 10000);
   await js(iconChoice(appIconSpec.default) + '.click()');
   for (let i = 0; i < 50 && appIconApplied !== appIconSpec.default; i += 1) await pause(200);
