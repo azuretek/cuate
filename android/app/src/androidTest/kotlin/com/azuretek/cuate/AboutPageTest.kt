@@ -243,6 +243,10 @@ class AboutPageTest {
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             val proof = awaitProof(scenario)
+            // The same slide as the desktop (Abi, 2026-10-13): the fixture held About rising and Settings going down and back
+            // up on their own timelines in this web view, and reports which it saw (a cut where the system reduces motion).
+            val motion = proof.optString("motion")
+            assertTrue("About and Settings moved as the desktop's do: $motion", motion.startsWith("slide ") || motion.startsWith("cut "))
             assertTrue("About draws its icon, Check for updates and the build: " + proof, proof.getString("parts") == "identity|updates|build")
             assertTrue("The notice offers the newer build: " + proof, proof.getString("notice").contains("Version $offered is available"))
             assertTrue("About's button is the notice's Download: " + proof, proof.getString("button") == "Download" && proof.getString("command") == "updates.download")

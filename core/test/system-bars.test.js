@@ -58,7 +58,9 @@ test('the page paints behind the system bars and every edge surface pads by one 
   for (const head of ['.sidebar-head', '.conv-head']) assert.match(rule(head), /height: calc\(var\(--size-header\) \+ var\(--inset-top\)\); padding: var\(--inset-top\) var\(--space-4\) 0;/, head + ' runs up behind the status bar');
   assert.doesNotMatch(css.slice(css.indexOf('\n.conv-head {') + 1), /\n\.conv-head \{|\n\.sidebar-head \{/, 'no later base rule takes the header\'s inset back');
   assert.match(rule('app-composer'), /padding-block-end: var\(--inset-bottom\)/, 'the composer runs down behind the home indicator');
-  assert.match(rule('.sidebar'), /padding-block-end: var\(--inset-bottom\); padding-inline-start: var\(--inset-left\)/, 'the list and the drawer do too');
+  assert.match(rule('.sidebar'), /padding-inline-start: var\(--inset-left\)/, 'the drawer pads its side');
+  assert.doesNotMatch(rule('.sidebar'), /padding-block-end/, 'the drawer runs to the bottom edge, so its list scrolls under it');
+  assert.match(rule('.chat-list'), /padding: 0 var\(--space-2\) calc\(var\(--space-2\) \+ var\(--inset-bottom\)\)/, 'the list ends with the home indicator\'s room, so its last row scrolls clear');
   assert.match(rule('.main'), /padding-inline-end: var\(--inset-right\)/);
   assert.match(rule('.onboarding-wrap'), /var\(--inset-top\)[\s\S]*var\(--inset-bottom\)/);
   assert.match(css, /\.sheet-scrim \{[^}]*padding: calc\(var\(--space-4\) \+ var\(--inset-top\)\)/);
