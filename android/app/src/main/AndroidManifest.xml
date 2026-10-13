@@ -188,6 +188,16 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Push notifications with the app closed (issue 347): Firebase hands each sealed message to this service, which
+             opens it with the phone's key and shows it. Not exported: only Firebase's own receiver starts it. -->
+        <service
+            android:name=".PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- The installer's answer to an update this app handed it. Not exported: only the PendingIntent the app made
              reaches it, so nothing outside the app can hand it an intent to start. -->
         <receiver

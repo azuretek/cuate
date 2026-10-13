@@ -37,6 +37,17 @@ test('a Firebase client config is never committed, and the release writes it fro
   assert.ok(wf.indexOf('Write the Firebase config') < wf.lastIndexOf('Generate the Xcode project'), 'written before the project is generated');
 });
 
+test('Android registers through its bridge and opens a sealed notification in its own service', () => {
+  const kotlin = 'android/app/src/main/kotlin/' + naming.ids.android.replace(/\./g, '/') + '/';
+  assert.match(read(ANDROID_BRIDGE), /"push\.token" -> pushToken\(id\)/);
+  assert.match(read(kotlin + 'Push.kt'), /Cipher\.getInstance\("AES\/GCM\/NoPadding"\)/, 'the server\'s own AES-256-GCM layout');
+  assert.match(read(kotlin + 'PushService.kt'), /putExtra\(HostBridge\.EXTRA_CHAT, chat\)/, 'a press opens the conversation');
+  assert.match(read('android/app/src/main/AndroidManifest.xml'), /android:name="\.PushService"\s+android:exported="false"/);
+  const wf = read('.github/workflows/android.yml');
+  assert.ok(wf.includes('secrets.' + SLUG + '_GOOGLE_SERVICES_JSON'), 'the release writes the config from a secret');
+  assert.doesNotMatch(read('android/app/build.gradle.kts'), /com\.google\.gms\.google-services/, 'no plugin that wants the file in the tree');
+});
+
 test('the iPhone opens a sealed notification in its extension with the key the app made', () => {
   const ext = read('ios/' + naming.product + 'Notify/NotificationService.swift');
   assert.match(ext, /AES\.GCM\.SealedBox\(combined: bytes\)/, 'nonce, ciphertext and tag, as the server seals it');
