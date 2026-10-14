@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { windowOptions, WINDOW_STRIP_HEIGHT, WINDOW_CONTROL_INSET, MAC_LIGHTS_X, MAC_LIGHTS_PX } from '../src/window-chrome.js';
+import { windowOptions, WINDOW_STRIP_HEIGHT, WINDOW_CONTROL_INSET, MAC_LIGHTS_X, MAC_LIGHTS_PX, MAC_LIGHTS_ROOM } from '../src/window-chrome.js';
 
 const tokens = JSON.parse(readFileSync(new URL('../../core/spec/tokens.json', import.meta.url), 'utf8'));
 
@@ -21,6 +21,9 @@ test('Windows and Linux draw no platform frame', () => {
 
 test('the strip height is the token the stylesheet uses', () => {
   assert.equal(tokens.size['window-strip'], WINDOW_STRIP_HEIGHT + 'px');
+  // The room a Mac notice keeps clear at the left is the lights' own, with a gap after them.
+  assert.equal(tokens.size['window-lights'], MAC_LIGHTS_ROOM + 'px');
+  assert.ok(MAC_LIGHTS_ROOM >= MAC_LIGHTS_X + 52 + 8, 'past the third light, with a gap');
 });
 
 test('the window-control inset is the token the stylesheet uses', () => {

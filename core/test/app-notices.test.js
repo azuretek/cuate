@@ -106,7 +106,9 @@ test('the notice stack draws above every other surface and sits as high as it ca
   const win = rules.find((r) => r.selector.includes('[data-platform="win32"] app-notices') && r.selector.includes('[data-platform="linux"] app-notices'));
   assert.ok(win, 'Windows and Linux place the stack themselves');
   assert.match(win.body, /top: calc\(var\(--inset-top\) \+ var\(--size-window-control-inset\) \+ var\(--size-window-control-h\) \+ var\(--space-2\)\)/, 'below the window controls');
-  assert.match(css, /\.app-window\[data-platform="darwin"\] app-notices \{ top: calc\(var\(--size-header\) \+ var\(--size-window-strip\) \+ var\(--space-3\)\); \}/, 'a Mac window starts the stack below its drag strip');
+  // A Mac's traffic lights are at the left, so the stack keeps the top edge a phone has and holds its left edge past them.
+  assert.match(css, /\.app-window\[data-platform="darwin"\] app-notices \{ left: max\(var\(--inset-left\), var\(--size-window-lights\)\); \}/, 'a Mac window starts the stack at the top, clear of the traffic lights');
+  assert.doesNotMatch(css, /\[data-platform="darwin"\] app-notices \{[^}]*top:/, 'nothing pushes the Mac stack below the header');
   assert.doesNotMatch(css, /^app-notices \{[^}]*size-header/m, 'a phone, Windows and Linux do not wait below the header');
 });
 
