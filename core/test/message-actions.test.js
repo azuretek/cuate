@@ -67,7 +67,7 @@ test('your own message\'s menu shows its time and React, never Reply in thread',
 
 test('a message carries no action buttons of its own: every action is in the one menu', () => {
   const m = msg({});
-  const markup = words(conversation.bubble.call(host({ messages: [m] }), { message: m, first: true, last: true }, null, false, 'list'));
+  const markup = words(conversation.bubble.call(host({ messages: [m] }), { message: m, first: true, last: true }, null, 'list'));
   assert.ok(!markup.includes('message-actions'), 'no hover buttons beside the bubble');
   assert.ok(!markup.includes('data-icon="reply"'));
 });
@@ -222,7 +222,7 @@ test('a document attachment carries no thread mark and its press saves rather th
   const png = { id: 'att-png', name: 'sunset.png', mime: 'image/png', bytes: 10, sticker: false, missing: false, local: false };
   const doc = msg({ id: 'doc', text: '', attachments: [pdf] });
   const h = host({ messages: [doc] });
-  const markup = words(conversation.bubble.call(h, { message: doc, first: true, last: true }, null, false, 'list'));
+  const markup = words(conversation.bubble.call(h, { message: doc, first: true, last: true }, null, 'list'));
   assert.ok(!/thread-reply/.test(markup), 'a document in no thread carries no thread mark');
   assert.equal(words(conversation.threadSummary.call(h, doc)), '', 'and carries no reply count');
   const attachment = defined['app-attachment'].prototype;
@@ -262,7 +262,7 @@ test('a thread is never opened on a platform that has no threads', () => {
 // and the menu copies a link, the one pressed or right clicked when there is one, else the message's first.
 test('a web address in a message is drawn as a link, and the rest of the text as text', () => {
   const m = msg({ text: 'see https://example.com/a and <b>this</b>' });
-  const markup = words(conversation.bubble.call(host({ messages: [m] }), { message: m, first: true, last: true }, null, false, 'list'));
+  const markup = words(conversation.bubble.call(host({ messages: [m] }), { message: m, first: true, last: true }, null, 'list'));
   assert.ok(markup.includes('<a class="message-link" href=https://example.com/a '), 'the address is a link');
   assert.ok(markup.includes('>https://example.com/a</a>'), 'shown as it was written');
   assert.ok(markup.includes('see ') && markup.includes(' and <b>this</b>'), 'the text around it is drawn as text');
@@ -322,7 +322,7 @@ test('Copy link puts the address on the clipboard and says so under the message,
     assert.deepEqual(written, ['https://a.example/']);
     assert.equal(h.pop, null, 'the menu closes');
     assert.deepEqual(h.ownNote, { id: m.id, text: 'Link copied' });
-    const markup = words(conversation.bubble.call(h, { message: m, first: true, last: true }, null, false, 'list'));
+    const markup = words(conversation.bubble.call(h, { message: m, first: true, last: true }, null, 'list'));
     assert.ok(markup.includes('Link copied'), 'the note shows under the message');
     mock.timers.tick(2500);
     assert.equal(h.ownNote, null);

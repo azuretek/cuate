@@ -14,7 +14,7 @@
 // the indicator on their side). It is told once per conversation, not per device, and refreshed while the typing
 // lasts, so the indicator never outlives the last device that was typing there.
 export const TYPING_REFRESH_MS = 20000;
-export function createTyping({ publish, ttlMs = 8000, outbound = null, refreshMs = TYPING_REFRESH_MS, now = () => Date.now() }) {
+export function createTyping({ publish, ttlMs = 8000, outbound = null, refreshMs = TYPING_REFRESH_MS, now = () => Date.now(), log = null }) {
   const active = new Map();
   const key = (chatId, from) => String(chatId) + ':' + String(from);
   const told = new Map();
@@ -30,7 +30,10 @@ export function createTyping({ publish, ttlMs = 8000, outbound = null, refreshMs
       if (!told.has(id) || typingIn(id)) return;
       told.delete(id);
     }
-    try { Promise.resolve(outbound(id, on)).catch(() => {}); } catch { /* the engine refused: nothing to show */ }
+    // Each hand-off to the engine is logged with its outcome (Abi, 2026-10-14), so our side of the indicator can be
+    // checked from the log rather than only from the other person's screen.
+    const said = (ok, error) => { if (log) log.emit('typing.outgoing', error ? { chat: id, typing: on, ok, error } : { chat: id, typing: on, ok }); };
+    try { Promise.resolve(outbound(id, on)).then(() => said(true), (e) => said(false, (e && e.message) || 'refused')); } catch (e) { said(false, (e && e.message) || 'refused'); }
   };
   const announce = (state, typing) => publish('typing', { chatId: String(state.chatId), from: String(state.from), kind: state.kind, typing }, typing ? String(state.from) : null);
 
@@ -65,6 +68,7 @@ export function createTyping({ publish, ttlMs = 8000, outbound = null, refreshMs
     // Inbound typing from the engine, when the switch is on. Present and, by default, off (issue 230).
     incoming({ chatId, typing }) {
       announce({ chatId, from: 'contact', kind: 'contact' }, Boolean(typing));
+      if (log) log.emit('typing.incoming', { chat: String(chatId), typing: Boolean(typing), resolved: true, published: true });
     },
     // Every conversation a device was typing in, when its last socket closes.
     stopFrom(from) {
