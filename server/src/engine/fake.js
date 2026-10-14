@@ -78,6 +78,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     incoming(chatId, text, sender) {
       const chat = chats.find((c) => c.id === chatId);
       const m = add({ chat_id: chatId, is_from_me: false, sender: sender || chat.participants[0], text, is_read: false });
+      // An unread message raises its conversation's count, as it does in chat.db.
+      chat.unread_count = (chat.unread_count || 0) + 1;
       broadcast(m);
       return m;
     },

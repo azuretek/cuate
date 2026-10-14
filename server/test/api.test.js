@@ -748,10 +748,13 @@ test('the appearance choice survives a server restart', async () => {
   }
 });
 
-// A conversation read on another device (the phone, Messages on the Mac) clears here too (issue 323): the engine's
-// count falls with nothing on the message stream, and the server's periodic read of the list tells every client.
-test('a conversation read on another device is told to every client as chat.read', async () => {
-  const t = await boot({ readSyncMs: 60 });
+// A change to the engine's own database is an EVENT: the list is read again the moment it settles, so a read on the
+// phone reaches every client in about a fifth of a second rather than at the next poll (Abi, 2026-10-14). The failsafe
+// interval here is ten minutes, so a pass can only come from the watcher.
+const touchDb = (t, which = 'wal') => writeFileSync(path.join(t.dir, 'chat.db' + (which === 'wal' ? '-wal' : '')), String(Date.now()));
+
+test('a conversation read on another device is told to every client as chat.read, on the database change', async () => {
+  const t = await boot({ readSyncMs: 10 * 60 * 1000, dbPath: true });
   try {
     const list = async () => (await (await t.get('/api/v1/chats', t.tokens.device)).json()).chats;
     const before = (await list()).find((c) => c.id === '1');
@@ -760,6 +763,7 @@ test('a conversation read on another device is told to every client as chat.read
     sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
     await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
     assert.ok(t.world.readElsewhere(1));
+    touchDb(t);
     await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'chat.read'), 3000);
     const ev = sock.frames.find((f) => f.name === 'chat.read');
     conforms(ev.data, 'ChatRead');
@@ -769,6 +773,44 @@ test('a conversation read on another device is told to every client as chat.read
     const seen = sock.frames.filter((f) => f.name === 'chat.read').length;
     await new Promise((r) => setTimeout(r, 250));
     assert.equal(sock.frames.filter((f) => f.name === 'chat.read').length, seen, 'a count that did not change is not told again');
+    sock.ws.close();
+  } finally { await t.close(); }
+});
+
+test('the database watch is the mechanism, and its own start is logged', async () => {
+  const t = await boot({ readSyncMs: 10 * 60 * 1000, dbPath: true });
+  try {
+    assert.deepEqual(t.lines.filter((l) => l.event === 'db.watch').map((l) => [l.ok, l.reason]), [[true, 'watching']], 'the server says it is watching the database');
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    const before = sock.frames.length;
+    touchDb(t);
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(sock.frames.length, before, 'a change when nothing was read tells nobody');
+    assert.ok(t.lines.some((l) => l.event === 'db.changed'), 'the change itself is logged');
+    sock.ws.close();
+  } finally { await t.close(); }
+  const noDb = await boot({ readSyncMs: 10 * 60 * 1000 });
+  try {
+    assert.deepEqual(noDb.lines.filter((l) => l.event === 'db.watch').map((l) => [l.ok, l.reason]), [[false, 'not configured']], 'a server with no database says so rather than polling silently');
+  } finally { await noDb.close(); }
+});
+
+test('a message that arrives and is read on another device between two reads of the list is still told as chat.read', async () => {
+  const t = await boot({ readSyncMs: 10 * 60 * 1000, dbPath: true });
+  try {
+    const list = async () => (await (await t.get('/api/v1/chats', t.tokens.device)).json()).chats;
+    assert.equal((await list()).find((c) => c.id === '2').unread, 0, 'the conversation starts read');
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    t.world.incoming(2, 'Synthetic arrival');
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'message.new'));
+    assert.ok(t.world.readElsewhere(2));
+    touchDb(t);
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'chat.read' && f.data.chatId === '2'), 3000);
+    assert.equal((await list()).find((c) => c.id === '2').unread, 0);
     sock.ws.close();
   } finally { await t.close(); }
 });
