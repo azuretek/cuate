@@ -2,7 +2,8 @@
 // in the Authorization header whose scope covers it. The routes themselves live one per module in ./routes, mounted
 // here by the id they declare in the spec.
 import http from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, watch } from 'node:fs';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
@@ -58,11 +59,15 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, readSyncMs = 20000, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+// The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (Abi, 2026-10-14).
+const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
+
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
   const LIST_TTL_MS = 5 * 60 * 1000;
+  // The failsafe interval for the database watch, in milliseconds.
   const READ_SYNC_MS = readSyncMs;
   const events = [];
   const clients = new Set();
@@ -182,8 +187,13 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     if (m.event && m.event.kind === 'groupPhoto') held.chats[at] = { ...held.chats[at], photo: m.event.photo };
     const chat = held.chats[at];
     if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
+    // An arriving message from someone else raises the held count by the same rule every client raises its own
+    // (applyMessageToChats in core/app/rules/chats.js), so a read on another device before the next read of the list is
+    // seen as the count falling and told as chat.read. Without this the list never saw the rise, so it never saw the fall,
+    // and the message stayed unread in the app (Abi, 2026-10-14).
+    const unread = !m.fromMe ? (Number(chat.unread) || 0) + 1 : chat.unread;
     held.chats.splice(at, 1);
-    held.chats.unshift({ ...chat, lastMessageAt: m.sentAt });
+    held.chats.unshift({ ...chat, unread, lastMessageAt: m.sentAt });
   };
   // After a conversation is created or a group changes, the list is read fresh (a read already in flight may predate the
   // change, so it is let finish and the list read again) and the changed chat is told to every client (issue 326).
@@ -439,11 +449,43 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     ws.on('error', (e) => log.emit('ws.error', { error: e.message }));
   }
 
-  // While a client is connected the list is read again every READ_SYNC_MS, so a read on another device reaches every
-  // client within that time rather than at the next five-minute refresh (issue 323).
-  const readSync = setInterval(() => {
-    if (held && [...clients].some((c) => c.authed)) readChats(held.limit).catch(() => {});
-  }, READ_SYNC_MS);
+  // A change to the engine's own database (a read on another device, a chat renamed or its photo changed, a message that
+  // arrived while the bridge was between events) is an EVENT, and the list is read again the moment it settles, so a
+  // change made anywhere reaches every client in about DB_SETTLE_MS rather than at the next poll (Abi, 2026-10-14). The
+  // database is SQLite in WAL mode, so the change lands in chat.db-wal as often as in chat.db: the directory is watched
+  // and both names are taken. The interval below is only a failsafe for a watcher that could not start or an event the
+  // filesystem coalesced away, never the mechanism.
+  const refresh = () => { if (held && [...clients].some((c) => c.authed)) readChats(held.limit).catch(() => {}); };
+  const DB_SETTLE_MS = 120;
+  let dbWatch = null;
+  let dbTimer = null;
+  let closeWatch = () => {};
+  if (typeof dbPath !== 'string' || dbPath === '') log.emit('db.watch', { ok: false, reason: 'not configured' });
+  else {
+    try {
+      const dir = path.dirname(dbPath);
+      const base = path.basename(dbPath);
+      dbWatch = watch(dir, { persistent: false });
+      // A write to a file already there arrives as a change; one that creates it (the -wal on a fresh database) arrives as
+      // a rename. Both are the database changing, so both are taken.
+      const changed = (_event, name) => {
+        const file = String(name || '');
+        if (file && file !== base && file !== base + '-wal' && file !== base + '-shm') return;
+        log.emit('db.changed', { kind: file === base ? 'db' : file === base + '-wal' ? 'wal' : 'other' });
+        clearTimeout(dbTimer);
+        dbTimer = setTimeout(refresh, DB_SETTLE_MS);
+        dbTimer.unref?.();
+      };
+      dbWatch.on('change', changed);
+      dbWatch.on('rename', changed);
+      dbWatch.on('error', (e) => log.emit('db.watch', { ok: false, reason: 'watch failed: ' + (e && e.code ? e.code : 'unknown') }));
+      log.emit('db.watch', { ok: true, reason: 'watching' });
+    } catch (e) {
+      log.emit('db.watch', { ok: false, reason: 'watch failed: ' + (e && e.code ? e.code : 'unknown') });
+    }
+  }
+  closeWatch = () => { dbTimer && clearTimeout(dbTimer); dbWatch?.close(); dbWatch = null; };
+  const readSync = setInterval(refresh, READ_SYNC_MS);
   readSync.unref();
 
   const beat = setInterval(() => {
@@ -490,6 +532,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       typing.stopAll();
       clearInterval(beat);
       clearInterval(readSync);
+      closeWatch();
       for (const c of clients) {
         try { c.ws.close(1012, 'restarting'); } catch { /* gone */ }
         setTimeout(() => c.ws.terminate(), 1000).unref();

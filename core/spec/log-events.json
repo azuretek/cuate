@@ -18,6 +18,8 @@
     "engine.error": { "level": "error", "msg": "engine request failed", "fields": { "method": "string", "code": "number?", "error": "string", "ms": "number?" } },
     "engine.stderr": { "level": "debug", "msg": "engine diagnostic", "fields": { "line": "string" } },
     "engine.overflow": { "level": "warn", "msg": "engine watch overflowed; resubscribing", "fields": { "resume_after": "number" } },
+    "db.watch": { "level": "notice", "msg": "database watch", "fields": { "ok": "boolean", "reason": "string" } },
+    "db.changed": { "level": "debug", "msg": "the engine database changed", "fields": { "kind": "string" } },
     "http.request": { "level": "debug", "msg": "request", "fields": { "route": "string", "status": "number", "ms": "number" } },
     "http.error": { "level": "error", "msg": "request failed", "fields": { "route": "string", "status": "number", "code": "string", "error": "string?" } },
     "auth.refused": { "level": "notice", "msg": "request refused", "fields": { "route": "string", "reason": "string" } },

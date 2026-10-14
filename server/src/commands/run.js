@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { loadConfig } from '../config.js';
-import { ROOT, naming, logSpec, serverVersion, serverCommit } from '../paths.js';
+import { ROOT, naming, logSpec, serverVersion, serverCommit, messagesDatabasePath } from '../paths.js';
 import { DATA_NEWER } from '../store.js';
 
 // The fields of a Mac event that go on the wire. The log line keeps its own shape; this is the event's, so a
@@ -95,7 +95,10 @@ export default {
         return null;
       }
     };
-    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, mac, restarts, diagnostics, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
+    // The database the engine reads is watched, so a change made anywhere (a read on the phone, a chat renamed) reaches
+    // every client at once rather than at the next poll (Abi, 2026-10-14). Only the engine that has a database.
+    const dbPath = config.engine.kind === 'imsg' ? messagesDatabasePath(config) : null;
+    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, dbPath, mac, restarts, diagnostics, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
     publish = srv.publish;
     let updater = null;
     if (L) {

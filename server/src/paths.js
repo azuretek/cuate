@@ -55,6 +55,12 @@ export function defaultDataDir({ env = process.env, platform = process.platform,
   return path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), name);
 }
 
+// The Messages database the engine reads (config.engine.db, or the default), so the server can watch it: a change to it
+// is an event rather than something to wait for (Abi, 2026-10-14).
+export function messagesDatabasePath(config = null, home = os.homedir()) {
+  const named = config && config.engine ? config.engine.db : null;
+  return named ? path.resolve(named) : path.join(home, "Library", "Messages", "chat.db");
+}
 export function messagesAttachmentsRoot(home = os.homedir()) {
   return path.join(home, 'Library', 'Messages', 'Attachments');
 }
