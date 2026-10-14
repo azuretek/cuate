@@ -96,14 +96,18 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     webhooks.enqueue(name, data);
   };
   // Our typing reaches the other person through the engine unless the switch is off (issue 319).
-  const typing = createTyping({ publish, outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
+  const typing = createTyping({ publish, log: log.child('typing'), outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
   // A phone with the app open shows its own notice, so only phones with no open connection get a push (issue 347).
   const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
   engine.on((name, data) => {
     if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
     // The engine only reports inbound typing when the switch is on and a bridge is already running; with it off this
     // never fires, so no contact indicator is invented (issue 230).
-    if (name === 'typing.incoming') { if (config.typing && config.typing.incoming) typing.incoming(data); return; }
+    if (name === 'typing.incoming') {
+      if (config.typing && config.typing.incoming) typing.incoming(data);
+      else log.child('typing').emit('typing.incoming', { chat: String(data.chatId), typing: Boolean(data.typing), resolved: true, published: false });
+      return;
+    }
     publish(name, data);
   });
   engine.onState((s) => {

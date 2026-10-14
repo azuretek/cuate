@@ -324,6 +324,7 @@ var engine = (() => {
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
     serverUpdateNotice: () => serverUpdateNotice,
+    serviceNote: () => serviceNote,
     setAllChecked: () => setAllChecked,
     setTermMode: () => setTermMode,
     settingValue: () => settingValue,
@@ -2883,6 +2884,17 @@ var engine = (() => {
       message: "This conversation has no threads, so the reply was not sent as one.",
       detail: "Answer with a message instead."
     };
+  }
+  function serviceNote(chat) {
+    const platform = platformOf(chat);
+    const group = Boolean(chat && chat.isGroup);
+    if (platform === "imessage") {
+      return { encrypted: true, apple: true, label: (group ? "Everyone here is on Apple devices." : "On Apple devices.") + " Your messages here are end-to-end encrypted." };
+    }
+    if (platform === "sms" || platform === "rcs") {
+      return { encrypted: false, apple: false, label: (group ? "Not everyone here is on Apple devices." : "Not on Apple devices.") + " Your messages here go as text messages and are not end-to-end encrypted." };
+    }
+    return null;
   }
 
   // core/app/rules/messages.js

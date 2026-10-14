@@ -22,7 +22,7 @@ test('a received reply is drawn from its stored pointer and never shows the orig
   const parent = { id: 'parent', text: 'Unique original body', senderName: 'Avery', fromMe: true, attachments: [], reactions: [] };
   const message = { id: 'reply', replyTo: 'parent', text: 'Answer', attachments: [], reactions: [], fromMe: false };
   const host = { messages: [parent, message], chat: {}, sending: true };
-  const markup = words(proto.bubble.call(host, { message }, null, false, 'list'));
+  const markup = words(proto.bubble.call(host, { message }, null, 'list'));
   assert.ok(!markup.includes(parent.text));
   assert.ok(!markup.includes('Reply to'));
   assert.match(markup, /thread-reply/, 'the reply is marked, and opens its thread on a press');
@@ -32,7 +32,7 @@ test('a received reply is drawn from its stored pointer and never shows the orig
   assert.ok(summary.includes('1 Reply'), 'the message answered carries one quiet count line');
   const missing = { ...message, replyTo: 'missing' };
   const alone = { messages: [missing], chat: {}, sending: true };
-  assert.match(words(proto.bubble.call(alone, { message: missing }, null, false, 'list')), /thread-reply/, 'a thread whose original is not loaded is still marked, and opens on a tap');
+  assert.match(words(proto.bubble.call(alone, { message: missing }, null, 'list')), /thread-reply/, 'a thread whose original is not loaded is still marked, and opens on a tap');
   assert.equal(words(proto.threadSummary.call(alone, missing)), '', 'with nothing loaded to answer it, it carries no count');
 });
 
