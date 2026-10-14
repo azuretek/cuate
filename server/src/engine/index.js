@@ -175,7 +175,12 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       const typing = ev.event === 'started-typing' ? true : ev.event === 'stopped-typing' ? false : null;
       const guid = ev.data && ev.data.chatGuid;
       if (typing !== null && guid) {
-        chatIdForGuid(String(guid)).then((chatId) => { if (chatId) emit('typing.incoming', { chatId, typing }); }).catch(() => {});
+        // An event whose chat cannot be resolved is logged too, so a dropped one is seen; the chat's own GUID is never
+        // logged, since it carries the person's address.
+        chatIdForGuid(String(guid)).then((chatId) => {
+          if (chatId) emit('typing.incoming', { chatId, typing });
+          else log.emit('typing.incoming', { chat: null, typing, resolved: false, published: false });
+        }).catch(() => log.emit('typing.incoming', { chat: null, typing, resolved: false, published: false }));
       }
       return;
     }
@@ -269,10 +274,15 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     log.emit('engine.start', { kind, version: state.version, ready });
     // Present and OFF by default (issue 230): the only source of another person typing is a bridge that is already
     // running, which this server never starts. The switch, and the engine advertising the method, must both be on.
-    if (typingIncoming && Array.isArray(st?.methods) && st.methods.includes('bridge.events.subscribe')) {
+    // Whether inbound typing is being listened for, and why not when it is not, is logged once per engine start, so a
+    // missing indicator can be told apart from a source that was never on (Abi, 2026-10-14).
+    if (!typingIncoming) log.emit('typing.subscribe', { subscribed: false, reason: 'switched off' });
+    else if (!(Array.isArray(st?.methods) && st.methods.includes('bridge.events.subscribe'))) log.emit('typing.subscribe', { subscribed: false, reason: 'the engine does not offer bridge events' });
+    else {
       try {
         await request('bridge.events.subscribe', { buffer_limit: 256 }, 10000);
-      } catch { /* request() logged it */ }
+        log.emit('typing.subscribe', { subscribed: true, reason: 'bridge events' });
+      } catch { log.emit('typing.subscribe', { subscribed: false, reason: 'subscribe failed' }); /* request() logged the error */ }
     }
     if (!ready && c.alive) scheduleRestart(); // a live child that will not answer is retried on the backoff
   }

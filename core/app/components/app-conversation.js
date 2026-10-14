@@ -9,7 +9,7 @@ import { newArrivals } from '../../kit/rules/motion.js';
 import { chatTitle, eventText } from '../rules/chats.js';
 import './app-avatar.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
-import { platformOf, platformCapabilities } from '../rules/platform.js';
+import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
 import { typingLabel } from '../rules/typing.js';
@@ -339,11 +339,14 @@ class AppConversation extends KitElement {
   // The menu: when the message arrived (or was sent), then Reply in thread and React as icons from the shared set.
   menu(m) {
     const actions = messageActions(m, { sending: this.sending, platform: platformOf(this.chat) });
+    // The lock sits beside the time, seen only when the menu is open, so it is there to check rather than to notice
+    // (Abi, 2026-10-14).
+    const lock = Boolean(serviceNote(this.chat)?.encrypted);
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
     const links = messageLinks(m);
     const link = this.pop.link && links.includes(this.pop.link) ? this.pop.link : links[0] || null;
     return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side} data-popover data-popover-edge=${this.pop.side === 'below' ? 'top' : 'bottom'} data-popover-align=${m.fromMe ? 'end' : 'start'}>
-      <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
+      ${lock ? html`<span class="icon message-lock" data-icon="lock" role="img" aria-label="End-to-end encrypted" title="End-to-end encrypted"></span>` : nothing}<time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
       ${link ? html`<button type="button" class="message-action" aria-label="Copy link" title="Copy link" data-link=${link} @click=${press(() => this.copyLink(m, link))}><span class="icon" data-icon="link" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('save') ? html`<button type="button" class="message-action" aria-label="Save" title="Save" @click=${press(() => this.save(m))}><span class="icon" data-icon="download" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
@@ -373,7 +376,7 @@ class AppConversation extends KitElement {
   // conversation a reply opens its thread when pressed, the message it answers carries the reply count (threadSummary),
   // and every other message carries nothing: no line is drawn between two messages, so no pairing is implied that the
   // stored pointer does not support (issue 208).
-  bubble(it, lastMine, sms, where = 'list') {
+  bubble(it, lastMine, where = 'list') {
     const m = it.message;
     // An event in the conversation (issue 341), such as a group photo changing, is a quiet line across it rather than a
     // bubble: who did it and what changed, with the new photo beside the words.
@@ -386,7 +389,9 @@ class AppConversation extends KitElement {
     const mark = where === 'list' ? marksOf(this.messages).get(m.id) || null : null;
     const isReply = Boolean(mark && mark.root);
     const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', isReply ? 'thread-reply' : '', this.revealedId === m.id ? 'revealed' : ''].filter(Boolean).join(' ');
-    const kind = mine ? (sms ? 'sms' : 'me') : 'them';
+    // Every message we send wears the theme's own colour, whatever the platform (Abi, 2026-10-12): who is on the other
+    // end is told by serviceNote, never by a second bubble colour.
+    const kind = mine ? 'me' : 'them';
     const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
     const own = myReaction(m);
     const ownGlyph = own ? reactionGlyph(own) : null;
@@ -410,7 +415,7 @@ class AppConversation extends KitElement {
 
   // The open thread: only its original and every reply, in order, each under its day and time, with the delivery status
   // of your last message in it, as a conversation of their own (issue 195).
-  threadView(sms) {
+  threadView() {
     const ids = threadIds(this.messages, this.replyingTo.id);
     const thread = (this.messages || []).filter((m) => ids.has(m.id));
     const lastMine = [...thread].reverse().find((m) => m.fromMe) || null;
@@ -418,7 +423,7 @@ class AppConversation extends KitElement {
     const locale = navigator.language;
     const items = groupMessages(thread, { gapMs: 0 });
     return html`<div class="thread-view">
-      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread"><div class="thread-card-head">${closeButtonHtml({ owner: 'thread', label: 'Close thread', onClose: () => this.closeThread() })}</div>${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, 'thread')))}</div>
+      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread"><div class="thread-card-head">${closeButtonHtml({ owner: 'thread', label: 'Close thread', onClose: () => this.closeThread() })}</div>${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, 'thread')))}</div>
     </div>`;
   }
 
@@ -427,7 +432,7 @@ class AppConversation extends KitElement {
     const locale = navigator.language;
     const items = groupMessages(this.messages || []);
     const lastMine = [...(this.messages || [])].reverse().find((m) => m.fromMe) || null;
-    const sms = this.chat.service === 'SMS' || this.chat.service === 'RCS';
+    const note = serviceNote(this.chat);
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
@@ -435,13 +440,13 @@ class AppConversation extends KitElement {
     // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name">${title}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name-row"><div class="chat-name" title=${note && !note.apple ? note.label : nothing}>${title}</div>${note && note.apple ? html`<span class="icon service-mark" data-icon="smartphone" role="img" tabindex="0" aria-label=${note.label} title=${note.label}></span>` : nothing}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
-          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, sms, 'list'), this.threadSummary(it.message)]))}
+          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, 'list'), this.threadSummary(it.message)]))}
         </div>
-        ${thread ? this.threadView(sms) : nothing}
+        ${thread ? this.threadView() : nothing}
       </div>
       <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }

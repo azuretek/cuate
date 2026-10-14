@@ -652,3 +652,14 @@ test('no component overrides a DOM method the renderer calls', () => {
     for (const name of reserved) assert.doesNotMatch(src, new RegExp('^  (?:async )?' + name + '\\(', 'm'), f + ' defines ' + name + '(), which is the element\'s own');
   }
 });
+
+// Abi, 2026-10-12: every message we send wears the theme's colour whatever the platform. The lock is in the message's
+// menu beside the time, and the Apple-devices mark is beside the conversation's name.
+test('one colour for what we send, a lock in the menu and a mark by the name', () => {
+  const src = read('core/app/components/app-conversation.js');
+  const css = read('core/app/styles/app.css');
+  assert.doesNotMatch(css, /\.bubble\.sms\b/, 'no second bubble colour');
+  assert.match(src, /const kind = mine \? 'me' : 'them';/);
+  assert.match(src, /data-icon="lock"[^>]*aria-label="End-to-end encrypted"[^>]*><\/span>` : nothing}<time class="message-time"/, 'the lock sits just before the time in the menu');
+  assert.match(src, /class="icon service-mark" data-icon="smartphone" role="img" tabindex="0" aria-label=\$\{note\.label\} title=\$\{note\.label\}/, 'the mark explains itself on hover and to a screen reader');
+});

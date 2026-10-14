@@ -152,3 +152,22 @@ test('outbound typing stays home with the switch off, or where the engine cannot
   } finally { await off.close(); }
   assert.ok(normalizeConfig({}).typing.outgoing, 'on by default');
 });
+
+// Observability (Abi, 2026-10-14): each typing hand-off is logged with its outcome, so either direction can be checked
+// from the server's log rather than only from someone's screen.
+test('the other person typing and our typing sent to them are each logged with what happened', async () => {
+  const lines = [];
+  const log = { emit: (event, fields) => lines.push({ event, ...fields }) };
+  let refuse = false;
+  const typing = createTyping({ publish: () => {}, log, outbound: async () => { if (refuse) throw new Error('engine refused'); } });
+  typing.incoming({ chatId: '7', typing: true });
+  typing.relay({ chatId: '7', from: 'device-a', typing: true });
+  refuse = true;
+  typing.relay({ chatId: '8', from: 'device-a', typing: true });
+  await new Promise((r) => setTimeout(r, 10));
+  typing.stopAll();
+  assert.deepEqual(lines.find((l) => l.event === 'typing.incoming'), { event: 'typing.incoming', chat: '7', typing: true, resolved: true, published: true });
+  const out = lines.filter((l) => l.event === 'typing.outgoing');
+  assert.deepEqual(out.find((l) => l.chat === '7'), { event: 'typing.outgoing', chat: '7', typing: true, ok: true });
+  assert.deepEqual(out.find((l) => l.chat === '8'), { event: 'typing.outgoing', chat: '8', typing: true, ok: false, error: 'engine refused' });
+});
