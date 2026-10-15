@@ -482,6 +482,10 @@ class AppImageViewer extends KitElement {
   // A Live Photo's play control: the motion plays once over the still, muted and inline, and the still is back when it
   // ends or the control is pressed again. The motion is the attachment's live part, which the server serves as an MP4
   // every platform can play; it is fetched on the first press only, and kept for the viewer's life like any other item.
+  // The viewer starts the motion itself (issue 386): once the motion element is drawn it calls play() on it rather than
+  // trusting autoplay, which WebKit refuses outside a gesture, and a play that is refused or a motion that will not load
+  // puts the still back and shows the control's failure state, never an empty box. While it loads the motion takes the
+  // still's own box with the still as its poster, so the stage keeps the picture's size and shows the picture.
   async playMotion() {
     const item = this.items[this.index];
     if (!item || !item.live) return;
@@ -497,9 +501,32 @@ class AppImageViewer extends KitElement {
       }
     }
     if (this.items[this.index] !== item) return;
+    const still = this.picture();
+    const size = still && still.offsetWidth && still.offsetHeight ? { width: still.offsetWidth, height: still.offsetHeight } : null;
     this.motion = this.urls.get(key);
     this.motionFailed = false;
     this.playing = true;
+    await this.updateComplete;
+    const video = this.querySelector('video.viewer-motion');
+    if (!video) return;
+    if (size) {
+      video.style.setProperty('--motion-w', String(size.width));
+      video.style.setProperty('--motion-h', String(size.height));
+    }
+    try {
+      await video.play();
+    } catch {
+      this.motionRefused(video, item);
+    }
+  }
+
+  // The motion could not play: its play() was refused or the file would not load. The still comes back and the play
+  // control says the motion could not be loaded. A play the viewer ended itself (the control pressed again, another
+  // item, the viewer closing) takes the motion element away first, and is not a failure.
+  motionRefused(video, item) {
+    if (!video.isConnected || !this.playing || this.items[this.index] !== item) return;
+    this.playing = false;
+    this.motionFailed = true;
   }
 
   // Move one item in the conversation's media, staying put at the ends. The page hears the move so its own idea of the
@@ -768,7 +795,7 @@ class AppImageViewer extends KitElement {
     const media = this.kind === 'video'
       ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
       : live && this.playing && this.motion
-        ? html`<video class="viewer-image viewer-motion" src=${this.motion} aria-label=${label} autoplay muted playsinline @ended=${() => { this.playing = false; }}></video>`
+        ? html`<video class="viewer-image viewer-motion" src=${this.motion} poster=${this.src} aria-label=${label} muted .muted=${true} playsinline preload="auto" @ended=${() => { this.playing = false; }} @error=${(e) => this.motionRefused(e.target, list[at])}></video>`
         : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
     const playLabel = this.motionFailed ? 'The motion could not be loaded' : this.playing ? 'Show the photo' : 'Play the Live Photo';
     // The controls are one family (issue 325): the step controls either side, the close control in its corner, and one

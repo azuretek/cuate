@@ -34,6 +34,10 @@ struct ShellWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
+        // Media plays without a gesture (issue 386), the same as the Android shell's mediaPlaybackRequiresUserGesture =
+        // false: a Live Photo's motion is drawn and started after the press has waited on its file, outside the gesture,
+        // and WebKit's default refused it, which left an empty box.
+        configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.setURLSchemeHandler(BundleSchemeHandler(), forURLScheme: BundleSchemeHandler.scheme)
 
         let controller = WKUserContentController()
@@ -66,6 +70,14 @@ struct ShellWebView: UIViewRepresentable {
         // The Settings page fixture (issue 167), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--settings-fixture"),
            let url = Bundle.main.url(forResource: "settings-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
+            controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        // The Live Photo fixture (issue 386), the same seam: Debug only, and its script and its synthetic motion are copied
+        // into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--live-photo-fixture"),
+           let url = Bundle.main.url(forResource: "live-photo-fixture", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
             let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
             controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
