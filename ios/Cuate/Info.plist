@@ -50,6 +50,8 @@
 	<!-- Export compliance, answered here so a build does not sit in TestFlight
 	     asking for it. The only cryptography in the app is what WebKit and the
 	     operating system provide for HTTPS and the Keychain. -->
+	<key>NSContactsUsageDescription</key>
+	<string>Edit contact opens the phone's own contact card on the person a conversation is with.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>

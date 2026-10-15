@@ -7,6 +7,7 @@ import { aimCarets } from '../../kit/popover.js';
 import { play, growFrom, cssVar } from '../../kit/motion.js';
 import { newArrivals } from '../../kit/rules/motion.js';
 import { chatTitle, eventText } from '../rules/chats.js';
+import { hasContactEditor } from '../rules/contacts.js';
 import './app-avatar.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
@@ -55,7 +56,7 @@ function marksOf(messages) {
 
 class AppConversation extends KitElement {
   static properties = {
-    chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {}, phone: {},
+    chat: { attribute: false }, host: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {}, phone: {},
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
@@ -82,6 +83,8 @@ class AppConversation extends KitElement {
     // handed down from the page. A phone passes neither, so the header draws no window controls there.
     this.windowControls = null;
     this.maximized = false;
+    // The shell's report, so the contact header draws the Edit contact control only where the shell has an editor.
+    this.host = null;
     // The conversation follows its latest message while it is there, and otherwise stays on the message it was on,
     // through new messages, older ones loading above, a picture loading, a resize and a new text size (issue 142).
     this.keep = keepScroll(this, { scroller: '.messages', items: '.bubble-row', follow: true });
@@ -104,6 +107,15 @@ class AppConversation extends KitElement {
     // (core/kit/dismiss.js). The composer keeps the thread open, since replying in it is typing there.
     dismissable(this, { name: 'pop', open: () => Boolean(this.pop), close: () => this.closePop() });
     dismissable(this, { name: 'thread', open: () => Boolean(this.replyingTo), close: () => this.closeThread() });
+  }
+
+  // Edit contact (issue 393): the shell opens the system's own editor on the person this conversation is with. The
+  // control is drawn only where the shell reports one, so a desktop with no contact editor shows nothing at all.
+  editContact() {
+    const handle = Array.isArray(this.chat?.participants) ? this.chat.participants[0] : null;
+    const bridge = globalThis.window?.bridge;
+    if (!handle || !bridge || typeof bridge.call !== 'function') return Promise.resolve(false);
+    return bridge.call('contacts.edit', { handle });
   }
 
   disconnectedCallback() {
@@ -445,7 +457,7 @@ class AppConversation extends KitElement {
     // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name-row"><div class="chat-name" title=${note && !note.apple ? note.label : nothing}>${title}</div>${note && note.apple ? html`<span class="icon service-mark" data-icon="smartphone" role="img" tabindex="0" aria-label=${note.label} title=${note.label}></span>` : nothing}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name-row"><div class="chat-name" title=${note && !note.apple ? note.label : nothing}>${title}</div>${note && note.apple ? html`<span class="icon service-mark" data-icon="smartphone" role="img" tabindex="0" aria-label=${note.label} title=${note.label}></span>` : nothing}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.chat && !this.chat.isGroup && hasContactEditor(this.host) && (this.chat.participants || []).length ? html`<button type="button" class="conv-info conv-edit-contact" aria-label="Edit contact" title="Edit contact" @click=${press(() => this.editContact())}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}

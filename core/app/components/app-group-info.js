@@ -3,6 +3,7 @@ import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { chatTitle, isAddress, isMachineName } from '../rules/chats.js';
+import './app-avatar.js';
 
 // A group conversation's own details (issue 326): its name and its people. A rename, an added person and a removed one
 // go through the Mac, so every member and every device sees the same group; the page hears the changed
@@ -55,7 +56,11 @@ class AppGroupInfo extends KitElement {
     const c = this.chat;
     if (!c) return html``;
     const name = this.name ?? (isMachineName(c.name, c) ? '' : c.name || '');
-    const people = Array.isArray(c.participants) ? c.participants : [];
+    // The chat's people with the name and picture the store has for each (issue 393); a chat whose members were not
+    // resolved still draws every address it carries.
+    const members = Array.isArray(c.members) && c.members.length
+      ? c.members
+      : (Array.isArray(c.participants) ? c.participants : []).map((handle) => ({ handle, name: handle, photo: null }));
     return html`<div class="sheet-scrim confirm-scrim">
       <section class="confirm-modal group-info" data-dismiss="groupinfo" role="dialog" aria-modal="true" aria-labelledby="group-info-title">
         <h2 id="group-info-title">${chatTitle(c)}</h2>
@@ -64,10 +69,13 @@ class AppGroupInfo extends KitElement {
             @input=${(e) => { this.name = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); this.querySelector('.group-info-rename')?.click(); } }}>
           <button type="button" class="chip group-info-rename" ?disabled=${this.name === null} @click=${press(() => this.rename())}>Rename</button>
         </div>
-        <h3 class="group-info-heading">${people.length} ${people.length === 1 ? 'person' : 'people'}</h3>
+        <h3 class="group-info-heading">${members.length} ${members.length === 1 ? 'person' : 'people'}</h3>
         <ul class="group-info-people">
-          ${people.map((a) => html`<li class="group-info-person" data-address=${a}><span>${a}</span>
-            <button type="button" class="text-button danger group-info-remove" aria-label=${'Remove ' + a} ?disabled=${people.length <= 2} @click=${press(() => this.removePerson(a))}>Remove</button></li>`)}
+          ${members.map((m) => html`<li class="group-info-person" data-address=${m.handle}>
+            <app-avatar title=${m.name} .photo=${m.photo} .client=${this.client}></app-avatar>
+            <span class="group-info-person-name">${m.name && m.name !== m.handle ? m.name : m.handle}</span>
+            ${m.name && m.name !== m.handle ? html`<span class="group-info-person-handle">${m.handle}</span>` : ''}
+            <button type="button" class="text-button danger group-info-remove" aria-label=${'Remove ' + m.handle} ?disabled=${members.length <= 2} @click=${press(() => this.removePerson(m.handle))}>Remove</button></li>`)}
         </ul>
         <div class="group-info-row">
           <input class="group-info-add" type="text" placeholder="Add a number or email" aria-label="Add a person by number or email" .value=${this.adding}

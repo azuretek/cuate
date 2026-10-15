@@ -6,6 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, createFileOpener, mimeFor } from './bridge-handlers.js';
+import { openContact } from './contacts.js';
 import { readTextScale, watchTextScale } from './text-scale.js';
 import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
@@ -242,7 +243,8 @@ const handlers = createHandlers({
   // knows, and the commit and build date the packaging step stamped into the app. Nothing here reads the server.
   info: () => {
     const stamp = buildStamp();
-    return clientReport({
+    // contactsEditor: the desktop reaches the Mac's Contacts only where it runs on the Mac (issue 393).
+    return { ...clientReport({
       product: naming.product,
       version,
       channel: versionSpec.channel,
@@ -253,8 +255,10 @@ const handlers = createHandlers({
       arch: process.arch,
       packaged: app.isPackaged,
       appImage: Boolean(process.env.APPIMAGE),
-    });
+    }), contactsEditor: process.platform === 'darwin' };
   },
+  // Edit contact (issue 393): the system's own editor on the person the conversation is with.
+  contactsEdit: (handle) => openContact(handle),
   openExternal: (url) => {
     if (!/^https?:\/\//i.test(url)) return false;
     shell.openExternal(url);

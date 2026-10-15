@@ -150,24 +150,30 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // nowhere else (issue 323): each fresh list is compared with the one it replaces, and a count that fell is told to
   // every client as chat.read, the same event a read in this app sends. A count that rose is a new message, which the
   // message stream already carries.
-  // The system Contacts store names and pictures a one-to-one chat (issue 393). A chat the store does not know, and
-  // every group, is left exactly as the engine reported it, so a Mac with no Contacts shows what it showed before.
+  // The system Contacts store names and pictures a chat's people (issue 393): every conversation carries its members
+  // with the name and picture the store has for each, a one-to-one chat also takes its own name and picture from its
+  // one member, and a chat the store does not know keeps the handle and no picture, exactly as the engine reported it.
+  const storedPicture = async (record) => {
+    const pic = await contacts.photo(record).catch(() => null);
+    if (!pic) return null;
+    store.putAttachment(pic.id, pic.file, pic.mime, pic.name);
+    return { id: pic.id, name: pic.name, mime: pic.mime, bytes: pic.bytes };
+  };
   const applyContacts = async (chats) => {
-    if (!contacts) return chats;
     const out = [];
     for (const chat of chats) {
-      if (chat.isGroup) { out.push(chat); continue; }
-      const found = await contacts.forHandles(chat.participants || []).catch(() => null);
-      if (!found) { out.push(chat); continue; }
+      const handles = Array.isArray(chat.participants) ? chat.participants : [];
+      // With no Contacts store (a server that is not on the Mac, or one whose store was not allowed) a chat still
+      // carries its people, each as its own address with no name and no picture.
+      if (!contacts) { out.push({ ...chat, members: handles.map((handle) => ({ handle, name: handle, photo: null })) }); continue; }
+      const members = await Promise.all(handles.map(async (handle) => {
+        const found = await contacts.forHandles([handle]).catch(() => null);
+        if (!found) return { handle, name: handle, photo: null };
+        return { handle, name: found.name || handle, photo: await storedPicture(found.record) };
+      }));
       let photo = chat.photo || null;
-      if (!photo) {
-        const pic = await contacts.photo(found.record).catch(() => null);
-        if (pic) {
-          store.putAttachment(pic.id, pic.file, pic.mime, pic.name);
-          photo = { id: pic.id, name: pic.name, mime: pic.mime, bytes: pic.bytes };
-        }
-      }
-      out.push({ ...chat, name: chat.name || found.name, photo });
+      if (!chat.isGroup && members.length) photo = photo || members[0].photo;
+      out.push({ ...chat, photo, members });
     }
     return out;
   };
@@ -305,6 +311,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     // The installed server's last update outcome, which info reports so a client that reconnects after a rollback
     // still hears about it. Null for a checkout.
     updateOutcome,
+    // The system Contacts store on the Mac (issue 393), for a one-to-one chat's name and picture and for status.
+    contacts,
   };
   const handlers = await loadRoutes(apiSpec.routes);
   for (const r of apiSpec.routes) if (!handlers.has(r.id)) throw new Error('no handler for route ' + r.id);
