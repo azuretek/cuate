@@ -152,10 +152,12 @@ var engine = (() => {
     checkAnswer: () => checkAnswer,
     checkedCount: () => checkedCount,
     checksumMatches: () => checksumMatches,
+    chooseTone: () => chooseTone,
     chroma: () => chroma,
     clampChatsWidth: () => clampChatsWidth,
     clampPan: () => clampPan,
     clampScale: () => clampScale,
+    cleanTones: () => cleanTones,
     clientReport: () => clientReport,
     closedByEscape: () => closedByEscape,
     closedByPress: () => closedByPress,
@@ -189,6 +191,7 @@ var engine = (() => {
     dragThreshold: () => dragThreshold,
     drawnY: () => drawnY,
     durationMs: () => durationMs,
+    emojiFallbackParts: () => emojiFallbackParts,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
@@ -213,9 +216,12 @@ var engine = (() => {
     formatTraceparent: () => formatTraceparent,
     frequentEmoji: () => frequentEmoji,
     fromOklch: () => fromOklch,
+    glyphDrawn: () => glyphDrawn,
     graphemes: () => graphemes,
     groupAddresses: () => groupAddresses,
     groupMessages: () => groupMessages,
+    hasTone: () => hasTone,
+    hasTones: () => hasTones,
     hideChats: () => hideChats,
     holdsAfter: () => holdsAfter,
     hostOf: () => hostOf,
@@ -290,6 +296,7 @@ var engine = (() => {
     pageZoomAttempt: () => pageZoomAttempt,
     panBounds: () => panBounds,
     panBy: () => panBy,
+    panelEmoji: () => panelEmoji,
     parseColour: () => parseColour,
     parseGlyph: () => parseGlyph,
     parseMessagingLink: () => parseMessagingLink,
@@ -392,6 +399,9 @@ var engine = (() => {
     toggleChecked: () => toggleChecked,
     toggleZoom: () => toggleZoom,
     tokensCss: () => tokensCss,
+    toneBase: () => toneBase,
+    toneChoices: () => toneChoices,
+    tonedChar: () => tonedChar,
     topLift: () => topLift,
     transferDetail: () => transferDetail,
     typingActive: () => typingActive,
@@ -2224,8 +2234,8 @@ var engine = (() => {
     const list = Array.isArray(m && m.attachments) ? m.attachments : null;
     const count = list ? list.length : typeof (m && m.attachments) === "number" ? m.attachments : 0;
     if (list) {
-      const names = list.map((a) => String(a && a.name || "").trim()).filter(Boolean);
-      if (names.length === 1) return names[0];
+      const names2 = list.map((a) => String(a && a.name || "").trim()).filter(Boolean);
+      if (names2.length === 1) return names2[0];
       if (count > 1) return count + " attachments";
     } else {
       if (count === 1) return "1 attachment";
@@ -2715,6 +2725,113 @@ var engine = (() => {
   }
   function isEmoji(char) {
     return EMOJI.some((e) => e.char === char);
+  }
+  var TONE_MODIFIER = /[\u{1F3FB}-\u{1F3FF}]/u;
+  function hasTone(char) {
+    return TONE_MODIFIER.test(String(char ?? ""));
+  }
+  var toneIndex = null;
+  function tones() {
+    if (toneIndex) return toneIndex;
+    const byName2 = /* @__PURE__ */ new Map();
+    const byBare = /* @__PURE__ */ new Map();
+    for (const e of EMOJI) {
+      if (hasTone(e.char)) continue;
+      byName2.set(e.name, e);
+      byBare.set(e.char.replace(/\uFE0F/g, ""), e);
+    }
+    const baseOf = /* @__PURE__ */ new Map();
+    const variants = /* @__PURE__ */ new Map();
+    for (const e of EMOJI) {
+      if (!hasTone(e.char)) continue;
+      const colon = e.name.indexOf(":");
+      const base = colon > 0 && byName2.get(e.name.slice(0, colon)) || byBare.get(e.char.replace(/\uFE0F|[\u{1F3FB}-\u{1F3FF}]/gu, ""));
+      if (!base) continue;
+      baseOf.set(e.char, base.char);
+      if (!variants.has(base.char)) variants.set(base.char, [base]);
+      variants.get(base.char).push(e);
+    }
+    toneIndex = { baseOf, variants };
+    return toneIndex;
+  }
+  function toneBase(char) {
+    return tones().baseOf.get(char) || char;
+  }
+  function toneChoices(char) {
+    return tones().variants.get(toneBase(char)) || [];
+  }
+  function hasTones(char) {
+    return toneChoices(char).length > 0;
+  }
+  function chooseTone(chosen, char) {
+    const next = { ...chosen && typeof chosen === "object" ? chosen : {} };
+    const base = toneBase(char);
+    if (!hasTones(base)) return next;
+    delete next[base];
+    if (char !== base) next[base] = char;
+    return next;
+  }
+  function cleanTones(chosen) {
+    const out = {};
+    if (!chosen || typeof chosen !== "object" || Array.isArray(chosen)) return out;
+    for (const [base, char] of Object.entries(chosen)) {
+      if (typeof char === "string" && char !== base && toneBase(char) === base) out[base] = char;
+    }
+    return out;
+  }
+  function tonedChar(chosen, char) {
+    const base = toneBase(char);
+    const pick2 = chosen && typeof chosen === "object" ? chosen[base] : void 0;
+    return typeof pick2 === "string" && toneBase(pick2) === base ? pick2 : base;
+  }
+  function panelEmoji(list, { chosen = {}, drawable = () => true } = {}) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    const byChar = new Map(EMOJI.map((e) => [e.char, e]));
+    for (const e of Array.isArray(list) ? list : []) {
+      const base = toneBase(e.char);
+      if (seen.has(base)) continue;
+      seen.add(base);
+      const entry = byChar.get(base) || e;
+      const toned = hasTones(base);
+      let char = toned ? tonedChar(chosen, base) : base;
+      if (!drawable(char)) {
+        if (!drawable(base)) continue;
+        char = base;
+      }
+      out.push({ char, base, name: entry.name, toned });
+    }
+    return out;
+  }
+  function glyphDrawn({ width, reference, blank = false, signature = null, missing: missing2 = [] } = {}) {
+    if (blank) return false;
+    if (signature !== null && missing2.includes(signature)) return false;
+    const w = Number(width);
+    const r = Number(reference);
+    if (Number.isFinite(w) && Number.isFinite(r) && r > 0 && w > r * 1.5) return false;
+    return true;
+  }
+  var MAYBE_EMOJI = /\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}]|[\u{1F3FB}-\u{1F3FF}]|\u200D|\u20E3/u;
+  var names = null;
+  function emojiFallbackParts(text, drawable = () => true) {
+    const s = String(text ?? "");
+    if (!s) return [];
+    if (!MAYBE_EMOJI.test(s)) return [{ text: s }];
+    if (!names) names = new Map(EMOJI.map((e) => [e.char, e.name]));
+    const parts = [];
+    let run = "";
+    for (const g of graphemes(s)) {
+      const name = names.get(g);
+      if (name && !drawable(g)) {
+        if (run) parts.push({ text: run });
+        run = "";
+        parts.push({ emoji: g, name });
+      } else {
+        run += g;
+      }
+    }
+    if (run) parts.push({ text: run });
+    return parts;
   }
 
   // core/app/rules/connection.js
