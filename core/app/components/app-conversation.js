@@ -53,8 +53,8 @@ class AppConversation extends KitElement {
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
-    // The message a pressed notice leads to ({ id, seq }, issue 331), brought into view and marked until the person
-    // presses somewhere in the conversation or another conversation opens.
+    // The message a pressed notice leads to ({ id, seq }, issue 331), brought into view and given focus, never marked
+    // (issue 368): revealedId names it until the person presses somewhere in the conversation or another one opens.
     reveal: { attribute: false }, revealedId: { state: true },
     // A note of the conversation's own under one message, such as Link copied: { id, text }, cleared after a moment.
     ownNote: { state: true },
@@ -297,7 +297,7 @@ class AppConversation extends KitElement {
     this.replyingTo = { id: threadRoot(this.messages, m.id) };
   }
 
-// A pressed notice's message (issue 331), brought into view and marked. A reply in a thread opens its thread, where
+// A pressed notice's message (issue 331), brought into view and never marked (issue 368). A reply in a thread opens its thread, where
   // it is drawn; any other message is held a third of the way down the conversation, the place the keep holds it at
   // while pictures above it load, and given focus so a screen reader starts there.
   async revealMessage(id) {
@@ -318,7 +318,6 @@ class AppConversation extends KitElement {
       this.keep.restore();
     }
     row.focus({ preventScroll: true });
-    play(row.querySelector('.bubble') || row, [{ scale: '1 1' }, { scale: '1.04 1.04' }, { scale: '1 1' }], { duration: 'screen', easing: 'sheet-ease' });
   }
 
   closeThread() {

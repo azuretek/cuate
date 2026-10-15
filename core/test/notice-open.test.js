@@ -67,3 +67,13 @@ test('every shell keeps the target with the notice and hands back the press once
   assert.match(read(IOS + 'NoticeRouter.swift'), /didReceive response: UNNotificationResponse/);
   assert.match(read(IOS + naming.product + 'App.swift'), /UNUserNotificationCenter\.current\(\)\.delegate = NoticeRouter\.shared/);
 });
+
+test('the message a pressed notice opens is focused and never marked', () => {
+  const conv = readFileSync(new URL('../app/components/app-conversation.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8');
+  const reveal = conv.slice(conv.indexOf('  async revealMessage('), conv.indexOf('  closeThread()'));
+  assert.match(reveal, /row\.focus\(\{ preventScroll: true \}\)/, 'it still takes focus, so a screen reader starts there');
+  assert.doesNotMatch(reveal, /play\(/, 'nothing pulses it');
+  assert.doesNotMatch(css, /\.revealed[^{]*\{[^}]*outline:\s*var/, 'no ring is drawn on it');
+  assert.match(css, /\.bubble-row\.revealed:focus-visible \{ outline: none; \}/, 'its focus draws no ring');
+});
