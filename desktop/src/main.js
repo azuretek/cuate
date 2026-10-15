@@ -299,6 +299,9 @@ function serve(req) {
 
 async function runSmoke(w) {
   const wc = w.webContents;
+  // Every read the page asks the server for, from before the page loads (issue 373): a fresh start must ask none.
+  const reads = [];
+  wc.session.webRequest.onCompleted({ urls: ['*://*/*'] }, (d) => { if (/\/api\/v1\/chats\/[^/]+\/read$/.test(new URL(d.url).pathname)) reads.push({ url: new URL(d.url).pathname, at: Date.now() }); });
   await new Promise((resolve) => wc.once('did-finish-load', resolve));
   const js = (code) => wc.executeJavaScript(code, true);
   const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -332,13 +335,25 @@ async function runSmoke(w) {
     }
   };
   const report = { info: await js("window.bridge.call('app.info')"), packaged: app.isPackaged };
-  await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.bubble-row').length > 0");
-  await pause(600);
+  await waitFor("document.querySelector('app-root')?.dataset.state === 'ready' && document.querySelectorAll('.chat-row').length > 0");
+  // A fresh start opens nothing and reads nothing (issue 373): the list is there with nothing selected, the pane asks
+  // for a choice, and past the page's read coalescing no read has gone to the server.
+  await pause(1200);
+  const fresh = await js(`(() => {
+    const root = document.querySelector('app-root');
+    const empty = document.querySelector('.main .empty');
+    return { open: root.openChatId, selecting: root.selecting, selected: document.querySelectorAll('.chat-row.selected').length, conversation: Boolean(document.querySelector('app-conversation')), empty: empty ? empty.textContent.trim() : null, unread: root.chats.reduce((n, c) => n + (c.unread || 0), 0) };
+  })()`);
+  fresh.reads = reads.map((r) => r.url);
+  report.freshStart = fresh.open === null && fresh.selecting === null && fresh.selected === 0 && !fresh.conversation && /^Choose a conversation/.test(fresh.empty || '') && fresh.reads.length === 0 && fresh.unread > 0;
+  if (!report.freshStart) console.error('fresh start: ' + JSON.stringify(fresh));
+  wc.session.webRequest.onCompleted(null);
   // No window bar: the app's surfaces reach the top edge and the top strip drags. The platform's arrangement is core's
   // own rules, so the smoke reads the DOM back and holds it to that answer: macOS keeps its traffic lights and leaves
-  // room for them, while Windows and Linux draw min, max, close at the right of the contact header. Nothing renders the
-  // product name, a bar or an icon over the top.
-  const bar = await js(`(() => {
+  // room for them, while Windows and Linux draw min, max, close at the right of the contact header, and at the right of
+  // the empty pane's strip while nothing is open (issue 373). Nothing renders the product name, a bar or an icon over
+  // the top.
+  const readBar = () => js(`(() => {
     if (document.querySelector('.window-bar') || document.querySelector('.window-title') || document.querySelector('.window-icon')) return null;
     const side = document.querySelector('.sidebar-head');
     const head = document.querySelector('.conv-head');
@@ -355,11 +370,21 @@ async function runSmoke(w) {
     };
   })()`);
   const barLayout = controlLayout({ platform: process.platform });
-  report.windowBar = Boolean(bar) && bar.sidebarTop === 0 && bar.headTop === 0 && bar.sideRegion === 'drag' && bar.headRegion === 'drag'
-    && JSON.stringify(bar.order) === JSON.stringify(barLayout.drawn ? barLayout.order : []);
-  if (barLayout.drawn) report.windowBar = report.windowBar && bar.controls && bar.labelled && bar.groupRegion === 'no-drag' && bar.group.right <= bar.head.right + 0.5;
-  else report.windowBar = report.windowBar && !bar.controls;
-  if (!report.windowBar) console.error('window chrome: ' + JSON.stringify({ bar, barLayout }));
+  const barHolds = (bar) => {
+    const top = Boolean(bar) && bar.sidebarTop === 0 && bar.headTop === 0 && bar.sideRegion === 'drag' && bar.headRegion === 'drag'
+      && JSON.stringify(bar.order) === JSON.stringify(barLayout.drawn ? barLayout.order : []);
+    if (barLayout.drawn) return top && bar.controls && bar.labelled && bar.groupRegion === 'no-drag' && bar.group.right <= bar.head.right + 0.5;
+    return top && !bar.controls;
+  };
+  const emptyBar = await readBar();
+  // Nothing opened itself, so the conversation every later step reads is opened here, as a person would: a press on the
+  // top row.
+  await js("(() => { const id = document.querySelector('app-root').chats[0].id; document.querySelector('.chat-row[data-chat=\"' + CSS.escape(String(id)) + '\"]').click(); return id; })()");
+  await waitFor("document.querySelector('app-root').openChatId !== null && document.querySelectorAll('.bubble-row').length > 0");
+  await pause(600);
+  const bar = await readBar();
+  report.windowBar = barHolds(emptyBar) && barHolds(bar);
+  if (!report.windowBar) console.error('window chrome: ' + JSON.stringify({ emptyBar, bar, barLayout }));
   // No application menu on Windows and Linux (issue 109); on macOS the minimal one, whose Quit carries Cmd+Q.
   const appMenu = Menu.getApplicationMenu();
   if (process.platform === 'darwin') {
