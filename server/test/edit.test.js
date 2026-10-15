@@ -146,9 +146,9 @@ function syntheticStore() {
 
 test('the store reader finds edited rows by their edit time, leaves out an unsent one, and starts from the newest edit', (t) => {
   const st = syntheticStore();
-  t.after(() => { st.db.close(); rmSync(st.dir, { recursive: true, force: true }); });
   const reader = createEditReader({ dbPath: st.file });
-  t.after(() => reader.close());
+  // Close everything that holds the file before the folder is removed: on Windows a directory with an open handle cannot be removed.
+  t.after(() => { reader.close(); st.db.close(); rmSync(st.dir, { recursive: true, force: true }); });
   const start = reader.latest();
   assert.equal(new Date(Date.UTC(2001, 0, 1) + start).toISOString(), '2026-05-01T10:00:00.000Z', 'the unsent row is not an edit');
   assert.deepEqual(reader.since(start).rows, [], 'nothing after the newest edit');
@@ -167,9 +167,9 @@ test('a store from before edits existed has nothing edited', (t) => {
   const file = path.join(dir, 'chat.db');
   const db = new DatabaseSync(file);
   db.exec('CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, text TEXT); CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);');
-  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
   const reader = createEditReader({ dbPath: file });
-  t.after(() => reader.close());
+  // Close everything that holds the file before the folder is removed: on Windows a directory with an open handle cannot be removed.
+  t.after(() => { reader.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   assert.equal(reader.latest(), 0);
   assert.deepEqual(reader.since(0).rows, []);
   assert.equal(reader.among(['G-1']).size, 0);
