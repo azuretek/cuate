@@ -117,6 +117,7 @@ const checks = [
   { key: 'appMenu', bound: 'true', value: (report) => report.appMenu, test: (v) => v === true },
   { key: 'live', bound: 'true', value: (report) => report.live, test: (v) => v === true },
   { key: 'sent', bound: 'true', value: (report) => report.sent, test: (v) => v === true },
+  { key: 'typingBubble', bound: 'the other person typing draws three dots under the newest message and clears, a reader scrolled up is not moved, and our other device is a header note (issue 390)', value: (report) => report.typingBubble, test: (v) => v === true },
   { key: 'composerGrows', bound: 'true', value: (report) => report.composerGrows, test: (v) => v === true },
   { key: 'closeToTray', bound: 'true', value: (report) => report.closeToTray, test: (v) => v === true },
   { key: 'tray', bound: 'true', value: (report) => report.tray, test: (v) => v === true },

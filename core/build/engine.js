@@ -104,6 +104,7 @@ var engine = (() => {
     TRAY_BADGE: () => TRAY_BADGE,
     TRAY_CROP: () => TRAY_CROP,
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
+    TYPING_BUBBLE_LABEL: () => TYPING_BUBBLE_LABEL,
     TYPING_TTL_MS: () => TYPING_TTL_MS,
     UNKNOWN: () => UNKNOWN,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
@@ -406,7 +407,9 @@ var engine = (() => {
     topLift: () => topLift,
     transferDetail: () => transferDetail,
     typingActive: () => typingActive,
-    typingLabel: () => typingLabel,
+    typingBubble: () => typingBubble,
+    typingNote: () => typingNote,
+    typingPulse: () => typingPulse,
     unreadTotal: () => unreadTotal,
     unsupportedBanner: () => unsupportedBanner,
     updateBanner: () => updateBanner,
@@ -4146,7 +4149,6 @@ var engine = (() => {
 
   // core/app/rules/typing.js
   var TYPING_TTL_MS = 8e3;
-  var ELLIPSIS = "\u2026";
   function typingActive(state, now) {
     return Boolean(state) && Number.isFinite(state.at) && now - state.at < TYPING_TTL_MS;
   }
@@ -4155,9 +4157,26 @@ var engine = (() => {
     if (!event.typing) return null;
     return { chatId: String(chatId), kind: event.kind === "contact" ? "contact" : "device", at: now };
   }
-  function typingLabel(state, now) {
-    if (!typingActive(state, now)) return "";
-    return state.kind === "contact" ? "typing" + ELLIPSIS : "You're typing on another device";
+  function typingNote(state, now) {
+    if (!typingActive(state, now) || state.kind !== "device") return "";
+    return "You're typing on another device";
+  }
+  function typingBubble(state, now) {
+    return typingActive(state, now) && state.kind === "contact";
+  }
+  var TYPING_BUBBLE_LABEL = "typing";
+  function typingPulse(index, count, lift) {
+    const n = Math.max(1, count);
+    const span = 0.6 / n;
+    const peak = 0.2 + index * span;
+    const rest = { opacity: 0.4, translate: "0px 0px" };
+    return [
+      { offset: 0, ...rest },
+      { offset: Math.max(0, peak - span), ...rest },
+      { offset: peak, opacity: 1, translate: "0px " + -Math.abs(lift) + "px" },
+      { offset: Math.min(1, peak + span), ...rest },
+      { offset: 1, ...rest }
+    ];
   }
 
   // core/app/rules/bar-layout.js
