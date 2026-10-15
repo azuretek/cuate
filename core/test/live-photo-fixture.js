@@ -98,6 +98,7 @@
   // Why a motion could not play, asked of the shell rather than inferred: the fixture fetches the motion and plays it on
   // an element of its own, so a fetch the shell refused and a shell that will not load a blob read apart, and the reason
   // is the media's own (issue 386).
+  const policy = () => (refusals.length ? 'refused by the policy: ' + refusals.join(', ') : 'nothing refused by the policy');
   const why = async () => {
     if (fetchFailure) return 'the page could not fetch the motion: ' + fetchFailure;
     const probe = document.createElement('video');
@@ -107,11 +108,12 @@
       probe.src = URL.createObjectURL(await motion());
       await probe.play();
     } catch (error) {
-      return 'the page could not play the same motion on its own element: ' + String((error && error.name) || '') + ' ' + String((error && error.message) || error);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return 'the page could not play the same motion on its own element: ' + String((error && error.name) || '') + ' ' + String((error && error.message) || error) + '; ' + policy();
     }
     const until = performance.now() + 3000;
     while (performance.now() < until && probe.readyState < 2 && !probe.error) await new Promise(requestAnimationFrame);
-    return 'the page played the same motion on its own element: readyState ' + probe.readyState + ' error ' + (probe.error ? probe.error.code : 'none') + '; ' + (refusals.length ? 'refused by the policy: ' + refusals.join(', ') : 'nothing refused by the policy');
+    return 'the page played the same motion on its own element: readyState ' + probe.readyState + ' error ' + (probe.error ? probe.error.code : 'none') + '; ' + policy();
   };
 
   // The press is the UI test's. The control's own click handler runs on the same click, so this only notes it arrived.
