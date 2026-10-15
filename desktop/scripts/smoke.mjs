@@ -186,6 +186,7 @@ const checks = [
   { key: 'aboutBackDesktop', bound: 'true', value: (report) => report.aboutBackDesktop, test: (v) => v === true },
   { key: 'aboutBackSmooth', bound: 'true', value: (report) => report.aboutBackSmooth, test: (v) => v === true },
   { key: 'appIcon', bound: 'true', value: (report) => report.appIcon, test: (v) => v === true },
+  { key: 'noticeIcon', bound: 'true', value: (report) => report.noticeIcon, test: (v) => v === true },
   { key: 'chatsBack', bound: 'true', value: (report) => report.chatsBack, test: (v) => v === true },
   { key: 'headerMenus', bound: 'true', value: (report) => report.headerMenus, test: (v) => v === true },
   { key: 'carets', bound: 'true', value: (report) => report.carets, test: (v) => v === true },
