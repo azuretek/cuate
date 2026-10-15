@@ -26,6 +26,7 @@ var engine = (() => {
     APP_ICONS: () => APP_ICONS,
     APP_ICON_KEY: () => APP_ICON_KEY,
     ATTACH_ACCEPT: () => ATTACH_ACCEPT,
+    AUDIO_PREVIEW_MAX_BYTES: () => AUDIO_PREVIEW_MAX_BYTES,
     BADGE_APART: () => BADGE_APART,
     BADGE_TEXT_FLOOR: () => BADGE_TEXT_FLOOR,
     BUILD_SPEC: () => BUILD_SPEC,
@@ -34,6 +35,9 @@ var engine = (() => {
     CONVERSATION_MIN: () => CONVERSATION_MIN,
     DELETE_STEPS: () => DELETE_STEPS,
     DISMISS: () => DISMISS,
+    DOC_ZOOM_MAX: () => DOC_ZOOM_MAX,
+    DOC_ZOOM_MIN: () => DOC_ZOOM_MIN,
+    DOC_ZOOM_STEP: () => DOC_ZOOM_STEP,
     DRAG_FRACTION: () => DRAG_FRACTION,
     DRAG_MAX: () => DRAG_MAX,
     DRAG_MIN: () => DRAG_MIN,
@@ -68,6 +72,9 @@ var engine = (() => {
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
     OVERLAY_SIZES: () => OVERLAY_SIZES,
+    PAGE_FIT_MAX: () => PAGE_FIT_MAX,
+    PAGE_MAX_PIXELS: () => PAGE_MAX_PIXELS,
+    PDF_PREVIEW_MAX_BYTES: () => PDF_PREVIEW_MAX_BYTES,
     PHOTO_SCAN_ROWS: () => PHOTO_SCAN_ROWS,
     PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PRESS_STATES: () => PRESS_STATES,
@@ -91,6 +98,7 @@ var engine = (() => {
     SWATCH_TOKENS: () => SWATCH_TOKENS,
     SWIPE_MIN_PX: () => SWIPE_MIN_PX,
     TAPBACKS: () => TAPBACKS2,
+    TEXT_PREVIEW_MAX_BYTES: () => TEXT_PREVIEW_MAX_BYTES,
     TEXT_SCALES: () => TEXT_SCALES,
     THEME_GROUPS: () => THEME_GROUPS,
     TRAY_BADGE: () => TRAY_BADGE,
@@ -173,6 +181,7 @@ var engine = (() => {
     dismissNotice: () => dismissNotice,
     dividerBounds: () => dividerBounds,
     dividerKey: () => dividerKey,
+    docZoom: () => docZoom,
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
     dragChatsWidth: () => dragChatsWidth,
@@ -186,9 +195,11 @@ var engine = (() => {
     emptyListText: () => emptyListText,
     engineLabel: () => engineLabel,
     eventText: () => eventText,
+    extensionOf: () => extensionOf,
     failedBanner: () => failedBanner,
     fallbackPhrase: () => fallbackPhrase,
     feedVersions: () => feedVersions,
+    filePress: () => filePress,
     fillTemplate: () => fillTemplate,
     filterChats: () => filterChats,
     firstUrl: () => firstUrl,
@@ -226,6 +237,7 @@ var engine = (() => {
     isDoubleTap: () => isDoubleTap,
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
+    isFileAttachment: () => isFileAttachment,
     isGroupPhotoRow: () => isGroupPhotoRow,
     isHorizontal: () => isHorizontal,
     isLivePhoto: () => isLivePhoto,
@@ -273,6 +285,8 @@ var engine = (() => {
     orderChats: () => orderChats,
     outcomeOf: () => outcomeOf,
     pageAfterBack: () => pageAfterBack,
+    pageCanvas: () => pageCanvas,
+    pageFit: () => pageFit,
     pageZoomAttempt: () => pageZoomAttempt,
     panBounds: () => panBounds,
     panBy: () => panBy,
@@ -295,6 +309,7 @@ var engine = (() => {
     platformThreadUnsupported: () => platformThreadUnsupported,
     policy: () => policy,
     pressOutside: () => pressOutside,
+    previewKind: () => previewKind,
     progressFor: () => progressFor,
     putNotice: () => putNotice,
     quietCount: () => quietCount,
@@ -1374,14 +1389,14 @@ var engine = (() => {
   }
   function fromOklch([L, C, h]) {
     const at = (c) => oklabToLinear(clamp01(L), c * Math.cos(h * Math.PI / 180), c * Math.sin(h * Math.PI / 180));
-    const fits = (lin2) => lin2.every((x) => x >= -1e-7 && x <= 1 + 1e-7);
+    const fits2 = (lin2) => lin2.every((x) => x >= -1e-7 && x <= 1 + 1e-7);
     let lin = at(C);
-    if (!fits(lin)) {
+    if (!fits2(lin)) {
       let lo = 0;
       let hi = C;
       for (let step = 0; step < 24; step += 1) {
         const mid = (lo + hi) / 2;
-        if (fits(at(mid))) lo = mid;
+        if (fits2(at(mid))) lo = mid;
         else hi = mid;
       }
       lin = at(lo);
@@ -3155,6 +3170,149 @@ var engine = (() => {
     if (Math.abs(x) < min) return null;
     if (Math.abs(x) <= Math.abs(y)) return null;
     return x > 0 ? "prev" : "next";
+  }
+
+  // core/app/rules/documents.js
+  var TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
+  var PDF_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
+  var AUDIO_PREVIEW_MAX_BYTES = 100 * 1024 * 1024;
+  var TEXT_EXTENSIONS = /* @__PURE__ */ new Set([
+    "txt",
+    "text",
+    "md",
+    "markdown",
+    "csv",
+    "tsv",
+    "log",
+    "json",
+    "ndjson",
+    "xml",
+    "yaml",
+    "yml",
+    "toml",
+    "ini",
+    "conf",
+    "cfg",
+    "env",
+    "js",
+    "mjs",
+    "cjs",
+    "jsx",
+    "ts",
+    "tsx",
+    "py",
+    "rb",
+    "go",
+    "rs",
+    "java",
+    "kt",
+    "kts",
+    "swift",
+    "c",
+    "h",
+    "cc",
+    "cpp",
+    "hpp",
+    "cs",
+    "m",
+    "php",
+    "pl",
+    "lua",
+    "r",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "ps1",
+    "bat",
+    "sql",
+    "css",
+    "scss",
+    "diff",
+    "patch",
+    "srt",
+    "vtt"
+  ]);
+  var TEXT_TYPES = /* @__PURE__ */ new Set([
+    "application/json",
+    "application/x-ndjson",
+    "application/xml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/ecmascript",
+    "application/x-sh",
+    "application/x-yaml",
+    "application/yaml",
+    "application/toml",
+    "application/sql",
+    "application/x-subrip"
+  ]);
+  var NOT_TEXT_TYPES = /* @__PURE__ */ new Set(["text/html", "text/rtf", "text/richtext", "text/enriched"]);
+  var AUDIO_EXTENSIONS = /* @__PURE__ */ new Set(["mp3", "m4a", "aac", "wav", "oga", "ogg", "opus", "flac"]);
+  var AUDIO_TYPES = /* @__PURE__ */ new Set([
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/m4a",
+    "audio/aac",
+    "audio/x-aac",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/ogg",
+    "audio/opus",
+    "audio/webm",
+    "audio/flac",
+    "audio/x-flac"
+  ]);
+  function extensionOf(name) {
+    const base = String(name || "").split(/[\\/]/).pop();
+    const dot = base.lastIndexOf(".");
+    return dot > 0 && dot < base.length - 1 ? base.slice(dot + 1).toLowerCase() : "";
+  }
+  var bareType = (mime) => String(mime || "").split(";")[0].trim().toLowerCase();
+  var fits = (a, max) => !(Number.isFinite(Number(a.bytes)) && Number(a.bytes) > max);
+  function isFileAttachment(a) {
+    return Boolean(a) && !a.local && !a.missing && !a.sticker && !isMediaAttachment(a);
+  }
+  function previewKind(a) {
+    if (!isFileAttachment(a)) return null;
+    const type = bareType(a.mime);
+    const ext = extensionOf(a.name);
+    const generic = !type || type === "application/octet-stream";
+    if (NOT_TEXT_TYPES.has(type)) return null;
+    if (type === "application/pdf" || generic && ext === "pdf") return fits(a, PDF_PREVIEW_MAX_BYTES) ? "pdf" : null;
+    if (AUDIO_TYPES.has(type) || generic && AUDIO_EXTENSIONS.has(ext)) return fits(a, AUDIO_PREVIEW_MAX_BYTES) ? "audio" : null;
+    const text = type.startsWith("text/") || TEXT_TYPES.has(type) || generic && TEXT_EXTENSIONS.has(ext);
+    if (text) return fits(a, TEXT_PREVIEW_MAX_BYTES) ? "text" : null;
+    return null;
+  }
+  function filePress(a) {
+    if (!isFileAttachment(a)) return null;
+    return previewKind(a) ? "view" : "open";
+  }
+  var DOC_ZOOM_MIN = 0.5;
+  var DOC_ZOOM_MAX = 4;
+  var DOC_ZOOM_STEP = 1.25;
+  function docZoom(scale, factor) {
+    const s = (Number(scale) || 1) * (Number(factor) || 1);
+    return Math.min(DOC_ZOOM_MAX, Math.max(DOC_ZOOM_MIN, Math.round(s * 1e3) / 1e3));
+  }
+  var PAGE_FIT_MAX = 1.5;
+  function pageFit(pageWidth, roomWidth) {
+    const w = Number(pageWidth) || 0;
+    const room = Number(roomWidth) || 0;
+    if (w <= 0 || room <= 0) return 1;
+    return Math.min(PAGE_FIT_MAX, room / w);
+  }
+  var PAGE_MAX_PIXELS = 16 * 1024 * 1024;
+  function pageCanvas(pageWidth, pageHeight, scale, ratio = 1, maxPixels = PAGE_MAX_PIXELS) {
+    const cssWidth = Math.max(1, Math.round((Number(pageWidth) || 0) * scale));
+    const cssHeight = Math.max(1, Math.round((Number(pageHeight) || 0) * scale));
+    const want = Math.max(1, Number(ratio) || 1);
+    const r = Math.min(want, Math.sqrt(maxPixels / (cssWidth * cssHeight)));
+    return { cssWidth, cssHeight, width: Math.max(1, Math.floor(cssWidth * r)), height: Math.max(1, Math.floor(cssHeight * r)), ratio: r };
   }
 
   // core/app/rules/places.js

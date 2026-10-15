@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createHandlers, createSecureStore, mimeFor } from '../src/bridge-handlers.js';
+import { createHandlers, createSecureStore, createFileOpener, openName, mimeFor } from '../src/bridge-handlers.js';
 
 const spec = JSON.parse(readFileSync(new URL('../../core/spec/host-bridge.json', import.meta.url), 'utf8'));
 const fs = { readFileSync, writeFileSync, existsSync, mkdirSync };
@@ -69,6 +69,55 @@ test('file.save hands the shell the file\'s name, type and bytes and answers wha
   assert.deepEqual(saves, [{ name: 'booking.pdf', mime: 'application/pdf', data: 'JVBERi0=' }]);
   assert.equal(await h['file.save']({ name: 'booking.pdf', data: 12 }), true, 'a non-string data is emptied rather than trusted');
   assert.deepEqual(saves[1], { name: 'booking.pdf', mime: '', data: '' });
+});
+
+// Issue 374: Open in hands the shell the file's name, type and bytes, and the desktop writes a temporary copy, opens it
+// in the system's default app and removes every copy when the app quits.
+test('file.open hands the shell the file\'s name, type and bytes and answers what it did', async () => {
+  const opens = [];
+  const h = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true, openFile: (f) => { opens.push(f); return true; } });
+  assert.equal(await h['file.open']({ name: 'booking.pdf', mime: 'application/pdf', data: 'JVBERi0=' }), true);
+  assert.deepEqual(opens, [{ name: 'booking.pdf', mime: 'application/pdf', data: 'JVBERi0=' }]);
+  assert.equal(await h['file.open']({ name: 'x'.repeat(400), data: 12 }), true);
+  assert.deepEqual(opens[1], { name: 'x'.repeat(255), mime: '', data: '' }, 'the name is bounded and a non-string data is emptied rather than trusted');
+  const none = createHandlers({ secure: {}, notify: () => true, info: () => ({}), openExternal: () => true });
+  assert.equal(await none['file.open']({ name: 'booking.pdf', mime: 'application/pdf', data: 'JVBERi0=' }), false, 'with nothing to open it in, it answers false');
+});
+
+test('the desktop writes each opened file to a folder of its own under its temporary folder, opens it, and removes them all on quit', async () => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'open-test-'));
+  const root = path.join(tmp, 'run');
+  const opened = [];
+  try {
+    const opener = createFileOpener({ root, fs: { mkdirSync, mkdtempSync, writeFileSync, rmSync }, openPath: async (f) => { opened.push(f); return ''; } });
+    assert.equal(opener.cleanup(), false, 'nothing written, nothing to remove');
+    assert.equal(await opener.open({ name: 'booking.pdf', data: Buffer.from('%PDF-1.4').toString('base64') }), true);
+    assert.equal(await opener.open({ name: '../../booking.pdf', data: Buffer.from('second').toString('base64') }), true);
+    assert.equal(opened.length, 2);
+    assert.equal(path.basename(opened[0]), 'booking.pdf', 'the copy keeps its real name');
+    assert.notEqual(path.dirname(opened[0]), path.dirname(opened[1]), 'two files with one name never meet');
+    for (const f of opened) assert.ok(f.startsWith(root + path.sep), 'every copy stays under the run\'s own folder: ' + f);
+    assert.equal(readFileSync(opened[0], 'utf8'), '%PDF-1.4');
+    assert.equal(readFileSync(opened[1], 'utf8'), 'second');
+    assert.equal(await opener.open({ name: 'empty.pdf', data: '' }), false, 'no bytes, nothing opened');
+    const failing = createFileOpener({ root, fs: { mkdirSync, mkdtempSync, writeFileSync, rmSync }, openPath: async () => 'No application knows how to open it' });
+    assert.equal(await failing.open({ name: 'a.xyz', data: 'eA==' }), false, 'a copy the system could not open answers false');
+    assert.equal(opener.cleanup(), true);
+    assert.equal(existsSync(root), false, 'quitting removes every copy');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a file is written under its own name, never outside its folder and never as nothing', () => {
+  assert.equal(openName('booking.pdf'), 'booking.pdf');
+  assert.equal(openName('../../etc/passwd'), 'passwd');
+  assert.equal(openName('C:\\Users\\x\\notes.txt'), 'notes.txt');
+  assert.equal(openName('a:b?.txt'), 'a_b_.txt');
+  assert.equal(openName('CON.txt'), '_CON.txt', 'a name Windows reserves is not taken as the device');
+  assert.equal(openName(''), 'Attachment');
+  assert.equal(openName('..'), 'Attachment');
+  assert.equal(openName(null), 'Attachment');
 });
 
 test('with no save wired, file.save answers false rather than throwing', async () => {

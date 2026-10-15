@@ -7,3 +7,7 @@ core/kit/vendor/** -text
 # data, not our voice), so GitHub and the publish scan treat them as vendored rather than as our prose.
 core/spec/emoji/** linguist-vendored
 core/app/rules/emoji-data.js linguist-vendored
+
+# The third-party builds the app ships as they came (core/kit/vendor/README.md): Lit, and pdf.js and its worker
+# (issue 374). Their text is the package authors', so they are vendored too.
+core/kit/vendor/** linguist-vendored
