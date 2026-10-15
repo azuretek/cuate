@@ -1939,11 +1939,38 @@ async function runSmoke(w) {
   await pause(500);
   const dividerState = () => js("(() => { const d = document.querySelector('.conv-divider'); const s = document.querySelector('.shell'); if (!d || !s) return null; const dr = d.getBoundingClientRect(); const list = document.querySelector('.sidebar').getBoundingClientRect(); const conv = document.querySelector('.main').getBoundingClientRect(); return { x: dr.left + dr.width / 2, y: dr.top + dr.height / 2, viewport: window.innerWidth, chatW: Math.round(list.width), convW: Math.round(conv.width), role: d.getAttribute('role'), label: d.getAttribute('aria-label'), orientation: d.getAttribute('aria-orientation'), tabindex: d.getAttribute('tabindex'), cursor: getComputedStyle(d).cursor, valueNow: Number(d.getAttribute('aria-valuenow')), valueMin: Number(d.getAttribute('aria-valuemin')), valueMax: Number(d.getAttribute('aria-valuemax')) }; })()");
   const dividerPlace = () => js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const last = rows[rows.length - 1]; const l = document.querySelector('app-chat-list'); const ltop = l.getBoundingClientRect().top; const first = [...l.querySelectorAll('.chat-row')].find((r) => r.getBoundingClientRect().bottom - ltop > 0); return { bottom: last ? { id: last.dataset.id, gap: Math.round(m.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom) } : null, listTop: first ? { chat: first.dataset.chat, offset: Math.round(first.getBoundingClientRect().top - ltop) } : null }; })()");
-  // A drag is read once the divider has answered it, as a key is below: a Windows runner drew the drag's last width
-  // after the 300 ms pause, so the check read the width before it while the stored and reopened width was the new one.
-  const dragDivider = async (dx) => {
+  // Every step below is read once the width it asked for has LANDED, never after a fixed pause or the first change of the
+  // divider's value (issue 382). Each width write is optimistic and comes back twice, as the write's answer and as a
+  // settings.changed event, and either can land after the next step has started: on a Windows runner (run 38678597263)
+  // the drag's chosen width read 320 while the stored and reopened width was 480. A step has landed when the server
+  // holds the width it asked for, the page's last delivered settings.changed carries that width (events arrive in
+  // order, so no older width can follow it), the page's own write has answered, and the divider shows it. A step that
+  // has not landed in 20 s is named in the log with what it saw and how long it waited.
+  const storedOf = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+  const widthSeenFrom = storedOf((await held())['chats.width']);
+  await js("(() => { const root = document.querySelector('app-root'); root.widthSeen = []; root.onEvent = (ev) => { const v = ev && ev.name === 'settings.changed' && ev.data && ev.data.values; if (v && Object.hasOwn(v, 'chats.width')) root.widthSeen.push(v['chats.width']); return Object.getPrototypeOf(root).onEvent.call(root, ev); }; return true; })()");
+  const dividerSteps = [];
+  const settleDivider = async (step, { shown, stored, before }) => {
+    const t0 = Date.now();
+    let seen;
+    let landed;
+    for (;;) {
+      const page = await js("(() => { const root = document.querySelector('app-root'); const seen = root.widthSeen; return { valueNow: Number(document.querySelector('.conv-divider').getAttribute('aria-valuenow')), busy: root.settingsBusy, delivered: seen.length ? seen[seen.length - 1] : undefined }; })()");
+      seen = { valueNow: page.valueNow, busy: page.busy, delivered: page.delivered === undefined ? widthSeenFrom : storedOf(page.delivered), held: storedOf((await held())['chats.width']) };
+      landed = seen.valueNow === shown && seen.held === stored && seen.delivered === stored && seen.busy === false;
+      if (landed || Date.now() - t0 > 20000) break;
+      await pause(100);
+    }
+    const out = { step, landed, waitedMs: Date.now() - t0, before, shown, stored, seen };
+    dividerSteps.push(out);
+    if (!landed) console.log('divider resize: step ' + step + ' did not land in ' + out.waitedMs + ' ms: ' + JSON.stringify(out));
+    return out;
+  };
+  // The drag's committed width is the one it drew at its last move, which the release writes: the width it started at
+  // plus the pointer's travel, held between the divider's own bounds.
+  const dragDivider = async (step, dx) => {
     const at = await dividerState();
-    const before = await js("document.querySelector('.conv-divider').getAttribute('aria-valuenow')");
+    const committed = Math.min(at.valueMax, Math.max(at.valueMin, at.valueNow + dx));
     const x0 = Math.round(at.x), y0 = Math.round(at.y);
     await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: x0, y: y0, button: 'left', buttons: 1, clickCount: 1 });
     for (let i = 1; i <= 5; i += 1) {
@@ -1951,17 +1978,13 @@ async function runSmoke(w) {
       await pause(40);
     }
     await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x0 + dx), y: y0, button: 'left', buttons: 0, clickCount: 1 });
-    try { await waitFor("document.querySelector('.conv-divider').getAttribute('aria-valuenow') !== " + JSON.stringify(before), 5000); } catch { /* unchanged, as a drag past a limit can be: reported by the check */ }
-    await pause(300);
+    await settleDivider(step, { shown: committed, stored: committed, before: at.valueNow });
   };
-  // Each key is read once the divider has answered it, not after a fixed pause: a Windows runner drew the step later
-  // than 250 ms and the check read the old width. A key that changes nothing still ends after five seconds, and the
-  // check then reports it.
-  const keyDivider = async (key) => {
-    const before = await js("document.querySelector('.conv-divider').getAttribute('aria-valuenow')");
+  // A key lands the same way: an arrow stores the stepped width, and Home stores none, so the default is drawn.
+  const keyDivider = async (key, { shown, stored }) => {
+    const before = Number(await js("document.querySelector('.conv-divider').getAttribute('aria-valuenow')"));
     await js("(() => { const d = document.querySelector('.conv-divider'); d.focus(); d.dispatchEvent(new KeyboardEvent('keydown', { key: " + JSON.stringify(key) + ", bubbles: true, cancelable: true })); return true; })()");
-    try { await waitFor("document.querySelector('.conv-divider').getAttribute('aria-valuenow') !== " + JSON.stringify(before), 5000); } catch { /* unchanged: reported by the check */ }
-    await pause(100);
+    await settleDivider('key ' + key, { shown, stored, before });
   };
   // The conversation is left at its end (what was at the bottom stays there) and the list scrolled back, so each pane's
   // anchor has something to hold across every drag below.
@@ -1972,30 +1995,31 @@ async function runSmoke(w) {
   const movedApart = (a, b) => Boolean(a && b) && a.chatW !== b.chatW;
   const sameBottom = (a, b) => Boolean(a && b) && a.id === b.id && Math.abs(a.gap - b.gap) <= 2;
   const sameListTop = (a, b) => Boolean(a && b) && a.chat === b.chat && Math.abs(a.offset - b.offset) <= 2;
-  await dragDivider(-2000);
+  await dragDivider('drag to the chats minimum', -2000);
   const dividerLeft = await dividerState();
   const placeLeft = await dividerPlace();
   await shot('17-divider-min-light.png');
-  await dragDivider(2000);
+  await dragDivider('drag to the conversation minimum', 2000);
   const dividerRight = await dividerState();
   const placeRight = await dividerPlace();
   await shot('17-divider-wide-light.png');
   nativeTheme.themeSource = 'dark';
   await pause(300);
   await shot('17-divider-wide-dark.png');
-  await dragDivider(-2000);
+  await dragDivider('drag to the chats minimum, dark', -2000);
   await shot('17-divider-min-dark.png');
   nativeTheme.themeSource = 'light';
   await pause(300);
   // Reset by double click, a step and a reset by key, then a chosen width to reopen on.
+  const beforeDbl = (await dividerState()).valueNow;
   await js("(() => { const d = document.querySelector('.conv-divider'); d.focus(); d.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return true; })()");
-  await pause(250);
+  await settleDivider('double click', { shown: CHATS_DEFAULT, stored: null, before: beforeDbl });
   const dividerDbl = await dividerState();
-  await keyDivider('ArrowRight');
+  await keyDivider('ArrowRight', { shown: CHATS_DEFAULT + KEY_STEP, stored: CHATS_DEFAULT + KEY_STEP });
   const dividerStep = await dividerState();
-  await keyDivider('Home');
+  await keyDivider('Home', { shown: CHATS_DEFAULT, stored: null });
   const dividerHome = await dividerState();
-  await dragDivider(160);
+  await dragDivider('drag to a chosen width', 160);
   const dividerChosen = await dividerState();
   const placeChosen = await dividerPlace();
   // A width change must not leave the composer short (issue 139): its field watches its own width, so a three-line draft
@@ -2028,7 +2052,8 @@ async function runSmoke(w) {
     persists: persistedWidth === dividerChosen.chatW && dividerReopened.chatW === dividerChosen.chatW && dividerReopened.valueNow === dividerChosen.chatW,
   };
   report.dividerResize = Object.values(dividerChecks).every(Boolean);
-  console.log('divider resize: ' + JSON.stringify({ checks: dividerChecks, dividerStart, dividerLeft, dividerRight, dividerDbl, dividerStep, dividerHome, dividerChosen, persistedWidth, dividerReopened, placeStart, placeLeft, placeRight, placeChosen }));
+  console.log('divider resize: ' + JSON.stringify({ checks: dividerChecks, dividerSteps, dividerStart, dividerLeft, dividerRight, dividerDbl, dividerStep, dividerHome, dividerChosen, persistedWidth, dividerReopened, placeStart, placeLeft, placeRight, placeChosen }));
+  await js("(() => { const root = document.querySelector('app-root'); delete root.onEvent; delete root.widthSeen; return true; })()");
   await putSettings({ 'chats.width': null });
 
   // The seam must TRACK the pointer THROUGH the drag, not only land where it ended (issue 288). The pointer presses the
