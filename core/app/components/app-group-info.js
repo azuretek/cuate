@@ -2,7 +2,7 @@ import { html } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
 import { dismissable } from '../../kit/dismiss.js';
-import { chatTitle, isAddress } from '../rules/chats.js';
+import { chatTitle, isAddress, isMachineName } from '../rules/chats.js';
 
 // A group conversation's own details (issue 326): its name and its people. A rename, an added person and a removed one
 // go through the Mac, so every member and every device sees the same group; the page hears the changed
@@ -54,7 +54,7 @@ class AppGroupInfo extends KitElement {
   render() {
     const c = this.chat;
     if (!c) return html``;
-    const name = this.name ?? (/^chat[0-9]+$/i.test(c.name || '') ? '' : c.name || '');
+    const name = this.name ?? (isMachineName(c.name, c) ? '' : c.name || '');
     const people = Array.isArray(c.participants) ? c.participants : [];
     return html`<div class="sheet-scrim confirm-scrim">
       <section class="confirm-modal group-info" data-dismiss="groupinfo" role="dialog" aria-modal="true" aria-labelledby="group-info-title">
