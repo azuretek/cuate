@@ -6,6 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { readTextScale, watchTextScale } from './text-scale.js';
 import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
@@ -192,6 +193,8 @@ const lifecycle = createLifecycle({
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
+  // The system's text size (issue 369); a change is sent as display.textScale where the window is made.
+  textScale: () => readTextScale(),
   takeLink: () => { const l = pendingLink; pendingLink = null; return l; },
   notify: (title, body, target) => {
     // Pressing a message notice raises the window and tells the page, which takes the target (issue 331).
@@ -3518,6 +3521,12 @@ function createWindow() {
   win.on('page-title-updated', (e) => e.preventDefault());
   lockZoom(win.webContents);
   // The bar's restore glyph follows the window wherever the change came from, a control or the platform's double-click.
+  // The system's text size, told to the page as an event whenever it changes (issue 369).
+  const stopTextScale = watchTextScale({
+    onChange: (percent) => { if (!win.isDestroyed()) win.webContents.send('bridge:event:display.textScale', { percent }); },
+    onFocus: (fn) => { win.on('focus', fn); return () => win.removeListener('focus', fn); },
+  });
+  win.on('closed', stopTextScale);
   win.on('maximize', () => { if (!win.isDestroyed()) win.webContents.send('bridge:event:window.state', { maximized: true }); });
   win.on('unmaximize', () => { if (!win.isDestroyed()) win.webContents.send('bridge:event:window.state', { maximized: false }); });
   win.webContents.setWindowOpenHandler(({ url }) => {
