@@ -1,6 +1,6 @@
 // The images the desktop shell shows for the app, redrawn from the active theme (issue 189): the tray's (a template
 // image in the macOS menu bar, the theme's colours in the Windows notification area and the Linux panel), the window's
-// icon on Windows and Linux, the taskbar overlay that carries the unread count on Windows, and the count macOS's Dock
+// icon on Windows and Linux, the icon a desktop notification carries there (issue 360), the taskbar overlay that carries the unread count on Windows, and the count macOS's Dock
 // and Linux launchers draw themselves. No Electron in it, so one node --test run holds every platform's answer; main.js
 // turns each image into a nativeImage.
 import { readFileSync } from 'node:fs';
@@ -36,6 +36,11 @@ export function shellIcons({ platform, masters, tokens, scheme = 'light', colors
   const template = platform === 'darwin';
   const tray = sizes.map(([size, scale]) => ({ scale, image: renderIcon({ masters, palette, kind: template ? 'template' : 'tray', size, unread: count }) }));
   const windowIcon = platform === 'darwin' ? null : renderIcon({ masters, palette, kind: 'app', size: WINDOW_ICON });
+  // The icon a desktop notification carries on Windows and Linux (issue 360): the window icon itself, so a notice wears
+  // the app icon in force, a fixed palette or the theme's, never the build's. macOS draws every notification with the
+  // bundle's own icon and Electron hands it no other, and rewriting the bundle would break its signature, so there it
+  // is null and the bundle's icon stands.
+  const notice = windowIcon;
   // The Windows taskbar overlay: one image per size the taskbar asks for, so the count is never resampled.
   const overlay = platform === 'win32' && count > 0
     ? OVERLAY_SIZES.map(([size, scale]) => ({ scale, image: renderIcon({ masters, palette, kind: 'overlay', size, unread: count }) }))
@@ -44,6 +49,7 @@ export function shellIcons({ platform, masters, tokens, scheme = 'light', colors
     palette,
     tray: { template, reps: tray },
     window: windowIcon,
+    notice,
     overlay,
     // The label macOS's Dock and a Linux launcher draw themselves: the same the overlay draws, exact to 9 then 9+.
     badgeText: badgeLabel(count, OVERLAY_SIZES[0][0]) || '',

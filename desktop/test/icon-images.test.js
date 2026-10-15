@@ -107,6 +107,34 @@ test('a fixed palette chosen in Settings draws every image whatever the theme an
   }
 });
 
+test('a desktop notification carries the app icon in force on Windows and Linux, and macOS keeps the bundle\'s (issue 360)', () => {
+  const spec = JSON.parse(readFileSync(path.join(CORE, 'spec', 'app-icons.json'), 'utf8'));
+  const variants = spec.families.flatMap((f) => ['light', 'dark'].map((k) => f.variants[k]));
+  const [first, second] = variants;
+  for (const platform of ['win32', 'linux']) {
+    const at = (o) => shellIcons({ platform, masters, tokens, ...o });
+    const theme = at({ scheme: 'light', colors: elegant.color.light });
+    // Follow theme: the notice is the window icon, drawn from the theme's palette by the one renderer.
+    assert.deepEqual(theme.notice, theme.window, platform + ': a notice wears the window icon');
+    assert.deepEqual(Buffer.from(theme.notice.data), Buffer.from(renderIcon({ masters, palette: theme.palette, kind: 'app', size: 256 }).data));
+    assert.notDeepEqual(Buffer.from(at({ scheme: 'dark' }).notice.data), Buffer.from(theme.notice.data), platform + ': the notice follows the theme');
+    // A fixed palette from Settings stands in for the theme, whatever the page reports.
+    const fixed = at({ scheme: 'dark', colors: elegant.color.dark, fixed: { scheme: first.scheme, colors: first.colors } });
+    const other = at({ scheme: 'light', fixed: { scheme: second.scheme, colors: second.colors } });
+    assert.deepEqual(Buffer.from(fixed.notice.data), Buffer.from(renderIcon({ masters, palette: iconPalette(iconColours(tokens[first.scheme], first.colors), first.scheme), kind: 'app', size: 256 }).data), platform + ': the fixed palette draws the notice');
+    assert.notDeepEqual(Buffer.from(fixed.notice.data), Buffer.from(other.notice.data), platform + ': another choice, another notice icon');
+    assert.notDeepEqual(Buffer.from(fixed.notice.data), Buffer.from(theme.notice.data));
+  }
+  // macOS draws a notification with the bundle's icon and takes none from the app; rewriting the bundle breaks its
+  // signature, so the shell hands it none (docs/conventions.md).
+  assert.equal(shellIcons({ platform: 'darwin', masters, tokens }).notice, null, 'macOS keeps the bundle icon');
+  assert.equal(shellIcons({ platform: 'darwin', masters, tokens, fixed: { scheme: first.scheme, colors: first.colors } }).notice, null);
+  // The shell hands that icon to every notification it raises.
+  const main = readFileSync(path.join(CORE, '..', 'desktop', 'src', 'main.js'), 'utf8');
+  assert.match(main, /new Notification\(icon \? \{ title, body, icon: icon\.image \} : \{ title, body \}\)/);
+  assert.equal((main.match(/new Notification\(/g) || []).length, 1, 'one place raises a notification');
+});
+
 test('the PNG the shell hands to Electron decodes to exactly the pixels drawn', async () => {
   const image = renderIcon({ masters, palette: iconPalette(tokens.light, 'light'), kind: 'tray', size: 24, unread: 3 });
   const { data, info } = await sharp(encodePng(image)).raw().toBuffer({ resolveWithObject: true });
