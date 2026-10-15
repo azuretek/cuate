@@ -19,16 +19,22 @@ import './app-composer.js';
 import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
 import { splitLinks, messageLinks } from '../rules/links.js';
+import { emojiFallbackParts } from '../rules/emoji.js';
+import { canDrawEmoji } from '../emoji-support.js';
 import { copyToClipboard } from '../clipboard.js';
 
 // The link a press or a right click landed on, or null.
 const linkAt = (target) => (target && target.closest ? target.closest('a.message-link')?.dataset.href || null : null);
 
 // A message's text with each web address in it a link (core/app/rules/links.js). The text parts stay plain text, so
-// nothing in a message is ever read as markup.
+// nothing in a message is ever read as markup. An emoji this device cannot draw shows its name instead of an empty box
+// (issue 392), marked as an image of that emoji, so the reader and a screen reader both know what was sent.
+const drawnText = (text) => emojiFallbackParts(text, canDrawEmoji).map((p) => (p.emoji
+  ? html`<span class="emoji-fallback" role="img" aria-label=${p.name} title=${p.emoji}>${p.name}</span>`
+  : p.text));
 const linkedText = (text, open) => splitLinks(text).map((p) => (p.href
   ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${p.text}</a>`
-  : p.text));
+  : drawnText(p.text)));
 
 // How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
 const LONG_PRESS_MS = 500;
