@@ -73,6 +73,18 @@ test('no component writes a style attribute, which the page\'s Content-Security-
   for (const f of walk('core/app/components')) assert.equal(/\sstyle=/.test(read(f)), false, f + ' writes a style attribute');
 });
 
+test('the page\'s Content-Security-Policy lets the viewer play media it fetched', () => {
+  // The media viewer plays a video, and a Live Photo's motion, from a blob URL of the file it fetched. With no media-src
+  // the policy falls back to default-src 'self', which refuses blob:, and WebKit reports the refused load as an
+  // unsupported source (NotSupportedError) rather than as the policy, so on iPhone the motion never played (issue 386).
+  const html = read('core/app/index.html');
+  const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html);
+  assert.ok(policy, 'the page declares its Content-Security-Policy');
+  const directives = Object.fromEntries(policy[1].split(';').map((d) => d.trim().split(/\s+/)).filter((d) => d[0]).map(([name, ...sources]) => [name, sources]));
+  assert.ok(directives['media-src'], 'the policy names media-src rather than leaving media to default-src');
+  assert.deepEqual(directives['media-src'].slice().sort(), ["'self'", 'blob:'], "media-src allows the page's own files and the blobs it fetched, nothing else");
+});
+
 test('the scrollbars are one set, on the containers that scroll', () => {
   // One set for the whole app, on the scroll containers rather than a component each, and no ::-webkit-scrollbar:
   // a width there turns an overlay scrollbar into a classic one, which ends the overlay behaviour a platform draws

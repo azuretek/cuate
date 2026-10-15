@@ -1,5 +1,6 @@
 * text=auto eol=lf
 *.png binary
+*.mp4 binary
 core/kit/vendor/** -text
 
 # Vendored third-party data: the Unicode emoji data and CLDR annotations under core/spec/emoji, and the
