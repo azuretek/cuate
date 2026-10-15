@@ -40,7 +40,9 @@ export function syntheticPdf(pages) {
   return Buffer.from(out, 'latin1');
 }
 
-export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, capabilities = null, features = [] } = {}) {
+// liveEdit: with liveText, the words the live message is edited to by its sender on another device, once the client has
+// sent its first message after the live one arrived, which is how the smoke proves an edit made elsewhere reaches the UI.
+export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, liveEdit = null, capabilities = null, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
   const imagePath = path.join(attachmentsRoot, 'fake', 'sunset.png');
   const png = gradientPng(480, 320);
@@ -59,6 +61,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   let rowid = messages.length;
   let attempts = 0;
   let liveSent = false;
+  let liveMessage = null;
+  let liveEdited = false;
   const sends = [];
   // send: how a send answers. sendDelayMs: how long a send takes to answer, so a test can hold one in flight.
   // afterDelayMs: how long each messages.after page takes, so a test can hold a sweep open.
@@ -71,7 +75,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // replyAnswer: 'own' answers a send with the guid of the row it created (what Messages does); 'existing' models the
   // bridge's reply path, which has answered a threaded reply with the id of an existing message in the chat (issue 208),
   // so a test can prove the server does not report that message as the one it created.
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} }, features, replyAnswer: 'own' };
+  // edit: false models an engine whose bridge cannot edit a message, so status leaves message.edit out (issue 391).
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', edit: true, capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} }, features, replyAnswer: 'own' };
   const tapbackEmojiVersion = () => {
     const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
     return Number.isInteger(v) ? v : 0;
@@ -92,9 +97,46 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   };
   const broadcast = (m) => { for (const t of transports) t.notify(m); };
 
+  // Edits as Messages records them (issue 391): the row's text changes in place and the row is stamped with when, and
+  // nothing is said on the message stream, as an edit made on another device reaches the Mac's database. The adapter
+  // learns of it through `edits`, the fake's stand-in for the store reader in edits.js, with the same shape.
+  const editListeners = new Set();
+  let lastEditAt = 0;
+  const editRow = (m, text) => {
+    m.text = String(text);
+    lastEditAt = Math.max(Date.now(), lastEditAt + 1);
+    m.edited_at = lastEditAt;
+    for (const cb of editListeners) setImmediate(cb);
+    return m;
+  };
+  const editedRows = () => messages.filter((m) => m.edited_at && !m.is_reaction);
+  const edits = {
+    latest: () => editedRows().reduce((a, m) => Math.max(a, m.edited_at), 0),
+    since(cursor, limit = 100) {
+      const rows = editedRows().filter((m) => m.edited_at > cursor).sort((a, b) => a.edited_at - b.edited_at).slice(0, limit);
+      return {
+        rows: rows.map((m) => ({ rowid: m.id, guid: m.guid, chatId: String(m.chat_id), editedAt: new Date(m.edited_at).toISOString() })),
+        cursor: rows.length ? rows[rows.length - 1].edited_at : cursor,
+        more: rows.length >= limit,
+      };
+    },
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(editedRows().filter((m) => want.has(m.guid)).map((m) => [m.guid, new Date(m.edited_at).toISOString()]));
+    },
+    onChange(cb) { editListeners.add(cb); },
+    close() {},
+  };
+
   const world = {
     sends,
     tapbacks,
+    edits,
+    // A message edited by its sender on another device: the row's text changes and it is stamped as edited.
+    editElsewhere(guid, text) {
+      const m = messages.find((x) => x.guid === guid && !x.is_reaction);
+      return m ? editRow(m, text) : null;
+    },
     // A conversation read on another device: its messages turn read in the engine and its count falls, with nothing
     // said on the message stream, as a read on the phone reaches the Mac's database (issue 323).
     readElsewhere(chatId) {
@@ -169,7 +211,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'status':
             // A ready bridge advertises its event stream, as imsg does when the non-launching bridge probe succeeds. The
             // adapter only subscribes when the inbound-typing switch is on (issue 230).
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe', 'typing'] : [] });
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe', 'typing', ...(behavior.edit ? ['message.edit'] : [])] : [] });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -182,7 +224,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             // photo (issue 341), which is no conversation anyone opened.
             if (liveText && !liveSent && (p.limit || 50) > 5 && p.limit !== PHOTO_SCAN_ROWS) {
               liveSent = true;
-              setTimeout(() => world.incoming(p.chat_id, liveText), liveDelayMs).unref();
+              setTimeout(() => { liveMessage = world.incoming(p.chat_id, liveText); }, liveDelayMs).unref();
             }
             return reply(req.id, { messages: ms.map((m) => withAttachments(m, p.attachments)) });
           }
@@ -267,6 +309,11 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             const prev = [...messages].reverse().find((x) => x.chat_id === p.chat_id && !x.is_reaction);
             const m = add({ chat_id: p.chat_id, is_from_me: true, text: p.text || '', attachments: file, ...(prev ? { reply_to_guid: prev.guid } : {}), ...(p.reply_to ? { thread_originator_guid: p.reply_to, thread_originator_part: '0:0:0' } : {}) });
             sends.push({ chatId: p.chat_id, text: p.text || '', file: p.file || null, replyTo: p.reply_to || null });
+            // The live message's sender edits it on their phone once the client has answered it (issue 391).
+            if (liveEdit && liveMessage && !liveEdited) {
+              liveEdited = true;
+              setTimeout(() => world.editElsewhere(liveMessage.guid, liveEdit), 300).unref();
+            }
             // The answer names the row the engine created, unless the test asks it to model the bridge's reply path and
             // hand back an existing message's id instead (issue 208).
             const answerGuid = p.reply_to && behavior.replyAnswer === 'existing' ? String(p.reply_to) : m.guid;
@@ -298,6 +345,22 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             reply(req.id, { ok: true });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
+          }
+          // The bridge's message.edit: the text of one of our own messages replaced, recorded on the row as Messages does
+          // (issue 391). Someone else's message, or one the chat does not hold, is refused as imsg refuses it.
+          case 'message.edit': {
+            attempts += 1;
+            if (behavior.bridge !== 'ready') return noBridge(req.id);
+            if (!behavior.edit) return fail(req.id, -32601, 'Method not found');
+            if (behavior.send === 'hang') return undefined;
+            if (behavior.send === 'uncertain') return fail(req.id, -32001, 'The edit may have completed.', { retry_safe: false, disposition: 'may_have_completed', transport: 'bridge', operation: 'edit', detail: '' });
+            if (behavior.send === 'fail') return fail(req.id, -32603, 'Messages refused the edit.', { retry_safe: true, disposition: 'not_started', transport: 'bridge', operation: 'edit', detail: '' });
+            const target = messages.find((m) => (m.guid === p.message_guid || m.id === p.message_id) && m.chat_id === p.chat_id && !m.is_reaction);
+            if (!target) return fail(req.id, -32602, 'unknown message_guid');
+            if (!target.is_from_me) return fail(req.id, -32602, 'only your own message can be edited');
+            if (typeof p.text !== 'string' || !p.text.trim()) return fail(req.id, -32602, 'text is required');
+            editRow(target, p.text);
+            return reply(req.id, { ok: true });
           }
           default:
             return fail(req.id, -32601, 'Method not found');

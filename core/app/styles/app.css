@@ -172,6 +172,8 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble-row.mine .reactions { right: auto; left: 0; transform: translate(-50%, -50%); }
 .reaction { background: none; border: 0; padding: 0; color: var(--color-fg-muted); }
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+/* A message changed after it was sent says so under its bubble, quietly, on its own side (issue 391). */
+.edited-mark { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
 /* A message's actions (issues 138 and 169). A long press with a finger, a long click with the mouse or a right click
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */

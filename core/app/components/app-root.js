@@ -4,13 +4,13 @@ import { createApiClient } from '../../kit/api.js';
 import { press, respond } from '../../kit/press.js';
 import { revealField } from '../../kit/scroll.js';
 import {
-  orderChats, applyMessageToChats, chatTitle, emptyFilters, SORT_ORDERS, SORT_LABELS, normalizeSort,
+  orderChats, applyMessageToChats, applyEditToChats, chatTitle, emptyFilters, SORT_ORDERS, SORT_LABELS, normalizeSort,
   SEARCH_MODES, SEARCH_MODE_LABELS, addTerm, removeTerm, setTermMode,
   sortChats, filterChats, setAllChecked, allChecked, checkedCount,
   hideChats, forgetChats, groupAddresses, upsertChat, parseMessagingLink, linkTarget,
   requestDelete, resolveDelete,
 } from '../rules/chats.js';
-import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
+import { mergeMessages, applyReaction, reactionUnsupported, applyEdit } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
 import { platformOf, foldReactions } from '../rules/platform.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
@@ -732,6 +732,12 @@ class AppRoot extends KitElement {
       }
     } else if (name === 'reaction') {
       if (data.chatId === this.openChatId) this.messages = applyReaction(this.messages, data);
+    } else if (name === 'message.edited') {
+      // A message edited on any device, this one included, replaces its words in the open conversation and in the
+      // chat's preview, marked Edited (issue 391); a reload reads the same from the server.
+      const m = data.message;
+      if (m.chatId === this.openChatId) this.messages = applyEdit(this.messages, m);
+      this.chats = applyEditToChats(this.chats, m);
     } else if (name === 'chat.changed') {
       // A conversation started, a group renamed or its people changed, on any device (issue 326).
       this.chats = upsertChat(this.chats, data);
@@ -922,6 +928,32 @@ class AppRoot extends KitElement {
       return false;
     } finally {
       this.reacting = null;
+    }
+  }
+
+  // Edit one of our own messages (issue 391). The new words show at once on success, and the event stream's copy lands on
+  // the same message; a refusal or an uncertain outcome is said under the message, and the words stay as they were.
+  async edit({ messageId, text }) {
+    const chatId = this.openChatId;
+    if (!chatId || !this.client) return false;
+    this.messageNote = null;
+    try {
+      const r = await this.client.edit(chatId, messageId, text);
+      if (chatId !== this.openChatId) return r.status !== 'uncertain';
+      if (r.status === 'uncertain') {
+        this.messageNote = { id: messageId, text: 'The edit may not have been made.' };
+        return false;
+      }
+      const target = (this.messages || []).find((x) => x.id === messageId);
+      if (target) {
+        const edited = { ...target, text: r.text };
+        this.messages = applyEdit(this.messages, edited);
+        this.chats = applyEditToChats(this.chats, edited);
+      }
+      return true;
+    } catch (e) {
+      if (chatId === this.openChatId) this.messageNote = { id: messageId, text: e.code === 'sending_off' ? 'Sending is switched off on the server.' : this.describe(e) };
+      return false;
     }
   }
 
@@ -1633,7 +1665,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .canEdit=${Boolean(this.info?.engine?.edit)} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @edit=${(e) => respond(e, this.edit(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<header class="conv-head conv-head--empty">${this.emptyControls()}</header><div class="empty">${EMPTY_PANE}</div>`;
   }
 
