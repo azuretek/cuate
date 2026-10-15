@@ -20,10 +20,33 @@ const iso = (s) => {
 };
 const stripTarget = (g) => String(g).replace(/^(?:p:\d+\/|bp:)/, '');
 
+// A machine identifier is not a name (issues 80 and 388). Messages keys a group by `chat<digits>` on older chats and by a
+// long hex string or a GUID on newer ones, and an unnamed group reaches us with that key where its name would be. Any of
+// those shapes, or the chat's own identifier or GUID tail, reads as no name, so the people in the group show instead.
+const MACHINE_NAME = /^(?:chat[0-9]+|[0-9a-f]{24,40}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const guidTail = (g) => String(g || '').split(';').pop();
+
+export function isMachineName(name, chat = {}) {
+  const n = String(name || '').trim();
+  if (!n) return false;
+  if (MACHINE_NAME.test(n)) return true;
+  const own = [chat.identifier, guidTail(chat.guid)].map((v) => String(v || '').trim()).filter(Boolean);
+  return own.includes(n);
+}
+
+// A group's name is only the one someone gave it: with no display name the server sends none, rather than the engine's
+// fallback, which is the group's identifier. A one to one chat still falls back to its address, which is a real name.
+function chatName(c) {
+  const name = c.is_group
+    ? String(c.display_name || c.contact_name || '').trim()
+    : String(c.display_name || c.contact_name || c.name || c.identifier || '').trim();
+  return c.is_group && isMachineName(name, c) ? '' : name;
+}
+
 export function mapChat(c) {
   return {
     id: String(c.id),
-    name: String(c.display_name || c.contact_name || c.name || c.identifier || '').trim(),
+    name: chatName(c),
     isGroup: Boolean(c.is_group),
     service: c.service ? String(c.service) : 'iMessage',
     participants: Array.isArray(c.participants) ? c.participants.map(String) : [],
