@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { sanitizeText, sanitizeState, smokeStateExpression, smokeTraceInstaller, retainSmokeFailure, TRACE_LIMIT } from '../src/smoke-failure.js';
+import { sanitizeText, sanitizeState, smokeStateExpression, smokeTraceInstaller, retainSmokeFailure, TRACE_LIMIT, drawerTraceInstaller, listClosedBy, surfaceLeftBy, DRAWER_TRACE_LIMIT } from '../src/smoke-failure.js';
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'smoke-failure-'));
 
@@ -88,6 +88,94 @@ test('the sheet trace is bounded', () => {
   assert.equal(p.window.__smokeTrace.length, TRACE_LIMIT);
   assert.equal(p.window.__smokeTrace.at(-1).anim, 'a' + (TRACE_LIMIT * 3 - 1));
   assert.match(smokeStateExpression(), /__smokeTrace/);
+});
+
+// An app-root stand-in whose drawer properties are accessors on its class, as the app's reactive properties are, so
+// the trace wraps them the way it wraps the real element.
+function fakeRoot() {
+  class Root {
+    constructor() { this.held = { listOpen: true, view: 'messages', sheetLeaving: false }; this.writes = 0; }
+    get listOpen() { return this.held.listOpen; }
+    set listOpen(v) { this.writes += 1; this.held.listOpen = v; }
+    get view() { return this.held.view; }
+    set view(v) { this.writes += 1; this.held.view = v; }
+    get sheetLeaving() { return this.held.sheetLeaving; }
+    set sheetLeaving(v) { this.writes += 1; this.held.sheetLeaving = v; }
+    closeDrawer() { this.listOpen = false; }
+  }
+  const root = new Root();
+  const window = {};
+  const document = { visibilityState: 'visible', querySelector: (sel) => (sel === 'app-root' ? root : null) };
+  const page = new Function('window', 'document', 'performance', 'return ' + drawerTraceInstaller());
+  const run = () => page(window, document, { now: () => 42.4 });
+  return { root, window, document, run };
+}
+
+test('the drawer trace names the step, the frames and the page visibility of each change (issue 380)', () => {
+  const p = fakeRoot();
+  assert.equal(p.run(), true);
+  p.window.__smokeStep = 'switch';
+  p.root.closeDrawer();
+  p.root.listOpen = false; // no change, so nothing recorded
+  p.window.__smokeStep = 'sheet';
+  p.root.view = 'settings';
+  p.document.visibilityState = 'hidden';
+  p.root.sheetLeaving = true;
+  // Every write still reaches the app's own setter, and the value reads back through it.
+  assert.equal(p.root.writes, 4);
+  assert.equal(p.root.view, 'settings');
+  assert.deepEqual(p.root.__drawerTrace.map((x) => [x.prop, x.to, x.step, x.vis, x.t]), [
+    ['listOpen', false, 'switch', 'visible', 42],
+    ['view', 'settings', 'sheet', 'visible', 42],
+    ['sheetLeaving', true, 'sheet', 'hidden', 42],
+  ]);
+  assert.match(p.root.__drawerTrace[0].at, /closeDrawer/);
+  // A property the element does not have (aboutLeaving here) is skipped, not invented.
+  assert.equal(Object.hasOwn(p.root, 'aboutLeaving'), false);
+  // Installing again keeps the one trace rather than wrapping the wrapper.
+  assert.equal(p.run(), true);
+  p.root.listOpen = true;
+  assert.equal(p.root.__drawerTrace.length, 4);
+  assert.equal(p.root.writes, 5);
+});
+
+test('the drawer trace is bounded, and a page with no app-root answers false', () => {
+  const p = fakeRoot();
+  p.run();
+  for (let i = 0; i < DRAWER_TRACE_LIMIT * 3; i += 1) { p.window.__smokeStep = 's' + i; p.root.listOpen = i % 2 === 1; }
+  assert.equal(p.root.__drawerTrace.length, DRAWER_TRACE_LIMIT);
+  assert.equal(p.root.__drawerTrace.at(-1).step, 's' + (DRAWER_TRACE_LIMIT * 3 - 1));
+  const none = new Function('window', 'document', 'performance', 'return ' + drawerTraceInstaller());
+  assert.equal(none({}, { querySelector: () => null }, { now: () => 0 }), false);
+});
+
+test('the write that left the list closed is the step that found it open and left it closed', () => {
+  const list = (to, step, at) => ({ prop: 'listOpen', to, step, at });
+  const closed = list(false, 'switch', 'open');
+  assert.equal(listClosedBy([list(true, 'boot'), { prop: 'view', to: 'settings', step: 'x' }, closed], false), closed);
+  // A later step that opens the list, closes it and puts back the closed list it found is a faithful restore: the step
+  // named is the earlier one that closed it, not the restore.
+  const late = list(false, 'switch', 'open');
+  const trace = [list(false, 'switch', 'open'), list(true, 'switch', 'restore'), late, list(true, 'notices', 'pane'), list(false, 'notices', 'closeDrawer')];
+  assert.equal(listClosedBy(trace, false), late);
+  // A step that leaves it closed after a step that put it back open is the one named.
+  const pin = list(false, 'pin', 'closeDrawer');
+  assert.equal(listClosedBy([closed, list(true, 'switch', 'restore'), pin], false), pin);
+  assert.equal(listClosedBy([closed], true), null);
+  assert.equal(listClosedBy([closed, list(true, 'pin')], false), null);
+  assert.equal(listClosedBy([], false), null);
+  assert.equal(listClosedBy(null, false), null);
+});
+
+test('a surface left over the conversations is named by its last change, only while it is still that way', () => {
+  const up = { prop: 'view', to: 'settings', step: 'sheet' };
+  const leaving = { prop: 'sheetLeaving', to: true, step: 'phone' };
+  const trace = [{ prop: 'view', to: 'messages', step: 'boot' }, up, leaving];
+  assert.equal(surfaceLeftBy(trace, 'view', 'settings'), up);
+  assert.equal(surfaceLeftBy(trace, 'sheetLeaving', true), leaving);
+  assert.equal(surfaceLeftBy(trace, 'view', 'about'), null);
+  assert.equal(surfaceLeftBy([...trace, { prop: 'sheetLeaving', to: false, step: 'phone' }], 'sheetLeaving', true), null);
+  assert.equal(surfaceLeftBy(null, 'view', 'settings'), null);
 });
 
 test('retainSmokeFailure records what the shell knows about the window, and survives a shell that throws', async () => {

@@ -22,7 +22,7 @@ import { renderIcon } from '../../core/app/rules/icon.js';
 import { fixedPalette, themeMatch } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
-import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
+import { retainSmokeFailure, captureRenderer, smokeTraceInstaller, drawerTraceInstaller, listClosedBy, surfaceLeftBy, sanitizeText } from './smoke-failure.js';
 import { runRegionProbe } from './region-probe.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -363,6 +363,12 @@ async function runSmoke(w) {
   report.freshStart = fresh.open === null && fresh.selecting === null && fresh.selected === 0 && !fresh.conversation && /^Choose a conversation/.test(fresh.empty || '') && fresh.reads.length === 0 && fresh.unread > 0;
   if (!report.freshStart) console.error('fresh start: ' + JSON.stringify(fresh));
   wc.session.webRequest.onCompleted(null);
+  // Every change of what decides the phone's drawer (the list, the view, a sheet's departure) is recorded from here on
+  // with the step in force (issue 380), so a check that finds the drawer shut can name the step that shut it rather than
+  // only the check that noticed.
+  const smokeStep = (name) => js('(() => { window.__smokeStep = ' + JSON.stringify(name) + '; return true; })()');
+  await js(drawerTraceInstaller());
+  await smokeStep('boot');
   // No window bar: the app's surfaces reach the top edge and the top strip drags. The platform's arrangement is core's
   // own rules, so the smoke reads the DOM back and holds it to that answer: macOS keeps its traffic lights and leaves
   // room for them, while Windows and Linux draw min, max, close at the right of the contact header, and at the right of
@@ -1021,6 +1027,7 @@ async function runSmoke(w) {
   await both('14e-emoji-reaction');
   // A phone's width is emulated, as the phone checks below do, since the window has a minimum width. The conversation is
   // the pane there, and the drawer is left as it was found, since a later check opens it.
+  await smokeStep('emoji reaction at phone width');
   const emojiListOpen = await js("document.querySelector('app-root').listOpen");
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
@@ -1227,6 +1234,7 @@ async function runSmoke(w) {
   await both('16e-fixture-thread');
   await js("document.querySelector('.thread-view .close-button').click()");
   await waitFor("!document.querySelector('.thread-view')", 5000);
+  await smokeStep('marks at phone width');
   const marksListOpen = await js("document.querySelector('app-root').listOpen");
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
@@ -1595,6 +1603,7 @@ async function runSmoke(w) {
   const mediaSave = smokeSaves[0] || null;
   // The media menu and the viewer at a phone's width, in both schemes. The list's own open state is put back, so the
   // phone section below finds the drawer as it left it.
+  await smokeStep('media at phone width');
   const listOpenBefore = await js("document.querySelector('app-root').listOpen");
   await js("(() => { const r = document.querySelector('app-root'); if (r.listOpen) r.closeDrawer(); return true; })()");
   await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
@@ -2064,6 +2073,7 @@ async function runSmoke(w) {
   w.setSize(1000, 560);
   // The switch check clicks chats on a desktop, which closes the list drawer (open with show). Put it back as it was,
   // since a later check reads an open drawer on a phone; the same way the marks and emoji sections above restore it.
+  await smokeStep('switch place');
   const switchListWasOpen = await js("document.querySelector('app-root').listOpen");
   await js("(() => { const root = document.querySelector('app-root'); root.listOpen = true; root.view = 'messages'; return true; })()");
   await pause(400);
@@ -2117,6 +2127,7 @@ async function runSmoke(w) {
   const skinBefore = ((await (await fetch(pinSrv + '/api/v1/settings', { headers: pinAuth })).json()).values || {})['appearance.skin'] || 'system';
   const putSkin = (skin) => fetch(pinSrv + '/api/v1/settings', { method: 'PUT', headers: { ...pinAuth, 'content-type': 'application/json' }, body: JSON.stringify({ values: { 'appearance.skin': skin } }) });
   const pinMinimum = w.getMinimumSize();
+  await smokeStep('pinned header');
   const pinListWasOpen = await js("document.querySelector('app-root').listOpen");
   const pinned = [];
   for (const [label, width, height] of [['desktop', 1100, 720], ['phone', 390, 760]]) {
@@ -2539,6 +2550,7 @@ async function runSmoke(w) {
   // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
   // leaves that conversation open with that message in view and focused, and never marked (issue 368): no ring on the
   // row or its bubble, and nothing animating it.
+  await smokeStep('notice opens');
   const pressFrom = await js("document.querySelector('app-root').openChatId");
   // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
   // in force (Settings, for the steps that follow) is put back once the press is checked.
@@ -2584,6 +2596,7 @@ async function runSmoke(w) {
     report.settingsBack = back;
   } else { report.settingsBack = true; }
 
+  await smokeStep('updates');
   // The update banner runs the whole flow in the app: an available state offers the download, the button's action
   // calls the bridge command it says it does, the download shows its progress, ready offers the restart, and a failure
   // says so. The shell records every bridge command the page calls, so the assertion reads the command actually sent.
@@ -2725,6 +2738,7 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   await pause(200);
 
+  await smokeStep('sheet');
   // The sheet's shape: the whole top strip is the back control, and the ways back are the strip, Escape and a press
   // on the backdrop. The hit area is read with elementFromPoint, so it is the real click target at the strip's own
   // corners rather than the label alone. A press INSIDE the card, and a drag that starts inside and is released over
@@ -2808,7 +2822,9 @@ async function runSmoke(w) {
   report.sheetDragKeeps = await sheetVisible();
   await pressSheet('backdrop', 'backdrop');
   await waitFor("!document.querySelector('.sheet')", 10000);
+  await smokeStep('app notices');
   await proveAppNotices();
+  await smokeStep('sheet');
   report.sheetBackdropReturns = !(await sheetVisible());
 
   // Escape is the keyboard's own way back, and the strip names the key that does it.
@@ -2827,6 +2843,7 @@ async function runSmoke(w) {
   const narrowSettings = await sideways();
   report.sheetWidthSettings = narrowSettings.doc <= narrowSettings.inner && narrowSettings.body <= narrowSettings.inner;
 
+  await smokeStep('phone settings and about');
   // Issue 167: on a phone Settings is a page that fills the screen, not a card, with the same tabs and every setting the
   // desktop offers; issue 168: its way back to the chats list is the chats icon, labelled with where it goes.
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
@@ -3009,6 +3026,7 @@ async function runSmoke(w) {
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
   report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.every((k) => aboutOrder.includes(k)) && aboutSeen.keys.join('|') === aboutOrder.filter((k) => aboutSeen.keys.includes(k)).join('|') && !aboutSeen.unknown && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
+  await smokeStep('sheet drag');
   // A drag on the sheet's header, made with the real pointer (issue 338): a short, slow one springs the card back into
   // place and leaves it open; one past a quarter of the card's height lets it go.
   const headDrag = async (fraction) => {
@@ -3034,6 +3052,7 @@ async function runSmoke(w) {
   await js("document.querySelector('app-settings [data-close=sheet]').click()");
   await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
 
+  await smokeStep('phone');
   // The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
   // left, the sibling's slide menu mirrored, with a scrim behind it and a back control returning. Checked at three
   // phone widths so a hidden right edge fails rather than ships, and the composer's field is checked for iOS's
@@ -3111,6 +3130,32 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   report.sendStates = ['light', 'dark'].every((s) => { const v = sendStates[s]; return Boolean(v.rest) && v.rest !== v.hover && v.hover !== v.press && v.rest !== v.press; });
   if (!report.sendStates) console.error('send states: ' + JSON.stringify(sendStates));
+  // The drawer check sets up the state it measures (issue 380). The drawer shows on the conversations surface with the
+  // list open, and the page draws the conversation instead while a sheet is up or still leaving, so the check closes a
+  // sheet still up, waits out a departure and opens the list itself rather than assuming what the steps before it left.
+  // A departure ends on its animation or at its deadline; a page that draws no frames and has its timers held back can
+  // run past both, so after a bounded wait the check ends it the way its deadline would. Whatever it found shut is named
+  // with the step that shut it, from the drawer trace, together with the page's visibility and the sheet's own events.
+  await smokeStep('phone drawer');
+  const drawerState = "(() => { const root = document.querySelector('app-root'); return { open: Boolean(root.listOpen), view: root.view, sheetLeaving: Boolean(root.sheetLeaving), aboutLeaving: Boolean(root.aboutLeaving), vis: document.visibilityState, trace: root.__drawerTrace || [], sheet: (window.__smokeTrace || []).slice(-8) }; })()";
+  const drawerShutBy = (s) => ({
+    list: listClosedBy(s.trace, s.open),
+    view: s.view === 'messages' ? null : surfaceLeftBy(s.trace, 'view', s.view),
+    sheetLeaving: s.sheetLeaving ? surfaceLeftBy(s.trace, 'sheetLeaving', true) : null,
+    aboutLeaving: s.aboutLeaving ? surfaceLeftBy(s.trace, 'aboutLeaving', true) : null,
+  });
+  const describeDrawer = (s) => sanitizeText(JSON.stringify({ open: s.open, view: s.view, sheetLeaving: s.sheetLeaving, aboutLeaving: s.aboutLeaving, vis: s.vis, shutBy: drawerShutBy(s), recent: s.trace.slice(-8).map((x) => x.step + ': ' + x.prop + ' ' + x.to), sheet: s.sheet }));
+  const drawerReady = (s) => s.open && s.view === 'messages' && !s.sheetLeaving && !s.aboutLeaving;
+  const drawerFound = await js(drawerState);
+  if (!drawerReady(drawerFound)) console.log('phone drawer: found shut, set up by the check: ' + describeDrawer(drawerFound));
+  if (drawerFound.view !== 'messages' && !drawerFound.sheetLeaving && !drawerFound.aboutLeaving) await js("(() => { document.querySelector('app-root').closeView(); return true; })()");
+  const surfaceUp = "(() => { const r = document.querySelector('app-root'); return r.view === 'messages' && !r.sheetLeaving && !r.aboutLeaving; })()";
+  if (!(await waitFor(surfaceUp, 10000).then(() => true, () => false))) {
+    console.log('phone drawer: a sheet departure ran past 10s, ended as its deadline would: ' + describeDrawer(await js(drawerState)));
+    await js("(() => { const r = document.querySelector('app-root'); if (r.aboutLeaving) r.finishAboutLeave(); if (r.sheetLeaving) r.finishSheetLeave(); return true; })()");
+    await waitFor(surfaceUp, 5000).catch(() => {});
+  }
+  await js("(() => { document.querySelector('app-root').listOpen = true; return true; })()");
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
   await waitFor('window.innerWidth === 375', 5000);
   // The open drawer is read until it has settled, as the closed one is below. One read straight after the resize failed
@@ -3121,7 +3166,10 @@ async function runSmoke(w) {
   let drawer = await drawerParts();
   for (const t0 = Date.now(); !drawerOpen(drawer) && Date.now() - t0 < 3000; drawer = await drawerParts()) await pause(100);
   report.phoneDrawer = drawerOpen(drawer);
-  if (!report.phoneDrawer) console.error('phone drawer: ' + JSON.stringify(drawer));
+  if (!report.phoneDrawer) {
+    // Set up just above, so a drawer shut here was shut since: the report names what shut it and the step it ran in.
+    console.error('phone drawer: ' + JSON.stringify(drawer) + ' ' + describeDrawer(await js(drawerState)));
+  }
   // The conversation list scrolls to the screen's bottom edge (Abi, 2026-10-12): with a home-indicator inset, the
   // list's scroller reaches the bottom of the drawer, and scrolled to its end the last row still clears the inset.
   await js("(() => { document.documentElement.style.setProperty('--shell-inset-bottom', '34px'); return true; })()");
