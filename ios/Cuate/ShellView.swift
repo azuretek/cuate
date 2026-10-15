@@ -70,6 +70,14 @@ struct ShellWebView: UIViewRepresentable {
             let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
             controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The Live Photo fixture (issue 386), the same seam: Debug only, and its script and its synthetic motion are copied
+        // into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--live-photo-fixture"),
+           let url = Bundle.main.url(forResource: "live-photo-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
+            controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         #endif
         configuration.userContentController = controller
 
