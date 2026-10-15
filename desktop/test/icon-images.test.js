@@ -126,7 +126,7 @@ test('a desktop notification carries the app icon in force on Windows and Linux,
     assert.notDeepEqual(Buffer.from(fixed.notice.data), Buffer.from(theme.notice.data));
   }
   // macOS draws a notification with the bundle's icon and takes none from the app; rewriting the bundle breaks its
-  // signature, so the shell hands it none (docs/conventions.md).
+  // signature, so the shell hands it none (docs/CONVENTIONS.md).
   assert.equal(shellIcons({ platform: 'darwin', masters, tokens }).notice, null, 'macOS keeps the bundle icon');
   assert.equal(shellIcons({ platform: 'darwin', masters, tokens, fixed: { scheme: first.scheme, colors: first.colors } }).notice, null);
   // The shell hands that icon to every notification it raises.

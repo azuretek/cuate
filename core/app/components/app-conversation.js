@@ -144,7 +144,7 @@ class AppConversation extends KitElement {
     this.arrive(changed);
   }
 
-  // Motion comes from where a thing came from (issue 316, docs/conventions.md). Another conversation slides in from
+  // Motion comes from where a thing came from (issue 316, docs/CONVENTIONS.md). Another conversation slides in from
   // the side it was chosen from; a message we send rises out of the composer's field into its place; a message that
   // arrives slides up into the end of the list. A first draw and a page of older history are a place, not news, so
   // they do not move (newArrivals).

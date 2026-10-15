@@ -1,4 +1,4 @@
-// Motion comes from where a thing came from (issue 316, docs/conventions.md "Motion").
+// Motion comes from where a thing came from (issue 316, docs/CONVENTIONS.md "Motion").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';

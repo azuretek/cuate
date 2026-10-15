@@ -21,7 +21,7 @@ const KEY = { kid: 'k1', key: Buffer.alloc(32, 7).toString('base64url') };
 const WRONG_KEY = { kid: 'k1', key: Buffer.alloc(32, 9).toString('base64url') };
 const endpoint = (url, extra = {}) => ({ id: 'a', url, secrets: [SECRET], keys: [KEY], ...extra });
 
-// What a receiver does, written the way docs/server.md shows it: verify the signature over "t.body" within a window,
+// What a receiver does, written the way docs/SERVER.md shows it: verify the signature over "t.body" within a window,
 // then decrypt the JWE with its key.
 function verify(header, body, secret, { nowS = Math.floor(Date.now() / 1000), windowS = 300 } = {}) {
   const parts = Object.groupBy(String(header).split(','), (p) => p.slice(0, p.indexOf('=')));
@@ -408,11 +408,11 @@ test('every event has a placeholder shape that validates against its declared mo
   assert.throws(() => sampleData('message.nwe'), /not an event/);
 });
 
-// The receiver docs/server.md shows, taken from the page itself, so the test proves the code a reader copies.
+// The receiver docs/SERVER.md shows, taken from the page itself, so the test proves the code a reader copies.
 async function docsReceiver(dir) {
-  const md = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../docs/server.md'), 'utf8');
+  const md = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../docs/SERVER.md'), 'utf8');
   const block = /`{3}js\n(import \{ createDecipheriv[\s\S]*?export function open[\s\S]*?)`{3}/.exec(md);
-  assert.ok(block, 'docs/server.md shows a receiver');
+  assert.ok(block, 'docs/SERVER.md shows a receiver');
   const file = path.join(dir, 'receiver.mjs');
   writeFileSync(file, block[1]);
   return (await import(pathToFileURL(file).href)).open;

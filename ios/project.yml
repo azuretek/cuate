@@ -29,7 +29,7 @@ options:
   groupSortPosition: top
   generateEmptyDirectories: false
 
-# Firebase Cloud Messaging gives the phone the push token our relay sends to (issue 347, docs/push.md). Only the
+# Firebase Cloud Messaging gives the phone the push token our relay sends to (issue 347, docs/PUSH.md). Only the
 # messaging product is linked; it brings Firebase's core and installations with it.
 packages:
   Firebase:
@@ -141,7 +141,7 @@ targets:
         Debug:
           CUATE_APS_ENVIRONMENT: development
 
-  # Opens each sealed push notification with the phone's key before it is shown (issue 347, docs/push.md).
+  # Opens each sealed push notification with the phone's key before it is shown (issue 347, docs/PUSH.md).
   CuateNotify:
     type: app-extension
     platform: iOS

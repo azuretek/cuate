@@ -3,7 +3,7 @@ import FirebaseMessaging
 import Foundation
 import UIKit
 
-/// Push notifications with the app closed (issue 347, docs/push.md). The phone gets a Firebase push token for itself
+/// Push notifications with the app closed (issue 347, docs/PUSH.md). The phone gets a Firebase push token for itself
 /// and makes a 32-byte key once; the page hands both to its own server, which seals each notification with the key, so
 /// the relay, Firebase and Apple carry only bytes they cannot read. The notification service extension opens them with
 /// the same key, which is why it lives in the Keychain group the app and the extension share.
