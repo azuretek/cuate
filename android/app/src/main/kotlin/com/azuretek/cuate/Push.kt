@@ -16,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Push notifications with the app closed (issue 347, docs/push.md). The phone gets a Firebase push token and makes a
+ * Push notifications with the app closed (issue 347, docs/PUSH.md). The phone gets a Firebase push token and makes a
  * 32-byte key once; the page hands both to its own server, which seals each notification with the key, so the relay
  * and Firebase carry only bytes they cannot read. PushService opens them with the same key.
  *

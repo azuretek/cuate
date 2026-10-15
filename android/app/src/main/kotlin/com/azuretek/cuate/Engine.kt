@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
  * null engine means the app still boots with the page's own copy of the rules
  * rather than refusing to start.
  *
- * The engine was chosen by measurement rather than by preference; docs/android.md
+ * The engine was chosen by measurement rather than by preference; docs/ANDROID.md
  * records the comparison and .github/workflows/android.yml records the numbers.
  */
 class Engine private constructor(

@@ -6,7 +6,7 @@
 // is not a colour of its own: it picks the offered variant nearest the theme's accent (issue 337), switching when the
 // theme or the appearance does. The value is held by the server under appearance.appIcon
 // like any other setting, so a choice made on one device reaches every device; each shell applies it where its platform
-// can (the bridge's app.icon), and docs/features.md says where a platform cannot.
+// can (the bridge's app.icon), and docs/FEATURES.md says where a platform cannot.
 import { APP_ICONS } from './app-icons-spec.js';
 import { cssColour, colourDistance, hueDistance, chroma, SATURATED } from './icon.js';
 

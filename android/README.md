@@ -57,4 +57,4 @@ blocked, and it says which of them is missing.
 ## The engine
 
 The embedded engine and the measurement that chose it are recorded in
-[docs/android.md](../docs/android.md).
+[docs/ANDROID.md](../docs/ANDROID.md).

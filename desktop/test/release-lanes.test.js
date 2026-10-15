@@ -1,7 +1,7 @@
 // The two release lanes: a dev snapshot per shipping main push, and a stable
 // release cut only by a vX.Y.Z tag that release-please produces. One version
 // source (scripts/release/version.mjs), one publisher, one publish gate call.
-// The shape is mirrored from chela; the divergences are named in docs/release.md.
+// The shape is mirrored from chela; the divergences are named in docs/RELEASE.md.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
