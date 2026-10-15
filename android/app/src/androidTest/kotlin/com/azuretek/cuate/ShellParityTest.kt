@@ -55,6 +55,7 @@ class ShellParityTest {
             "window.close",
             "window.appearance",
             "icon.redraw",
+            "display.textScale",
         )
         assertEquals(declared, HostBridge.commandNames(context.assets))
     }

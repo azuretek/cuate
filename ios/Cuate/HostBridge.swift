@@ -129,6 +129,17 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         super.init()
         // A pressed message notice is told to the page through this bridge (issue 331).
         NoticeRouter.shared.bridge = self
+        // The system's text size follows Dynamic Type (issue 369): a change in Settings or Control Centre is told to the
+        // page at once.
+        NotificationCenter.default.addObserver(forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.emit("display.textScale", ["percent": Self.systemTextScale()])
+        }
+    }
+
+    /// The system's text size as a percentage (issue 369): Dynamic Type's body size against its default of 17 points,
+    /// so the default Large is 100 and every larger or smaller setting scales from there.
+    static func systemTextScale() -> Int {
+        Int((UIFontMetrics(forTextStyle: .body).scaledValue(for: 17) / 17 * 100).rounded())
     }
 
     /// The command names the bundled spec declares.
@@ -265,6 +276,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         // false.
         case "icon.redraw":
             settle(id: id, ok: true, value: false)
+        // The system's text size (issue 369).
+        case "display.textScale":
+            settle(id: id, ok: true, value: Self.systemTextScale())
         default:
             settle(id: id, ok: false, value: "undeclared bridge command: " + name)
         }

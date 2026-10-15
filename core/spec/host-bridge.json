@@ -23,13 +23,15 @@
     "window.toggleMaximize": { "args": {}, "returns": "boolean" },
     "window.close": { "args": {}, "returns": "boolean" },
     "window.appearance": { "args": { "scheme": "string", "background": "string" }, "returns": "boolean" },
-    "icon.redraw": { "args": { "scheme": "string", "colors": "object", "unread": "number" }, "returns": "boolean", "note": "The app icon follows the active theme (issue 189): the page sends the scheme it draws, the colour tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) as it resolved them, and the total unread count. The desktop redraws its tray image, its window icon and the Windows taskbar overlay from them and sets the count the Dock and Linux launchers draw, answering true; a phone cannot recolour its icon at runtime and answers false." }
+    "icon.redraw": { "args": { "scheme": "string", "colors": "object", "unread": "number" }, "returns": "boolean", "note": "The app icon follows the active theme (issue 189): the page sends the scheme it draws, the colour tokens the icon reads (core/app/rules/icon.js ICON_TOKENS) as it resolved them, and the total unread count. The desktop redraws its tray image, its window icon and the Windows taskbar overlay from them and sets the count the Dock and Linux launchers draw, answering true; a phone cannot recolour its icon at runtime and answers false." },
+    "display.textScale": { "args": {}, "returns": "number?", "note": "The system's text size as a percentage (issue 369): iOS Dynamic Type against its default, the Android font scale, the Windows Text size slider, the GNOME text scaling factor. A shell with no system text size an app can read (macOS) answers null, which the page reads as 100." }
   },
   "events": {
     "update.state": { "args": { "state": "string", "version": "string?", "percent": "number?", "detail": "string?", "canInstall": "boolean?", "via": "string?", "transferred": "number?", "total": "number?" }, "returns": "void", "states": ["checking", "available", "downloading", "stalled", "ready", "error", "current", "unsupported"] },
     "window.state": { "args": { "maximized": "boolean" }, "returns": "void" },
     "app.link": { "args": {}, "returns": "void", "note": "A messaging link has arrived; the page takes it with link.take. The iPhone has no event stream, so there the page asks when it is shown." },
     "notify.opened": { "args": {}, "returns": "void", "note": "A notice was pressed (issue 331): the page takes it with notify.take. The event carries nothing, so the one held press is the only answer and a page that was not listening yet still finds it." },
-    "app.open": { "args": { "screen": "string" }, "returns": "void", "screens": ["settings", "about", "updates"] }
+    "app.open": { "args": { "screen": "string" }, "returns": "void", "screens": ["settings", "about", "updates"] },
+    "display.textScale": { "args": { "percent": "number?" }, "returns": "void", "note": "Sent when the person changes the system text size while the app is open (issue 369), so the page follows at once." }
   }
 }

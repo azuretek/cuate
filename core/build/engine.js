@@ -368,10 +368,13 @@ var engine = (() => {
     swallows: () => swallows,
     swatchVars: () => swatchVars,
     swipeStep: () => swipeStep,
+    systemTextScale: () => systemTextScale,
     tapbackType: () => tapbackType,
     termsSentence: () => termsSentence,
     testFlightBanner: () => testFlightBanner,
+    textFollowsSystem: () => textFollowsSystem,
     textScale: () => textScale,
+    textScaleInForce: () => textScaleInForce,
     textScaleVars: () => textScaleVars,
     themeChoices: () => themeChoices,
     themeFonts: () => themeFonts,
@@ -3603,8 +3606,22 @@ var engine = (() => {
     const n = Number(value);
     return TEXT_SCALES.includes(n) ? n : 100;
   }
+  function systemTextScale(value) {
+    const n = Number(value);
+    if (value === null || value === void 0 || value === "" || !Number.isFinite(n) || n <= 0) return 100;
+    return Math.round(Math.min(Math.max(...TEXT_SCALES), Math.max(Math.min(...TEXT_SCALES), n)));
+  }
+  function textFollowsSystem(values = {}) {
+    const v = values || {};
+    if (Object.hasOwn(v, "appearance.textScaleSystem")) return v["appearance.textScaleSystem"] !== false;
+    return !(Object.hasOwn(v, "appearance.textScale") && textScale(v["appearance.textScale"]) !== 100);
+  }
+  function textScaleInForce(values = {}, system = null) {
+    return textFollowsSystem(values) ? systemTextScale(system) : textScale((values || {})["appearance.textScale"]);
+  }
   function textScaleVars(percent, base = {}) {
-    const p = textScale(percent);
+    const n = Number(percent);
+    const p = Number.isFinite(n) && n >= Math.min(...TEXT_SCALES) && n <= Math.max(...TEXT_SCALES) ? n : 100;
     if (p === 100) return [];
     const out = [];
     for (const name of TYPE_SIZE_VARS) {
@@ -3667,6 +3684,8 @@ var engine = (() => {
     ],
     keys: {
       "appearance.skin": { group: "appearance", label: "Appearance", type: "segmented", options: ["system", "light", "dark"], labels: { system: "System", light: "Light", dark: "Dark" }, default: "system" },
+      // Text size follows the system's by default (issue 369): each device its own. Moving the slider turns this off.
+      "appearance.textScaleSystem": { group: "appearance", label: "Match system text size", type: "toggle", default: true },
       "appearance.textScale": { group: "appearance", label: "Text size", type: "scale", options: TEXT_SCALES, default: 100 },
       // The app icon (issues 167 and 246): every colour is one family with a paper Light variant and a bright Dark one,
       // from core/spec/app-icons.json, plus Follow theme. Each is drawn as its own picture, held by the server like every
@@ -3756,6 +3775,7 @@ var engine = (() => {
     return String(option);
   }
   function settingValue(field, values) {
+    if (field.key === "appearance.textScaleSystem") return textFollowsSystem(values);
     return values && Object.hasOwn(values, field.key) ? values[field.key] : field.default;
   }
   function coerceSetting(field, raw) {

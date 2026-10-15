@@ -146,6 +146,11 @@ class HostBridge(
         return result.toString()
     }
 
+    /** The page is told the new font size when the person changes it while the app is open (issue 369). */
+    fun textScaleChanged(fontScale: Float) {
+        emit("display.textScale", JSONObject().put("percent", systemTextScale(fontScale)))
+    }
+
     /** An event the page listens for with window.bridge.on, sent from any thread. */
     fun emit(name: String, payload: JSONObject) {
         script("window.$EMIT_HOOK && window.$EMIT_HOOK(" + JSONObject.quote(name) + ", " + payload.toString() + ");")
@@ -229,6 +234,8 @@ class HostBridge(
             "window.close" -> success(false)
             // The status and navigation bars draw over the page's colours, so their icons follow the page's scheme.
             "window.appearance" -> success(appearance(args.optString("scheme") == "dark", args.optString("background")))
+            // The system's font size as a percentage (issue 369); the page scales its own type by it.
+            "display.textScale" -> success(systemTextScale(context.resources.configuration.fontScale))
             // The app icon follows the theme on the desktop (issue 189). Android cannot recolour its launcher icon at
             // runtime: the adaptive icon is the default theme's, its monochrome layer takes the launcher's own themed
             // colours, and the launcher draws the unread badge. This answers false.
@@ -437,6 +444,8 @@ class HostBridge(
             false
         }
     }
+
+    private fun systemTextScale(fontScale: Float): Int = Math.round(fontScale * 100)
 
     private fun success(value: Any): JSONObject = JSONObject().put("ok", true).put("value", value)
 
