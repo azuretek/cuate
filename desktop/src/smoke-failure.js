@@ -72,6 +72,80 @@ export function smokeTraceInstaller() {
   ].join('\n');
 }
 
+// What decides the phone's drawer, recorded as it changes (issue 380). The drawer shows when the conversations surface
+// is up (view 'messages', no sheet leaving) and listOpen is set. Many smoke steps change both and put them back, so a
+// check that finds the drawer shut used to say only that, far from the step that shut it. This records each change of
+// listOpen, view and the two sheet departures (sheetLeaving, aboutLeaving), with the smoke step in force
+// (window.__smokeStep, set by the smoke) and the first frames of the write, bounded to the last DRAWER_TRACE_LIMIT
+// changes. It wraps those properties on the one app-root element and observes: every write still reaches the app's
+// own setter unchanged. Installed by the smoke only, once the page is ready.
+export const DRAWER_TRACE_LIMIT = 40;
+export const DRAWER_PROPS = ['listOpen', 'view', 'sheetLeaving', 'aboutLeaving'];
+
+export function drawerTraceInstaller() {
+  return [
+    '(() => {',
+    '  const root = document.querySelector("app-root");',
+    '  if (!root) return false;',
+    '  if (root.__drawerTrace) return true;',
+    '  const trace = root.__drawerTrace = [];',
+    '  for (const prop of ' + JSON.stringify(DRAWER_PROPS) + ') {',
+    '    let own = null;',
+    '    for (let p = Object.getPrototypeOf(root); p && !own; p = Object.getPrototypeOf(p)) own = Object.getOwnPropertyDescriptor(p, prop);',
+    '    if (!own || !own.get || !own.set) continue;',
+    '    Object.defineProperty(root, prop, {',
+    '      configurable: true,',
+    '      enumerable: true,',
+    '      get() { return own.get.call(this); },',
+    '      set(value) {',
+    '        const was = own.get.call(this);',
+    '        own.set.call(this, value);',
+    '        const to = typeof value === "string" ? value : Boolean(value);',
+    '        if ((typeof was === "string" ? was : Boolean(was)) === to) return;',
+    '        const at = String(new Error().stack || "").split("\\n").slice(2, 5).map((line) => line.trim().replace(/^at /, "")).join(" < ");',
+    '        trace.push({ t: Math.round(performance.now()), prop, to, step: window.__smokeStep || null, vis: document.visibilityState, at });',
+    '        if (trace.length > ' + DRAWER_TRACE_LIMIT + ') trace.shift();',
+    '      },',
+    '    });',
+    '  }',
+    '  return true;',
+    '})()',
+  ].join('\n');
+}
+
+// The write that left the list closed. A step that saves the drawer, changes it and puts it back ends as it began, so
+// the last write is often a faithful restore of a list some earlier step had already closed. The listOpen changes are
+// read in order, each run under one step name as a whole, and the one named is the last step that found the list open
+// and left it closed, with its last closing write. Null when the list is open, when nothing was recorded, or when the
+// last recorded change opened it (the list was then closed by a write the trace does not see, and the report says so
+// rather than naming a step).
+export function listClosedBy(trace, open) {
+  const changes = Array.isArray(trace) ? trace.filter((x) => x.prop === 'listOpen') : [];
+  if (open || !changes.length) return null;
+  if (changes[changes.length - 1].to !== false) return null;
+  let state = !changes[0].to; // the trace holds changes only, so before its first one the list was the other way
+  let closer = null;
+  for (let i = 0; i < changes.length;) {
+    const step = changes[i].step;
+    const found = state;
+    let lastClose = null;
+    for (; i < changes.length && changes[i].step === step; i += 1) {
+      state = changes[i].to;
+      if (!state) lastClose = changes[i];
+    }
+    if (found && !state) closer = lastClose;
+  }
+  return closer || changes[changes.length - 1];
+}
+
+// The write that left a surface over the conversations: the last change of prop (view, or a sheet's departure) when its
+// value is still the one found. Null when the surface is as the drawer needs it or the trace holds no such change.
+export function surfaceLeftBy(trace, prop, value) {
+  const changes = Array.isArray(trace) ? trace.filter((x) => x.prop === prop) : [];
+  const last = changes[changes.length - 1];
+  return last && last.to === value ? last : null;
+}
+
 // What the page says about its own surface. It reads the app's state and the sheet's own animation, which
 // is what tells a sheet that is leaving from one that is stuck: an element still drawing a finite
 // animation is on its way out, while one whose animation never ended or never ran is not.
