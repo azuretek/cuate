@@ -373,6 +373,9 @@ async function runSmoke(w) {
   }
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
+  // A preview's <img> is drawn only once its attachment has been fetched (app-attachment.js load()), so the count waits
+  // for the first one, bounded, rather than reading the page once: a slow runner otherwise counts the placeholders' moment.
+  try { await waitFor("document.querySelectorAll('img.attachment-image').length > 0", 15000); } catch { /* measured below */ }
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
   // Every popover wears the shared caret (issue 217). The guard reads each open panel back from the page: it must carry
   // the popover marks and its --caret-x must be a real offset inside the panel, aimed at the control that opened it.
