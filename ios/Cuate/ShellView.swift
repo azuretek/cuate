@@ -34,6 +34,10 @@ struct ShellWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
+        // Media plays without a gesture (issue 386), the same as the Android shell's mediaPlaybackRequiresUserGesture =
+        // false: a Live Photo's motion is drawn and started after the press has waited on its file, outside the gesture,
+        // and WebKit's default refused it, which left an empty box.
+        configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.setURLSchemeHandler(BundleSchemeHandler(), forURLScheme: BundleSchemeHandler.scheme)
 
         let controller = WKUserContentController()

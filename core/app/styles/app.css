@@ -893,6 +893,9 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* A video is drawn like a picture, with the viewer's own rounded edge and shadow; its first frame stands in for the
    picture until it plays. */
 .viewer video.viewer-image { background: var(--color-bg-sunken); }
+/* A Live Photo's motion (issue 386) takes the still's own box while it loads and plays, the still as its poster, so the
+   stage keeps the picture's size and never shows the empty box a video draws before it has a frame. */
+.viewer video.viewer-motion { width: calc(var(--motion-w) * 1px); height: calc(var(--motion-h) * 1px); }
 /* A document in the viewer (issue 374) fills the stage and scrolls in it, under the X and over the bar, which float
    above it as they do over a picture. A PDF's pages are a column of paper, centred while they fit and scrolled across
    once a zoom makes them wider than the view; a finger scrolls them and two pinch them, so the stage's own refusal of
