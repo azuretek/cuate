@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
-import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
+import { PHOTO_SCAN_ROWS, UNREAD_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 
 // The fixture PDF's pages: each a page of the given size in points with one square filled in the given colour (0 to 1
 // per channel). Synthetic: drawn here, no text and no fonts.
@@ -117,6 +117,16 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       broadcast(m);
       return m;
     },
+    // A row Messages writes on its own, with no text and nothing to show: a group membership change, a rename or
+    // another group action. imsg emits it like a message and its own unread count carries it, while Messages never
+    // counts it (issue 389), so a test can prove our recount ignores it.
+    incomingEvent(chatId, fields = {}) {
+      const chat = chats.find((c) => c.id === chatId);
+      const m = add({ chat_id: chatId, is_from_me: false, sender: (chat && chat.participants[0]) || '', text: '', is_read: false, attachments: [], ...fields });
+      chat.unread_count = (chat.unread_count || 0) + 1;
+      broadcast(m);
+      return m;
+    },
     // Someone else's reaction: a standard kind, or any emoji, added or taken off. The target's own reactions change as
     // they would in chat.db (one per person), and the row streams in imsg's shape, so the adapter maps what imsg sends.
     react(chatId, targetGuid, kindOrEmoji, sender, { remove = false } = {}) {
@@ -180,7 +190,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             ms = ms.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id).slice(0, p.limit || 50);
             // The live message lands in the first conversation a client opens, never in a group the engine reads for its
             // photo (issue 341), which is no conversation anyone opened.
-            if (liveText && !liveSent && (p.limit || 50) > 5 && p.limit !== PHOTO_SCAN_ROWS) {
+            if (liveText && !liveSent && (p.limit || 50) > 5 && p.limit !== PHOTO_SCAN_ROWS && p.limit !== UNREAD_SCAN_ROWS) {
               liveSent = true;
               setTimeout(() => world.incoming(p.chat_id, liveText), liveDelayMs).unref();
             }

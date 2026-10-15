@@ -14,7 +14,7 @@ import { pressOutside } from '../kit/rules/dismiss.js';
 import { slideProgress, slideConfirms, slideRelease, slideKey, SLIDE_CONFIRM_AT } from '../app/rules/slide.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
 import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars, themeFonts, contrastRatio, textScaleInForce, textFollowsSystem, systemTextScale } from '../app/rules/theme.js';
-import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, NO_CHAT_ID, countUnreadMessages, countsAsUnreadMessage, GROUP_PHOTO_NAME } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
 import { formatTraceparent, parseTraceparent, newTraceparent } from '../kit/rules/trace.js';
@@ -1061,4 +1061,22 @@ test('the system text size is a bridge command every shell answers and an event 
   assert.match(src('android/app/src/main/AndroidManifest.xml'), /configChanges="[^"]*fontScale/, 'a font size change keeps the page, which is told');
   assert.match(src(android + 'MainActivity.kt'), /textScaleChanged\(newConfig\.fontScale\)/);
   assert.match(src('core/app/components/app-root.js'), /bridge\.on\('display\.textScale'/, 'the page listens rather than polls');
+});
+
+// A chat's unread counts only ordinary messages (issue 389). Messages writes a group membership change, a rename or
+// another group action as a row with no text and nothing to show; imsg emits it like any row and its own unread count
+// carries it forever, while Messages itself never counts it. The recount keeps only the ordinary unread messages, so
+// such a chat reads as 0 while a genuine unread message still counts.
+test('a chat counts only its ordinary unread messages, never an engine event row (issue 389)', () => {
+  const event = { id: 1, chat_id: 7, guid: 'E-1', is_from_me: false, sender: '+15555550100', text: '', created_at: '2021-01-01T00:00:00Z', is_read: false, attachments: [] };
+  const real = { id: 2, chat_id: 7, guid: 'M-2', is_from_me: false, sender: '+15555550100', text: 'Are we still on?', created_at: '2026-01-01T00:00:00Z', is_read: false, attachments: [] };
+  assert.equal(countUnreadMessages([event]), 0, 'an event row alone is not an unread message');
+  assert.equal(countUnreadMessages([event, real]), 1, 'a genuine unread message still counts');
+  assert.equal(countUnreadMessages([real, { ...real, is_read: true }, { ...real, is_from_me: true }, { ...real, is_reaction: true }]), 1, 'read, outgoing and reaction rows never count');
+  // A group photo change is an event row that carries an attachment; it is not an unread message either.
+  const photo = { id: 3, chat_id: 7, guid: 'P-3', is_from_me: false, text: '', created_at: '2026-01-01T00:00:00Z', is_read: false, attachments: [{ transfer_name: GROUP_PHOTO_NAME, mime_type: '', total_bytes: 1, is_sticker: false, missing: false, original_path: '/x/GroupPhotoImage' }] };
+  assert.equal(countsAsUnreadMessage(photo), false, 'a group photo change is an event, not an unread message');
+  // A message whose only content is a link preview or an attachment is still an ordinary message.
+  assert.equal(countsAsUnreadMessage({ ...real, text: '', balloon_bundle_id: 'com.apple.messages.URLBalloonProvider' }), true);
+  assert.equal(countsAsUnreadMessage({ ...real, text: '', attachments: [{ transfer_name: 'a.png', mime_type: 'image/png' }] }), true);
 });
