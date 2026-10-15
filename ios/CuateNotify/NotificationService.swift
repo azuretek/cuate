@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import UserNotifications
 
-/// Opens a sealed push notification (issue 347, docs/push.md). The server sealed it with AES-256-GCM under the key this
+/// Opens a sealed push notification (issue 347, docs/PUSH.md). The server sealed it with AES-256-GCM under the key this
 /// phone made, as base64url of the 12-byte nonce, the ciphertext and the 16-byte tag, which is CryptoKit's combined
 /// form. The key is read from the Keychain group the app shares with this extension. What arrives readable is only a
 /// placeholder; a notification that cannot be opened is shown as that placeholder rather than dropped.

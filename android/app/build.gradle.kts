@@ -37,7 +37,7 @@ android {
         buildConfig = true
     }
 
-    // Firebase's client config carries an API key, so it is never committed (issue 347, docs/push.md): the release
+    // Firebase's client config carries an API key, so it is never committed (issue 347, docs/PUSH.md): the release
     // writes google-services.json from a secret, and the four values push needs become build settings here. A build
     // without the file runs without push.
     val firebase = firebaseClient()
@@ -125,7 +125,7 @@ fun firebaseClient(): Map<String, String> {
 }
 
 dependencies {
-    // Firebase Cloud Messaging gives the phone the push token our relay sends to (issue 347, docs/push.md).
+    // Firebase Cloud Messaging gives the phone the push token our relay sends to (issue 347, docs/PUSH.md).
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
     // The web view host and its asset loader.
@@ -133,7 +133,7 @@ dependencies {
     // FileProvider, so a saved document reaches the system's share sheet (issue 219).
     implementation("androidx.core:core:1.13.1")
     // The embedded engine for the rules a shell needs with no page on screen.
-    // docs/android.md records the measurement that chose it.
+    // docs/ANDROID.md records the measurement that chose it.
     implementation("androidx.javascriptengine:javascriptengine:1.1.1")
 
     testImplementation("junit:junit:4.13.2")

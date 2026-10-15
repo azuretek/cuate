@@ -26,7 +26,7 @@ test('non-shipped paths never release, unknown and shipped paths do', () => {
 });
 test('a server-only change releases', () => {
   for (const file of ['server/src/main.js', 'server/package.json', 'server/test/cli.test.js']) assert.equal(classify([file]).release, true, file);
-  assert.deepEqual(classify(['docs/server.md', 'server/src/send.js']).shipped, ['server/src/send.js']);
+  assert.deepEqual(classify(['docs/SERVER.md', 'server/src/send.js']).shipped, ['server/src/send.js']);
 });
 test('diff includes deletions and both sides of renames, dispatch uses release range', () => {
   const calls = [];

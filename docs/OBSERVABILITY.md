@@ -1,7 +1,7 @@
 # Observability
 
 What Cuate measures, where the numbers can be read, and what it deliberately does not measure. The design rules
-live in [design.md](design.md); the household standard is the Software standards page, sections Observability and
+live in [DESIGN.md](DESIGN.md); the household standard is the Software standards page, sections Observability and
 Configuration. The logging side is owned by the [logging skill](https://github.com/azuretek/cuate) shape this repo
 already follows: one JSON object per line, every event and field declared in `core/spec/log-events.json`.
 

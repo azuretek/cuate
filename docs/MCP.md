@@ -21,7 +21,7 @@ and its route's scope disagree.
 
 The events the spec names are the webhook payloads. The OpenAPI document lists each under `webhooks` with the model
 it carries, and the tool catalogue carries the same models, so a receiver and a tool read one shape. A hook delivers
-that model encrypted, as the `jwe` field of a signed envelope; [the server guide](server.md#hooks) has the format.
+that model encrypted, as the `jwe` field of a signed envelope; [the server guide](SERVER.md#hooks) has the format.
 
 ## What it deliberately does not expose
 

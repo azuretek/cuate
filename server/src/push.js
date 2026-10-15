@@ -1,11 +1,11 @@
-// Push notifications with the app closed (issue 347, docs/push.md). A phone registers its push token and a key it made;
+// Push notifications with the app closed (issue 347, docs/PUSH.md). A phone registers its push token and a key it made;
 // the server registers the token with the relay, which answers a ticket bound to it. For each new message the server
 // seals the notification with that phone's key (AES-256-GCM) and hands the relay only the token, the ticket and the
 // sealed bytes, so neither the relay nor Firebase, Apple or Google can read who wrote or what they said.
 import { createCipheriv, randomBytes } from 'node:crypto';
 import { naming } from './paths.js';
 
-/** Our relay, which every release build uses unless the server's config names another (docs/push.md). Its Firebase
+/** Our relay, which every release build uses unless the server's config names another (docs/PUSH.md). Its Firebase
  * project is named for the product, so the address is built from naming.json rather than spelled here. */
 export const PUSH_RELAY = 'https://us-central1-' + naming.slug + '-push.cloudfunctions.net/relay';
 export const PLATFORMS = ['ios', 'android'];
