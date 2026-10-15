@@ -21,14 +21,27 @@ export const CONTACTS_JXA = [
   'const status = Number($.CNContactStore.authorizationStatusForEntityType($.CNEntityTypeContacts));',
   'if (status !== 3) { JSON.stringify({ authorized: false, status: status }); }',
   'else {',
-  '  const keys = [$.CNContactGivenNameKey, $.CNContactMiddleNameKey, $.CNContactFamilyNameKey,',
+  '  const keys = [$.CNContactIdentifierKey, $.CNContactGivenNameKey, $.CNContactMiddleNameKey, $.CNContactFamilyNameKey,',
   '    $.CNContactNicknameKey, $.CNContactOrganizationNameKey, $.CNContactPhoneNumbersKey,',
   '    $.CNContactEmailAddressesKey, $.CNContactThumbnailImageDataKey];',
-  '  const all = store.unifiedContactsMatchingPredicateKeysToFetchError(',
-  '    $.CNContact.predicateForContactsWithIdentifiers([]), keys, Ref());',
+  '  const err = Ref();',
+  '  const containers = store.containersMatchingPredicateError(null, err);',
+  '  if (!containers) throw new Error("Contacts containers could not be read");',
+  '  const all = [];',
+  '  const seen = new Set();',
+  '  for (let n = 0; n < Number(containers.count); n += 1) {',
+  '    const pred = $.CNContact.predicateForContactsInContainerWithIdentifier(containers.objectAtIndex(n).identifier);',
+  '    const rows = store.unifiedContactsMatchingPredicateKeysToFetchError(pred, keys, err);',
+  '    if (!rows) throw new Error("Contacts could not be read");',
+  '    for (let j = 0; j < Number(rows.count); j += 1) {',
+  '      const row = rows.objectAtIndex(j);',
+  '      const id = String(ObjC.unwrap(row.identifier));',
+  '      if (!seen.has(id)) { seen.add(id); all.push(row); }',
+  '    }',
+  '  }',
   '  const out = [];',
-  '  for (let i = 0; i < Number(all.count); i += 1) {',
-  '    const c = all.objectAtIndex(i);',
+  '  for (let i = 0; i < all.length; i += 1) {',
+  '    const c = all[i];',
   '    const str = (v) => { try { return v && v.js !== undefined ? String(v.js) : String(v || ""); } catch (e) { return ""; } };',
   '    const rec = { given: str(c.givenName), middle: str(c.middleName), family: str(c.familyName),',
   '      nickname: str(c.nickname), organization: str(c.organizationName), phones: [], emails: [] };',
@@ -73,7 +86,7 @@ export function createContacts({ run = macRun, log = null, dataDir = null, ttlMs
   let records = [];
   let loadedAt = 0;
   let loading = null;
-  let last = { state: 'unread', status: null, count: null, reason: null, ms: null, at: null };
+  let last = { state: 'unread', status: null, count: 0, reason: null, ms: null, at: null };
   const photos = new Map();
 
   // One read of the store, cached until it is TTL old. A read in flight is joined rather than repeated.
@@ -92,7 +105,8 @@ export function createContacts({ run = macRun, log = null, dataDir = null, ttlMs
           log?.emit('contacts.refused', { status: last.status === null ? 0 : last.status, reason: state });
           records = [];
         } else {
-          records = Array.isArray(parsed.contacts) ? parsed.contacts : [];
+          if (status !== 3 || !Array.isArray(parsed.contacts)) throw new Error('Invalid Contacts response');
+          records = parsed.contacts;
           const state = records.length ? 'ok' : 'empty';
           last = { state, status, count: records.length, reason: null, ms: Math.round(now() - started), at: new Date(now()).toISOString() };
           log?.emit('contacts.read', { count: records.length, status, state, ms: last.ms });
@@ -165,7 +179,7 @@ export function createContacts({ run = macRun, log = null, dataDir = null, ttlMs
     watchStore,
     /** What the store last answered: state is ok, empty, not_determined, restricted, denied, unknown, error or
      * unread, so an empty store and a refused one are never the same answer. */
-    status: () => ({ ...last, contacts: records.length }),
+    status: () => ({ ...last }),
     get records() { return records; },
   };
 }

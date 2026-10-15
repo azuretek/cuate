@@ -173,7 +173,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       }));
       let photo = chat.photo || null;
       if (!chat.isGroup && members.length) photo = photo || members[0].photo;
-      out.push({ ...chat, photo, members });
+      const name = !chat.isGroup && members[0] && members[0].name !== members[0].handle ? members[0].name : chat.name;
+      out.push({ ...chat, name, photo, members });
     }
     return out;
   };
@@ -191,7 +192,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
               const unread = Number(c.unread) || 0;
               if (unread < (Number(was.unread) || 0)) publish('chat.read', { chatId: String(c.id), unread });
               // A contact renamed or repictured reaches every client as the chat changing (issue 393).
-              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id)) publish('chat.changed', c);
+              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id) || JSON.stringify(was.members) !== JSON.stringify(c.members)) publish('chat.changed', c);
             }
           }
         })

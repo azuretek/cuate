@@ -247,7 +247,7 @@
           "last_message_at": "2026-01-01T00:00:00Z"
         }
       ],
-      "expect": "{\"id\":\"42\",\"name\":\"Ana Example\",\"isGroup\":false,\"service\":\"iMessage\",\"participants\":[\"ana@example.com\"],\"unread\":2,\"lastMessageAt\":\"2026-01-01T00:00:00.000Z\",\"lastMessage\":null}"
+      "expect": "{\"id\":\"42\",\"name\":\"Ana Example\",\"isGroup\":false,\"service\":\"iMessage\",\"participants\":[\"ana@example.com\"],\"members\":[],\"unread\":2,\"lastMessageAt\":\"2026-01-01T00:00:00.000Z\",\"lastMessage\":null}"
     },
     {
       "id": "validate.ok",

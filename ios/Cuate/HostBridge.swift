@@ -483,7 +483,7 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             if status == .notDetermined { store.requestAccess(for: .contacts) { _, _ in } }
             return false
         }
-        guard let contact = (try? store.unifiedContacts(matching: predicate, keysToFetch: keys))?.first else { return false }
+        guard let matches = try? store.unifiedContacts(matching: predicate, keysToFetch: keys), matches.count == 1, let contact = matches.first else { return false }
         DispatchQueue.main.async { [weak self] in
             guard let self, let root = self.webView?.window?.rootViewController else { return }
             let card = CNContactViewController(for: contact)

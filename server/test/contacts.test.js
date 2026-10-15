@@ -62,3 +62,15 @@ test('a store is read again only after its ttl, and a read in flight is joined (
   await c.forHandles(['5550101234']);
   assert.equal(reads, 2);
 });
+
+test('empty, denied and failed reads have different diagnostic states', async () => {
+  for (const [answer, expected] of [[{authorized:true,status:3,contacts:[]}, 'empty'], [{authorized:false,status:2}, 'denied']]) {
+    const c = createContacts({run:fake(answer)});
+    await c.load();
+    assert.equal(c.status().state, expected);
+    assert.equal(Object.hasOwn(c.status(), 'contacts'), false);
+  }
+  const c = createContacts({run:async () => { throw Error('failed'); }});
+  await c.load();
+  assert.equal(c.status().state, 'error');
+});

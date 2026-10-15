@@ -61,3 +61,9 @@ test('a record held twice still answers once, and its own two numbers never coll
   assert.equal(contactFor(['5550101234'], index).given, 'Ada');
   assert.equal(contactIndex(null).exact.size, 0);
 });
+
+test('an explicit foreign country and digits inside an email never fall back to a phone', () => {
+  const index = contactIndex([ONE]);
+  assert.equal(contactFor(['+445550101234'], index), null);
+  assert.equal(contactFor(['5550101234@example.com'], index), null);
+});

@@ -76,6 +76,8 @@ export function contactFor(handles, index) {
     if (found) return found;
   }
   for (const handle of list) {
+    // An explicit country code or an email must never fall back to a different country's phone.
+    if (String(handle).includes('@') || phoneKey(handle).startsWith('+') || exact.has(handleKey(handle))) continue;
     const key = nationalKey(handle);
     const found = key ? only(national.get(key)) : null;
     if (found) return found;
