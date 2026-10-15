@@ -106,6 +106,7 @@ var engine = (() => {
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
     TYPING_TTL_MS: () => TYPING_TTL_MS,
     UNKNOWN: () => UNKNOWN,
+    UNREAD_SCAN_ROWS: () => UNREAD_SCAN_ROWS,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
     ZOOM_DOUBLE_TAP: () => ZOOM_DOUBLE_TAP,
     ZOOM_DOUBLE_TAP_MS: () => ZOOM_DOUBLE_TAP_MS,
@@ -170,6 +171,8 @@ var engine = (() => {
     contrastRatio: () => contrastRatio,
     controlLayout: () => controlLayout,
     countGraphemes: () => countGraphemes,
+    countUnreadMessages: () => countUnreadMessages,
+    countsAsUnreadMessage: () => countsAsUnreadMessage,
     createApiClient: () => createApiClient,
     createLogger: () => createLogger,
     cssColour: () => cssColour,
@@ -2364,6 +2367,17 @@ var engine = (() => {
   function isGroupPhotoRow(m) {
     const list = Array.isArray(m && m.attachments) ? m.attachments : [];
     return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || "") === GROUP_PHOTO_NAME;
+  }
+  var UNREAD_SCAN_ROWS = 100;
+  function countsAsUnreadMessage(m) {
+    if (!m || m.is_reaction || m.is_from_me || m.is_read !== false) return false;
+    if (isGroupPhotoRow(m)) return false;
+    if (stripInlineObjects(m.text).trim()) return true;
+    if (m.balloon_bundle_id || m.poll) return true;
+    return Array.isArray(m.attachments) && m.attachments.length > 0;
+  }
+  function countUnreadMessages(rows) {
+    return (Array.isArray(rows) ? rows : []).filter(countsAsUnreadMessage).length;
   }
   function mapMessage(m, { attachmentId }) {
     const fromMe = Boolean(m.is_from_me);

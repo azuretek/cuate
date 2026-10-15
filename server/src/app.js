@@ -152,7 +152,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // message stream already carries.
   const readChats = (limit) => {
     if (!listing) {
-      listing = engine.chats({ limit, photos: true })
+      listing = engine.chats({ limit, photos: true, recountUnread: true })
         .then((chats) => {
           const before = held ? new Map(held.chats.map((c) => [String(c.id), Number(c.unread) || 0])) : null;
           held = { chats, limit, at: Date.now() };

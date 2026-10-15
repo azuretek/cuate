@@ -7,7 +7,7 @@ import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
 import { annotateLivePhotos } from './live-photo.js';
-import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, countUnreadMessages, PHOTO_SCAN_ROWS, UNREAD_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 // Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
@@ -298,9 +298,27 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return starting;
   }
 
-  async function chats({ limit = 200, photos = false } = {}) {
+  // A chat's unread as our own layer counts it: read the chat's messages and count the ordinary unread ones. imsg's
+  // own count carries every unread inbound row, including the rows Messages writes for group membership changes,
+  // renames and other group actions, which Messages itself never counts, so a chat read as unread with nothing a
+  // person sent (issue 389). A read that fails keeps the engine's number for that chat, so a hiccup never invents a
+  // zero.
+  async function countUnread(chatId, fallback) {
+    try {
+      const r = await request('messages.history', { chat_id: Number(chatId), limit: UNREAD_SCAN_ROWS, attachments: true }, timeoutMs, ['attachments']);
+      return countUnreadMessages(r && Array.isArray(r.messages) ? r.messages : []);
+    } catch {
+      return fallback; // request() already logged the failure
+    }
+  }
+
+  // recountUnread asks for each unread chat's count to be read back from its own messages. It costs one history read
+  // per unread chat, so a caller that only needs names, ids and ordering (an export, a search) leaves it off; the
+  // server's own chat list, which draws the badge, turns it on.
+  async function chats({ limit = 200, photos = false, recountUnread = false } = {}) {
     const r = await request('chats.list', { limit }, timeoutMs);
     const list = (r && Array.isArray(r.chats) ? r.chats : []).map(mapChat);
+    if (recountUnread) for (const c of list) if (c.unread > 0) c.unread = await countUnread(c.id, c.unread);
     // A group the engine has not looked through yet is read once for its photo, one at a time; the list waits a moment
     // for those reads and goes out with whatever they found by then, and a later list carries the rest.
     const unseen = photos ? list.filter((c) => c.isGroup && !photoScanned.has(c.id)) : [];
