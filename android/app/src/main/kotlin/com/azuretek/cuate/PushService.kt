@@ -9,7 +9,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
 /**
- * Receives each sealed push (issue 347, docs/push.md). The relay sends Android a data-only message at high priority,
+ * Receives each sealed push (issue 347, docs/PUSH.md). The relay sends Android a data-only message at high priority,
  * so this runs whether the app is open or not; it opens the notification with the phone's key and shows the sender and
  * the text, and a press opens the conversation the way a message notice does (issue 331). A notification it cannot
  * open is shown as a plain one rather than dropped.

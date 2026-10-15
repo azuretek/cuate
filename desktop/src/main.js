@@ -81,7 +81,7 @@ function handOverLink(url) {
 // The app icon chosen in Settings (issue 167): Follow theme, the default, leaves the icons to the theme (applyIcons,
 // below); a fixed palette from core/spec/app-icons.json stands in for the theme's colours in every image the shell
 // redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
-// The launcher's or the installed bundle's own icon is the platform's, and docs/features.md says so.
+// The launcher's or the installed bundle's own icon is the platform's, and docs/FEATURES.md says so.
 const appIconSpec = JSON.parse(readFileSync(path.join(CORE, 'spec/app-icons.json'), 'utf8'));
 // Every colour is one family with a paper Light and a bright Dark variant (issue 246); Follow theme carries no colours.
 const appIconVariants = appIconSpec.families.flatMap((family) => ['light', 'dark'].map((key) => family.variants[key]));
@@ -398,6 +398,9 @@ async function runSmoke(w) {
   }
   report.chats = await js("document.querySelectorAll('.chat-row').length");
   report.bubbles = await js("document.querySelectorAll('.bubble-row').length");
+  // A preview's <img> is drawn only once its attachment has been fetched (app-attachment.js load()), so the count waits
+  // for the first one, bounded, rather than reading the page once: a slow runner otherwise counts the placeholders' moment.
+  try { await waitFor("document.querySelectorAll('img.attachment-image').length > 0", 15000); } catch { /* measured below */ }
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
   // Every popover wears the shared caret (issue 217). The guard reads each open panel back from the page: it must carry
   // the popover marks and its --caret-x must be a real offset inside the panel, aimed at the control that opened it.

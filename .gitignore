@@ -34,6 +34,6 @@ android/build/
 android/app/build/
 android/local.properties
 android/proof/
-# Firebase client configs are injected at build time from a secret, never committed (issue 347, docs/push.md).
+# Firebase client configs are injected at build time from a secret, never committed (issue 347, docs/PUSH.md).
 GoogleService-Info.plist
 google-services.json

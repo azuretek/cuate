@@ -64,8 +64,8 @@ test('a line that is not an object is ignored rather than throwing', () => {
   assert.deepEqual(d.snapshot().counters, {});
 });
 
-test('docs/observability.md records what is deliberately not measured', () => {
-  const doc = readFileSync(new URL('../../docs/observability.md', import.meta.url), 'utf8');
+test('docs/OBSERVABILITY.md records what is deliberately not measured', () => {
+  const doc = readFileSync(new URL('../../docs/OBSERVABILITY.md', import.meta.url), 'utf8');
   assert.match(doc, /Deliberately not measured/);
   for (const omitted of ['A metrics or tracing backend', 'The success path', 'Per-action client latency']) {
     assert.ok(doc.includes(omitted), 'the omissions list does not name ' + omitted);

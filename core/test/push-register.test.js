@@ -1,4 +1,4 @@
-// A phone allowed to show notifications registers for them with the app closed (issue 347, docs/push.md): the page asks
+// A phone allowed to show notifications registers for them with the app closed (issue 347, docs/PUSH.md): the page asks
 // its shell for the push token and key, sends them to its own server, and stops them on sign out.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -268,7 +268,7 @@ jobs:
           fi
 
       # Firebase's client config carries an API key, so it is never committed: the release writes it from a secret
-      # before the project is generated, which is what puts it in the app (issue 347, docs/push.md). A build without
+      # before the project is generated, which is what puts it in the app (issue 347, docs/PUSH.md). A build without
       # it runs without push rather than failing.
       - name: Write the Firebase config
         env:
@@ -276,7 +276,7 @@ jobs:
         run: |
           set -eo pipefail
           if [ -z "$GOOGLE_SERVICE_INFO_PLIST" ]; then
-            echo "::error::CUATE_GOOGLE_SERVICE_INFO_PLIST is not set. It is the base64 of the iOS app's GoogleService-Info.plist from the Firebase project (docs/push.md)."
+            echo "::error::CUATE_GOOGLE_SERVICE_INFO_PLIST is not set. It is the base64 of the iOS app's GoogleService-Info.plist from the Firebase project (docs/PUSH.md)."
             exit 1
           fi
           printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > Cuate/GoogleService-Info.plist

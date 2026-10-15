@@ -2,7 +2,7 @@
   "name": "cuate-relay",
   "private": true,
   "type": "module",
-  "description": "The push relay: a function in the project's Firebase project that passes sealed notifications to phones. See docs/push.md.",
+  "description": "The push relay: a function in the project's Firebase project that passes sealed notifications to phones. See docs/PUSH.md.",
   "main": "src/index.js",
   "engines": {
     "node": "22"
