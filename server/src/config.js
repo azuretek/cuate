@@ -28,7 +28,7 @@ export const DEFAULTS = Object.freeze({
   mac: macDefaults(),
   webhooks: { endpoints: [] },
   // Push notifications go through the relay in our Firebase project, which only passes on what this server already
-  // sealed for one phone (issue 347, docs/push.md). null switches push off; a self-built app points this at its own.
+  // sealed for one phone (issue 347, docs/PUSH.md). null switches push off; a self-built app points this at its own.
   push: { relay: PUSH_RELAY },
 });
 

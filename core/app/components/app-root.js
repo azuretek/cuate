@@ -30,6 +30,7 @@ import './app-notices.js';
 import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpenAt, velocityFor } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
+import { windowControlsHtml } from './window-controls.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, textScaleInForce, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { ICON_TOKENS, unreadTotal } from '../rules/icon.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
@@ -50,6 +51,9 @@ import './app-image-viewer.js';
 import './app-slide-confirm.js';
 
 const API_VERSION = 1;
+// What the conversation pane says while nothing is open (issue 373): a fresh start opens nothing, so this is often
+// the first thing seen beside the list.
+const EMPTY_PANE = 'Choose a conversation to read it here.';
 // A burst of arrivals in the conversation on screen is one read on the Mac (issue 323).
 const READ_COALESCE_MS = 600;
 const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
@@ -494,10 +498,13 @@ class AppRoot extends KitElement {
       this.launchCheck();
       this.noticeServerUpdate(info.serverUpdate);
       this.releaseHeldScreen();
-      if (this.chats.length) await this.open(this.chats[0].id);
+      // A fresh start opens no conversation (issue 373): opening one reads it, here and on the Mac, so the list and its
+      // unread counts are what is seen first. Only a press or a link that launched the app opens one. A start over a
+      // conversation already on screen (signing in again without leaving it) refreshes that one in place.
+      if (this.openChatId) await this.open(this.openChatId);
       this.dataset.state = 'ready';
       // A notice pressed while the app was closed launched it (issue 331): the shell held the press, so it is taken now
-      // the conversations are here, and opens over the first conversation.
+      // the conversations are here.
       this.takeNotice();
     } catch (e) {
       client.close();
@@ -1627,7 +1634,7 @@ class AppRoot extends KitElement {
   mainView(chat) {
     return chat
       ? html`<app-conversation .chat=${chat} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
-      : html`<div class="empty">No conversation selected.</div>`;
+      : html`<header class="conv-head conv-head--empty">${this.emptyControls()}</header><div class="empty">${EMPTY_PANE}</div>`;
   }
 
   // The shell's product and platform; the app draws window chrome only where the platform has a window.
@@ -1667,6 +1674,13 @@ class AppRoot extends KitElement {
   windowControls() {
     if (!this.isDesktop()) return null;
     return controlLayout({ platform: String(this.host && this.host.platform || '').toLowerCase() });
+  }
+
+  // The pane with no conversation keeps the window's own top strip (issue 373): it drags the window as the contact
+  // header does, and on Windows and Linux it carries the same controls, since nothing is open to draw them.
+  emptyControls() {
+    const layout = this.windowControls();
+    return layout && layout.drawn ? windowControlsHtml({ order: layout.order, maximized: this.maximized, onAction: (name) => this.windowAction(name) }) : nothing;
   }
 
   // The one class the stylesheet keys off: it says a surface is leaving, so the sheet and its dim leave together. A

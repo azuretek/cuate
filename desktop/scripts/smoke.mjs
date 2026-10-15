@@ -1,5 +1,5 @@
 // The desktop boot smoke: a real server over the fake engine, the real desktop app against it, and captures of what
-// it drew. It proves boot, the chat list, a conversation with a photo, a live incoming message over the event stream,
+// it drew. It proves boot, a fresh start that opens no conversation and reads none, the chat list, a conversation with a photo, a live incoming message over the event stream,
 // a send, closing to the tray with a send in flight and the tray's menu opening screens in the app, the settings page reading, writing and streaming a change, a theme imported by URL, a notice firing and a notice suppressed, the about
 // page, image previews and the image viewer's zoom by click, wheel, key and touch, the phone layout with its edge drag (the settle threshold and the reduced-motion path included), and onboarding.
 // The sidebar's search terms each refine the list in their own mode, the sort icon matches the filter icon and orders
@@ -107,6 +107,7 @@ const checks = [
   { key: 'report', bound: 'the app wrote a report', value: (report) => Boolean(report), test: (v) => v === true },
   { key: 'version', bound: packed ? 'the app version equals the build version' : 'not a packaged run', value: (report) => (packed ? (report.info && report.info.version) : 'not packaged'), test: (v) => (packed ? v === process.env.BUILD_VERSION : true) },
   { key: 'packaged', bound: packed ? 'the run reports itself packaged' : 'not a packaged run', value: (report) => (packed ? report.packaged : true), test: (v) => (packed ? v === true : true) },
+  { key: 'freshStart', bound: 'a fresh start opens no conversation and sends no read (issue 373)', value: (report) => report.freshStart, test: (v) => v === true },
   { key: 'chats', bound: 'at least 3 chats listed', value: (report) => report.chats, test: (v) => v >= 3 },
   { key: 'bubbles', bound: 'more than 0 message bubbles drawn', value: (report) => report.bubbles, test: (v) => v > 0 },
   { key: 'images', bound: 'more than 0 attachment images drawn', value: (report) => report.images, test: (v) => v > 0 },
