@@ -1,4 +1,5 @@
 import Foundation
+import QuickLook
 import UIKit
 import UserNotifications
 import WebKit
@@ -113,6 +114,8 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
 
     /// The messaging link the system last opened the app with (issue 333), until the page takes it.
     var pendingLink: String?
+    /// The file Quick Look is showing for Open in (issue 374), held while it is up: Quick Look holds its source weakly.
+    private var quickLook: QuickLookFile?
 
     /// Keeps the web view on the system's scheme while the window shows the page's; registered on the first call.
     private var systemObserver: UITraitChangeRegistration?
@@ -224,6 +227,9 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             // A document pressed in a conversation (issue 219) is offered for saving under its real name through the
             // system's share sheet, which includes Save to Files.
             settle(id: id, ok: true, value: saveFile(args))
+        case "file.open":
+            // Open in (issue 374): Quick Look shows the file, and its share button reaches every other app.
+            settle(id: id, ok: true, value: openFile(args))
         case "updates.check":
             // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
             // its own to answer; the one bridge spec still declares the command for the desktop's tray check.
@@ -412,6 +418,30 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
                 pop.sourceRect = CGRect(x: host.view.bounds.midX, y: host.view.bounds.midY, width: 1, height: 1)
             }
             host.present(sheet, animated: true)
+        }
+        return true
+    }
+
+    /// Open in (issue 374): the page hands the bytes as base64 under the file's real name, the copy is written to a
+    /// folder of its own (OpenFile), and Quick Look presents it over whatever is on screen. The copy goes when Quick
+    /// Look is dismissed.
+    private func openFile(_ args: [String: Any]) -> Bool {
+        guard let data = args["data"] as? String,
+              let url = OpenFile.stage(name: args["name"] as? String ?? "", base64: data) else { return false }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let root = self.webView?.window?.rootViewController else {
+                OpenFile.remove(url)
+                return
+            }
+            let source = QuickLookFile(url: url)
+            source.dismissed = { [weak self] in self?.quickLook = nil }
+            self.quickLook = source
+            let preview = QLPreviewController()
+            preview.dataSource = source
+            preview.delegate = source
+            var host = root
+            while let shown = host.presentedViewController { host = shown }
+            host.present(preview, animated: true)
         }
         return true
     }

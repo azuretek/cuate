@@ -211,6 +211,8 @@ class HostBridge(
             "notify.take" -> success(takeNotice())
             "open.external" -> success(openExternal(args))
             "file.save" -> success(saveFile(args))
+            // Open in (issue 374): the system's Open with chooser, through the app's file provider.
+            "file.open" -> success(openFile(args))
             // The page runs this phone's check itself from the release feed (issue 192), so the shell has no state of
             // its own to answer; the one bridge spec still declares the command for the desktop's tray check.
             "updates.check" -> success(JSONObject.NULL)
@@ -391,6 +393,32 @@ class HostBridge(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(intent, name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Open in (issue 374): the page hands the bytes as base64 under the file's real name and type, the copy is written to
+     * a folder of its own in the app's cache (OpenFile), and the system's Open with chooser is offered it through the
+     * provider the manifest declares, with read access granted to the app the person picks.
+     */
+    private fun openFile(args: JSONObject): Boolean {
+        val data = args.optString("data")
+        if (data.isEmpty()) return false
+        val mime = args.optString("mime").ifEmpty { "application/octet-stream" }
+        return try {
+            val bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT)
+            val file = OpenFile.stage(context.cacheDir, args.optString("name"), bytes) ?: return false
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(view, file.name)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.startActivity(chooser)
             true
         } catch (e: Exception) {
             false
