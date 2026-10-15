@@ -133,15 +133,19 @@ export function isGroupPhotoRow(m) {
   return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || '') === GROUP_PHOTO_NAME;
 }
 
-// How far back a chat's history is read to recount its unread; the fake engine knows that page by its size.
+// How many rows a chat's history is read back per page, and how many pages at most, when a chat's unread is
+// recounted. The fake engine knows a page by its size.
 export const UNREAD_SCAN_ROWS = 100;
+export const UNREAD_SCAN_PAGES = 3;
 // Whether one engine row is a message Messages would count as unread. Messages writes a group membership change, a
 // rename or another group action as a row with no text and nothing to show, which runs is_from_me = 0 and is never
 // marked read, so imsg's own unread count carries it forever although Messages never counts it (issue 389). Only an
 // ordinary message counts: inbound, unread, not a reaction, not an event row, and holding something a person can read
-// (text, a link preview, a poll or an attachment). An event row that carries a group photo or logo image is
-// indistinguishable here and still counts; the engine must skip item_type <> 0 for that (openclaw/imsg, the upstream
-// issue our PR drafts).
+// (text, a link preview, a poll or an attachment). A group photo change is an event and is excluded by
+// isGroupPhotoRow; an event row that carries any OTHER image (a brand or logo image) is NOT distinguishable from a
+// message here and still counts, which the engine must fix by skipping item_type <> 0 (openclaw/imsg, the upstream
+// issue the PR drafts). The unread rows can also sit thousands of messages deep, so the adapter pages and, when it
+// cannot see every row the engine counted, keeps the engine's own number rather than a count it cannot stand behind.
 export function countsAsUnreadMessage(m) {
   if (!m || m.is_reaction || m.is_from_me || m.is_read !== false) return false;
   if (isGroupPhotoRow(m)) return false;

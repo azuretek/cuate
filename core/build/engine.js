@@ -106,6 +106,7 @@ var engine = (() => {
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
     TYPING_TTL_MS: () => TYPING_TTL_MS,
     UNKNOWN: () => UNKNOWN,
+    UNREAD_SCAN_PAGES: () => UNREAD_SCAN_PAGES,
     UNREAD_SCAN_ROWS: () => UNREAD_SCAN_ROWS,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
     ZOOM_DOUBLE_TAP: () => ZOOM_DOUBLE_TAP,
@@ -2369,6 +2370,7 @@ var engine = (() => {
     return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || "") === GROUP_PHOTO_NAME;
   }
   var UNREAD_SCAN_ROWS = 100;
+  var UNREAD_SCAN_PAGES = 3;
   function countsAsUnreadMessage(m) {
     if (!m || m.is_reaction || m.is_from_me || m.is_read !== false) return false;
     if (isGroupPhotoRow(m)) return false;

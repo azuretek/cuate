@@ -13,6 +13,7 @@ import { createEngine } from '../src/engine/index.js';
 import { createFakeImsg } from '../src/engine/fake.js';
 import { createLogger } from '../../core/kit/log.js';
 import { logSpec } from '../src/paths.js';
+import { UNREAD_SCAN_ROWS, UNREAD_SCAN_PAGES } from '../../core/app/rules/engine-imsg.js';
 
 async function withEngine(fn) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'unread-'));
@@ -51,5 +52,35 @@ test('a chat whose only unread rows are engine event rows reads as 0, and a real
     // no chat.
     const plain = await engine.chats();
     assert.equal(plain.find((c) => c.id === '3').unread, 4, 'without the recount the engine\'s own count carries all four rows, the three event rows included');
+  });
+});
+
+// Issue 389, the scan bound: a genuine unread message deeper than one page must still be found, so it is never
+// silently dropped.
+test('a genuine unread message past the first page still counts (issue 389)', async () => {
+  await withEngine(async ({ world, engine }) => {
+    const base = Date.now() - 60000;
+    const at = (ms) => new Date(ms).toISOString();
+    // Chat 3 starts read and its fixture messages are days old. Put one genuine unread message well behind a page of
+    // newer, already read messages, so only a second page of the scan can reach it.
+    world.incoming(3, 'Synthetic unread behind a page', undefined, { created_at: at(base - 100 * 60000) });
+    for (let i = 0; i < UNREAD_SCAN_ROWS + 20; i++) world.inboundRead(3, 'later ' + i, { created_at: at(base - 99 * 60000 + i * 1000) });
+    const list = await engine.chats({ recountUnread: true });
+    assert.equal(list.find((c) => c.id === '3').unread, 1, 'the unread message behind the first page still counts');
+  });
+});
+
+// Issue 389, the fail safe: a chat whose unread rows sit beyond the whole page bound keeps the engine's own number,
+// never a false zero, because the scan cannot prove they are not messages.
+test('unread rows beyond the page bound are never silently dropped to zero (issue 389)', async () => {
+  await withEngine(async ({ world, engine }) => {
+    const base = Date.now() - 60000;
+    const at = (ms) => new Date(ms).toISOString();
+    // Chat 2 starts read. Its one unread row sits behind more read messages than the whole bound can scan, so the
+    // recount cannot reach it; the engine's own number is kept instead of reporting nothing.
+    world.incoming(2, 'Synthetic unread beyond the bound', undefined, { created_at: at(base - 100 * 60000) });
+    for (let i = 0; i < UNREAD_SCAN_ROWS * UNREAD_SCAN_PAGES + 20; i++) world.inboundRead(2, 'later ' + i, { created_at: at(base - 99 * 60000 + i * 1000) });
+    const list = await engine.chats({ recountUnread: true });
+    assert.equal(list.find((c) => c.id === '2').unread, 1, 'the engine number is kept, never a false zero');
   });
 });

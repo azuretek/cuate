@@ -109,11 +109,19 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     messages,
     requests: [],
     get attempts() { return attempts; },
-    incoming(chatId, text, sender) {
+    incoming(chatId, text, sender, fields = {}) {
       const chat = chats.find((c) => c.id === chatId);
-      const m = add({ chat_id: chatId, is_from_me: false, sender: sender || chat.participants[0], text, is_read: false });
+      const m = add({ chat_id: chatId, is_from_me: false, sender: sender || chat.participants[0], text, is_read: false, ...fields });
       // An unread message raises its conversation's count, as it does in chat.db.
       chat.unread_count = (chat.unread_count || 0) + 1;
+      broadcast(m);
+      return m;
+    },
+    // An inbound message already read, which raises no unread count. A test uses it to push a genuine unread message
+    // past the recount's first page, or past its page bound, and prove it is not silently dropped (issue 389).
+    inboundRead(chatId, text, fields = {}) {
+      const chat = chats.find((c) => c.id === chatId);
+      const m = add({ chat_id: chatId, is_from_me: false, sender: (chat && chat.participants[0]) || '', text, is_read: true, ...fields });
       broadcast(m);
       return m;
     },
