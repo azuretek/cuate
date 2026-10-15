@@ -31,7 +31,7 @@ import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpenAt, velocityFor } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { windowControlsHtml } from './window-controls.js';
-import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
+import { resolveScheme, themeVars, themeFonts, textScaleVars, textScaleInForce, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { ICON_TOKENS, unreadTotal } from '../rules/icon.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { CHATS_DEFAULT, CHATS_MIN, clampChatsWidth, chatsWidthFrom, dividerBounds, dividerKey, dragChatsWidth } from '../rules/divider.js';
@@ -80,6 +80,8 @@ const normalizeUrl = (u) => {
 
 class AppRoot extends KitElement {
   static properties = {
+    // The system's text size as this device's shell reports it (issue 369), null until it has answered or where it has none.
+    systemText: { state: true },
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
     conn: { state: true }, problem: { state: true }, hasMore: { state: true }, sending: { state: true },
     // The message a pressed notice leads to, handed to the conversation to bring into view (issue 331).
@@ -268,6 +270,10 @@ class AppRoot extends KitElement {
       this.offLink = window.bridge.on('app.link', () => this.takeLink());
       // A notice was pressed (issue 331): the shell holds which one, and the page takes it.
       this.offNotice = window.bridge.on('notify.opened', () => this.takeNotice());
+      // The system's text size (issue 369): asked for once, then told as an event whenever the person changes it, so
+      // the page follows at once with nothing polled.
+      this.offTextSize = window.bridge.on('display.textScale', (data) => this.onSystemText(data && data.percent));
+      this.bridge('display.textScale', {}).then((percent) => this.onSystemText(percent), () => {});
     }
     if (typeof window !== 'undefined') this.holdPage();
     // A messaging link may arrive while the app is away, and a phone has no event to say so: it is asked for whenever
@@ -316,6 +322,7 @@ class AppRoot extends KitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    if (typeof this.offTextSize === 'function') this.offTextSize();
     if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
     for (const t of this.readTimers?.values() || []) clearTimeout(t);
     if (this.onShownForLink) document.removeEventListener('visibilitychange', this.onShownForLink);
@@ -338,6 +345,14 @@ class AppRoot extends KitElement {
 
   // The server holds the theme and the skin; the page writes them onto the root as custom properties, so a theme
   // chosen on any device is what this page draws, and light and dark both come from it. No client carries its own copy.
+  // A new system text size redraws the type only when it changes what is in force.
+  onSystemText(percent) {
+    const next = Number.isFinite(Number(percent)) && percent !== null ? Number(percent) : null;
+    if (next === this.systemText) return;
+    this.systemText = next;
+    this.applyTheme();
+  }
+
   applyTheme() {
     if (typeof document === 'undefined') return;
     const root = document.documentElement;
@@ -357,7 +372,7 @@ class AppRoot extends KitElement {
     // theme's own type sizes are scaled too. At 100% nothing is written and the tokens draw what they always did.
     const style = getComputedStyle(root);
     const base = Object.fromEntries(TYPE_SIZE_VARS.map((name) => [name, style.getPropertyValue(name)]));
-    const scaled = textScaleVars(this.settings['appearance.textScale'], base);
+    const scaled = textScaleVars(textScaleInForce(this.settings, this.systemText), base);
     for (const [name, value] of scaled) root.style.setProperty(name, value);
     this.themeApplied = [...themed, ...scaled];
     this.loadThemeFonts(this.settings['appearance.theme']);
@@ -1605,7 +1620,7 @@ class AppRoot extends KitElement {
   // Settings and About are the app's two sheets, drawn here and never in the main pane: the Settings sheet under,
   // the About sheet stacked above it (issues 171, 253).
   settingsBody() {
-    return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
+    return html`<app-settings .values=${this.settings} .systemText=${this.systemText} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
       @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()} @close=${() => this.closeView()}
       .themePicture=${this.themePicture} .tab=${this.settingsTab} @tab=${(e) => { this.settingsTab = e.detail; }}></app-settings>`;
   }

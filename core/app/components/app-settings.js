@@ -3,7 +3,7 @@ import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
 import { settingsFields, settingsGroups, settingsTabs, settingValue, coerceSetting, optionLabel } from '../rules/settings.js';
 import { appIconChoices } from '../rules/app-icons.js';
-import { importTheme, importSummary, addTheme, themeChoices, swatchVars, SWATCH_TOKENS } from '../rules/theme.js';
+import { importTheme, importSummary, addTheme, themeChoices, swatchVars, SWATCH_TOKENS, textScaleInForce } from '../rules/theme.js';
 import './app-sheet.js';
 
 // The one line the page says about itself, under its title.
@@ -32,6 +32,8 @@ class AppSettings extends KitElement {
   static properties = {
     values: { attribute: false }, themePicture: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
     info: { attribute: false }, host: { attribute: false }, tab: {},
+    // The system's text size this device's shell reported (issue 369), shown on the slider while text follows it.
+    systemText: { attribute: false },
     importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
   };
 
@@ -135,7 +137,9 @@ class AppSettings extends KitElement {
   onSliderCommit(e, field, stops) {
     const at = Math.max(0, Math.min(stops.length - 1, Number(e.currentTarget.value)));
     this.paintSlider(e.currentTarget, field, stops[at]);
-    this.fire('setting', { key: field.key, value: stops[at] });
+    // Choosing a size is choosing not to follow the system (issue 369), so both are written as one change.
+    if (field.key === 'appearance.textScale') return this.fire('settings', { 'appearance.textScaleSystem': false, [field.key]: stops[at] });
+    return this.fire('setting', { key: field.key, value: stops[at] });
   }
 
   onSliderKey(e, field, stops) {
@@ -186,16 +190,20 @@ class AppSettings extends KitElement {
       // percentage rather than the index, so a screen reader announces the size and not a position. The stops are drawn
       // as ticks from the datalist, and the stored value is unchanged: still one of the schema's percentages.
       const stops = field.options.map(Number);
-      const at = Math.max(0, stops.indexOf(Number(value)));
+      // While text follows the system the reading is the system's size, and the thumb sits on the stop nearest it
+      // (issue 369); a chosen size is its own stop.
+      const shown = field.key === 'appearance.textScale' ? textScaleInForce(this.values, this.systemText) : Number(value);
+      const nearest = stops.reduce((best, s, i) => (Math.abs(s - shown) < Math.abs(stops[best] - shown) ? i : best), 0);
+      const at = stops.includes(shown) ? stops.indexOf(shown) : nearest;
       const listId = 'scale-stops-' + field.key;
       return html`<div class="scale-slider setting-control-wide" data-key=${field.key}>
         <input type="range" class="scale-range" min="0" max=${stops.length - 1} step="1" .value=${String(at)} list=${listId}
-          aria-label=${field.label} aria-valuetext=${stops[at] + ' percent'} ?disabled=${disabled}
+          aria-label=${field.label} aria-valuetext=${shown + ' percent'} ?disabled=${disabled}
           @input=${(e) => this.onSliderMove(e, field, stops)}
           @change=${(e) => this.onSliderCommit(e, field, stops)}
           @keydown=${(e) => this.onSliderKey(e, field, stops)}>
         <datalist id=${listId}>${stops.map((o, i) => html`<option value=${String(i)} label=${optionLabel(field, o)}></option>`)}</datalist>
-        <output class="scale-value" data-value=${String(stops[at])}>${optionLabel(field, stops[at])}</output>
+        <output class="scale-value" data-value=${String(shown)}>${optionLabel(field, shown)}</output>
       </div>`;
     }
     if (field.type === 'icon') {
