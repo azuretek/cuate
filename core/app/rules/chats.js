@@ -149,13 +149,12 @@ export function listSections(chats, { sort = 'recent', now = 0 } = {}) {
 }
 
 // A group nobody has named reaches us with the chat's own identifier as its name, so the list read
-// "chat323392484988469066" where it should read the people in it (issue #80). An identifier is not a name, so those
-// fall through to the participants, joined the way a person would say them, and then to a plain label.
-const CHAT_IDENTIFIER = /^chat[0-9]+$/i;
-
+// "chat323392484988469066", or a 32 character hex string, where it should read the people in it (issues 80 and 388).
+// An identifier is not a name, so those fall through to the participants, joined the way a person would say them, and
+// then to a plain label. isMachineName (engine-imsg.js) is the one test of what an identifier looks like.
 export function chatTitle(chat) {
   const name = String(chat.name || '').trim();
-  if (name && !CHAT_IDENTIFIER.test(name)) return name;
+  if (name && !isMachineName(name, chat)) return name;
   const people = (chat.participants || []).map((p) => String(p).trim()).filter(Boolean);
   if (people.length === 1) return people[0];
   if (people.length === 2) return people[0] + ' and ' + people[1];
@@ -164,7 +163,8 @@ export function chatTitle(chat) {
   return chat.isGroup ? 'Group chat' : 'Unknown';
 }
 
-import { stripInlineObjects } from './engine-imsg.js';
+import { stripInlineObjects, isMachineName } from './engine-imsg.js';
+export { isMachineName };
 import { messageSummary } from './payload.js';
 
 export function chatPreview(chat) {

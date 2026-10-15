@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, emptyFilters, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, toggleChecked, setAllChecked, allChecked, checkedCount, hideChats, forgetChats, requestDelete, resolveDelete, parseRecipients, recipientSuggestions, groupAddresses, upsertChat, isAddress, listSections, LETTER_OTHER, DELETE_STEPS } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, emptyFilters, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, toggleChecked, setAllChecked, allChecked, checkedCount, hideChats, forgetChats, requestDelete, resolveDelete, parseRecipients, recipientSuggestions, groupAddresses, upsertChat, isAddress, listSections, LETTER_OTHER, DELETE_STEPS, isMachineName } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES } from '../app/rules/emoji-data.js';
 import { graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
 import { ATTACH_ACCEPT, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
@@ -115,6 +115,34 @@ test('connection sentences', () => {
   assert.equal(connectionSentence('open'), '');
   assert.match(connectionSentence('reconnecting'), /Reconnecting/);
   assert.equal(connectionSentence('no such state'), '');
+});
+
+test('an unnamed group whose identifier is hex or a GUID reads as its people, never the identifier (issue 388)', () => {
+  const people = ['Avery Quinn', 'Jordan Lee', 'Priya Shah'];
+  const hex = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+  const uuid = '0F8E2A4C-1B3D-4E5F-8A9B-C0D1E2F3A4B5';
+  // The shapes Messages keys a group by: the old chat<digits>, a 24 to 40 character hex string, a GUID.
+  for (const id of ['chat500000001', hex, hex.slice(0, 24), hex + '01234567', uuid, uuid.toLowerCase()]) {
+    assert.equal(isMachineName(id), true, id + ' is an identifier');
+    assert.equal(chatTitle({ id: '7', name: id, isGroup: true, participants: people }), 'Avery Quinn, Jordan Lee and 1 other', id);
+  }
+  // Names a person gives a group are kept, hex-looking words and short numbers included.
+  for (const name of ['Weekend plans', 'cafe', 'deadbeef', 'chat', 'chat group', '2026', 'Avery Quinn']) {
+    assert.equal(isMachineName(name), false, name + ' is a name');
+    assert.equal(chatTitle({ id: '7', name, isGroup: true, participants: people }), name);
+  }
+  // A name equal to the chat's own identifier or GUID tail is no name, whatever shape that identifier has.
+  assert.equal(isMachineName('grp-7731', { identifier: 'grp-7731' }), true);
+  assert.equal(isMachineName('grp-7731', { guid: 'iMessage;+;grp-7731' }), true);
+  // The server sends no name for a group nobody named, rather than the engine's fallback to its identifier.
+  const raw = { id: 9, name: hex, display_name: '', contact_name: '', identifier: hex, guid: 'iMessage;+;' + hex, service: 'iMessage', is_group: true, participants: ['+15555550100', 'jordan@example.com'], unread_count: 0 };
+  assert.equal(mapChat(raw).name, '');
+  assert.equal(chatTitle(mapChat(raw)), '+15555550100 and jordan@example.com');
+  assert.equal(mapChat({ ...raw, name: 'grp-7731', identifier: 'grp-7731', guid: 'iMessage;+;grp-7731' }).name, '');
+  assert.equal(mapChat({ ...raw, display_name: hex }).name, '', 'a display name that is itself the identifier is no name');
+  assert.equal(mapChat({ ...raw, display_name: 'Weekend plans' }).name, 'Weekend plans');
+  // A conversation with one person still falls back to its address, which is a real name.
+  assert.equal(mapChat({ id: 3, name: '+15555550142', display_name: '', contact_name: '', identifier: '+15555550142', guid: 'SMS;-;+15555550142', is_group: false, participants: ['+15555550142'] }).name, '+15555550142');
 });
 
 test('the imsg mapping produces exactly the declared model', () => {
