@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The documents a conversation saves (issue 219) are written to the app's cache and shared from there. -->
+<!-- The documents a conversation saves (issue 219), and the copies Open in hands to another app (issue 374), are
+     written to the app's cache and shared from there. -->
 <paths>
     <cache-path name="saves" path="saves/" />
+    <cache-path name="open" path="open/" />
 </paths>

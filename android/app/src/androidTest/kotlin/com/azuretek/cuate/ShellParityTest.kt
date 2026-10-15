@@ -44,6 +44,7 @@ class ShellParityTest {
             "push.token",
             "open.external",
             "file.save",
+            "file.open",
             "updates.check",
             "updates.releases",
             "updates.configure",

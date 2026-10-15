@@ -69,6 +69,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The copies an earlier run handed another app with Open in (issue 374) are not needed again.
+        if (savedInstanceState == null) OpenFile.clear(cacheDir)
 
         val product = Naming.product(assets).ifEmpty { "Cuate" }
         val bridge = HostBridge(

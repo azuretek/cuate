@@ -1846,6 +1846,13 @@ class AppRoot extends KitElement {
       this.viewing = { src: d.src || '', alt: d.alt || '', kind: 'video', items: [item], index: 0 };
       return;
     }
+    // A document the viewer shows (issue 374: a PDF, text, or audio) is a single item the viewer loads itself, with Open
+    // in and Save beside it; it is not one of the conversation's media, so there is nothing to step to.
+    if (d.document && d.attachmentId) {
+      const item = { id: String(d.attachmentId), attachmentId: String(d.attachmentId), kind: String(d.kind || ''), name: String(d.name || ''), mime: String(d.mime || ''), alt: d.alt || d.name || '', document: true };
+      this.viewing = { src: '', alt: item.alt, kind: item.kind, items: [item], index: 0 };
+      return;
+    }
     if (!d.src) { this.viewing = null; return; }
     const items = mediaItems(this.messages || []);
     const at = d.attachmentId ? mediaIndex(items, d.attachmentId) : -1;

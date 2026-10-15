@@ -893,6 +893,24 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* A video is drawn like a picture, with the viewer's own rounded edge and shadow; its first frame stands in for the
    picture until it plays. */
 .viewer video.viewer-image { background: var(--color-bg-sunken); }
+/* A document in the viewer (issue 374) fills the stage and scrolls in it, under the X and over the bar, which float
+   above it as they do over a picture. A PDF's pages are a column of paper, centred while they fit and scrolled across
+   once a zoom makes them wider than the view; a finger scrolls them and two pinch them, so the stage's own refusal of
+   every touch gesture is lifted for a document. Text is a raised card in the mono face, selectable, wrapping long
+   lines rather than scrolling them away. Audio, and a file the viewer cannot read, is a small card with its name. */
+.viewer[data-kind="pdf"], .viewer[data-kind="text"], .viewer[data-kind="audio"] { touch-action: pan-x pan-y; }
+.viewer-doc { flex: 1 1 auto; align-self: stretch; box-sizing: border-box; width: 100%; min-height: 0; max-height: 100%; overflow: auto; padding: calc(var(--viewer-control) + var(--space-6)) var(--space-4); touch-action: pan-x pan-y; outline: none; overscroll-behavior: contain; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
+.viewer-pages { display: flex; flex-direction: column; align-items: safe center; gap: var(--space-4); }
+.viewer-page { flex: none; width: var(--page-w); height: var(--page-h); border-radius: var(--radius-sm); background: var(--color-bg-raised); box-shadow: var(--shadow-lg); overflow: hidden; }
+.viewer-page > canvas { display: block; width: 100%; height: 100%; }
+.viewer-text { box-sizing: border-box; max-width: var(--size-sheet-max); margin: 0 auto; padding: var(--space-4); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-image-edge); background: var(--color-bg-raised); color: var(--color-bg-raised-fg); box-shadow: var(--shadow-lg); font-family: var(--font-mono); font-size: var(--font-size-sm); line-height: var(--font-line); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.viewer-note { flex: none; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: var(--space-3); max-width: var(--size-sheet-max); margin: 0 var(--space-4); padding: var(--space-6); border-radius: var(--radius-lg); border: var(--size-border) solid var(--color-image-edge); background: var(--viewer-glass); color: var(--color-fg); box-shadow: var(--shadow-lg); text-align: center; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
+.viewer-note > .icon { width: var(--viewer-control); height: var(--viewer-control); color: var(--color-fg-muted); }
+.viewer-note-name { margin: 0; font-weight: var(--font-weight-medium); overflow-wrap: anywhere; }
+.viewer-note-detail { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
+.viewer-audio { max-width: 100%; }
+.viewer-action { padding: 0 var(--space-4) 0 var(--space-3); border: 0; background: transparent; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
+@media (prefers-reduced-motion: reduce) { .viewer-doc, .viewer-note { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }
 
 /* The one close (X) control (issue 213, core/app/components/close-button.js): the image viewer's, the thread card's and

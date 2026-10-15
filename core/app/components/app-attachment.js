@@ -2,6 +2,7 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
 import { isMediaAttachment, mediaKind, isLivePhoto } from '../rules/media.js';
+import { previewKind, filePress } from '../rules/documents.js';
 
 const needsJpeg = (a) => /heic|heif/i.test(a.mime);
 
@@ -32,23 +33,25 @@ export function holdMedia(a, url) {
 }
 const mediaLabel = (kind) => (kind === 'video' ? 'video' : 'image');
 
-// A document (a PDF or any other file that is not a picture or a video) is saved rather than viewed (issue 219): the
-// page hands the shell the file's bytes under its real name, and the shell offers to keep it, a save dialog on the
-// desktop and the share or save sheet on a phone. A page with no shell (a plain browser) downloads it under that name.
+// A file in a conversation is kept with Save and handed to the device's own apps with Open in (issues 219 and 374):
+// the page hands the shell the file's bytes under its real name and type. Save offers to keep it, a save dialog on the
+// desktop and the share or save sheet on a phone; Open in opens it in the system's default app for its type on the
+// desktop, Quick Look on an iPhone and the Open with chooser on Android. A page with no shell (a plain browser)
+// downloads it under that name for either, which is how a browser hands a file to the system.
 export function bytesToBase64(bytes) {
   let out = '';
   for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(out);
 }
 
-export async function saveAttachment(a, { client, bridge = globalThis.window?.bridge, doc = globalThis.document } = {}) {
+async function handFile(command, a, { client, bridge = globalThis.window?.bridge, doc = globalThis.document } = {}) {
   if (!a || a.local || a.missing || !client) return false;
   const blob = await client.attachment(a.id);
   const name = String(a.name || 'Attachment');
   const mime = String(a.mime || blob.type || 'application/octet-stream');
   if (bridge && typeof bridge.call === 'function') {
     const data = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
-    return bridge.call('file.save', { name, mime, data });
+    return bridge.call(command, { name, mime, data });
   }
   const href = URL.createObjectURL(blob);
   try {
@@ -61,6 +64,9 @@ export async function saveAttachment(a, { client, bridge = globalThis.window?.br
     setTimeout(() => URL.revokeObjectURL(href), 0);
   }
 }
+
+export const saveAttachment = (a, options) => handFile('file.save', a, options);
+export const openAttachment = (a, options) => handFile('file.open', a, options);
 
 class AppAttachment extends KitElement {
   static properties = { attachment: { attribute: false }, client: { attribute: false }, src: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
@@ -147,11 +153,18 @@ class AppAttachment extends KitElement {
     this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { from, src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: isLivePhoto(this.attachment) ? 'video' : mediaKind(this.attachment) || 'image' } }));
   }
 
-  // Pressing a document offers to save it under its real name. The press stops here, so the message it sits in never
-  // takes it as a press of its own (a thread reply's text opens its thread; an attachment never does).
-  save(e) {
+  // Pressing a document (issue 374): a kind the app shows itself (a PDF, text, or audio a web view plays) opens in the
+  // media viewer, which offers Open in and Save beside it; any other kind goes straight to Open in. The press stops
+  // here, so the message it sits in never takes it as a press of its own (a thread reply's text opens its thread; an
+  // attachment never does).
+  pressDocument(e) {
     e?.stopPropagation?.();
-    return saveAttachment(this.attachment, { client: this.client });
+    const a = this.attachment;
+    if (filePress(a) === 'view') {
+      this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { from: this, document: true, attachmentId: a.id, kind: previewKind(a), alt: a.name || '', name: a.name || '', mime: a.mime || '' } }));
+      return undefined;
+    }
+    return openAttachment(a, { client: this.client });
   }
 
   render() {
@@ -174,7 +187,10 @@ class AppAttachment extends KitElement {
       return html`<button type="button" class="attachment-preview" aria-label=${label} data-moves=${moves ? 'true' : nothing} @click=${press(() => this.open())}>${media}${moves ? html`<span class="media-play" aria-hidden="true"><span class="icon" data-icon="play"></span></span>` : nothing}</button>`;
     }
     if (a.missing || a.local || !this.client) return html`<div class="attachment-file"><span class="attachment-name">${a.name}</span>${a.missing ? html`<span class="muted small"> Not on the Mac</span>` : nothing}</div>`;
-    return html`<button type="button" class="attachment-file" aria-label=${'Save ' + a.name} title=${'Save ' + a.name} @click=${press((e) => this.save(e))}><span class="icon" data-icon="download" aria-hidden="true"></span><span class="attachment-name">${a.name}</span></button>`;
+    // A document the viewer shows reads as a document; one that goes straight to the device's own apps says so.
+    const view = filePress(a) === 'view';
+    const label = view ? 'Open ' + a.name : 'Open ' + a.name + ' in another app';
+    return html`<button type="button" class="attachment-file" data-opens=${view ? 'viewer' : 'app'} aria-label=${label} title=${label} @click=${press((e) => this.pressDocument(e))}><span class="icon" data-icon=${view ? 'file-text' : 'external-link'} aria-hidden="true"></span><span class="attachment-name">${a.name}</span></button>`;
   }
 }
 

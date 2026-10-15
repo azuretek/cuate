@@ -7,6 +7,39 @@ import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 
+// The fixture PDF's pages: each a page of the given size in points with one square filled in the given colour (0 to 1
+// per channel). Synthetic: drawn here, no text and no fonts.
+export const SYNTHETIC_PDF_PAGES = [
+  { width: 200, height: 260, fill: [0.8, 0.3, 0.2] },
+  { width: 200, height: 260, fill: [0.2, 0.4, 0.8] },
+];
+
+// A well-formed PDF of filled pages, with a real cross-reference table, so a strict reader opens it as a lenient one
+// does.
+export function syntheticPdf(pages) {
+  const objects = [];
+  const kids = pages.map((_, i) => (3 + i * 2) + ' 0 R').join(' ');
+  objects.push('<</Type/Catalog/Pages 2 0 R>>');
+  objects.push('<</Type/Pages/Kids[' + kids + ']/Count ' + pages.length + '>>');
+  pages.forEach((p, i) => {
+    const inset = 20;
+    const draw = p.fill.join(' ') + ' rg ' + inset + ' ' + inset + ' ' + (p.width - inset * 2) + ' ' + (p.height - inset * 2) + ' re f';
+    objects.push('<</Type/Page/Parent 2 0 R/MediaBox[0 0 ' + p.width + ' ' + p.height + ']/Contents ' + (4 + i * 2) + ' 0 R/Resources<<>>>>');
+    objects.push('<</Length ' + draw.length + '>>\nstream\n' + draw + '\nendstream');
+  });
+  let out = '%PDF-1.4\n';
+  const offsets = [];
+  objects.forEach((body, i) => {
+    offsets.push(out.length);
+    out += (i + 1) + ' 0 obj\n' + body + '\nendobj\n';
+  });
+  const xref = out.length;
+  out += 'xref\n0 ' + (objects.length + 1) + '\n0000000000 65535 f \n';
+  for (const o of offsets) out += String(o).padStart(10, '0') + ' 00000 n \n';
+  out += 'trailer\n<</Size ' + (objects.length + 1) + '/Root 1 0 R>>\nstartxref\n' + xref + '\n%%EOF\n';
+  return Buffer.from(out, 'latin1');
+}
+
 export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, capabilities = null, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
   const imagePath = path.join(attachmentsRoot, 'fake', 'sunset.png');
@@ -17,9 +50,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const photo2Path = path.join(attachmentsRoot, 'fake', 'hills.png');
   const photo2 = gradientPng(320, 240);
   writeFileSync(photo2Path, photo2);
-  // A document the conversation can save (issue 219): a small, well-formed PDF under its real name.
+  // A document the conversation can preview, open and save (issues 219 and 374): a small, well-formed PDF under its
+  // real name, whose two pages are each one filled square, so the smoke can read a drawn page's colour back.
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
-  const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
+  const pdf = syntheticPdf(SYNTHETIC_PDF_PAGES);
   writeFileSync(docPath, pdf);
   const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
   let rowid = messages.length;

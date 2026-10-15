@@ -215,9 +215,10 @@ test('the thread opens over a blur that reduced motion keeps without animation, 
   assert.ok(!/\.composer-reply|\.composer-thread|\.reply-mark|\.tapback-row|\.message-actions|\.reply-link|\.faded/.test(css), 'the old banner, indicator, per-message mark, tapback row, hover buttons, reply label and fade are gone');
 });
 
-// Issue 219: a document attachment is a save control under its real name, it carries no thread mark, and its press
-// never opens the thread; a picture keeps the media viewer.
-test('a document attachment carries no thread mark and its press saves rather than opening the thread', () => {
+// Issues 219 and 374: a document attachment is a control under its real name, it carries no thread mark, and its press
+// never opens the thread: a kind the viewer shows opens in it, any other goes to another app; a picture keeps the
+// media viewer.
+test('a document attachment carries no thread mark, and its press opens the file rather than the thread', () => {
   const pdf = { id: 'att-pdf', name: 'booking.pdf', mime: 'application/pdf', bytes: 10, sticker: false, missing: false, local: false };
   const png = { id: 'att-png', name: 'sunset.png', mime: 'image/png', bytes: 10, sticker: false, missing: false, local: false };
   const doc = msg({ id: 'doc', text: '', attachments: [pdf] });
@@ -227,7 +228,16 @@ test('a document attachment carries no thread mark and its press saves rather th
   assert.equal(words(conversation.threadSummary.call(h, doc)), '', 'and carries no reply count');
   const attachment = defined['app-attachment'].prototype;
   const file = words(attachment.render.call({ attachment: pdf, client: {}, failed: false, src: '' }));
-  assert.ok(file.includes('aria-label=Save booking.pdf') && file.includes('data-icon="download"'), 'a document is a save control under its real name');
+  assert.ok(file.includes('aria-label=Open booking.pdf') && file.includes('data-icon=file-text') && file.includes('data-opens=viewer'), 'a PDF opens in the viewer, under its real name');
+  const zip = { ...pdf, id: 'att-zip', name: 'photos.zip', mime: 'application/zip' };
+  const other = words(attachment.render.call({ attachment: zip, client: {}, failed: false, src: '' }));
+  assert.ok(other.includes('aria-label=Open photos.zip in another app') && other.includes('data-icon=external-link') && other.includes('data-opens=app'), 'a kind the viewer cannot show goes straight to another app');
+  const stopped = [];
+  const fired = [];
+  attachment.pressDocument.call({ attachment: pdf, client: {}, dispatchEvent: (e) => fired.push(e) }, { stopPropagation: () => stopped.push(true) });
+  assert.equal(stopped.length, 1, 'the press stops at the attachment, so the message never takes it');
+  assert.equal(fired[0]?.type, 'view-image', 'a PDF opens the viewer');
+  assert.deepEqual({ document: fired[0].detail.document, kind: fired[0].detail.kind, attachmentId: fired[0].detail.attachmentId }, { document: true, kind: 'pdf', attachmentId: 'att-pdf' });
   assert.ok(!file.includes('attachment-preview'), 'and never the media viewer');
   const image = words(attachment.render.call({ attachment: png, client: {}, failed: false, src: '' }));
   assert.ok(image.includes('attachment-image'), 'a picture keeps the media viewer');

@@ -71,6 +71,47 @@ const noIcons = () => false;
 // A document pressed in a conversation (issue 219). A shell with nowhere to save answers false.
 const noSave = () => false;
 
+// Open in (issue 374). A shell with no other app to hand a file to answers false.
+const noOpen = () => false;
+
+// A file's name, type and bytes as the page sent them, bounded and typed, never anything else it might carry.
+const fileArgs = ({ name, mime, data }) => ({ name: String(name ?? '').slice(0, 255), mime: String(mime ?? '').slice(0, 100), data: typeof data === 'string' ? data : '' });
+
+// The name a file is written under for Open in: its own last path part, with nothing that could leave the folder it is
+// written to or that a file system refuses (a separator, a control character, a reserved Windows name), and never empty,
+// so a copy can always be written and the app it opens in shows the name it was sent under.
+export function openName(name) {
+  // eslint-disable-next-line no-control-regex
+  let base = String(name ?? '').split(/[\\/]/).pop().replace(/[\u0000-\u001f<>:"|?*]/g, '_').replace(/^[.\s]+|[.\s]+$/g, '');
+  if (/^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i.test(base)) base = '_' + base;
+  return base.slice(0, 200) || 'Attachment';
+}
+
+// Open in on the desktop (issue 374): each file is written to a fresh folder of its own inside one folder this run
+// owns under the system's temporary directory, so two files with one name never meet, and opened in the system's
+// default app for its type. The run's folder is removed when the app quits (cleanup), so no copy outlives the run.
+// fs is node:fs's sync calls, openPath Electron's shell.openPath (it answers '' on success, an error string otherwise).
+export function createFileOpener({ root, fs, openPath }) {
+  let made = null;
+  return {
+    async open({ name, data }) {
+      if (!data) return false;
+      if (!made) { fs.mkdirSync(root, { recursive: true, mode: 0o700 }); made = root; }
+      const dir = fs.mkdtempSync(path.join(root, 'f-'));
+      const file = path.join(dir, openName(name));
+      fs.writeFileSync(file, Buffer.from(data, 'base64'), { mode: 0o600 });
+      const failed = await openPath(file);
+      return !failed;
+    },
+    cleanup() {
+      if (!made) return false;
+      fs.rmSync(made, { recursive: true, force: true });
+      made = null;
+      return true;
+    },
+  };
+}
+
 // The colour tokens the page sends for the icon: strings only, a bounded handful, never anything else it might carry.
 const iconColors = (colors) => (colors && typeof colors === 'object' && !Array.isArray(colors) ? Object.fromEntries(Object.entries(colors).filter(([k, v]) => /^[a-z][a-z-]{0,31}$/.test(k) && typeof v === 'string' && v.length <= 120).slice(0, 16)) : {});
 
@@ -80,7 +121,7 @@ const noticeIds = ({ chatId, messageId }) => {
   return id(chatId) ? { chatId: id(chatId), messageId: id(messageId) } : null;
 };
 
-export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', takeNotice = () => null, info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons, textScale = async () => null }) {
+export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', takeNotice = () => null, info, openExternal, saveFile = noSave, openFile = noOpen, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons, textScale = async () => null }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -100,7 +141,9 @@ export function createHandlers({ secure, takeLink = () => null, notify, notifyPe
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
     // A document is offered for saving under its real name (issue 219): the page hands the bytes and the name, and the
     // shell shows its save dialog (desktop) or share or save sheet (phone).
-    'file.save': async ({ name, mime, data }) => saveFile({ name: String(name ?? '').slice(0, 255), mime: String(mime ?? '').slice(0, 100), data: typeof data === 'string' ? data : '' }),
+    'file.save': async (args) => saveFile(fileArgs(args ?? {})),
+    // Open in (issue 374): the shell writes a temporary copy and opens it in the system's default app for its type.
+    'file.open': async (args) => openFile(fileArgs(args ?? {})),
     // About's Check for updates (issue 171): the tray's own check, answering the state it reached; the outcome that
     // follows arrives on update.state as the tray's does.
     'updates.check': async () => checkUpdates() ?? null,
