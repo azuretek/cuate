@@ -2403,7 +2403,8 @@ async function runSmoke(w) {
 
   // A pressed message notice opens its conversation at its message (issue 331): a notice raised through the bridge for
   // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
-  // leaves that conversation open with that message in view, marked and focused.
+  // leaves that conversation open with that message in view and focused, and never marked (issue 368): no ring on the
+  // row or its bubble, and nothing animating it.
   const pressFrom = await js("document.querySelector('app-root').openChatId");
   // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
   // in force (Settings, for the steps that follow) is put back once the press is checked.
@@ -2420,14 +2421,15 @@ async function runSmoke(w) {
     try {
       await waitFor("document.querySelector('app-root').openChatId === " + JSON.stringify(pressTo.chatId) + ' && Boolean(document.querySelector(' + JSON.stringify(rowSel) + '))', 10000);
     } catch { /* measured below */ }
-    pressSeen = await js("(() => { const row = document.querySelector(" + JSON.stringify(rowSel) + "); const open = document.querySelector('app-root').openChatId; if (!row) return { row: false, open }; const view = row.closest('.thread-view') || row.closest('.messages'); const a = row.getBoundingClientRect(); const b = view.getBoundingClientRect(); return { row: true, open, inView: a.top >= b.top - 1 && a.top < b.bottom, focused: document.activeElement === row }; })()");
+    pressSeen = await js("(() => { const row = document.querySelector(" + JSON.stringify(rowSel) + "); const open = document.querySelector('app-root').openChatId; if (!row) return { row: false, open }; const view = row.closest('.thread-view') || row.closest('.messages'); const a = row.getBoundingClientRect(); const b = view.getBoundingClientRect(); const none = (el) => !el || getComputedStyle(el).outlineStyle === 'none'; const body = row.querySelector('.bubble-body'); const still = row.getAnimations({ subtree: true }).every((x) => x.playState === 'finished'); return { row: true, open, inView: a.top >= b.top - 1 && a.top < b.bottom, focused: document.activeElement === row, unmarked: none(row) && none(body) && still }; })()");
   }
   const pressChecks = {
     target: Boolean(pressTo),
     raised: smokeNotices.some((n) => n.title === 'Smoke notice' && n.target && n.target.chatId === pressTo?.chatId && n.target.messageId === pressTo?.messageId),
     opened: pressSeen?.open === pressTo?.chatId,
     inView: pressSeen?.inView === true,
-    marked: pressSeen?.row === true,
+    found: pressSeen?.row === true,
+    unmarked: pressSeen?.unmarked === true,
     focused: pressSeen?.focused === true,
     takenOnce: (await js("window.bridge.call('notify.take', {})")) === null,
   };
