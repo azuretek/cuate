@@ -165,6 +165,9 @@ var engine = (() => {
     commitState: () => commitState,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
+    contactFor: () => contactFor,
+    contactIndex: () => contactIndex,
+    contactName: () => contactName,
     contactSearchText: () => contactSearchText,
     contrast: () => contrast,
     contrastRatio: () => contrastRatio,
@@ -216,6 +219,8 @@ var engine = (() => {
     graphemes: () => graphemes,
     groupAddresses: () => groupAddresses,
     groupMessages: () => groupMessages,
+    handleKey: () => handleKey,
+    handleKeys: () => handleKeys,
     hideChats: () => hideChats,
     holdsAfter: () => holdsAfter,
     hostOf: () => hostOf,
@@ -2643,6 +2648,43 @@ var engine = (() => {
     const want = [...link.addresses].sort().join("\n");
     const hit = orderChats(chats).find((c) => Array.isArray(c.participants) && c.isGroup === link.addresses.length > 1 && [...c.participants].sort().join("\n") === want);
     return hit ? { open: hit.id } : { compose: link.addresses };
+  }
+
+  // core/app/rules/contacts.js
+  function handleKey(handle) {
+    const raw = String(handle || "").trim();
+    if (!raw) return "";
+    if (raw.includes("@")) return raw.toLowerCase();
+    const digits = raw.replace(/\D+/g, "");
+    if (digits.length >= 7) return digits.slice(-10);
+    return raw.toLowerCase();
+  }
+  function handleKeys(handles) {
+    return (Array.isArray(handles) ? handles : []).map(handleKey).filter(Boolean);
+  }
+  function contactFor(handles, index) {
+    if (!index || typeof index.get !== "function") return null;
+    for (const key of handleKeys(handles)) {
+      const record = index.get(key);
+      if (record) return record;
+    }
+    return null;
+  }
+  function contactName(record) {
+    if (!record) return "";
+    const nickname = String(record.nickname || "").trim();
+    if (nickname) return nickname;
+    const person = [record.given, record.middle, record.family].map((p) => String(p || "").trim()).filter(Boolean).join(" ");
+    if (person) return person;
+    return String(record.organization || "").trim();
+  }
+  function contactIndex(records) {
+    const index = /* @__PURE__ */ new Map();
+    for (const record of Array.isArray(records) ? records : []) {
+      const keys = [...handleKeys(record && record.phones), ...handleKeys(record && record.emails)];
+      for (const key of keys) if (!index.has(key)) index.set(key, record);
+    }
+    return index;
   }
 
   // core/app/rules/emoji-data.js

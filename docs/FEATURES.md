@@ -62,5 +62,7 @@ What works today, and the test that proves each. Planned work is at the end.
 
 ## Planned
 
+- Contact names and photos (issue 393): a one-to-one chat draws the name and the picture the Mac's Contacts hold, in the chat list, the header and every surface that draws the person, and a contact renamed or repictured reaches every client at once: `server/test/contacts.test.js`, "the store names a chat by the first of its handles it knows (issue 393)".
+
 iPhone and Android apps; webhooks; export and backup; scheduled messages; the server looking after the Mac; metrics and tracing; the emoji engine and skins; rich content; edits and unsend where the engine offers them; and the other person's typing where a bridge offers it. Our own typing is relayed between this account's signed-in devices and shown in the conversation header (issue 230); the other person's typing is not drawn where the engine cannot report it. [Read and typing](READ-AND-TYPING.md) records what the engine reports for read state and typing.
 - Group photos (issue 341): a group's photo is its avatar in the chat list and the contact header, and a change to it is a line in the conversation naming who changed it, with the new photo beside it; stickers draw as themselves: `server/test/group-photo.test.js`.

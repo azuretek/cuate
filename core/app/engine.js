@@ -25,6 +25,7 @@ export * from './rules/app-icons.js';
 export * from './rules/attach.js';
 export * from './rules/app-notices.js';
 export * from './rules/chats.js';
+export * from './rules/contacts.js';
 export * from './rules/emoji.js';
 export * from './rules/emoji-data.js';
 export * from './rules/connection.js';
