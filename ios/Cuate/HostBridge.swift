@@ -474,7 +474,7 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
     private func editContact(_ args: [String: Any]) -> Bool {
         guard let handle = args["handle"] as? String, !handle.isEmpty else { return false }
         let store = CNContactStore()
-        let keys: [CNKeyDescriptor] = [CNContactViewController.descriptorForRequiredKeys]
+        let keys: [CNKeyDescriptor] = [CNContactViewController.descriptorForRequiredKeys()]
         let predicate: NSPredicate = handle.contains("@")
             ? CNContact.predicateForContacts(matchingEmailAddress: handle)
             : CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: handle))
