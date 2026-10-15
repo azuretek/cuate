@@ -21,6 +21,11 @@
       await new Promise(requestAnimationFrame);
     }
   };
+  // What the page's own policy refused, recorded as it happens: a media load the Content-Security-Policy does not
+  // allow fails as an unsupported source rather than as itself, so the recorded violation is the only thing that names
+  // the cause (issue 386).
+  const refusals = [];
+  document.addEventListener('securitypolicyviolation', (e) => refusals.push(e.violatedDirective + ' ' + e.blockedURI));
   const marker = document.createElement('output');
   Object.assign(marker.style, { position: 'fixed', top: '0', left: '0', zIndex: '9999', fontSize: '1px' });
   const say = (text) => { marker.setAttribute('aria-label', text); marker.textContent = text; };
@@ -50,11 +55,18 @@
   g.arc(300, 520, 120, 0, Math.PI * 2);
   g.fill();
   const still = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-  // The motion, served by the shell's own scheme from the bundle and typed as the server types it.
+  // The motion, served by the shell's own scheme from the bundle and typed as the server types it. What went wrong is
+  // kept, because a failure the page cannot explain reads as a viewer bug whatever it was (issue 386).
+  let fetchFailure = null;
   const motion = async () => {
-    const r = await fetch(new URL('/live-photo-fixture.mp4', document.baseURI));
-    if (!r.ok) throw new Error('the motion fixture answered ' + r.status);
-    return new Blob([await r.arrayBuffer()], { type: 'video/mp4' });
+    try {
+      const r = await fetch(new URL('/live-photo-fixture.mp4', document.baseURI));
+      if (!r.ok) throw new Error('the motion fixture answered ' + r.status);
+      return new Blob([await r.arrayBuffer()], { type: 'video/mp4' });
+    } catch (error) {
+      fetchFailure = String((error && error.message) || error);
+      throw error;
+    }
   };
   const client = { attachment: async (id, o = {}) => (o.part === 'live' ? motion() : still) };
 
@@ -82,6 +94,24 @@
       still: img() ? box(img()) : null,
       control: c ? c.getAttribute('aria-label') : null,
     });
+  };
+  // Why a motion could not play, asked of the shell rather than inferred: the fixture fetches the motion and plays it on
+  // an element of its own, so a fetch the shell refused and a shell that will not load a blob read apart, and the reason
+  // is the media's own (issue 386).
+  const why = async () => {
+    if (fetchFailure) return 'the page could not fetch the motion: ' + fetchFailure;
+    const probe = document.createElement('video');
+    probe.muted = true;
+    probe.playsInline = true;
+    try {
+      probe.src = URL.createObjectURL(await motion());
+      await probe.play();
+    } catch (error) {
+      return 'the page could not play the same motion on its own element: ' + String((error && error.name) || '') + ' ' + String((error && error.message) || error);
+    }
+    const until = performance.now() + 3000;
+    while (performance.now() < until && probe.readyState < 2 && !probe.error) await new Promise(requestAnimationFrame);
+    return 'the page played the same motion on its own element: readyState ' + probe.readyState + ' error ' + (probe.error ? probe.error.code : 'none') + '; ' + (refusals.length ? 'refused by the policy: ' + refusals.join(', ') : 'nothing refused by the policy');
   };
 
   // The press is the UI test's. The control's own click handler runs on the same click, so this only notes it arrived.
@@ -113,7 +143,7 @@
       if (!started && v.currentTime > 0.3 && !v.paused) started = v.currentTime;
       else if (started && v.currentTime > started + 0.2) break;
     } else if (control() && control().getAttribute('aria-label') === 'The motion could not be loaded') {
-      say('live:fail the viewer reported the motion could not be loaded ' + state());
+      say('live:fail the viewer reported the motion could not be loaded ' + state() + ' ' + await why());
       return;
     }
     await new Promise(requestAnimationFrame);
