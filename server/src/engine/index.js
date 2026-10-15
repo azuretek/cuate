@@ -7,7 +7,7 @@ import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
 import { annotateLivePhotos } from './live-photo.js';
-import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, countUnreadMessages, PHOTO_SCAN_ROWS, UNREAD_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, countsAsUnreadMessage, PHOTO_SCAN_ROWS, UNREAD_SCAN_ROWS, UNREAD_SCAN_PAGES } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 // Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
@@ -298,17 +298,34 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return starting;
   }
 
-  // A chat's unread as our own layer counts it: read the chat's messages and count the ordinary unread ones. imsg's
-  // own count carries every unread inbound row, including the rows Messages writes for group membership changes,
-  // renames and other group actions, which Messages itself never counts, so a chat read as unread with nothing a
-  // person sent (issue 389). A read that fails keeps the engine's number for that chat, so a hiccup never invents a
-  // zero.
-  async function countUnread(chatId, fallback) {
+  // A chat's unread as our own layer counts it: read the chat's messages and count the ordinary unread ones, so the
+  // rows Messages writes for a group membership change, a rename or another group action (which it never counts) do
+  // not raise the badge (issue 389). The scan pages back until it has seen every unread row the engine counted for the
+  // chat, so a genuine unread message deeper than one page is never dropped. When it cannot (the rows sit deeper than
+  // the bound, or a read fails) it answers null and the caller keeps the engine's own number, never a count we cannot
+  // stand behind.
+  async function countUnread(chatId, expected) {
+    let end = null;
+    let seen = 0;
+    let found = 0;
     try {
-      const r = await request('messages.history', { chat_id: Number(chatId), limit: UNREAD_SCAN_ROWS, attachments: true }, timeoutMs, ['attachments']);
-      return countUnreadMessages(r && Array.isArray(r.messages) ? r.messages : []);
+      for (let page = 0; page < UNREAD_SCAN_PAGES; page++) {
+        const params = { chat_id: Number(chatId), limit: UNREAD_SCAN_ROWS, attachments: true };
+        if (end) params.end = end;
+        const r = await request('messages.history', params, timeoutMs, ['attachments']);
+        const rows = r && Array.isArray(r.messages) ? r.messages : [];
+        if (!rows.length) return found;
+        for (const m of rows) {
+          if (m && m.is_from_me !== true && m.is_read === false) { seen += 1; if (countsAsUnreadMessage(m)) found += 1; }
+        }
+        if (seen >= expected || rows.length < UNREAD_SCAN_ROWS) return found;
+        const oldest = rows.reduce((a, m) => (a && a.created_at <= m.created_at ? a : m), null);
+        end = oldest && oldest.created_at ? oldest.created_at : null;
+        if (!end) return found;
+      }
+      return null; // bounded out without seeing every unread row: keep the engine's own number
     } catch {
-      return fallback; // request() already logged the failure
+      return null; // request() already logged the failure
     }
   }
 
@@ -318,7 +335,10 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   async function chats({ limit = 200, photos = false, recountUnread = false } = {}) {
     const r = await request('chats.list', { limit }, timeoutMs);
     const list = (r && Array.isArray(r.chats) ? r.chats : []).map(mapChat);
-    if (recountUnread) for (const c of list) if (c.unread > 0) c.unread = await countUnread(c.id, c.unread);
+    if (recountUnread) for (const c of list) if (c.unread > 0) {
+      const n = await countUnread(c.id, c.unread);
+      if (n !== null) c.unread = n;
+    }
     // A group the engine has not looked through yet is read once for its photo, one at a time; the list waits a moment
     // for those reads and goes out with whatever they found by then, and a later list carries the rest.
     const unseen = photos ? list.filter((c) => c.isGroup && !photoScanned.has(c.id)) : [];
