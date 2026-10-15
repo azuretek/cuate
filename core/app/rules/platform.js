@@ -143,3 +143,19 @@ export function platformThreadUnsupported() {
     detail: 'Answer with a message instead.',
   };
 }
+
+// Who is on the other end, and whether what we send is end-to-end encrypted (Abi, 2026-10-12 and 2026-10-14). Every
+// message we send keeps the theme's own colour whatever the platform; the difference is told quietly instead: an icon
+// beside the name for a conversation on Apple devices, which explains itself on hover, a plain explanation on the name
+// otherwise, and a small lock beside the time in a message's menu. A platform the app does not know says nothing.
+export function serviceNote(chat) {
+  const platform = platformOf(chat);
+  const group = Boolean(chat && chat.isGroup);
+  if (platform === 'imessage') {
+    return { encrypted: true, apple: true, label: (group ? 'Everyone here is on Apple devices.' : 'On Apple devices.') + ' Your messages here are end-to-end encrypted.' };
+  }
+  if (platform === 'sms' || platform === 'rcs') {
+    return { encrypted: false, apple: false, label: (group ? 'Not everyone here is on Apple devices.' : 'Not on Apple devices.') + ' Your messages here go as text messages and are not end-to-end encrypted.' };
+  }
+  return null;
+}

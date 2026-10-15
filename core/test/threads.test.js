@@ -77,7 +77,7 @@ test('an ordinary message carries no thread affordance, and no line is drawn bet
   const marks = threadMarks(list);
   for (const id of ['SYN-0001', 'SYN-0003', 'SYN-0004', 'SYN-0007']) {
     assert.equal(marks.has(id), false, id + ' answers nothing and is answered by nothing, so it carries no mark');
-    const markup = words(conversation.bubble.call(h, { message: list.find((m) => m.id === id), first: true, last: true }, null, false, 'list'));
+    const markup = words(conversation.bubble.call(h, { message: list.find((m) => m.id === id), first: true, last: true }, null, 'list'));
     assert.ok(!/thread-reply|thread-count|thread-line|thread-ghost/.test(markup), id + ' draws no thread chrome');
   }
   const page = words(conversation.render.call(h));

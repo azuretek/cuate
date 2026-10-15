@@ -13,6 +13,10 @@ export const WINDOW_STRIP_HEIGHT = 32;
 // derived from.
 export const MAC_LIGHTS_X = 16;
 export const MAC_LIGHTS_PX = 16;
+// The room the three lights take from the window's left edge (they start at MAC_LIGHTS_X and are about 52px across),
+// with a gap after them: the token size.window-lights, which desktop/test/window-chrome.test.js holds to this, keeps a
+// notice clear of them on macOS.
+export const MAC_LIGHTS_ROOM = 80;
 
 // How far Windows and Linux set the app's own window controls in from the window's top edge and from its right edge,
 // the one value both offsets share so the controls sit square in the corner. It is the token size.window-control-inset,

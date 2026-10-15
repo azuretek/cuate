@@ -747,3 +747,111 @@ test('the appearance choice survives a server restart', async () => {
     reopened.close();
   }
 });
+
+// A change to the engine's own database is an EVENT: the list is read again the moment it settles, so a read on the
+// phone reaches every client in about a fifth of a second rather than at the next poll (Abi, 2026-10-14). The failsafe
+// interval here is ten minutes, so a pass can only come from the watcher.
+const touchDb = (t, which = 'wal') => writeFileSync(path.join(t.dir, 'chat.db' + (which === 'wal' ? '-wal' : '')), String(Date.now()));
+
+test('a conversation read on another device is told to every client as chat.read, on the database change', async () => {
+  const t = await boot({ readSyncMs: 10 * 60 * 1000, dbPath: true });
+  try {
+    const list = async () => (await (await t.get('/api/v1/chats', t.tokens.device)).json()).chats;
+    const before = (await list()).find((c) => c.id === '1');
+    assert.ok(before.unread > 0, 'the fixture conversation starts unread');
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    assert.ok(t.world.readElsewhere(1));
+    touchDb(t);
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'chat.read'), 3000);
+    const ev = sock.frames.find((f) => f.name === 'chat.read');
+    conforms(ev.data, 'ChatRead');
+    assert.deepEqual(ev.data, { chatId: '1', unread: 0 });
+    assert.equal((await list()).find((c) => c.id === '1').unread, 0, 'the held list follows');
+    assert.ok(!t.world.requests.includes('read'), 'nothing in this app read it');
+    const seen = sock.frames.filter((f) => f.name === 'chat.read').length;
+    await new Promise((r) => setTimeout(r, 250));
+    assert.equal(sock.frames.filter((f) => f.name === 'chat.read').length, seen, 'a count that did not change is not told again');
+    sock.ws.close();
+  } finally { await t.close(); }
+});
+
+test('the database watch is the mechanism, and its own start is logged', async () => {
+  const t = await boot({ readSyncMs: 10 * 60 * 1000, dbPath: true });
+  try {
+    assert.deepEqual(t.lines.filter((l) => l.event === 'db.watch').map((l) => [l.ok, l.reason]), [[true, 'watching']], 'the server says it is watching the database');
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    const before = sock.frames.length;
+    touchDb(t);
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(sock.frames.length, before, 'a change when nothing was read tells nobody');
+    assert.ok(t.lines.some((l) => l.event === 'db.changed'), 'the change itself is logged');
+    sock.ws.close();
+  } finally { await t.close(); }
+  const noDb = await boot({ readSyncMs: 10 * 60 * 1000 });
+  try {
+    assert.deepEqual(noDb.lines.filter((l) => l.event === 'db.watch').map((l) => [l.ok, l.reason]), [[false, 'not configured']], 'a server with no database says so rather than polling silently');
+  } finally { await noDb.close(); }
+});
+
+test('a message that arrives and is read on another device between two reads of the list is still told as chat.read', async () => {
+  const t = await boot({ readSyncMs: 10 * 60 * 1000, dbPath: true });
+  try {
+    const list = async () => (await (await t.get('/api/v1/chats', t.tokens.device)).json()).chats;
+    assert.equal((await list()).find((c) => c.id === '2').unread, 0, 'the conversation starts read');
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    t.world.incoming(2, 'Synthetic arrival');
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'message.new'));
+    assert.ok(t.world.readElsewhere(2));
+    touchDb(t);
+    await waitFor(() => sock.frames.some((f) => f.type === 'event' && f.name === 'chat.read' && f.data.chatId === '2'), 3000);
+    assert.equal((await list()).find((c) => c.id === '2').unread, 0);
+    sock.ws.close();
+  } finally { await t.close(); }
+});
+
+// Conversations and groups are Messages' own (issue 326): created, renamed and changed through the engine, and every
+// client hears the change as chat.changed.
+test('a new conversation with several people is an iMessage group, named, and every client hears it', async () => {
+  const t = await boot();
+  try {
+    const sock = await openSocket(t.base);
+    sock.ws.send(JSON.stringify({ type: 'auth', token: t.tokens.device }));
+    await waitFor(() => sock.frames.some((f) => f.type === 'hello'));
+    const r = await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550199', 'friend@example.com'], name: 'Picnic' });
+    assert.equal(r.status, 200);
+    const chat = await r.json();
+    conforms(chat, 'Chat');
+    assert.equal(chat.isGroup, true);
+    assert.equal(chat.name, 'Picnic');
+    assert.deepEqual([...chat.participants].sort(), ['+15555550199', 'friend@example.com']);
+    assert.ok(t.world.requests.includes('chats.create'));
+    await waitFor(() => sock.frames.some((f) => f.name === 'chat.changed' && f.data.id === chat.id));
+    const one = await (await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550100'] })).json();
+    assert.equal(one.id, '1', 'one address opens the existing conversation with that person');
+    assert.equal((await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550100'], name: 'x' })).status, 400, 'a direct chat takes no name');
+    assert.equal((await t.post('/api/v1/chats', t.tokens.device, { addresses: ['not an address'] })).status, 400);
+    sock.ws.close();
+  } finally { await t.close(); }
+});
+
+test('a group is renamed and its members changed through Messages; a direct chat refuses it', async () => {
+  const t = await boot();
+  try {
+    const g = await (await t.post('/api/v1/chats', t.tokens.device, { addresses: ['+15555550199', '+15555550188'] })).json();
+    const call = (method, path, body) => fetch(t.base + path, { method, headers: { authorization: 'Bearer ' + t.tokens.device, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const renamed = await (await call('PUT', '/api/v1/chats/' + g.id + '/name', { name: 'Book club' })).json();
+    assert.equal(renamed.name, 'Book club');
+    const added = await (await call('POST', '/api/v1/chats/' + g.id + '/members', { address: 'reader@example.com' })).json();
+    assert.ok(added.participants.includes('reader@example.com'));
+    const removed = await (await call('DELETE', '/api/v1/chats/' + g.id + '/members/' + encodeURIComponent('+15555550188'))).json();
+    assert.ok(!removed.participants.includes('+15555550188'));
+    for (const m of ['group.rename', 'group.addParticipant', 'group.removeParticipant']) assert.ok(t.world.requests.includes(m), m);
+    assert.equal((await call('PUT', '/api/v1/chats/1/name', { name: 'x' })).status, 400, 'a direct chat is not a group');
+  } finally { await t.close(); }
+});

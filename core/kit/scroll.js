@@ -17,6 +17,10 @@ import { anchorFrom, scrollFor, revealDelta } from './rules/scroll.js';
 
 const keyOf = (el, i) => el.dataset.id ?? el.dataset.chat ?? el.dataset.key ?? String(i);
 
+// The person's own ways of moving a view, and how long after one a scroll is still theirs (a fling keeps scrolling).
+const INPUTS = ['wheel', 'touchstart', 'touchmove', 'keydown', 'pointerdown'];
+const PERSON_MS = 1500;
+
 // The view's width. A scroll event that arrives while it differs from the width the view was last put back at is the
 // browser's (a turn rewrapping every item, carrying or clamping the old scrollTop), never the person's. Only the width:
 // a view that only grew or shrank in height (the composer growing under it) still takes a scroll the person or the page
@@ -36,6 +40,12 @@ export class KeepScroll {
     this.resized = null;
     this.added = null;
     this.shape = null;
+    // The scrollTop this controller last wrote, so the scroll event that write raises is never read as the person's.
+    this.written = null;
+    // When the person last touched the view: a wheel, a touch, a key or a press on it (its scrollbar included). A view
+    // that follows its newest item leaves its end only for the person, never for a layout that moved under it.
+    this.touched = 0;
+    this.onInput = () => { this.touched = Date.now(); };
     host.addController(this);
   }
 
@@ -77,6 +87,7 @@ export class KeepScroll {
     this.el = el;
     if (!el) return;
     el.addEventListener('scroll', this.onScroll, { passive: true });
+    for (const type of INPUTS) el.addEventListener(type, this.onInput, { passive: true });
     // The browser's own scroll anchoring would move the view on a layout change by its own choice of anchor, before
     // this one is asked; with it off, the only mover is this controller (CSSOM, which the page's CSP allows).
     el.style.overflowAnchor = 'none';
@@ -87,6 +98,7 @@ export class KeepScroll {
   detach() {
     if (!this.el) return;
     this.el.removeEventListener('scroll', this.onScroll);
+    for (const type of INPUTS) this.el.removeEventListener(type, this.onInput);
     if (this.resized) this.resized.disconnect();
     if (this.added) this.added.disconnect();
     this.el = null;
@@ -116,9 +128,26 @@ export class KeepScroll {
   // is the layout moving under the view (a phone turning, a rewrap; issue 211): the place stays, and the resize that
   // follows puts the view back. Read as the person's, it re-anchors a conversation to whatever item the half-turned
   // layout has at its top, so a turn can end many messages away from where it started.
+  //
+  // A scroll that leaves the view exactly where this controller last put it is this controller's own, whatever has
+  // changed since: the browser delivers the scroll event a moment after restore() moves the view, and a picture that
+  // landed in that moment has already grown the conversation, so read then, the view no longer sits on its place and
+  // the scroll was taken for the person's. That is how a conversation at its newest message came to rest a screen or
+  // more above it: the end was traded for whatever message happened to be at the top. The person scrolling always
+  // moves the view off the value written here.
   record() {
     if (!this.el) return;
     if (this.shape !== null && shapeOf(this.el) !== this.shape) return;
+    if (this.written !== null && Math.abs(this.el.scrollTop - this.written) < 1) return;
+    // A view at its end stays there until the person moves it. The browser clamps a view whose content shrank (a row
+    // handed a picture still on its way), and by the time that scroll is heard a picture may already have grown the
+    // conversation again, so the view reads as a screen above its end with nobody having scrolled. Without the person's
+    // own input just before, that is layout: the end is kept and the view is put back on it.
+    if (this.anchor && this.anchor.end && Date.now() - this.touched > PERSON_MS) {
+      this.restore();
+      return;
+    }
+    this.written = null;
     const now = this.measure();
     if (this.anchor && Math.abs(scrollFor(this.anchor, now) - now.scrollTop) < 1) return;
     this.anchor = anchorFrom({ ...now, follow: this.follow });
@@ -127,7 +156,11 @@ export class KeepScroll {
   restore() {
     if (!this.el || !this.el.isConnected || !this.anchor) return;
     const next = scrollFor(this.anchor, this.measure());
-    if (Math.abs(next - this.el.scrollTop) >= 1) this.el.scrollTop = next;
+    if (Math.abs(next - this.el.scrollTop) >= 1) {
+      this.el.scrollTop = next;
+      // Where the view actually landed, which a view too short to reach the place clamps.
+      this.written = this.el.scrollTop;
+    }
     this.shape = shapeOf(this.el);
     this.reveal();
   }

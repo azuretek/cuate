@@ -157,6 +157,21 @@ jobs:
           node ../scripts/release/version.mjs > /dev/null
           echo "the release APK names itself $(node ../scripts/release/version.mjs)"
 
+      # Firebase's client config carries an API key, so it is never committed: the release writes it from a secret and
+      # Gradle reads the four values push needs from it (issue 347, docs/PUSH.md).
+      - name: Write the Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.CUATE_GOOGLE_SERVICES_JSON }}
+        run: |
+          set -eo pipefail
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::CUATE_GOOGLE_SERVICES_JSON is not set. It is the base64 of the Android app's google-services.json from the Firebase project (docs/PUSH.md)."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 --decode > "$RUNNER_TEMP/google-services.json"
+          node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$RUNNER_TEMP/google-services.json"
+          echo "CUATE_GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+
       - name: Build the signed APK
         run: |
           set -eo pipefail

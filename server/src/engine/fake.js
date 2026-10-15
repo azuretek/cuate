@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
+import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 
 export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, capabilities = null, features = [] } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
@@ -41,6 +42,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
     return Number.isInteger(v) ? v : 0;
   };
+  // Every typing call, as { chatId, typing }, so a test sees our indicator shown and taken down (issue 319).
+  const typings = [];
   const tapbacks = [];
   const KINDS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
   const transports = new Set();
@@ -58,6 +61,16 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const world = {
     sends,
     tapbacks,
+    // A conversation read on another device: its messages turn read in the engine and its count falls, with nothing
+    // said on the message stream, as a read on the phone reaches the Mac's database (issue 323).
+    readElsewhere(chatId) {
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat) return false;
+      for (const m of messages) if (m.chat_id === chatId && !m.is_from_me) m.is_read = true;
+      chat.unread_count = 0;
+      return true;
+    },
+    typings,
     behavior,
     messages,
     requests: [],
@@ -65,6 +78,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     incoming(chatId, text, sender) {
       const chat = chats.find((c) => c.id === chatId);
       const m = add({ chat_id: chatId, is_from_me: false, sender: sender || chat.participants[0], text, is_read: false });
+      // An unread message raises its conversation's count, as it does in chat.db.
+      chat.unread_count = (chat.unread_count || 0) + 1;
       broadcast(m);
       return m;
     },
@@ -120,7 +135,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'status':
             // A ready bridge advertises its event stream, as imsg does when the non-launching bridge probe succeeds. The
             // adapter only subscribes when the inbound-typing switch is on (issue 230).
-            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe'] : [] });
+            return reply(req.id, { version: 'fake-1.0', protocol_version: 1, database: { path: ':fake:', ready: true }, capabilities: behavior.capabilities, rpc_features: behavior.features, methods: behavior.bridge === 'ready' ? ['bridge.events.subscribe', 'typing'] : [] });
           case 'chats.list': {
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
@@ -129,7 +144,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             let ms = messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction);
             if (p.end) ms = ms.filter((m) => m.created_at < p.end);
             ms = ms.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id).slice(0, p.limit || 50);
-            if (liveText && !liveSent && (p.limit || 50) > 5) {
+            // The live message lands in the first conversation a client opens, never in a group the engine reads for its
+            // photo (issue 341), which is no conversation anyone opened.
+            if (liveText && !liveSent && (p.limit || 50) > 5 && p.limit !== PHOTO_SCAN_ROWS) {
               liveSent = true;
               setTimeout(() => world.incoming(p.chat_id, liveText), liveDelayMs).unref();
             }
@@ -158,10 +175,40 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'watch.unsubscribe':
             subs.delete(p.subscription);
             return reply(req.id, { ok: true });
+          // imsg's typing: our indicator in a chat, shown or taken down, through the bridge.
+          case 'typing': {
+            if (behavior.bridge !== 'ready') return noBridge(req.id);
+            if (!chats.some((c) => c.id === p.chat_id)) return fail(req.id, -32602, 'unknown chat_id ' + p.chat_id);
+            typings.push({ chatId: p.chat_id, typing: p.typing !== false });
+            return reply(req.id, { ok: true });
+          }
           case 'bridge.events.subscribe': {
             nextBridgeSub += 1;
             bridgeSubs.add(nextBridgeSub);
             return reply(req.id, { subscription: nextBridgeSub, buffer_limit: p.buffer_limit || 256, resumable: false });
+          }
+          case 'chats.create': {
+            const addresses = Array.isArray(p.addresses) ? p.addresses.map(String).filter(Boolean) : [];
+            if (!addresses.length) return fail(req.id, -32602, 'addresses is required');
+            const group = addresses.length > 1;
+            const existing = group ? null : chats.find((c) => !c.is_group && c.identifier === addresses[0]);
+            if (existing) return reply(req.id, { ok: true, chat_guid: existing.guid });
+            const id = Math.max(0, ...chats.map((c) => c.id)) + 1;
+            const identifier = group ? 'chat' + (900000000 + id) : addresses[0];
+            const guid = 'iMessage;' + (group ? '+' : '-') + ';' + identifier;
+            chats.push({ id, name: p.name || (group ? '' : addresses[0]), display_name: p.name || '', contact_name: '', identifier, guid, service: 'iMessage', is_group: group, participants: addresses, unread_count: 0 });
+            return reply(req.id, { ok: true, chat_guid: guid });
+          }
+          case 'group.rename':
+          case 'group.addParticipant':
+          case 'group.removeParticipant': {
+            const chat = chats.find((c) => c.id === p.chat_id);
+            if (!chat) return fail(req.id, -32602, 'unknown chat_id');
+            if (!chat.is_group) return fail(req.id, -32602, 'not a group chat');
+            if (req.method === 'group.rename') { chat.display_name = String(p.name || ''); chat.name = chat.display_name; }
+            else if (req.method === 'group.addParticipant') { if (!chat.participants.includes(p.address)) chat.participants = [...chat.participants, String(p.address)]; }
+            else chat.participants = chat.participants.filter((a) => a !== p.address);
+            return reply(req.id, { ok: true });
           }
           case 'read': {
             const chat = chats.find((c) => c.id === p.chat_id);

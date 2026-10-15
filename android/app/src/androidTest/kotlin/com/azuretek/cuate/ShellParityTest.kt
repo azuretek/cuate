@@ -36,8 +36,12 @@ class ShellParityTest {
             "storage.set",
             "storage.delete",
             "app.info",
+            "link.take",
             "app.icon",
             "notify",
+            "notify.permission",
+            "notify.take",
+            "push.token",
             "open.external",
             "file.save",
             "updates.check",
@@ -52,6 +56,18 @@ class ShellParityTest {
             "icon.redraw",
         )
         assertEquals(declared, HostBridge.commandNames(context.assets))
+    }
+
+    // Issue 331: a pressed message notice is held until the page takes it, and taking it clears it.
+    @Test
+    fun aPressedNoticeIsTakenOnce() {
+        val bridge = HostBridge(context, SecureStore(context), HostBridge.commandNames(context.assets), "App", "0.0.1")
+        val open = android.content.Intent().putExtra(HostBridge.EXTRA_CHAT, "7").putExtra(HostBridge.EXTRA_MESSAGE, "m-9")
+        HostBridge.pressedNotice = HostBridge.noticeFrom(open)
+        val taken = org.json.JSONObject(bridge.call("notify.take", "{}")).getJSONObject("value")
+        assertEquals("7", taken.getString("chatId"))
+        assertEquals("m-9", taken.getString("messageId"))
+        assertEquals(true, org.json.JSONObject(bridge.call("notify.take", "{}")).isNull("value"))
     }
 
     // Issue 192: About shows this build's channel and build number rather than Unknown.

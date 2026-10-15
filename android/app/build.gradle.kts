@@ -37,6 +37,17 @@ android {
         buildConfig = true
     }
 
+    // Firebase's client config carries an API key, so it is never committed (issue 347, docs/PUSH.md): the release
+    // writes google-services.json from a secret, and the four values push needs become build settings here. A build
+    // without the file runs without push.
+    val firebase = firebaseClient()
+    defaultConfig {
+        buildConfigField("String", "FIREBASE_APP_ID", "\"" + firebase["appId"] + "\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"" + firebase["apiKey"] + "\"")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"" + firebase["projectId"] + "\"")
+        buildConfigField("String", "FIREBASE_SENDER_ID", "\"" + firebase["senderId"] + "\"")
+    }
+
     signingConfigs {
         // The release keystore is a CI secret (see .github/workflows/android.yml).
         // Nothing here names a path: the workflow writes the file and sets these
@@ -94,13 +105,35 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
 // spells some of them with a capital L in the middle.
 tasks.matching { it.name.lowercase().contains("lint") }.configureEach { dependsOn(copyCore) }
 
+// The app's entry in google-services.json, read from CUATE_GOOGLE_SERVICES_JSON or app/google-services.json (both
+// outside the tree's history), or empty values when neither exists.
+fun firebaseClient(): Map<String, String> {
+    val empty = mapOf("appId" to "", "apiKey" to "", "projectId" to "", "senderId" to "")
+    val file = System.getenv("CUATE_GOOGLE_SERVICES_JSON")?.takeIf { it.isNotBlank() }?.let { file(it) } ?: file("google-services.json")
+    if (!file.exists()) return empty
+    @Suppress("UNCHECKED_CAST")
+    val json = groovy.json.JsonSlurper().parse(file) as Map<String, Any?>
+    val project = json["project_info"] as Map<String, Any?>
+    @Suppress("UNCHECKED_CAST")
+    val client = (json["client"] as List<Map<String, Any?>>).firstOrNull { c ->
+        ((c["client_info"] as Map<String, Any?>)["android_client_info"] as Map<String, Any?>)["package_name"] == "com.azuretek.cuate"
+    } ?: return empty
+    val info = client["client_info"] as Map<String, Any?>
+    @Suppress("UNCHECKED_CAST")
+    val key = (client["api_key"] as List<Map<String, Any?>>).first()["current_key"] as String
+    return mapOf("appId" to info["mobilesdk_app_id"] as String, "apiKey" to key, "projectId" to project["project_id"] as String, "senderId" to project["project_number"] as String)
+}
+
 dependencies {
+    // Firebase Cloud Messaging gives the phone the push token our relay sends to (issue 347, docs/PUSH.md).
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
     // The web view host and its asset loader.
     implementation("androidx.webkit:webkit:1.12.1")
     // FileProvider, so a saved document reaches the system's share sheet (issue 219).
     implementation("androidx.core:core:1.13.1")
     // The embedded engine for the rules a shell needs with no page on screen.
-    // docs/android.md records the measurement that chose it.
+    // docs/ANDROID.md records the measurement that chose it.
     implementation("androidx.javascriptengine:javascriptengine:1.1.1")
 
     testImplementation("junit:junit:4.13.2")

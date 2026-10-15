@@ -309,7 +309,7 @@ test('About is a second sheet above Settings, each arriving on its own, and redu
   // The two are distinct sheets: About has its own header and its own way back to Settings.
   assert.match(read('core/app/components/app-about.js'), /app-sheet \.title=\$\{'About'\}/, 'About draws its own header, not Settings');
   const root = read('core/app/components/app-root.js');
-  assert.match(root, /\.backLabel=\$\{this\.aboutFrom === 'settings' \? 'Back to settings' : 'Back to app'\}/, 'About keeps its own way back to Settings');
+  assert.match(root, /\.backLabel=\$\{this\.aboutFrom === 'settings' \? 'Back to settings' : ''\}/, 'About keeps its own way back to Settings');
   assert.match(root, /dismissable\(this, \{ name: 'about', open: \(\) => this\.aboutSheetShowing && !this\.aboutLeaving/, 'the About sheet has its own dismissal, so Escape closes it first');
   assert.match(root, /data-dismiss-keep="sheet about"/, 'the notices float above BOTH sheets and take the press first');
   const h = host();

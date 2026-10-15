@@ -2,12 +2,19 @@
 // the engine, restarting it with a backoff and resuming the live stream after the last row it saw.
 import os from 'node:os';
 import path from 'node:path';
-import { openSync, readSync, closeSync } from 'node:fs';
+import { openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
-import { mapChat, mapMessage, mapReaction } from '../../../core/app/rules/engine-imsg.js';
+import { annotateLivePhotos } from './live-photo.js';
+import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
+
+// Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
+function motionExists(recorded) {
+  const file = recorded.startsWith('~/') ? path.join(os.homedir(), recorded.slice(2)) : recorded;
+  try { return existsSync(file); } catch { return false; }
+}
 
 // The first bytes of a message's own payload, read without copying the whole file. A payload under a temp path that is
 // already gone reads nothing, which is how a missing one stays missing.
@@ -39,7 +46,25 @@ const omit = (o, keys) => {
 export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
-  const toModel = (raw) => mapMessage(annotatePayloads(raw, readHead), { attachmentId });
+  // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
+  // page of history, or a bounded first read of a group's recent history the first time the chat list names it.
+  const groupPhotos = new Map();
+  const notePhoto = (msg) => {
+    if (msg && msg.event && msg.event.kind === 'groupPhoto') {
+      const id = String(msg.chatId);
+      const was = groupPhotos.get(id);
+      if (!was || was.sentAt <= msg.sentAt) groupPhotos.set(id, { sentAt: msg.sentAt, photo: msg.event.photo });
+    }
+    return msg;
+  };
+  const toModel = (raw) => notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId }));
+  const photoScanned = new Set();
+  const PHOTO_SCAN_WAIT_MS = 3000;
+  async function scanPhoto(chatId) {
+    const r = await request('messages.history', { chat_id: Number(chatId), limit: PHOTO_SCAN_ROWS, attachments: true }, timeoutMs, ['attachments']);
+    for (const m of (r && Array.isArray(r.messages) ? r.messages : [])) if (!m.is_reaction && isGroupPhotoRow(m)) toModel(m);
+    photoScanned.add(String(chatId));
+  }
 
 
   let state = { kind, version: null, ready: false, capabilities: null };
@@ -47,6 +72,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   let stopping = false;
   let dropExtras = false;
   let canReadStatus = false;
+  // Whether the engine can show our typing to the other person: imsg lists `typing` in status.methods only where it can
+  // (macOS, with its bridge ready), so an engine that cannot is never asked (issue 319).
+  let canType = false;
   // The link's own record, so the log and the diagnostics can say what happened: the generation of the current
   // child, how long it had been up, the last request that failed, and the restart history.
   let gen = 0;
@@ -147,7 +175,12 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       const typing = ev.event === 'started-typing' ? true : ev.event === 'stopped-typing' ? false : null;
       const guid = ev.data && ev.data.chatGuid;
       if (typing !== null && guid) {
-        chatIdForGuid(String(guid)).then((chatId) => { if (chatId) emit('typing.incoming', { chatId, typing }); }).catch(() => {});
+        // An event whose chat cannot be resolved is logged too, so a dropped one is seen; the chat's own GUID is never
+        // logged, since it carries the person's address.
+        chatIdForGuid(String(guid)).then((chatId) => {
+          if (chatId) emit('typing.incoming', { chatId, typing });
+          else log.emit('typing.incoming', { chat: null, typing, resolved: false, published: false });
+        }).catch(() => log.emit('typing.incoming', { chat: null, typing, resolved: false, published: false }));
       }
       return;
     }
@@ -220,6 +253,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
     if (current !== c) return; // a newer start replaced this one, or the child died
     canReadStatus = Array.isArray(st?.methods) && st.methods.includes('message.send_status');
+    canType = Array.isArray(st?.methods) && st.methods.includes('typing');
     // capabilities is the engine's own block (an older release omits it, so it stays null). The reaction sender
     // reads it through supportsEmojiTapback to decide whether an arbitrary emoji can be sent.
     setState({ version: st && st.version != null ? String(st.version) : null, capabilities: st && typeof st.capabilities === 'object' ? st.capabilities : null });
@@ -240,10 +274,15 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     log.emit('engine.start', { kind, version: state.version, ready });
     // Present and OFF by default (issue 230): the only source of another person typing is a bridge that is already
     // running, which this server never starts. The switch, and the engine advertising the method, must both be on.
-    if (typingIncoming && Array.isArray(st?.methods) && st.methods.includes('bridge.events.subscribe')) {
+    // Whether inbound typing is being listened for, and why not when it is not, is logged once per engine start, so a
+    // missing indicator can be told apart from a source that was never on (Abi, 2026-10-14).
+    if (!typingIncoming) log.emit('typing.subscribe', { subscribed: false, reason: 'switched off' });
+    else if (!(Array.isArray(st?.methods) && st.methods.includes('bridge.events.subscribe'))) log.emit('typing.subscribe', { subscribed: false, reason: 'the engine does not offer bridge events' });
+    else {
       try {
         await request('bridge.events.subscribe', { buffer_limit: 256 }, 10000);
-      } catch { /* request() logged it */ }
+        log.emit('typing.subscribe', { subscribed: true, reason: 'bridge events' });
+      } catch { log.emit('typing.subscribe', { subscribed: false, reason: 'subscribe failed' }); /* request() logged the error */ }
     }
     if (!ready && c.alive) scheduleRestart(); // a live child that will not answer is retried on the backoff
   }
@@ -259,9 +298,18 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return starting;
   }
 
-  async function chats({ limit = 200 } = {}) {
+  async function chats({ limit = 200, photos = false } = {}) {
     const r = await request('chats.list', { limit }, timeoutMs);
-    return (r && Array.isArray(r.chats) ? r.chats : []).map(mapChat);
+    const list = (r && Array.isArray(r.chats) ? r.chats : []).map(mapChat);
+    // A group the engine has not looked through yet is read once for its photo, one at a time; the list waits a moment
+    // for those reads and goes out with whatever they found by then, and a later list carries the rest.
+    const unseen = photos ? list.filter((c) => c.isGroup && !photoScanned.has(c.id)) : [];
+    if (unseen.length) {
+      const scans = unseen.reduce((p, c) => p.then(() => scanPhoto(c.id).catch(() => {})), Promise.resolve());
+      await Promise.race([scans, new Promise((resolve) => setTimeout(resolve, PHOTO_SCAN_WAIT_MS).unref?.())]);
+    }
+    if (photos) for (const c of list) if (c.isGroup) c.photo = groupPhotos.get(c.id)?.photo || null;
+    return list;
   }
 
   async function messages(chatId, { limit = 50, before = null } = {}) {
@@ -342,6 +390,29 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return { ok: Boolean(r && r.ok) };
   }
 
+  // Conversations and groups are Messages' own (issue 326): a new conversation with one address is a direct chat and
+  // with several a group, optionally named, and a group's name and members change through the same IMCore bridge. The
+  // engine answers the new chat's guid; the server rereads the list to learn its id.
+  async function createChat(addresses, { name = '', text = '' } = {}) {
+    const params = { addresses, service: 'iMessage' };
+    if (name) params.name = name;
+    if (text) params.text = text;
+    const r = await request('chats.create', params, timeoutMs);
+    return { ok: Boolean(r && r.ok), guid: r && r.chat_guid ? String(r.chat_guid) : null };
+  }
+  async function renameGroup(chatId, name) {
+    const r = await request('group.rename', { chat_id: Number(chatId), name }, timeoutMs);
+    return { ok: Boolean(r && r.ok) };
+  }
+  async function addMember(chatId, address) {
+    const r = await request('group.addParticipant', { chat_id: Number(chatId), address }, timeoutMs);
+    return { ok: Boolean(r && r.ok) };
+  }
+  async function removeMember(chatId, address) {
+    const r = await request('group.removeParticipant', { chat_id: Number(chatId), address }, timeoutMs);
+    return { ok: Boolean(r && r.ok) };
+  }
+
   // A reply carries `reply_to`, which imsg sends through its IMCore bridge only. An engine too old to know the key
   // answers -32602, and one with no bridge running -32003; both mean it cannot thread a reply, so both are refused as
   // unsupported rather than sent outside the thread. reply_to is never an optional extra the adapter may drop.
@@ -367,6 +438,18 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   };
   const supportsEmojiTapback = () => capabilityVersion('tapback.emoji') >= REACTION_TAPBACK_EMOJI_VERSION;
 
+  // Our typing, shown to the other person in a chat or taken down. Resolves false, sending nothing, where the engine
+  // cannot; a refusal is logged by request() and resolves false too, since a missed indicator costs nothing.
+  async function typing(chatId, on) {
+    if (!canType) return false;
+    try {
+      await request('typing', { chat_id: Number(chatId), typing: Boolean(on) }, 10000);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // imsg's bridge `tapback` adds or removes a reaction on a message by its guid, as an arbitrary `emoji` when the
   // engine advertises it, otherwise as one of the six classic `kind`s (issue 188).
   const react = (chatId, targetId, { type = '', emoji = '', remove = false } = {}) => {
@@ -391,10 +474,16 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     messages,
     after,
     read,
+    createChat,
+    renameGroup,
+    addMember,
+    removeMember,
     sendText,
     sendFile,
     react,
     supportsEmojiTapback,
+    typing,
+    canType: () => canType,
     capabilityVersion: (name) => capabilityVersion(name),
     emojiTapbackVersion: () => capabilityVersion('tapback.emoji'),
     // The link's state and its restart history, read by /api/v1/info and the diagnostics surface: a person

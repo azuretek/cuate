@@ -8,7 +8,10 @@
 // picture is drawn as translate(x, y) scale(scale) about its own centre, which is what makes the maths below hold.
 //
 // The box is what the viewer measured: { width, height } is the fitted picture, { stageWidth, stageHeight } the space
-// it sits in.
+// it sits in. With anchor 'top' (which the viewer used from issue 315 until it went back to the middle in issue 325), a picture shorter than the stage sits at the stage's
+// top rather than its middle, as Photos opens a tall screenshot or a wide photo: drawnY adds that lift to y, and the
+// zoom keeps the point under a pointer or between two fingers where it is while the lift shrinks to nothing as the
+// picture grows to fill the stage.
 
 export const ZOOM_FIT = 1;
 // The step one click or one key press takes, as a factor of the scale it starts from.
@@ -78,8 +81,19 @@ export function zoomTo(view, scale, point, box, max) {
   const next = clampScale(scale, max);
   const k = next / view.scale;
   const p = point || { x: 0, y: 0 };
-  return clampPan({ scale: next, x: p.x - (p.x - view.x) * k, y: p.y - (p.y - view.y) * k }, box);
+  return clampPan({ scale: next, x: p.x - (p.x - view.x) * k, y: p.y - (p.y - drawnY(view, box)) * k - topLift(next, box) }, box);
 }
+
+// How far a picture shorter than the stage is raised from the middle to the top, at a scale; nothing unless the box
+// anchors to the top, and nothing once the picture is as tall as the stage.
+export function topLift(scale, box) {
+  if (!box || box.anchor !== 'top' || !(Number(box.height) > 0)) return 0;
+  const room = (Number(box.stageHeight) || 0) - (Number(box.height) || 0) * scale;
+  return room > 0 ? -room / 2 : 0;
+}
+
+// Where the picture's centre is drawn on the vertical axis, from the stage's centre: the pan plus the top lift.
+export const drawnY = (view, box) => view.y + topLift(view.scale, box);
 
 export function zoomBy(view, factor, point, box, max) {
   return zoomTo(view, view.scale * factor, point, box, max);
@@ -109,7 +123,7 @@ export function pinch(start, from, to, box, max) {
   const c1 = middle(to[0], to[1]);
   const next = clampScale(start.scale * (d1 / d0), max);
   const k = next / start.scale;
-  return clampPan({ scale: next, x: c1.x - (c0.x - start.x) * k, y: c1.y - (c0.y - start.y) * k }, box);
+  return clampPan({ scale: next, x: c1.x - (c0.x - start.x) * k, y: c1.y - (c0.y - drawnY(start, box)) * k - topLift(next, box) }, box);
 }
 
 // A wheel turn, or a trackpad pinch (which the browser reports as a wheel with ctrlKey), as a zoom factor: smooth, so

@@ -267,6 +267,21 @@ jobs:
             HOMEBREW_NO_AUTO_UPDATE=1 timeout 300 brew install xcodegen
           fi
 
+      # Firebase's client config carries an API key, so it is never committed: the release writes it from a secret
+      # before the project is generated, which is what puts it in the app (issue 347, docs/PUSH.md). A build without
+      # it runs without push rather than failing.
+      - name: Write the Firebase config
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.CUATE_GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          set -eo pipefail
+          if [ -z "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "::error::CUATE_GOOGLE_SERVICE_INFO_PLIST is not set. It is the base64 of the iOS app's GoogleService-Info.plist from the Firebase project (docs/PUSH.md)."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > Cuate/GoogleService-Info.plist
+          plutil -lint Cuate/GoogleService-Info.plist
+
       - name: Generate the Xcode project
         run: xcodegen generate
 
@@ -336,18 +351,27 @@ jobs:
       # keychain here holds one distribution certificate and the portal's own
       # automatic signing would try to mint development credentials the team has
       # no room for. It is the App Store profile for this bundle id.
-      - name: Install the provisioning profile
+      # The notification service extension (issue 347) is a second bundle id with its own App Store profile, installed
+      # the same way; ios/scripts/signing.py makes both.
+      - name: Install the provisioning profiles
         env:
           PROFILE_BASE64: ${{ secrets.CUATE_PROFILE_BASE64 }}
           PROFILE_UUID: ${{ vars.CUATE_PROFILE_UUID }}
+          NOTIFY_PROFILE_BASE64: ${{ secrets.CUATE_NOTIFY_PROFILE_BASE64 }}
+          NOTIFY_PROFILE_UUID: ${{ vars.CUATE_NOTIFY_PROFILE_UUID }}
         run: |
           set -eo pipefail
+          if [ -z "$NOTIFY_PROFILE_BASE64" ] || [ -z "$NOTIFY_PROFILE_UUID" ]; then
+            echo "::error::CUATE_NOTIFY_PROFILE_BASE64 (secret) and CUATE_NOTIFY_PROFILE_UUID (variable) must both be set. They are the App Store profile for the notification extension's bundle id; ios/scripts/signing.py makes it."
+            exit 1
+          fi
           if [ -z "$PROFILE_BASE64" ] || [ -z "$PROFILE_UUID" ]; then
             echo "::error::CUATE_PROFILE_BASE64 (secret) and CUATE_PROFILE_UUID (variable) must both be set. They are the App Store distribution profile for this bundle id, generated once and kept in the vault."
             exit 1
           fi
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           printf '%s' "$PROFILE_BASE64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          printf '%s' "$NOTIFY_PROFILE_BASE64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/$NOTIFY_PROFILE_UUID.mobileprovision"
 
       - name: Archive
         env:
@@ -378,7 +402,8 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="${{ vars.CUATE_PROFILE_NAME }}" \
+            CUATE_PROFILE_NAME="${{ vars.CUATE_PROFILE_NAME }}" \
+            CUATE_NOTIFY_PROFILE_NAME="${{ vars.CUATE_NOTIFY_PROFILE_NAME }}" \
             archive
 
       # The bundle id comes from the one owner of the ids rather than being typed
@@ -386,8 +411,13 @@ jobs:
       - name: Write the export options
         env:
           PROFILE_NAME: ${{ vars.CUATE_PROFILE_NAME }}
+          NOTIFY_PROFILE_NAME: ${{ vars.CUATE_NOTIFY_PROFILE_NAME }}
         run: |
           set -eo pipefail
+          if [ -z "$NOTIFY_PROFILE_NAME" ]; then
+            echo "::error::vars.CUATE_NOTIFY_PROFILE_NAME is not set. The export names the notification extension's App Store profile."
+            exit 1
+          fi
           if [ -z "$PROFILE_NAME" ]; then
             echo "::error::vars.CUATE_PROFILE_NAME is not set. The export names the App Store profile it signs with."
             exit 1
@@ -408,6 +438,8 @@ jobs:
             <dict>
               <key>$bundle</key>
               <string>$PROFILE_NAME</string>
+              <key>$bundle.notify</key>
+              <string>$NOTIFY_PROFILE_NAME</string>
             </dict>
           </dict>
           </plist>

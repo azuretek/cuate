@@ -34,14 +34,20 @@ var engine = (() => {
     CONVERSATION_MIN: () => CONVERSATION_MIN,
     DELETE_STEPS: () => DELETE_STEPS,
     DISMISS: () => DISMISS,
+    DRAG_FRACTION: () => DRAG_FRACTION,
+    DRAG_MAX: () => DRAG_MAX,
+    DRAG_MIN: () => DRAG_MIN,
     EDGE: () => EDGE,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
     EMOJI_TAPBACK_VERSION: () => EMOJI_TAPBACK_VERSION,
+    FLICK_MIN: () => FLICK_MIN,
+    FLICK_VELOCITY: () => FLICK_VELOCITY,
     FLING: () => FLING,
     FLING_TRAVEL: () => FLING_TRAVEL,
     FOLLOW_THEME: () => FOLLOW_THEME,
     GLYPH_FLOOR: () => GLYPH_FLOOR,
+    GROUP_PHOTO_NAME: () => GROUP_PHOTO_NAME,
     ICON_KINDS: () => ICON_KINDS,
     ICON_MASTERS: () => ICON_MASTERS,
     ICON_TOKENS: () => ICON_TOKENS,
@@ -62,6 +68,7 @@ var engine = (() => {
     NO_CHAT_ID: () => NO_CHAT_ID,
     OPEN_SCREENS: () => OPEN_SCREENS,
     OVERLAY_SIZES: () => OVERLAY_SIZES,
+    PHOTO_SCAN_ROWS: () => PHOTO_SCAN_ROWS,
     PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PRESS_STATES: () => PRESS_STATES,
     SATURATED: () => SATURATED,
@@ -90,7 +97,6 @@ var engine = (() => {
     TRAY_CROP: () => TRAY_CROP,
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
     TYPING_TTL_MS: () => TYPING_TTL_MS,
-    UNGROUPED: () => UNGROUPED,
     UNKNOWN: () => UNKNOWN,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
     ZOOM_DOUBLE_TAP: () => ZOOM_DOUBLE_TAP,
@@ -107,8 +113,6 @@ var engine = (() => {
     actionLabel: () => actionLabel,
     actionLabels: () => actionLabels,
     actionStateOf: () => actionStateOf,
-    addChatsToGroup: () => addChatsToGroup,
-    addGroup: () => addGroup,
     addTerm: () => addTerm,
     addTheme: () => addTheme,
     admitPress: () => admitPress,
@@ -144,7 +148,6 @@ var engine = (() => {
     clampChatsWidth: () => clampChatsWidth,
     clampPan: () => clampPan,
     clampScale: () => clampScale,
-    clearGroupPlacement: () => clearGroupPlacement,
     clientReport: () => clientReport,
     closedByEscape: () => closedByEscape,
     closedByPress: () => closedByPress,
@@ -165,7 +168,6 @@ var engine = (() => {
     cssVarName: () => cssVarName,
     currentBanner: () => currentBanner,
     daysAgo: () => daysAgo,
-    defaultGroupName: () => defaultGroupName,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
     dismissNotice: () => dismissNotice,
@@ -174,12 +176,16 @@ var engine = (() => {
     downloadProgress: () => downloadProgress,
     downloadingNotice: () => downloadingNotice,
     dragChatsWidth: () => dragChatsWidth,
+    dragOutcome: () => dragOutcome,
+    dragThreshold: () => dragThreshold,
+    drawnY: () => drawnY,
     durationMs: () => durationMs,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
     emptyListText: () => emptyListText,
     engineLabel: () => engineLabel,
+    eventText: () => eventText,
     failedBanner: () => failedBanner,
     fallbackPhrase: () => fallbackPhrase,
     feedVersions: () => feedVersions,
@@ -197,14 +203,14 @@ var engine = (() => {
     frequentEmoji: () => frequentEmoji,
     fromOklch: () => fromOklch,
     graphemes: () => graphemes,
-    groupFromSelection: () => groupFromSelection,
+    groupAddresses: () => groupAddresses,
     groupMessages: () => groupMessages,
-    groupSections: () => groupSections,
     hideChats: () => hideChats,
     holdsAfter: () => holdsAfter,
     hostOf: () => hostOf,
     hueDistance: () => hueDistance,
     iconColours: () => iconColours,
+    iconInForce: () => iconInForce,
     iconPalette: () => iconPalette,
     iconSvg: () => iconSvg,
     iconToApply: () => iconToApply,
@@ -215,17 +221,22 @@ var engine = (() => {
     insertEmoji: () => insertEmoji,
     installPolicy: () => installPolicy,
     installSource: () => installSource,
+    isAddress: () => isAddress,
     isClick: () => isClick,
     isDoubleTap: () => isDoubleTap,
     isEdgeStart: () => isEdgeStart,
     isEmoji: () => isEmoji,
+    isGroupPhotoRow: () => isGroupPhotoRow,
     isHorizontal: () => isHorizontal,
+    isLivePhoto: () => isLivePhoto,
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
+    linkHref: () => linkHref,
     linkMediaKey: () => linkMediaKey,
     linkMediaSite: () => linkMediaSite,
     linkSite: () => linkSite,
+    linkTarget: () => linkTarget,
     listSections: () => listSections,
     localAttachment: () => localAttachment,
     mapChat: () => mapChat,
@@ -240,10 +251,11 @@ var engine = (() => {
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     messageActions: () => messageActions,
+    messageLinks: () => messageLinks,
     messageNotice: () => messageNotice,
     messageSearchText: () => messageSearchText,
     messageSummary: () => messageSummary,
-    moveGroup: () => moveGroup,
+    messageTarget: () => messageTarget,
     myReaction: () => myReaction,
     newTraceparent: () => newTraceparent,
     newestRelease: () => newestRelease,
@@ -253,6 +265,7 @@ var engine = (() => {
     noticeQuiet: () => noticeQuiet,
     noticeState: () => noticeState,
     noticeStateOf: () => noticeStateOf,
+    noticeTarget: () => noticeTarget,
     offersReaction: () => offersReaction,
     onGroup: () => onGroup,
     openapiDocument: () => openapiDocument,
@@ -265,15 +278,16 @@ var engine = (() => {
     panBy: () => panBy,
     parseColour: () => parseColour,
     parseGlyph: () => parseGlyph,
+    parseMessagingLink: () => parseMessagingLink,
     parseOgVideo: () => parseOgVideo,
     parseReactionText: () => parseReactionText,
+    parseRecipients: () => parseRecipients,
     parseTraceparent: () => parseTraceparent,
     payloadMedia: () => payloadMedia,
     phoneUpdate: () => phoneUpdate,
     pick: () => pick,
     pickerSide: () => pickerSide,
     pinch: () => pinch,
-    placeChat: () => placeChat,
     placeFor: () => placeFor,
     platformCapabilities: () => platformCapabilities,
     platformOf: () => platformOf,
@@ -289,18 +303,16 @@ var engine = (() => {
     reactionGlyph: () => reactionGlyph,
     reactionUnsupported: () => reactionUnsupported,
     readyBanner: () => readyBanner,
+    recipientSuggestions: () => recipientSuggestions,
     releaseAssets: () => releaseAssets,
     rememberPlace: () => rememberPlace,
-    removeGroup: () => removeGroup,
     removeTerm: () => removeTerm,
     removeTheme: () => removeTheme,
-    renameGroup: () => renameGroup,
     renderIcon: () => renderIcon,
     replyCountLabel: () => replyCountLabel,
     replyQuote: () => replyQuote,
     reportRows: () => reportRows,
     requestDelete: () => requestDelete,
-    requestDeleteGroup: () => requestDeleteGroup,
     resizeChatsWidth: () => resizeChatsWidth,
     resolveDelete: () => resolveDelete,
     resolveScheme: () => resolveScheme,
@@ -312,6 +324,7 @@ var engine = (() => {
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
     serverUpdateNotice: () => serverUpdateNotice,
+    serviceNote: () => serviceNote,
     setAllChecked: () => setAllChecked,
     setTermMode: () => setTermMode,
     settingValue: () => settingValue,
@@ -329,6 +342,7 @@ var engine = (() => {
     slideProgress: () => slideProgress,
     slideRelease: () => slideRelease,
     sortChats: () => sortChats,
+    splitLinks: () => splitLinks,
     springCurve: () => springCurve,
     stackOf: () => stackOf,
     stageCheck: () => stageCheck,
@@ -347,6 +361,7 @@ var engine = (() => {
     themeChoices: () => themeChoices,
     themeFonts: () => themeFonts,
     themeId: () => themeId,
+    themeMatch: () => themeMatch,
     themeName: () => themeName,
     themeVars: () => themeVars,
     threadIds: () => threadIds,
@@ -359,6 +374,7 @@ var engine = (() => {
     toggleChecked: () => toggleChecked,
     toggleZoom: () => toggleZoom,
     tokensCss: () => tokensCss,
+    topLift: () => topLift,
     transferDetail: () => transferDetail,
     typingActive: () => typingActive,
     typingLabel: () => typingLabel,
@@ -367,6 +383,7 @@ var engine = (() => {
     updateBanner: () => updateBanner,
     updateNotice: () => updateNotice,
     updateNoticeKey: () => updateNoticeKey,
+    upsertChat: () => upsertChat,
     validate: () => validate,
     velocityFor: () => velocityFor,
     verificationCheck: () => verificationCheck,
@@ -465,9 +482,18 @@ var engine = (() => {
       react: (chatId, messageId, { emoji, remove = false, text = "" }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...remove ? { remove: true } : {}, ...text ? { text } : {} }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+      // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
+      // a group conversation, and a group's name and people change through the Mac. Each answers the chat as it now is.
+      createChat: ({ addresses, name, text }) => call("POST", "/api/v1/chats", { addresses, ...name ? { name } : {}, ...text ? { text } : {} }),
+      renameGroup: (chatId, name) => call("PUT", `/api/v1/chats/${encodeURIComponent(chatId)}/name`, { name }),
+      addMember: (chatId, address) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/members`, { address }),
+      removeMember: (chatId, address) => call("DELETE", `/api/v1/chats/${encodeURIComponent(chatId)}/members/${encodeURIComponent(address)}`),
       // Say we are (or are no longer) typing in a conversation. The server relays it to this account's other signed-in
       // devices; nothing is sent to anyone else and nothing is written to history (issue 230).
       typing: (chatId, typing) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/typing`, { typing }),
+      // Push notifications with the app closed (issue 347): this phone's push token, platform and key, or stop.
+      pushRegister: ({ token: token2, platform, key }) => call("POST", "/api/v1/push", { token: token2, platform, key }),
+      pushUnregister: () => call("DELETE", "/api/v1/push"),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
       themeImport: ({ url, name }) => call("POST", "/api/v1/themes", name ? { url, name } : { url }),
@@ -478,7 +504,7 @@ var engine = (() => {
         return res.arrayBuffer();
       },
       async attachment(id, o = {}) {
-        const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format }), { headers: auth });
+        const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format, part: o.part }), { headers: auth });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
         return res.blob();
       },
@@ -825,12 +851,14 @@ var engine = (() => {
 
   // core/kit/rules/popover.js
   var INSET = 7;
-  function caretX(anchor, box, align = "center") {
+  function caretX(anchor, box, align = "center", radius = 0) {
     if (!anchor || !box || !(box.width > 0)) return null;
     if (anchor.right <= box.left || anchor.left >= box.right) return null;
-    const raw = align === "start" ? anchor.left + INSET : align === "end" ? anchor.right - INSET : anchor.left + anchor.width / 2;
-    const min = Math.min(INSET, box.width / 2);
-    const max = Math.max(box.width - INSET, box.width / 2);
+    const corner = Math.max(0, Math.min(Number(radius) || 0, (box.height || Infinity) / 2));
+    const inset = INSET + corner;
+    const raw = align === "start" ? anchor.left + inset : align === "end" ? anchor.right - inset : anchor.left + anchor.width / 2;
+    const min = Math.min(inset, box.width / 2);
+    const max = Math.max(box.width - inset, box.width / 2);
     return Math.round(Math.min(Math.max(raw - box.left, min), max));
   }
 
@@ -1275,6 +1303,499 @@ var engine = (() => {
     small: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="11 13 79 79"><defs><mask id="g1f" maskUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120"><rect x="-10" y="-10" width="120" height="120" fill="white"/><g fill="black"><circle cx="32" cy="55" r="7.2"/><circle cx="50" cy="55" r="7.2"/><path transform="translate(41 66) scale(1.25)" d="M0,-3.6 C2.5,-1.1 4.5,0.9 3,2.9 C2,4.2 0.6,3.7 0,2.7 C-0.6,3.7 -2,4.2 -3,2.9 C-4.5,0.9 -2.5,-1.1 0,-3.6Z"/></g></mask><mask id="g1b" maskUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120"><rect x="-10" y="-10" width="120" height="120" fill="white"/><g fill="black" stroke="black" stroke-width="10" stroke-linejoin="round"><circle cx="41" cy="58" r="26"/><path d="M24,76 L13,90 L37,82Z"/></g><g fill="black"><circle cx="62" cy="30" r="4.6"/><circle cx="75" cy="33" r="4.6"/></g></mask></defs><g mask="url(#g1b)" fill="#000" fill-opacity="1"><circle cx="62" cy="38" r="23"/><path d="M76,54 L88,68 L66,59Z"/></g><g mask="url(#g1f)" fill="#000"><circle cx="41" cy="58" r="26"/><path d="M24,76 L13,90 L37,82Z"/></g></svg>\n'
   };
 
+  // core/app/rules/icon.js
+  var ICON_TOKENS = ["accent", "accent-fg", "fg", "bg", "bg-raised", "danger", "badge", "badge-fg"];
+  var GLYPH_FLOOR = { light: 2.6, dark: 4 };
+  var BADGE_TEXT_FLOOR = 4.5;
+  var BADGE_APART = 0.15;
+  var OVERLAY_SIZES = [[32, 2], [40, 2.5], [48, 3]];
+  var SATURATED = 0.06;
+  var NAMED = { black: [0, 0, 0], white: [1, 1, 1], red: [1, 0, 0], green: [0, 128 / 255, 0], blue: [0, 0, 1], gray: [128 / 255, 128 / 255, 128 / 255], grey: [128 / 255, 128 / 255, 128 / 255] };
+  var clamp01 = (x) => Math.min(1, Math.max(0, x));
+  var args = (body) => body.replace(/\//g, " ").split(/[\s,]+/).filter(Boolean);
+  var toLinear = (c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  var toGamma = (x) => x <= 31308e-7 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
+  var part = (s, whole) => String(s).endsWith("%") ? parseFloat(s) / 100 * whole : parseFloat(s);
+  function hslToRgb(h, s, l) {
+    const k = (n) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return [0, 8, 4].map((n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)));
+  }
+  function oklabToLinear(L, a, b) {
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+    const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+    return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+  }
+  function cssColour(value) {
+    const v = String(value ?? "").trim().toLowerCase();
+    if (NAMED[v]) return [...NAMED[v]];
+    let m = v.match(/^#([0-9a-f]{3,8})$/);
+    if (m) {
+      const h = m[1];
+      if (h.length === 3 || h.length === 4) return [0, 1, 2].map((i) => parseInt(h[i] + h[i], 16) / 255);
+      if (h.length === 6 || h.length === 8) return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+      return null;
+    }
+    m = v.match(/^(rgba?|hsla?|oklch|oklab)\(([^()]*)\)$/);
+    if (!m) return null;
+    const p = args(m[2]).map((x) => x === "none" ? "0" : x.replace(/deg$/, ""));
+    if (p.length < 3 || p.slice(0, 3).some((x) => !/^-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?%?$/.test(x))) return null;
+    if (m[1].startsWith("rgb")) return p.slice(0, 3).map((x) => clamp01(x.endsWith("%") ? parseFloat(x) / 100 : parseFloat(x) / 255));
+    if (m[1].startsWith("hsl")) return hslToRgb((parseFloat(p[0]) % 360 + 360) % 360, clamp01(parseFloat(p[1]) / 100), clamp01(parseFloat(p[2]) / 100)).map(clamp01);
+    const L = part(p[0], 1);
+    let a;
+    let b;
+    if (m[1] === "oklch") {
+      const C = part(p[1], 0.4);
+      const h = parseFloat(p[2]) * Math.PI / 180;
+      a = C * Math.cos(h);
+      b = C * Math.sin(h);
+    } else {
+      a = part(p[1], 0.4);
+      b = part(p[2], 0.4);
+    }
+    return oklabToLinear(L, a, b).map((c) => toGamma(clamp01(c)));
+  }
+  var channels = (x) => Array.isArray(x) ? x : cssColour(x);
+  function toOklch(colour) {
+    const [R, G, B] = channels(colour).map(toLinear);
+    const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+    const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+    const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+    const L = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+    const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+    const b = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+    const h = Math.atan2(b, a) * 180 / Math.PI;
+    return [L, Math.hypot(a, b), h < 0 ? h + 360 : h];
+  }
+  function fromOklch([L, C, h]) {
+    const at = (c) => oklabToLinear(clamp01(L), c * Math.cos(h * Math.PI / 180), c * Math.sin(h * Math.PI / 180));
+    const fits = (lin2) => lin2.every((x) => x >= -1e-7 && x <= 1 + 1e-7);
+    let lin = at(C);
+    if (!fits(lin)) {
+      let lo = 0;
+      let hi = C;
+      for (let step = 0; step < 24; step += 1) {
+        const mid = (lo + hi) / 2;
+        if (fits(at(mid))) lo = mid;
+        else hi = mid;
+      }
+      lin = at(lo);
+    }
+    return lin.map((x) => toGamma(clamp01(x)));
+  }
+  var toHex = (rgb) => "#" + rgb.map((c) => Math.round(clamp01(c) * 255).toString(16).padStart(2, "0")).join("");
+  function luminance(rgb) {
+    const [r, g, b] = rgb.map(toLinear);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function contrast(x, y) {
+    const a = channels(x);
+    const b = channels(y);
+    if (!a || !b) return null;
+    const [hi, lo] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function hueDistance(x, y) {
+    const d = Math.abs(toOklch(x)[2] - toOklch(y)[2]) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+  var chroma = (x) => toOklch(x)[1];
+  function colourDistance(x, y) {
+    const [L1, C1, h1] = toOklch(x);
+    const [L2, C2, h2] = toOklch(y);
+    const rad = (h) => h * Math.PI / 180;
+    return Math.hypot(L1 - L2, C1 * Math.cos(rad(h1)) - C2 * Math.cos(rad(h2)), C1 * Math.sin(rad(h1)) - C2 * Math.sin(rad(h2)));
+  }
+  function iconColours(defaults = {}, given = {}) {
+    const out = {};
+    for (const key of ICON_TOKENS) out[key] = given && cssColour(given[key]) ? String(given[key]).trim() : defaults[key];
+    return out;
+  }
+  function iconPalette(colours, scheme = "light") {
+    const c = Object.fromEntries(ICON_TOKENS.map((k) => [k, cssColour(colours && colours[k])]));
+    for (const k of ICON_TOKENS) if (!c[k]) throw new Error("the icon needs the " + k + " token as a colour");
+    const dark = scheme === "dark";
+    const [L, C, h] = toOklch(c.accent);
+    let tileTop;
+    let tileBottom;
+    let glyph;
+    if (dark) {
+      const [rL, rC, rh] = toOklch(c["bg-raised"]);
+      tileTop = fromOklch([rL + 0.04, rC, rh]);
+      tileBottom = c.bg;
+      glyph = c.accent;
+      for (let next = L; contrast(glyph, c["bg-raised"]) < GLYPH_FLOOR.dark && next < 1; ) {
+        next = Math.min(1, next + 0.02);
+        glyph = fromOklch([next, C, h]);
+      }
+    } else {
+      tileTop = fromOklch([L + 0.07, C, h - 4]);
+      tileBottom = fromOklch([L - 0.07, C, h + 4]);
+      glyph = contrast(c["accent-fg"], c.accent) >= GLYPH_FLOOR.light ? c["accent-fg"] : c.fg;
+    }
+    const tileColours = [tileTop, tileBottom, dark ? c["bg-raised"] : c.accent];
+    const own = contrast(c.danger, c["badge-fg"]) >= BADGE_TEXT_FLOOR && tileColours.every((t) => colourDistance(c.danger, t) >= BADGE_APART);
+    return {
+      scheme: dark ? "dark" : "light",
+      tile: { top: toHex(tileTop), bottom: toHex(tileBottom), behind: toHex(dark ? c["bg-raised"] : c.accent) },
+      glyph: toHex(glyph),
+      back: dark ? 0.45 : 0.5,
+      mark: toHex(dark ? glyph : c.accent),
+      badge: { fill: toHex(own ? c.danger : c.badge), text: toHex(c["badge-fg"]) }
+    };
+  }
+  var attrsOf = (s) => Object.fromEntries([...s.matchAll(/([\w:-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  var nums = (s) => (String(s).match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
+  function transformer(spec) {
+    const ops = [...String(spec || "").matchAll(/(translate|rotate|scale)\(([^)]*)\)/g)].map((m) => [m[1], nums(m[2])]);
+    return ([x, y]) => {
+      let p = [x, y];
+      for (let i = ops.length - 1; i >= 0; i -= 1) {
+        const [op, n] = ops[i];
+        if (op === "translate") p = [p[0] + n[0], p[1] + (n[1] ?? 0)];
+        else if (op === "scale") p = [p[0] * n[0], p[1] * (n[1] ?? n[0])];
+        else {
+          const r = n[0] * Math.PI / 180;
+          p = [p[0] * Math.cos(r) - p[1] * Math.sin(r), p[0] * Math.sin(r) + p[1] * Math.cos(r)];
+        }
+      }
+      return p;
+    };
+  }
+  function pathPolygons(d, transform) {
+    const t = transformer(transform);
+    const tokens = String(d).match(/[MLQCZ]|-?\d*\.?\d+(?:e-?\d+)?/gi) || [];
+    const polys = [];
+    let poly = null;
+    let at = [0, 0];
+    let i = 0;
+    const read = () => Number(tokens[i++]);
+    while (i < tokens.length) {
+      const cmd = tokens[i++].toUpperCase();
+      if (cmd === "M") {
+        at = [read(), read()];
+        poly = [at];
+        polys.push(poly);
+      } else if (cmd === "L") {
+        at = [read(), read()];
+        poly.push(at);
+      } else if (cmd === "Q") {
+        const c = [read(), read()];
+        const e = [read(), read()];
+        for (let k = 1; k <= 16; k += 1) {
+          const u = k / 16;
+          const v = 1 - u;
+          poly.push([v * v * at[0] + 2 * v * u * c[0] + u * u * e[0], v * v * at[1] + 2 * v * u * c[1] + u * u * e[1]]);
+        }
+        at = e;
+      } else if (cmd === "C") {
+        const c1 = [read(), read()];
+        const c2 = [read(), read()];
+        const e = [read(), read()];
+        for (let k = 1; k <= 24; k += 1) {
+          const u = k / 24;
+          const v = 1 - u;
+          poly.push([v ** 3 * at[0] + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u ** 3 * e[0], v ** 3 * at[1] + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u ** 3 * e[1]]);
+        }
+        at = e;
+      } else if (cmd === "Z") at = poly[0];
+      else throw new Error("the icon masters use M, L, Q, C and Z only, not " + cmd);
+    }
+    return polys.map((p) => p.map(t));
+  }
+  function bounds(points, grow) {
+    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const [x, y] of points) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+    return [x0 - grow, y0 - grow, x1 + grow, y1 + grow];
+  }
+  var circle = (cx, cy, r) => ({ kind: "circle", cx, cy, r, box: [cx - r, cy - r, cx + r, cy + r] });
+  function shapeOf(tag, a, grow) {
+    if (tag === "circle") return circle(Number(a.cx), Number(a.cy), Number(a.r) + grow);
+    if (tag === "rect") {
+      const [x, y, w, h] = [Number(a.x) - grow, Number(a.y) - grow, Number(a.width) + 2 * grow, Number(a.height) + 2 * grow];
+      const rx = Math.min(Number(a.rx || 0) + grow, w / 2, h / 2);
+      return { kind: "rect", x, y, w, h, rx, box: [x, y, x + w, y + h] };
+    }
+    const polys = pathPolygons(a.d, a.transform);
+    return { kind: "poly", polys, grow, box: bounds(polys.flat(), grow) };
+  }
+  function parseGlyph(svg) {
+    const text = String(svg);
+    const viewBox = nums(attrsOf(/<svg\b([^>]*)>/.exec(text)?.[1] || "").viewBox);
+    if (viewBox.length !== 4) throw new Error("an icon master names its viewBox");
+    const masks = {};
+    const groups = [];
+    const stack = [{}];
+    let mask = null;
+    let group = null;
+    for (const m of text.matchAll(/<(\/?)([a-z]+)\b([^>]*?)(\/?)>/gi)) {
+      const [, close, tag, rest, selfClose] = m;
+      const a = attrsOf(rest);
+      if (close) {
+        if (tag === "mask") mask = null;
+        if (tag === "g" && stack.pop().owns) group = null;
+        continue;
+      }
+      if (tag === "mask") {
+        mask = [];
+        masks[a.id] = mask;
+        continue;
+      }
+      if (tag === "g") {
+        const inherit = { ...stack[stack.length - 1], ...a, owns: false };
+        if (a.mask) {
+          group = { mask: /#([^)]+)/.exec(a.mask)[1], shapes: [] };
+          groups.push(group);
+          inherit.owns = true;
+        }
+        if (!selfClose) stack.push(inherit);
+        continue;
+      }
+      if (!["circle", "rect", "path"].includes(tag)) continue;
+      const ctx = { ...stack[stack.length - 1], ...a };
+      const grow = ctx.stroke && ctx.stroke !== "none" ? Number(ctx["stroke-width"] || 1) / 2 : 0;
+      if (mask) mask.push({ shape: shapeOf(tag, a, grow), keep: ctx.fill === "white" });
+      else if (group) group.shapes.push(shapeOf(tag, a, grow));
+    }
+    if (groups.length !== 2) throw new Error("an icon master has a back group and a front group");
+    const [back, front] = groups.map((g) => ({ shapes: g.shapes, mask: masks[g.mask] || [] }));
+    return { viewBox, back, front };
+  }
+  function segDist2(px, py, [ax, ay], [bx, by]) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy;
+    const t = len ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len)) : 0;
+    const ex = ax + t * dx - px;
+    const ey = ay + t * dy - py;
+    return ex * ex + ey * ey;
+  }
+  function inPoly(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+      const [xi, yi] = poly[i];
+      const [xj, yj] = poly[j];
+      if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function contains(s, x, y) {
+    if (x < s.box[0] || x > s.box[2] || y < s.box[1] || y > s.box[3]) return false;
+    if (s.kind === "circle") return (x - s.cx) ** 2 + (y - s.cy) ** 2 <= s.r * s.r;
+    if (s.kind === "rect") {
+      const qx = Math.max(Math.abs(x - (s.x + s.w / 2)) - (s.w / 2 - s.rx), 0);
+      const qy = Math.max(Math.abs(y - (s.y + s.h / 2)) - (s.h / 2 - s.rx), 0);
+      return qx * qx + qy * qy <= s.rx * s.rx;
+    }
+    if (s.kind === "stroke") {
+      for (const line of s.lines) for (let i = 1; i < line.length; i += 1) if (segDist2(x, y, line[i - 1], line[i]) <= s.r * s.r) return true;
+      return false;
+    }
+    for (const poly of s.polys) if (inPoly(x, y, poly)) return true;
+    if (s.grow > 0) {
+      for (const poly of s.polys) for (let i = 0; i < poly.length; i += 1) if (segDist2(x, y, poly[i], poly[(i + 1) % poly.length]) <= s.grow * s.grow) return true;
+    }
+    return false;
+  }
+  function groupAt(g, x, y) {
+    if (!g.shapes.some((s) => contains(s, x, y))) return 0;
+    let keep = true;
+    for (const op of g.mask) if (contains(op.shape, x, y)) keep = op.keep;
+    return keep ? 1 : -1;
+  }
+  var onGroup = (g, x, y) => groupAt(g, x, y) === 1;
+  function unreadTotal(chats) {
+    return (Array.isArray(chats) ? chats : []).reduce((sum, c) => sum + (Number.isFinite(c?.unread) && c.unread > 0 ? c.unread : 0), 0);
+  }
+  function badgeLabel(count, size2) {
+    const n = Math.max(0, Math.floor(Number(count) || 0));
+    if (n === 0) return null;
+    if (size2 < 22) return "";
+    if (n <= 9) return String(n);
+    return size2 >= 32 ? "9+" : "";
+  }
+  var oval = (cx, cy, rx, ry) => Array.from({ length: 25 }, (_, k) => [cx + rx * Math.sin(k / 24 * 2 * Math.PI), cy - ry * Math.cos(k / 24 * 2 * Math.PI)]);
+  var DIGITS = {
+    0: [oval(0.3, 0.5, 0.25, 0.42)],
+    1: [[[0.12, 0.24], [0.34, 0.08], [0.34, 0.92]]],
+    2: [[[0.06, 0.26], [0.14, 0.12], [0.3, 0.08], [0.46, 0.12], [0.54, 0.26], [0.5, 0.42], [0.06, 0.92], [0.56, 0.92]]],
+    3: [[[0.06, 0.16], [0.22, 0.08], [0.4, 0.09], [0.52, 0.2], [0.5, 0.36], [0.36, 0.46], [0.24, 0.47]], [[0.36, 0.47], [0.52, 0.58], [0.54, 0.76], [0.42, 0.89], [0.26, 0.92], [0.1, 0.88], [0.04, 0.8]]],
+    4: [[[0.44, 0.92], [0.44, 0.08], [0.04, 0.66], [0.58, 0.66]]],
+    5: [[[0.52, 0.08], [0.14, 0.08], [0.1, 0.44], [0.28, 0.4], [0.44, 0.44], [0.54, 0.58], [0.54, 0.76], [0.42, 0.89], [0.26, 0.92], [0.1, 0.88], [0.04, 0.8]]],
+    6: [[[0.5, 0.1], [0.34, 0.07], [0.18, 0.14], [0.08, 0.34], [0.06, 0.6], [0.12, 0.84], [0.3, 0.93], [0.47, 0.87], [0.55, 0.7], [0.5, 0.53], [0.32, 0.46], [0.14, 0.52], [0.07, 0.62]]],
+    7: [[[0.04, 0.08], [0.56, 0.08], [0.22, 0.92]]],
+    8: [oval(0.3, 0.29, 0.2, 0.2), oval(0.3, 0.71, 0.24, 0.21)],
+    "+": [[[0.3, 0.24], [0.3, 0.76]], [[0.04, 0.5], [0.56, 0.5]]]
+  };
+  DIGITS[9] = DIGITS[6].map((line) => line.map(([x, y]) => [0.6 - x, 1 - y]));
+  function labelStroke(label, cx, cy, h) {
+    const advance = 0.72 * h;
+    const width = advance * (label.length - 1) + 0.6 * h;
+    const lines = [];
+    [...label].forEach((ch, i) => {
+      const x0 = cx - width / 2 + i * advance;
+      for (const line of DIGITS[ch]) lines.push(line.map(([x, y]) => [x0 + x * h, cy - h / 2 + y * h]));
+    });
+    const r = 0.11 * h;
+    return { kind: "stroke", lines, r, box: bounds(lines.flat(), r) };
+  }
+  var TRAY_BADGE = { text: { cx: 73, cy: 30, r: 17 }, dot: { cx: 76, cy: 27, r: 14 }, gap: 5 };
+  var TRAY_CROP = [11, 13, 79, 79];
+  var SMALL_MAX = 32;
+  var ICON_KINDS = ["app", "ios", "tinted", "foreground", "monochrome", "tray", "template", "overlay"];
+  var hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  var mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  var FRONT = 1;
+  var BACK = 2;
+  var TILE = 4;
+  var BADGE = 8;
+  var DIGIT = 16;
+  var GAP = 32;
+  var CUT = 128;
+  var HINT_MAX = 16;
+  function layout(kind, S) {
+    if (kind === "app") {
+      const m = S * 32 / 1024;
+      const tile = { x: m, y: m, w: S - 2 * m, h: S - 2 * m, r: S * 224 / 1024 };
+      const box = tile.w * 0.94;
+      return { tile, place: [m + (tile.w - box) / 2, m + (tile.h - box) / 2, box / 100] };
+    }
+    if (kind === "ios" || kind === "tinted") {
+      const box = S * 0.86;
+      return { tile: { x: 0, y: 0, w: S, h: S, r: 0 }, place: [(S - box) / 2, (S - box) / 2, box / 100] };
+    }
+    if (kind === "foreground" || kind === "monochrome") {
+      const box = S * 0.64;
+      return { tile: null, place: [S / 2 - 50.5 * (box / 100), S / 2 - 52.5 * (box / 100), box / 100] };
+    }
+    if (kind === "tray" || kind === "template") {
+      const [vx, vy, vw] = TRAY_CROP;
+      return { tile: null, place: [-vx * S / vw, -vy * S / vw, S / vw] };
+    }
+    if (kind === "overlay") return { tile: null, place: null };
+    throw new Error('no icon kind "' + kind + '"');
+  }
+  function renderIcon({ masters, palette, kind, size: size2, unread = 0 }) {
+    const S = Math.round(size2);
+    const { tile, place } = layout(kind, S);
+    const small = kind === "app" ? S <= 48 : S <= SMALL_MAX;
+    const glyph = small ? masters.small : masters.full;
+    const empty = { width: S, height: S, data: new Uint8ClampedArray(S * S * 4) };
+    let badge = null;
+    if (kind === "overlay") {
+      const label = badgeLabel(unread, OVERLAY_SIZES[0][0]);
+      if (label === null) return empty;
+      badge = { disk: circle(S / 2, S / 2, S / 2), digit: label ? labelStroke(label, S / 2, S / 2, S * (label.length > 1 ? 0.44 : 0.54)) : null };
+    } else if (kind === "tray" || kind === "template") {
+      const label = badgeLabel(unread, S);
+      if (label !== null) {
+        const at = label ? TRAY_BADGE.text : TRAY_BADGE.dot;
+        const [px, py, k] = place;
+        const [cx, cy, r] = [px + at.cx * k, py + at.cy * k, at.r * k];
+        const grow = kind === "tray" ? 1 : 0;
+        badge = { disk: circle(cx, cy, r + grow), gap: circle(cx, cy, r + grow + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
+      }
+    }
+    const tileShape = tile ? { kind: "rect", x: tile.x, y: tile.y, w: tile.w, h: tile.h, rx: tile.r, box: [tile.x, tile.y, tile.x + tile.w, tile.y + tile.h] } : null;
+    const flags = (x, y) => {
+      let f = 0;
+      if (tileShape && contains(tileShape, x, y)) f |= TILE;
+      if (badge) {
+        if (contains(badge.disk, x, y)) return f | BADGE | (badge.digit && contains(badge.digit, x, y) ? DIGIT : 0);
+        if (badge.gap && contains(badge.gap, x, y)) return f | GAP;
+      }
+      if (place) {
+        const gx = (x - place[0]) / place[2];
+        const gy = (y - place[1]) / place[2];
+        const front = groupAt(glyph.front, gx, gy);
+        if (front === 1) f |= FRONT;
+        else {
+          const back = groupAt(glyph.back, gx, gy);
+          if (back === 1) f |= BACK;
+          else if (front === -1 || back === -1) f |= CUT;
+        }
+      }
+      return f;
+    };
+    const p = palette || {};
+    const glyphRgb = p.glyph ? hexRgb(p.glyph) : [1, 1, 1];
+    const markRgb = p.mark ? hexRgb(p.mark) : [0, 0, 0];
+    const none = [0, 0, 0, 0];
+    const colourOf = (f, y) => {
+      if (kind === "overlay") {
+        if (f & DIGIT) return [...hexRgb(p.badge.text), 1];
+        if (f & BADGE) return [...hexRgb(p.badge.fill), 1];
+        return none;
+      }
+      if (kind === "tray" || kind === "template") {
+        const ink2 = kind === "template" ? [0, 0, 0] : markRgb;
+        if (f & GAP) return none;
+        if (f & BADGE) {
+          if (kind === "template") return f & DIGIT ? none : [0, 0, 0, 1];
+          return f & DIGIT ? [...hexRgb(p.badge.text), 1] : [...hexRgb(p.badge.fill), 1];
+        }
+        if (f & FRONT) return [...ink2, 1];
+        return f & BACK ? [...ink2, kind === "template" ? 1 : p.back] : none;
+      }
+      if (kind === "monochrome") return f & FRONT ? [1, 1, 1, 1] : f & BACK ? [1, 1, 1, 0.5] : none;
+      if (kind === "foreground") return f & FRONT ? [...glyphRgb, 1] : f & BACK ? [...glyphRgb, p.back] : none;
+      let base = none;
+      if (f & TILE) base = kind === "tinted" ? [0, 0, 0, 1] : [...mix(hexRgb(p.tile.top), hexRgb(p.tile.bottom), Math.min(1, Math.max(0, (y - tile.y) / tile.h))), 1];
+      const ink = kind === "tinted" ? [1, 1, 1] : glyphRgb;
+      if (f & FRONT) return [...ink, 1];
+      if (f & BACK) {
+        const a = kind === "tinted" ? 0.5 : p.back;
+        return base[3] ? [...mix(base.slice(0, 3), ink, a), 1] : [...ink, a];
+      }
+      return base;
+    };
+    const data = empty.data;
+    const N = 4;
+    const W = S + 1;
+    const corners = S > 64 ? new Int32Array(W * W) : null;
+    const hint = (kind === "tray" || kind === "template") && S <= HINT_MAX;
+    if (corners) for (let y = 0; y <= S; y += 1) for (let x = 0; x <= S; x += 1) corners[y * W + x] = flags(x, y);
+    for (let y = 0; y < S; y += 1) {
+      for (let x = 0; x < S; x += 1) {
+        const acc = [0, 0, 0, 0];
+        const c = corners ? corners[y * W + x] : -1;
+        if (corners && c === corners[y * W + x + 1] && c === corners[(y + 1) * W + x] && c === corners[(y + 1) * W + x + 1] && c === flags(x + 0.5, y + 0.5)) {
+          const [r, g, b, a2] = colourOf(c, y + 0.5);
+          acc[0] = r * a2;
+          acc[1] = g * a2;
+          acc[2] = b * a2;
+          acc[3] = a2;
+        } else {
+          for (let j = 0; j < N; j += 1) {
+            const sy = y + (j + 0.5) / N;
+            for (let i = 0; i < N; i += 1) {
+              const [r, g, b, a2] = colourOf(flags(x + (i + 0.5) / N, sy), sy);
+              acc[0] += r * a2 / (N * N);
+              acc[1] += g * a2 / (N * N);
+              acc[2] += b * a2 / (N * N);
+              acc[3] += a2 / (N * N);
+            }
+          }
+        }
+        if (hint && flags(x + 0.5, y + 0.5) & (CUT | GAP | DIGIT)) acc[3] = 0;
+        const o = (y * S + x) * 4;
+        const a = acc[3];
+        data[o] = a ? Math.round(acc[0] / a * 255) : 0;
+        data[o + 1] = a ? Math.round(acc[1] / a * 255) : 0;
+        data[o + 2] = a ? Math.round(acc[2] / a * 255) : 0;
+        data[o + 3] = Math.round(a * 255);
+      }
+    }
+    return { width: S, height: S, data };
+  }
+
   // core/app/rules/app-icons.js
   var APP_ICON_KEY = "appearance.appIcon";
   var FOLLOW_THEME = "theme";
@@ -1295,6 +1816,17 @@ var engine = (() => {
   function fixedPalette(id, spec = APP_ICONS) {
     const variant = appIconVariants(spec).find((v) => v.id === id);
     return variant && variant.colors ? { scheme: variant.scheme === "dark" ? "dark" : "light", colors: { ...variant.colors } } : null;
+  }
+  function themeMatch(accent, spec = APP_ICONS) {
+    if (!cssColour(accent)) return spec.default;
+    const nearest = (items, distance2) => items.reduce((best, item) => distance2(item) < distance2(best) ? item : best);
+    if (chroma(accent) < SATURATED) return nearest(appIconVariants(spec), (v) => colourDistance(accent, v.colors.accent)).id;
+    const family = nearest(spec.families, (f) => hueDistance(accent, f.variants.dark.colors.accent));
+    return nearest([family.variants.dark, family.variants.light], (v) => colourDistance(accent, v.colors.accent)).id;
+  }
+  function iconInForce(values, accent = null, spec = APP_ICONS) {
+    const id = appIconFor(values, spec);
+    return id === FOLLOW_THEME ? themeMatch(accent, spec) : id;
   }
   function appIconChoices(values, { themePicture = null } = {}, spec = APP_ICONS) {
     const current = appIconFor(values, spec);
@@ -1318,8 +1850,8 @@ var engine = (() => {
     });
     return choices;
   }
-  function iconToApply(applied, values, spec = APP_ICONS) {
-    const next = appIconFor(values, spec);
+  function iconToApply(applied, values, accent = null, spec = APP_ICONS) {
+    const next = iconInForce(values, accent, spec);
     return next === applied ? null : next;
   }
 
@@ -1760,11 +2292,13 @@ var engine = (() => {
       bytes: Number.isFinite(a.total_bytes) ? a.total_bytes : 0,
       sticker: Boolean(a.is_sticker),
       missing: Boolean(a.missing) || !a.original_path,
-      payload: isPayloadName(name)
+      payload: isPayloadName(name),
+      // A Live Photo: a picture whose motion the server found beside it (server/src/engine/live-photo.js).
+      live: Boolean(a.live_photo) && /^image\//i.test(String(a.mime_type || ""))
     };
   }
   function modelAttachment(v, name) {
-    return { id: v.id, name: name === void 0 ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing };
+    return { id: v.id, name: name === void 0 ? v.name : name, mime: v.mime, bytes: v.bytes, sticker: v.sticker, missing: v.missing, ...v.live ? { live: true } : {} };
   }
   var payloadTitle = (m) => typeof m.payload_title === "string" && m.payload_title.trim() ? m.payload_title.trim() : null;
   function mapInlineReaction(r) {
@@ -1793,9 +2327,15 @@ var engine = (() => {
       payloads: link ? 0 : payloads.length - carried.length
     };
   }
+  var GROUP_PHOTO_NAME = "GroupPhotoImage";
+  var PHOTO_SCAN_ROWS = 400;
+  function isGroupPhotoRow(m) {
+    const list = Array.isArray(m && m.attachments) ? m.attachments : [];
+    return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || "") === GROUP_PHOTO_NAME;
+  }
   function mapMessage(m, { attachmentId }) {
     const fromMe = Boolean(m.is_from_me);
-    return {
+    const base = {
       id: m.guid ? String(m.guid) : "row:" + m.id,
       chatId: chatOf(m),
       fromMe,
@@ -1807,7 +2347,15 @@ var engine = (() => {
       // fills it on ordinary rows with the message before it, so reading it marked every consecutive message as a reply
       // to the one above (issue 195).
       replyTo: m.thread_originator_guid ? String(m.thread_originator_guid) : null,
-      read: fromMe || typeof m.is_read !== "boolean" ? null : m.is_read,
+      read: fromMe || typeof m.is_read !== "boolean" ? null : m.is_read
+    };
+    if (isGroupPhotoRow(m)) {
+      const v = attachmentView(m.attachments[0], attachmentId);
+      const photo = v.missing ? null : { ...modelAttachment(v, "Group photo"), mime: /^image\//i.test(v.mime) ? v.mime : "image/*" };
+      return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "groupPhoto", photo } };
+    }
+    return {
+      ...base,
       ...payloadParts(m, { attachmentId }),
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean)
     };
@@ -1832,11 +2380,10 @@ var engine = (() => {
   function normalizeSort(sort) {
     return SORT_ORDERS.includes(sort) ? sort : "recent";
   }
-  var UNGROUPED = "ungrouped";
   var SEARCH_MODES = ["contact", "text"];
   var SEARCH_MODE_LABELS = { contact: "Contact", text: "Full text" };
   function emptyFilters() {
-    return { unread: false, group: null, kind: null, text: "", mode: "contact", terms: [] };
+    return { unread: false, kind: null, text: "", mode: "contact", terms: [] };
   }
   function orderChats(chats) {
     return [...chats].sort(byActivity);
@@ -1889,29 +2436,16 @@ var engine = (() => {
     if (String(f.text || "").trim()) terms.push({ text: String(f.text).trim(), mode: f.mode });
     return terms.length ? "No conversations match " + termsSentence(terms) + "." : "No conversations match these filters.";
   }
-  function filterChats(chats, filters = {}, { placement = {}, texts = {} } = {}) {
+  function filterChats(chats, filters = {}, { texts = {} } = {}) {
     const f = { ...emptyFilters(), ...filters };
     const terms = [...Array.isArray(f.terms) ? f.terms : [], { text: f.text, mode: f.mode }];
     return chats.filter((c) => {
       if (f.unread && !(c.unread > 0)) return false;
-      if (f.group) {
-        const g = placement[c.id] || null;
-        if (f.group === UNGROUPED ? g : g !== f.group) return false;
-      }
       if (f.kind === "direct" && c.isGroup) return false;
       if (f.kind === "group" && !c.isGroup) return false;
       if (!terms.every((t) => matchesTerm(c, t, { texts }))) return false;
       return true;
     });
-  }
-  function groupSections(chats, { groups = [], placement = {} } = {}) {
-    const byGroup = new Map(groups.map((g) => [g.id, []]));
-    const ungrouped = [];
-    for (const c of chats) {
-      const g = placement[c.id];
-      (g && byGroup.has(g) ? byGroup.get(g) : ungrouped).push(c);
-    }
-    return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: "Ungrouped", chats: ungrouped }];
   }
   var LETTER_OTHER = "#";
   var sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -1943,32 +2477,6 @@ var engine = (() => {
     }
     return sections;
   }
-  function defaultGroupName(groups = []) {
-    const taken = new Set(groups.map((g) => g.name));
-    let n = 1;
-    while (taken.has("Group " + n)) n += 1;
-    return "Group " + n;
-  }
-  function addGroup(groups, { id, name }) {
-    return [...groups, { id, name: String(name || "").trim() || defaultGroupName(groups) }];
-  }
-  function renameGroup(groups, id, name) {
-    return groups.map((g) => g.id === id ? { ...g, name: String(name || "").trim() || g.name } : g);
-  }
-  function moveGroup(groups, id, delta) {
-    const list = [...groups];
-    const i = list.findIndex((g) => g.id === id);
-    const j = i < 0 ? -1 : i + delta;
-    if (i < 0 || j < 0 || j >= list.length) return list;
-    [list[i], list[j]] = [list[j], list[i]];
-    return list;
-  }
-  function placeChat(placement, chatId, groupId) {
-    const out = { ...placement };
-    if (groupId && groupId !== UNGROUPED) out[chatId] = groupId;
-    else delete out[chatId];
-    return out;
-  }
   var CHAT_IDENTIFIER = /^chat[0-9]+$/i;
   function chatTitle(chat) {
     const name = String(chat.name || "").trim();
@@ -1983,7 +2491,13 @@ var engine = (() => {
   function chatPreview(chat) {
     const m = chat.lastMessage;
     if (!m) return "";
+    if (m.event) return eventText(m);
     return (m.fromMe ? "You: " : "") + messageSummary({ ...m, text: stripInlineObjects(m.text) });
+  }
+  function eventText(m) {
+    const who = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
+    if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
+    return "";
   }
   function initials(name) {
     const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
@@ -1999,7 +2513,8 @@ var engine = (() => {
     const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
     const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
     const out = chats.slice();
-    out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
+    const photo = message.event && message.event.kind === "groupPhoto" ? { photo: message.event.photo } : {};
+    out[i] = { ...c, ...photo, unread, lastMessageAt: message.sentAt, lastMessage: message.event ? { ...lastMessage, event: { kind: message.event.kind }, senderName: message.senderName || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
   function toggleChecked(checked = [], id) {
@@ -2015,40 +2530,88 @@ var engine = (() => {
   function checkedCount(checked = [], ids = []) {
     return ids.filter((id) => checked.includes(id)).length;
   }
-  function addChatsToGroup(placement = {}, ids = [], groupId) {
-    return ids.reduce((acc, id) => placeChat(acc, id, groupId), { ...placement });
-  }
-  function groupFromSelection(groups = [], placement = {}, ids = [], { id, name } = {}) {
-    return { groups: addGroup(groups, { id, name }), placement: addChatsToGroup(placement, ids, id) };
-  }
-  function removeGroup(groups = [], id) {
-    return groups.filter((g) => g.id !== id);
-  }
-  function clearGroupPlacement(placement = {}, groupId) {
-    const out = {};
-    for (const [chatId, g] of Object.entries(placement)) if (g !== groupId) out[chatId] = g;
-    return out;
-  }
   function hideChats(hidden = [], ids = []) {
     return [.../* @__PURE__ */ new Set([...hidden, ...ids])];
   }
-  function forgetChats(order = [], placement = {}, ids = []) {
+  function forgetChats(order = [], ids = []) {
     const gone = new Set(ids);
-    const outPlacement = {};
-    for (const [chatId, g] of Object.entries(placement)) if (!gone.has(chatId)) outPlacement[chatId] = g;
-    return { order: order.filter((id) => !gone.has(id)), placement: outPlacement };
+    return order.filter((id) => !gone.has(id));
   }
   var DELETE_STEPS = { idle: "idle", confirming: "confirming" };
   function requestDelete(ids = []) {
     const unique = [...new Set(ids)];
     return unique.length ? { ids: unique, step: DELETE_STEPS.confirming } : null;
   }
-  function requestDeleteGroup(id, name) {
-    return id ? { kind: "group", id, name: String(name || "this group"), step: DELETE_STEPS.confirming } : null;
-  }
   function resolveDelete(pending, confirmed) {
     if (!pending || pending.step !== DELETE_STEPS.confirming || confirmed !== true) return null;
     return pending;
+  }
+  var ADDRESS = /^(\+?[0-9][0-9 ().-]{2,30}|[^\s@]{1,64}@[^\s@]{1,190})$/;
+  var isAddress = (a) => typeof a === "string" && ADDRESS.test(a.trim());
+  function parseRecipients(text = "") {
+    const parts = String(text).split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+    const addresses = [];
+    const invalid = [];
+    for (const p of parts) (isAddress(p) ? addresses : invalid).push(p);
+    return { addresses: [...new Set(addresses)], invalid };
+  }
+  function recipientSuggestions(chats = [], query = "", { exclude = [], limit = 8 } = {}) {
+    const q = String(query).trim().toLocaleLowerCase();
+    const seen = new Set(exclude);
+    const out = [];
+    for (const c of orderChats(chats)) {
+      if (c.isGroup || !Array.isArray(c.participants) || c.participants.length !== 1) continue;
+      const address = c.participants[0];
+      if (seen.has(address)) continue;
+      const name = chatTitle(c);
+      if (q && !name.toLocaleLowerCase().includes(q) && !String(address).toLocaleLowerCase().includes(q)) continue;
+      seen.add(address);
+      out.push({ address, name, chatId: c.id });
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+  function groupAddresses(chats = [], ids = []) {
+    const want = new Set(ids);
+    const out = [];
+    for (const c of chats) if (want.has(c.id)) {
+      for (const a of c.participants || []) if (!out.includes(a)) out.push(a);
+    }
+    return out;
+  }
+  function upsertChat(chats = [], chat) {
+    if (!chat || chat.id == null) return chats;
+    const i = chats.findIndex((c) => c.id === chat.id);
+    const out = i < 0 ? [...chats, chat] : chats.map((c, k) => k === i ? { ...c, ...chat } : c);
+    return orderChats(out);
+  }
+  var LINK = /^(sms|smsto|mms|mmsto|im|imessage):(?:\/\/)?([^?]*)(?:\?(.*))?$/i;
+  function parseMessagingLink(url) {
+    const m = LINK.exec(String(url || "").trim());
+    if (!m) return null;
+    let people;
+    try {
+      people = decodeURIComponent(m[2]);
+    } catch {
+      return null;
+    }
+    const addresses = [...new Set(people.split(/[,;]/).map((p) => p.trim()).filter(Boolean))];
+    if (!addresses.length || !addresses.every(isAddress)) return null;
+    let body = "";
+    if (m[3]) {
+      try {
+        body = new URLSearchParams(m[3]).get("body") || "";
+      } catch {
+        body = "";
+      }
+    }
+    return { addresses, body };
+  }
+  function linkTarget(chats = [], link) {
+    if (!link) return null;
+    const want = [...link.addresses].sort().join("\n");
+    const hit = orderChats(chats).find((c) => Array.isArray(c.participants) && c.isGroup === link.addresses.length > 1 && [...c.participants].sort().join("\n") === want);
+    return hit ? { open: hit.id } : { compose: link.addresses };
   }
 
   // core/app/rules/emoji-data.js
@@ -2322,6 +2885,17 @@ var engine = (() => {
       detail: "Answer with a message instead."
     };
   }
+  function serviceNote(chat) {
+    const platform = platformOf(chat);
+    const group = Boolean(chat && chat.isGroup);
+    if (platform === "imessage") {
+      return { encrypted: true, apple: true, label: (group ? "Everyone here is on Apple devices." : "On Apple devices.") + " Your messages here are end-to-end encrypted." };
+    }
+    if (platform === "sms" || platform === "rcs") {
+      return { encrypted: false, apple: false, label: (group ? "Not everyone here is on Apple devices." : "Not on Apple devices.") + " Your messages here go as text messages and are not end-to-end encrypted." };
+    }
+    return null;
+  }
 
   // core/app/rules/messages.js
   var GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
@@ -2473,9 +3047,59 @@ var engine = (() => {
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
   }
 
+  // core/app/rules/links.js
+  var FIND = /\b(?:https?:\/\/|www\.)[^\s<>"]+/gi;
+  var TRAIL = /[.,;:!?'\u2019\u201d*_]+$/;
+  function trim(raw) {
+    let s = raw;
+    for (; ; ) {
+      const before = s;
+      s = s.replace(TRAIL, "");
+      for (const [open, close] of [["(", ")"], ["[", "]"], ["{", "}"]]) {
+        while (s.endsWith(close) && s.split(open).length < s.split(close).length) s = s.slice(0, -1);
+      }
+      if (s === before) return s;
+    }
+  }
+  function linkHref(text) {
+    const t = String(text || "");
+    const href = /^www\./i.test(t) ? "https://" + t : t;
+    try {
+      const u = new URL(href);
+      return (u.protocol === "http:" || u.protocol === "https:") && u.hostname.includes(".") ? u.href : null;
+    } catch {
+      return null;
+    }
+  }
+  function splitLinks(text) {
+    const s = String(text || "");
+    const parts = [];
+    let at = 0;
+    for (const m of s.matchAll(FIND)) {
+      const shown = trim(m[0]);
+      const href = linkHref(shown);
+      if (!href) continue;
+      if (m.index > at) parts.push({ text: s.slice(at, m.index) });
+      parts.push({ text: shown, href });
+      at = m.index + shown.length;
+    }
+    if (at < s.length) parts.push({ text: s.slice(at) });
+    return parts;
+  }
+  function messageLinks(m) {
+    const out = [];
+    for (const p of splitLinks(m && m.text)) if (p.href && !out.includes(p.href)) out.push(p.href);
+    const card = m && m.link && linkHref(m.link.url);
+    if (card && !out.includes(card)) out.push(card);
+    return out;
+  }
+
   // core/app/rules/media.js
   function isMediaAttachment(a) {
     return Boolean(a) && !a.local && !a.missing && !a.sticker && /^(?:image|video)\//i.test(String(a.mime || ""));
+  }
+  function isLivePhoto(a) {
+    return Boolean(a && a.live) && mediaKind(a) === "image";
   }
   function mediaKind(a) {
     if (!isMediaAttachment(a)) return null;
@@ -2488,7 +3112,8 @@ var engine = (() => {
       for (const a of m.attachments || []) {
         const kind = mediaKind(a);
         if (!kind) continue;
-        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ""), mime: String(a.mime || "") });
+        const live = isLivePhoto(a);
+        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ""), mime: String(a.mime || ""), ...live ? { live: true } : {} });
       }
     }
     return items;
@@ -2856,7 +3481,7 @@ var engine = (() => {
     }
     return null;
   }
-  function luminance(rgb) {
+  function luminance2(rgb) {
     const [r, g, b] = rgb.map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
@@ -2864,7 +3489,7 @@ var engine = (() => {
     const x = Array.isArray(a) ? a : parseColour(a);
     const y = Array.isArray(b) ? b : parseColour(b);
     if (!x || !y) return null;
-    const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p);
+    const [hi, lo] = [luminance2(x), luminance2(y)].sort((p, q) => q - p);
     return (hi + 0.05) / (lo + 0.05);
   }
 
@@ -3038,6 +3663,17 @@ var engine = (() => {
     const notice = updateNotice("error", outcome.version, outcome.detail || null);
     return { ...notice, title: "Server update failed", key: "server:" + outcome.state + ":" + (outcome.version || "") + ":" + (outcome.at || "") };
   }
+  function messageTarget(m) {
+    if (!m || m.chatId == null || m.id == null) return {};
+    return { chatId: String(m.chatId), messageId: String(m.id) };
+  }
+  function noticeTarget(value) {
+    if (!value || typeof value !== "object") return null;
+    const id = (v) => (typeof v === "string" || typeof v === "number") && String(v).length > 0 && String(v).length <= 200 ? String(v) : null;
+    const chatId = id(value.chatId);
+    if (!chatId) return null;
+    return { chatId, messageId: id(value.messageId) };
+  }
   function messageNotice(title, m) {
     const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
     return { title, body: messageSummary(m) || (count > 1 ? count + " attachments" : "Attachment") };
@@ -3114,8 +3750,14 @@ var engine = (() => {
     const next = clampScale(scale, max);
     const k = next / view.scale;
     const p = point || { x: 0, y: 0 };
-    return clampPan({ scale: next, x: p.x - (p.x - view.x) * k, y: p.y - (p.y - view.y) * k }, box);
+    return clampPan({ scale: next, x: p.x - (p.x - view.x) * k, y: p.y - (p.y - drawnY(view, box)) * k - topLift(next, box) }, box);
   }
+  function topLift(scale, box) {
+    if (!box || box.anchor !== "top" || !(Number(box.height) > 0)) return 0;
+    const room = (Number(box.stageHeight) || 0) - (Number(box.height) || 0) * scale;
+    return room > 0 ? -room / 2 : 0;
+  }
+  var drawnY = (view, box) => view.y + topLift(view.scale, box);
   function zoomBy(view, factor, point, box, max) {
     return zoomTo(view, view.scale * factor, point, box, max);
   }
@@ -3136,7 +3778,7 @@ var engine = (() => {
     const c1 = middle(to[0], to[1]);
     const next = clampScale(start.scale * (d1 / d0), max);
     const k = next / start.scale;
-    return clampPan({ scale: next, x: c1.x - (c0.x - start.x) * k, y: c1.y - (c0.y - start.y) * k }, box);
+    return clampPan({ scale: next, x: c1.x - (c0.x - start.x) * k, y: c1.y - (c0.y - drawnY(start, box)) * k - topLift(next, box) }, box);
   }
   function wheelFactor(deltaY, deltaMode = 0, pinching = false) {
     const unit = deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1;
@@ -3166,499 +3808,6 @@ var engine = (() => {
   };
   function zoomKey(key) {
     return Object.prototype.hasOwnProperty.call(KEYS, key) ? KEYS[key] : null;
-  }
-
-  // core/app/rules/icon.js
-  var ICON_TOKENS = ["accent", "accent-fg", "fg", "bg", "bg-raised", "danger", "badge", "badge-fg"];
-  var GLYPH_FLOOR = { light: 2.6, dark: 4 };
-  var BADGE_TEXT_FLOOR = 4.5;
-  var BADGE_APART = 0.15;
-  var OVERLAY_SIZES = [[32, 2], [40, 2.5], [48, 3]];
-  var SATURATED = 0.06;
-  var NAMED = { black: [0, 0, 0], white: [1, 1, 1], red: [1, 0, 0], green: [0, 128 / 255, 0], blue: [0, 0, 1], gray: [128 / 255, 128 / 255, 128 / 255], grey: [128 / 255, 128 / 255, 128 / 255] };
-  var clamp01 = (x) => Math.min(1, Math.max(0, x));
-  var args = (body) => body.replace(/\//g, " ").split(/[\s,]+/).filter(Boolean);
-  var toLinear = (c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  var toGamma = (x) => x <= 31308e-7 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
-  var part = (s, whole) => String(s).endsWith("%") ? parseFloat(s) / 100 * whole : parseFloat(s);
-  function hslToRgb(h, s, l) {
-    const k = (n) => (n + h / 30) % 12;
-    const a = s * Math.min(l, 1 - l);
-    return [0, 8, 4].map((n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)));
-  }
-  function oklabToLinear(L, a, b) {
-    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-    const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-    return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
-  }
-  function cssColour(value) {
-    const v = String(value ?? "").trim().toLowerCase();
-    if (NAMED[v]) return [...NAMED[v]];
-    let m = v.match(/^#([0-9a-f]{3,8})$/);
-    if (m) {
-      const h = m[1];
-      if (h.length === 3 || h.length === 4) return [0, 1, 2].map((i) => parseInt(h[i] + h[i], 16) / 255);
-      if (h.length === 6 || h.length === 8) return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
-      return null;
-    }
-    m = v.match(/^(rgba?|hsla?|oklch|oklab)\(([^()]*)\)$/);
-    if (!m) return null;
-    const p = args(m[2]).map((x) => x === "none" ? "0" : x.replace(/deg$/, ""));
-    if (p.length < 3 || p.slice(0, 3).some((x) => !/^-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?%?$/.test(x))) return null;
-    if (m[1].startsWith("rgb")) return p.slice(0, 3).map((x) => clamp01(x.endsWith("%") ? parseFloat(x) / 100 : parseFloat(x) / 255));
-    if (m[1].startsWith("hsl")) return hslToRgb((parseFloat(p[0]) % 360 + 360) % 360, clamp01(parseFloat(p[1]) / 100), clamp01(parseFloat(p[2]) / 100)).map(clamp01);
-    const L = part(p[0], 1);
-    let a;
-    let b;
-    if (m[1] === "oklch") {
-      const C = part(p[1], 0.4);
-      const h = parseFloat(p[2]) * Math.PI / 180;
-      a = C * Math.cos(h);
-      b = C * Math.sin(h);
-    } else {
-      a = part(p[1], 0.4);
-      b = part(p[2], 0.4);
-    }
-    return oklabToLinear(L, a, b).map((c) => toGamma(clamp01(c)));
-  }
-  var channels = (x) => Array.isArray(x) ? x : cssColour(x);
-  function toOklch(colour) {
-    const [R, G, B] = channels(colour).map(toLinear);
-    const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
-    const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
-    const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
-    const L = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
-    const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
-    const b = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
-    const h = Math.atan2(b, a) * 180 / Math.PI;
-    return [L, Math.hypot(a, b), h < 0 ? h + 360 : h];
-  }
-  function fromOklch([L, C, h]) {
-    const at = (c) => oklabToLinear(clamp01(L), c * Math.cos(h * Math.PI / 180), c * Math.sin(h * Math.PI / 180));
-    const fits = (lin2) => lin2.every((x) => x >= -1e-7 && x <= 1 + 1e-7);
-    let lin = at(C);
-    if (!fits(lin)) {
-      let lo = 0;
-      let hi = C;
-      for (let step = 0; step < 24; step += 1) {
-        const mid = (lo + hi) / 2;
-        if (fits(at(mid))) lo = mid;
-        else hi = mid;
-      }
-      lin = at(lo);
-    }
-    return lin.map((x) => toGamma(clamp01(x)));
-  }
-  var toHex = (rgb) => "#" + rgb.map((c) => Math.round(clamp01(c) * 255).toString(16).padStart(2, "0")).join("");
-  function luminance2(rgb) {
-    const [r, g, b] = rgb.map(toLinear);
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  }
-  function contrast(x, y) {
-    const a = channels(x);
-    const b = channels(y);
-    if (!a || !b) return null;
-    const [hi, lo] = [luminance2(a), luminance2(b)].sort((p, q) => q - p);
-    return (hi + 0.05) / (lo + 0.05);
-  }
-  function hueDistance(x, y) {
-    const d = Math.abs(toOklch(x)[2] - toOklch(y)[2]) % 360;
-    return d > 180 ? 360 - d : d;
-  }
-  var chroma = (x) => toOklch(x)[1];
-  function colourDistance(x, y) {
-    const [L1, C1, h1] = toOklch(x);
-    const [L2, C2, h2] = toOklch(y);
-    const rad = (h) => h * Math.PI / 180;
-    return Math.hypot(L1 - L2, C1 * Math.cos(rad(h1)) - C2 * Math.cos(rad(h2)), C1 * Math.sin(rad(h1)) - C2 * Math.sin(rad(h2)));
-  }
-  function iconColours(defaults = {}, given = {}) {
-    const out = {};
-    for (const key of ICON_TOKENS) out[key] = given && cssColour(given[key]) ? String(given[key]).trim() : defaults[key];
-    return out;
-  }
-  function iconPalette(colours, scheme = "light") {
-    const c = Object.fromEntries(ICON_TOKENS.map((k) => [k, cssColour(colours && colours[k])]));
-    for (const k of ICON_TOKENS) if (!c[k]) throw new Error("the icon needs the " + k + " token as a colour");
-    const dark = scheme === "dark";
-    const [L, C, h] = toOklch(c.accent);
-    let tileTop;
-    let tileBottom;
-    let glyph;
-    if (dark) {
-      const [rL, rC, rh] = toOklch(c["bg-raised"]);
-      tileTop = fromOklch([rL + 0.04, rC, rh]);
-      tileBottom = c.bg;
-      glyph = c.accent;
-      for (let next = L; contrast(glyph, c["bg-raised"]) < GLYPH_FLOOR.dark && next < 1; ) {
-        next = Math.min(1, next + 0.02);
-        glyph = fromOklch([next, C, h]);
-      }
-    } else {
-      tileTop = fromOklch([L + 0.07, C, h - 4]);
-      tileBottom = fromOklch([L - 0.07, C, h + 4]);
-      glyph = contrast(c["accent-fg"], c.accent) >= GLYPH_FLOOR.light ? c["accent-fg"] : c.fg;
-    }
-    const tileColours = [tileTop, tileBottom, dark ? c["bg-raised"] : c.accent];
-    const own = contrast(c.danger, c["badge-fg"]) >= BADGE_TEXT_FLOOR && tileColours.every((t) => colourDistance(c.danger, t) >= BADGE_APART);
-    return {
-      scheme: dark ? "dark" : "light",
-      tile: { top: toHex(tileTop), bottom: toHex(tileBottom), behind: toHex(dark ? c["bg-raised"] : c.accent) },
-      glyph: toHex(glyph),
-      back: dark ? 0.45 : 0.5,
-      mark: toHex(dark ? glyph : c.accent),
-      badge: { fill: toHex(own ? c.danger : c.badge), text: toHex(c["badge-fg"]) }
-    };
-  }
-  var attrsOf = (s) => Object.fromEntries([...s.matchAll(/([\w:-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
-  var nums = (s) => (String(s).match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
-  function transformer(spec) {
-    const ops = [...String(spec || "").matchAll(/(translate|rotate|scale)\(([^)]*)\)/g)].map((m) => [m[1], nums(m[2])]);
-    return ([x, y]) => {
-      let p = [x, y];
-      for (let i = ops.length - 1; i >= 0; i -= 1) {
-        const [op, n] = ops[i];
-        if (op === "translate") p = [p[0] + n[0], p[1] + (n[1] ?? 0)];
-        else if (op === "scale") p = [p[0] * n[0], p[1] * (n[1] ?? n[0])];
-        else {
-          const r = n[0] * Math.PI / 180;
-          p = [p[0] * Math.cos(r) - p[1] * Math.sin(r), p[0] * Math.sin(r) + p[1] * Math.cos(r)];
-        }
-      }
-      return p;
-    };
-  }
-  function pathPolygons(d, transform) {
-    const t = transformer(transform);
-    const tokens = String(d).match(/[MLQCZ]|-?\d*\.?\d+(?:e-?\d+)?/gi) || [];
-    const polys = [];
-    let poly = null;
-    let at = [0, 0];
-    let i = 0;
-    const read = () => Number(tokens[i++]);
-    while (i < tokens.length) {
-      const cmd = tokens[i++].toUpperCase();
-      if (cmd === "M") {
-        at = [read(), read()];
-        poly = [at];
-        polys.push(poly);
-      } else if (cmd === "L") {
-        at = [read(), read()];
-        poly.push(at);
-      } else if (cmd === "Q") {
-        const c = [read(), read()];
-        const e = [read(), read()];
-        for (let k = 1; k <= 16; k += 1) {
-          const u = k / 16;
-          const v = 1 - u;
-          poly.push([v * v * at[0] + 2 * v * u * c[0] + u * u * e[0], v * v * at[1] + 2 * v * u * c[1] + u * u * e[1]]);
-        }
-        at = e;
-      } else if (cmd === "C") {
-        const c1 = [read(), read()];
-        const c2 = [read(), read()];
-        const e = [read(), read()];
-        for (let k = 1; k <= 24; k += 1) {
-          const u = k / 24;
-          const v = 1 - u;
-          poly.push([v ** 3 * at[0] + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u ** 3 * e[0], v ** 3 * at[1] + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u ** 3 * e[1]]);
-        }
-        at = e;
-      } else if (cmd === "Z") at = poly[0];
-      else throw new Error("the icon masters use M, L, Q, C and Z only, not " + cmd);
-    }
-    return polys.map((p) => p.map(t));
-  }
-  function bounds(points, grow) {
-    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
-    for (const [x, y] of points) {
-      x0 = Math.min(x0, x);
-      y0 = Math.min(y0, y);
-      x1 = Math.max(x1, x);
-      y1 = Math.max(y1, y);
-    }
-    return [x0 - grow, y0 - grow, x1 + grow, y1 + grow];
-  }
-  var circle = (cx, cy, r) => ({ kind: "circle", cx, cy, r, box: [cx - r, cy - r, cx + r, cy + r] });
-  function shapeOf(tag, a, grow) {
-    if (tag === "circle") return circle(Number(a.cx), Number(a.cy), Number(a.r) + grow);
-    if (tag === "rect") {
-      const [x, y, w, h] = [Number(a.x) - grow, Number(a.y) - grow, Number(a.width) + 2 * grow, Number(a.height) + 2 * grow];
-      const rx = Math.min(Number(a.rx || 0) + grow, w / 2, h / 2);
-      return { kind: "rect", x, y, w, h, rx, box: [x, y, x + w, y + h] };
-    }
-    const polys = pathPolygons(a.d, a.transform);
-    return { kind: "poly", polys, grow, box: bounds(polys.flat(), grow) };
-  }
-  function parseGlyph(svg) {
-    const text = String(svg);
-    const viewBox = nums(attrsOf(/<svg\b([^>]*)>/.exec(text)?.[1] || "").viewBox);
-    if (viewBox.length !== 4) throw new Error("an icon master names its viewBox");
-    const masks = {};
-    const groups = [];
-    const stack = [{}];
-    let mask = null;
-    let group = null;
-    for (const m of text.matchAll(/<(\/?)([a-z]+)\b([^>]*?)(\/?)>/gi)) {
-      const [, close, tag, rest, selfClose] = m;
-      const a = attrsOf(rest);
-      if (close) {
-        if (tag === "mask") mask = null;
-        if (tag === "g" && stack.pop().owns) group = null;
-        continue;
-      }
-      if (tag === "mask") {
-        mask = [];
-        masks[a.id] = mask;
-        continue;
-      }
-      if (tag === "g") {
-        const inherit = { ...stack[stack.length - 1], ...a, owns: false };
-        if (a.mask) {
-          group = { mask: /#([^)]+)/.exec(a.mask)[1], shapes: [] };
-          groups.push(group);
-          inherit.owns = true;
-        }
-        if (!selfClose) stack.push(inherit);
-        continue;
-      }
-      if (!["circle", "rect", "path"].includes(tag)) continue;
-      const ctx = { ...stack[stack.length - 1], ...a };
-      const grow = ctx.stroke && ctx.stroke !== "none" ? Number(ctx["stroke-width"] || 1) / 2 : 0;
-      if (mask) mask.push({ shape: shapeOf(tag, a, grow), keep: ctx.fill === "white" });
-      else if (group) group.shapes.push(shapeOf(tag, a, grow));
-    }
-    if (groups.length !== 2) throw new Error("an icon master has a back group and a front group");
-    const [back, front] = groups.map((g) => ({ shapes: g.shapes, mask: masks[g.mask] || [] }));
-    return { viewBox, back, front };
-  }
-  function segDist2(px, py, [ax, ay], [bx, by]) {
-    const dx = bx - ax;
-    const dy = by - ay;
-    const len = dx * dx + dy * dy;
-    const t = len ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len)) : 0;
-    const ex = ax + t * dx - px;
-    const ey = ay + t * dy - py;
-    return ex * ex + ey * ey;
-  }
-  function inPoly(x, y, poly) {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
-      const [xi, yi] = poly[i];
-      const [xj, yj] = poly[j];
-      if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
-  }
-  function contains(s, x, y) {
-    if (x < s.box[0] || x > s.box[2] || y < s.box[1] || y > s.box[3]) return false;
-    if (s.kind === "circle") return (x - s.cx) ** 2 + (y - s.cy) ** 2 <= s.r * s.r;
-    if (s.kind === "rect") {
-      const qx = Math.max(Math.abs(x - (s.x + s.w / 2)) - (s.w / 2 - s.rx), 0);
-      const qy = Math.max(Math.abs(y - (s.y + s.h / 2)) - (s.h / 2 - s.rx), 0);
-      return qx * qx + qy * qy <= s.rx * s.rx;
-    }
-    if (s.kind === "stroke") {
-      for (const line of s.lines) for (let i = 1; i < line.length; i += 1) if (segDist2(x, y, line[i - 1], line[i]) <= s.r * s.r) return true;
-      return false;
-    }
-    for (const poly of s.polys) if (inPoly(x, y, poly)) return true;
-    if (s.grow > 0) {
-      for (const poly of s.polys) for (let i = 0; i < poly.length; i += 1) if (segDist2(x, y, poly[i], poly[(i + 1) % poly.length]) <= s.grow * s.grow) return true;
-    }
-    return false;
-  }
-  function groupAt(g, x, y) {
-    if (!g.shapes.some((s) => contains(s, x, y))) return 0;
-    let keep = true;
-    for (const op of g.mask) if (contains(op.shape, x, y)) keep = op.keep;
-    return keep ? 1 : -1;
-  }
-  var onGroup = (g, x, y) => groupAt(g, x, y) === 1;
-  function unreadTotal(chats) {
-    return (Array.isArray(chats) ? chats : []).reduce((sum, c) => sum + (Number.isFinite(c?.unread) && c.unread > 0 ? c.unread : 0), 0);
-  }
-  function badgeLabel(count, size2) {
-    const n = Math.max(0, Math.floor(Number(count) || 0));
-    if (n === 0) return null;
-    if (size2 < 22) return "";
-    if (n <= 9) return String(n);
-    return size2 >= 32 ? "9+" : "";
-  }
-  var oval = (cx, cy, rx, ry) => Array.from({ length: 25 }, (_, k) => [cx + rx * Math.sin(k / 24 * 2 * Math.PI), cy - ry * Math.cos(k / 24 * 2 * Math.PI)]);
-  var DIGITS = {
-    0: [oval(0.3, 0.5, 0.25, 0.42)],
-    1: [[[0.12, 0.24], [0.34, 0.08], [0.34, 0.92]]],
-    2: [[[0.06, 0.26], [0.14, 0.12], [0.3, 0.08], [0.46, 0.12], [0.54, 0.26], [0.5, 0.42], [0.06, 0.92], [0.56, 0.92]]],
-    3: [[[0.06, 0.16], [0.22, 0.08], [0.4, 0.09], [0.52, 0.2], [0.5, 0.36], [0.36, 0.46], [0.24, 0.47]], [[0.36, 0.47], [0.52, 0.58], [0.54, 0.76], [0.42, 0.89], [0.26, 0.92], [0.1, 0.88], [0.04, 0.8]]],
-    4: [[[0.44, 0.92], [0.44, 0.08], [0.04, 0.66], [0.58, 0.66]]],
-    5: [[[0.52, 0.08], [0.14, 0.08], [0.1, 0.44], [0.28, 0.4], [0.44, 0.44], [0.54, 0.58], [0.54, 0.76], [0.42, 0.89], [0.26, 0.92], [0.1, 0.88], [0.04, 0.8]]],
-    6: [[[0.5, 0.1], [0.34, 0.07], [0.18, 0.14], [0.08, 0.34], [0.06, 0.6], [0.12, 0.84], [0.3, 0.93], [0.47, 0.87], [0.55, 0.7], [0.5, 0.53], [0.32, 0.46], [0.14, 0.52], [0.07, 0.62]]],
-    7: [[[0.04, 0.08], [0.56, 0.08], [0.22, 0.92]]],
-    8: [oval(0.3, 0.29, 0.2, 0.2), oval(0.3, 0.71, 0.24, 0.21)],
-    "+": [[[0.3, 0.24], [0.3, 0.76]], [[0.04, 0.5], [0.56, 0.5]]]
-  };
-  DIGITS[9] = DIGITS[6].map((line) => line.map(([x, y]) => [0.6 - x, 1 - y]));
-  function labelStroke(label, cx, cy, h) {
-    const advance = 0.72 * h;
-    const width = advance * (label.length - 1) + 0.6 * h;
-    const lines = [];
-    [...label].forEach((ch, i) => {
-      const x0 = cx - width / 2 + i * advance;
-      for (const line of DIGITS[ch]) lines.push(line.map(([x, y]) => [x0 + x * h, cy - h / 2 + y * h]));
-    });
-    const r = 0.11 * h;
-    return { kind: "stroke", lines, r, box: bounds(lines.flat(), r) };
-  }
-  var TRAY_BADGE = { text: { cx: 73, cy: 30, r: 17 }, dot: { cx: 76, cy: 27, r: 14 }, gap: 5 };
-  var TRAY_CROP = [11, 13, 79, 79];
-  var SMALL_MAX = 32;
-  var ICON_KINDS = ["app", "ios", "tinted", "foreground", "monochrome", "tray", "template", "overlay"];
-  var hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-  var mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
-  var FRONT = 1;
-  var BACK = 2;
-  var TILE = 4;
-  var BADGE = 8;
-  var DIGIT = 16;
-  var GAP = 32;
-  var CUT = 128;
-  var HINT_MAX = 16;
-  function layout(kind, S) {
-    if (kind === "app") {
-      const m = S * 32 / 1024;
-      const tile = { x: m, y: m, w: S - 2 * m, h: S - 2 * m, r: S * 224 / 1024 };
-      const box = tile.w * 0.94;
-      return { tile, place: [m + (tile.w - box) / 2, m + (tile.h - box) / 2, box / 100] };
-    }
-    if (kind === "ios" || kind === "tinted") {
-      const box = S * 0.86;
-      return { tile: { x: 0, y: 0, w: S, h: S, r: 0 }, place: [(S - box) / 2, (S - box) / 2, box / 100] };
-    }
-    if (kind === "foreground" || kind === "monochrome") {
-      const box = S * 0.64;
-      return { tile: null, place: [S / 2 - 50.5 * (box / 100), S / 2 - 52.5 * (box / 100), box / 100] };
-    }
-    if (kind === "tray" || kind === "template") {
-      const [vx, vy, vw] = TRAY_CROP;
-      return { tile: null, place: [-vx * S / vw, -vy * S / vw, S / vw] };
-    }
-    if (kind === "overlay") return { tile: null, place: null };
-    throw new Error('no icon kind "' + kind + '"');
-  }
-  function renderIcon({ masters, palette, kind, size: size2, unread = 0 }) {
-    const S = Math.round(size2);
-    const { tile, place } = layout(kind, S);
-    const small = kind === "app" ? S <= 48 : S <= SMALL_MAX;
-    const glyph = small ? masters.small : masters.full;
-    const empty = { width: S, height: S, data: new Uint8ClampedArray(S * S * 4) };
-    let badge = null;
-    if (kind === "overlay") {
-      const label = badgeLabel(unread, OVERLAY_SIZES[0][0]);
-      if (label === null) return empty;
-      badge = { disk: circle(S / 2, S / 2, S / 2), digit: label ? labelStroke(label, S / 2, S / 2, S * (label.length > 1 ? 0.44 : 0.54)) : null };
-    } else if (kind === "tray" || kind === "template") {
-      const label = badgeLabel(unread, S);
-      if (label !== null) {
-        const at = label ? TRAY_BADGE.text : TRAY_BADGE.dot;
-        const [px, py, k] = place;
-        const [cx, cy, r] = [px + at.cx * k, py + at.cy * k, at.r * k];
-        const grow = kind === "tray" ? 1 : 0;
-        badge = { disk: circle(cx, cy, r + grow), gap: circle(cx, cy, r + grow + TRAY_BADGE.gap * k), digit: label ? labelStroke(label, cx, cy, 2 * r * (label.length > 1 ? 0.5 : 0.62)) : null };
-      }
-    }
-    const tileShape = tile ? { kind: "rect", x: tile.x, y: tile.y, w: tile.w, h: tile.h, rx: tile.r, box: [tile.x, tile.y, tile.x + tile.w, tile.y + tile.h] } : null;
-    const flags = (x, y) => {
-      let f = 0;
-      if (tileShape && contains(tileShape, x, y)) f |= TILE;
-      if (badge) {
-        if (contains(badge.disk, x, y)) return f | BADGE | (badge.digit && contains(badge.digit, x, y) ? DIGIT : 0);
-        if (badge.gap && contains(badge.gap, x, y)) return f | GAP;
-      }
-      if (place) {
-        const gx = (x - place[0]) / place[2];
-        const gy = (y - place[1]) / place[2];
-        const front = groupAt(glyph.front, gx, gy);
-        if (front === 1) f |= FRONT;
-        else {
-          const back = groupAt(glyph.back, gx, gy);
-          if (back === 1) f |= BACK;
-          else if (front === -1 || back === -1) f |= CUT;
-        }
-      }
-      return f;
-    };
-    const p = palette || {};
-    const glyphRgb = p.glyph ? hexRgb(p.glyph) : [1, 1, 1];
-    const markRgb = p.mark ? hexRgb(p.mark) : [0, 0, 0];
-    const none = [0, 0, 0, 0];
-    const colourOf = (f, y) => {
-      if (kind === "overlay") {
-        if (f & DIGIT) return [...hexRgb(p.badge.text), 1];
-        if (f & BADGE) return [...hexRgb(p.badge.fill), 1];
-        return none;
-      }
-      if (kind === "tray" || kind === "template") {
-        const ink2 = kind === "template" ? [0, 0, 0] : markRgb;
-        if (f & GAP) return none;
-        if (f & BADGE) {
-          if (kind === "template") return f & DIGIT ? none : [0, 0, 0, 1];
-          return f & DIGIT ? [...hexRgb(p.badge.text), 1] : [...hexRgb(p.badge.fill), 1];
-        }
-        if (f & FRONT) return [...ink2, 1];
-        return f & BACK ? [...ink2, kind === "template" ? 1 : p.back] : none;
-      }
-      if (kind === "monochrome") return f & FRONT ? [1, 1, 1, 1] : f & BACK ? [1, 1, 1, 0.5] : none;
-      if (kind === "foreground") return f & FRONT ? [...glyphRgb, 1] : f & BACK ? [...glyphRgb, p.back] : none;
-      let base = none;
-      if (f & TILE) base = kind === "tinted" ? [0, 0, 0, 1] : [...mix(hexRgb(p.tile.top), hexRgb(p.tile.bottom), Math.min(1, Math.max(0, (y - tile.y) / tile.h))), 1];
-      const ink = kind === "tinted" ? [1, 1, 1] : glyphRgb;
-      if (f & FRONT) return [...ink, 1];
-      if (f & BACK) {
-        const a = kind === "tinted" ? 0.5 : p.back;
-        return base[3] ? [...mix(base.slice(0, 3), ink, a), 1] : [...ink, a];
-      }
-      return base;
-    };
-    const data = empty.data;
-    const N = 4;
-    const W = S + 1;
-    const corners = S > 64 ? new Int32Array(W * W) : null;
-    const hint = (kind === "tray" || kind === "template") && S <= HINT_MAX;
-    if (corners) for (let y = 0; y <= S; y += 1) for (let x = 0; x <= S; x += 1) corners[y * W + x] = flags(x, y);
-    for (let y = 0; y < S; y += 1) {
-      for (let x = 0; x < S; x += 1) {
-        const acc = [0, 0, 0, 0];
-        const c = corners ? corners[y * W + x] : -1;
-        if (corners && c === corners[y * W + x + 1] && c === corners[(y + 1) * W + x] && c === corners[(y + 1) * W + x + 1] && c === flags(x + 0.5, y + 0.5)) {
-          const [r, g, b, a2] = colourOf(c, y + 0.5);
-          acc[0] = r * a2;
-          acc[1] = g * a2;
-          acc[2] = b * a2;
-          acc[3] = a2;
-        } else {
-          for (let j = 0; j < N; j += 1) {
-            const sy = y + (j + 0.5) / N;
-            for (let i = 0; i < N; i += 1) {
-              const [r, g, b, a2] = colourOf(flags(x + (i + 0.5) / N, sy), sy);
-              acc[0] += r * a2 / (N * N);
-              acc[1] += g * a2 / (N * N);
-              acc[2] += b * a2 / (N * N);
-              acc[3] += a2 / (N * N);
-            }
-          }
-        }
-        if (hint && flags(x + 0.5, y + 0.5) & (CUT | GAP | DIGIT)) acc[3] = 0;
-        const o = (y * S + x) * 4;
-        const a = acc[3];
-        data[o] = a ? Math.round(acc[0] / a * 255) : 0;
-        data[o + 1] = a ? Math.round(acc[1] / a * 255) : 0;
-        data[o + 2] = a ? Math.round(acc[2] / a * 255) : 0;
-        data[o + 3] = Math.round(a * 255);
-      }
-    }
-    return { width: S, height: S, data };
   }
 
   // core/app/rules/time.js
@@ -3721,6 +3870,22 @@ var engine = (() => {
   }
   function pageAfterBack(view, from) {
     return view === "about" && from === "settings" ? "settings" : null;
+  }
+
+  // core/app/rules/sheet-drag.js
+  var DRAG_FRACTION = 0.25;
+  var DRAG_MIN = 64;
+  var DRAG_MAX = 160;
+  var FLICK_VELOCITY = 0.6;
+  var FLICK_MIN = 24;
+  function dragThreshold(height) {
+    const h = Number(height) > 0 ? Number(height) : 0;
+    return Math.min(DRAG_MAX, Math.max(DRAG_MIN, h * DRAG_FRACTION));
+  }
+  function dragOutcome({ dy = 0, velocity = 0, height = 0 } = {}) {
+    if (!(dy > 0)) return "stay";
+    if (velocity >= FLICK_VELOCITY && dy >= FLICK_MIN) return "dismiss";
+    return dy >= dragThreshold(height) ? "dismiss" : "stay";
   }
   return __toCommonJS(engine_exports);
 })();

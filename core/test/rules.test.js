@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, groupSections, emptyFilters, addGroup, renameGroup, moveGroup, placeChat, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, defaultGroupName, UNGROUPED, toggleChecked, setAllChecked, allChecked, checkedCount, addChatsToGroup, groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats, requestDelete, requestDeleteGroup, resolveDelete, listSections, LETTER_OTHER, DELETE_STEPS } from '../app/rules/chats.js';
+import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sortChats, filterChats, emptyFilters, contactSearchText, messageSearchText, matchesTerm, addTerm, removeTerm, setTermMode, termsSentence, emptyListText, SEARCH_MODES, SEARCH_MODE_LABELS, SORT_ORDERS, SORT_LABELS, normalizeSort, toggleChecked, setAllChecked, allChecked, checkedCount, hideChats, forgetChats, requestDelete, resolveDelete, parseRecipients, recipientSuggestions, groupAddresses, upsertChat, isAddress, listSections, LETTER_OTHER, DELETE_STEPS } from '../app/rules/chats.js';
 import { EMOJI, EMOJI_CATEGORIES } from '../app/rules/emoji-data.js';
 import { graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
 import { ATTACH_ACCEPT, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
@@ -582,12 +582,9 @@ test('filters compose, clear one at a time, and search names and last messages',
     { id: '2', name: 'Weekend', isGroup: true, unread: 0, participants: ['a@example.com', 'b@example.com'], lastMessageAt: '2026-01-01T00:00:00.000Z', lastMessage: { text: 'plans', fromMe: true, sentAt: '2026-01-01T00:00:00.000Z', attachments: 0 } },
     { id: '3', name: '', isGroup: false, unread: 1, participants: ['+15555550142'], lastMessageAt: '2026-01-02T00:00:00.000Z', lastMessage: null },
   ];
-  const placement = { '1': 'g1', '2': 'g1' };
-  const by = (f) => filterChats(chats, { ...emptyFilters(), ...f }, { placement }).map((c) => c.id);
+  const by = (f) => filterChats(chats, { ...emptyFilters(), ...f }).map((c) => c.id);
   assert.deepEqual(by({}), ['1', '2', '3']);
   assert.deepEqual(by({ unread: true }), ['1', '3'], 'only unread');
-  assert.deepEqual(by({ group: 'g1' }), ['1', '2'], 'a named group');
-  assert.deepEqual(by({ group: UNGROUPED }), ['3'], 'the chats in no group');
   assert.deepEqual(by({ kind: 'direct' }), ['1', '3']);
   assert.deepEqual(by({ kind: 'group' }), ['2']);
   assert.deepEqual(by({ text: 'lake', mode: 'text' }), ['1'], 'Full text searches the last message text');
@@ -650,25 +647,6 @@ test('Enter adds a search term, each term refines, and a chip can be removed or 
   assert.equal(emptyListText({ terms: [{ text: 'a', mode: 'contact' }], text: ' lake ', mode: 'text' }), 'No conversations match "a" (Contact) and "lake" (Full text).');
   assert.equal(emptyListText({ terms: addTerm(addTerm(switched, 'b', 'text'), 'c', 'text') }), 'No conversations match "a" (Contact), "corner" (Contact), "b" (Full text) and "c" (Full text).');
   assert.equal(emptyListText({ unread: true }), 'No conversations match these filters.');
-});
-
-test('groups keep their own order, draw as sections, and never lose an ungrouped chat', () => {
-  const groups = [{ id: 'g1', name: 'Family' }, { id: 'g2', name: 'Work' }];
-  const chats = [
-    { id: '1', name: 'A', lastMessageAt: '2026-01-03T00:00:00.000Z' },
-    { id: '2', name: 'B', lastMessageAt: '2026-01-02T00:00:00.000Z' },
-    { id: '3', name: 'C', lastMessageAt: '2026-01-01T00:00:00.000Z' },
-  ];
-  const sections = groupSections(chats, { groups, placement: { '2': 'g2', '3': 'gone' } });
-  assert.deepEqual(sections.map((s) => s.id), ['g1', 'g2', UNGROUPED]);
-  assert.deepEqual(sections.map((s) => s.chats.map((c) => c.id)), [[], ['2'], ['1', '3']], 'a chat whose group is gone is ungrouped, not lost');
-  assert.equal(renameGroup(groups, 'g1', 'Close family')[0].name, 'Close family');
-  assert.deepEqual(moveGroup(groups, 'g1', 1).map((g) => g.id), ['g2', 'g1']);
-  assert.deepEqual(moveGroup(groups, 'g2', 1).map((g) => g.id), ['g1', 'g2'], 'a move past the end is a no-op');
-  assert.deepEqual(addGroup([], { id: 'g9', name: '  New  ' }), [{ id: 'g9', name: 'New' }]);
-  assert.deepEqual(addGroup([], { id: 'g9', name: '   ' }), [{ id: 'g9', name: 'Group 1' }], 'an unnamed group takes a default');
-  assert.deepEqual(placeChat({ '1': 'g1' }, '1', UNGROUPED), {}, 'moving a chat out drops its placement');
-  assert.deepEqual(placeChat({}, '1', 'g2'), { '1': 'g2' });
 });
 
 test('the list sections follow the sort in force: by day for recent, by first letter for the name sorts (issue 217)', () => {
@@ -810,20 +788,6 @@ test('the sort menu names its three choices, and every order has a label', () =>
   assert.deepEqual(SORT_ORDERS.map((o) => SORT_LABELS[o]), ['Recent', 'Name A to Z', 'Name Z to A']);
 });
 
-test('grouping a selection takes an optional name, and an unnamed group gets the first free default (issue 137)', () => {
-  assert.equal(defaultGroupName([]), 'Group 1');
-  assert.equal(defaultGroupName([{ id: 'a', name: 'Group 1' }, { id: 'b', name: 'Family' }]), 'Group 2');
-  assert.equal(defaultGroupName([{ id: 'a', name: 'Group 2' }]), 'Group 1', 'a gap is filled first');
-  const named = groupFromSelection([], {}, ['1', '2'], { id: 'g1', name: 'Lake trip' });
-  assert.deepEqual(named, { groups: [{ id: 'g1', name: 'Lake trip' }], placement: { '1': 'g1', '2': 'g1' } });
-  const unnamed = groupFromSelection(named.groups, named.placement, ['3'], { id: 'g2', name: '' });
-  assert.deepEqual(unnamed.groups, [{ id: 'g1', name: 'Lake trip' }, { id: 'g2', name: 'Group 1' }]);
-  assert.deepEqual(unnamed.placement, { '1': 'g1', '2': 'g1', '3': 'g2' });
-  const again = groupFromSelection(unnamed.groups, unnamed.placement, ['1'], { id: 'g3' });
-  assert.equal(again.groups.at(-1).name, 'Group 2', 'two unnamed groups never read alike');
-  assert.equal(again.placement['1'], 'g3', 'a chat moves to the new group');
-});
-
 test('slide to confirm only confirms at the end of the track, by drag or by key', () => {
   assert.equal(slideProgress(0, 200), 0);
   assert.equal(slideProgress(100, 200), 0.5);
@@ -861,17 +825,6 @@ test('a selection counts, selects all and clears together, and agrees with the r
   assert.equal(checkedCount(['1', '2'], visible), 2);
 });
 
-test('a selection joins an existing group or starts a group of its own', () => {
-  const groups = [{ id: 'g1', name: 'Family' }];
-  assert.deepEqual(addChatsToGroup({ '9': 'g1' }, ['1', '2'], 'g1'), { '9': 'g1', '1': 'g1', '2': 'g1' });
-  assert.deepEqual(addChatsToGroup({ '1': 'g1' }, ['1'], UNGROUPED), {}, 'adding a selection to no group drops those placements');
-  const made = groupFromSelection(groups, { '9': 'g1' }, ['1', '2'], { id: 'g2', name: '  Weekend  ' });
-  assert.deepEqual(made.groups, [{ id: 'g1', name: 'Family' }, { id: 'g2', name: 'Weekend' }]);
-  assert.deepEqual(made.placement, { '9': 'g1', '1': 'g2', '2': 'g2' }, 'the new group takes the selection');
-  assert.deepEqual(removeGroup(groups, 'g1'), [], 'deleting a group drops the group entry');
-  assert.deepEqual(clearGroupPlacement({ '1': 'g1', '2': 'g1', '9': 'g2' }, 'g1'), { '9': 'g2' }, 'its placements go with it, the chats stay');
-});
-
 test('a delete cannot complete without the confirm gate, and it only hides the client entry', () => {
   assert.equal(requestDelete([]), null, 'an empty selection cannot even open the gate');
   const pending = requestDelete(['1', '1', '2']);
@@ -880,20 +833,11 @@ test('a delete cannot complete without the confirm gate, and it only hides the c
   assert.equal(resolveDelete(pending, undefined), null);
   assert.deepEqual(resolveDelete(pending, true), { ids: ['1', '2'], step: DELETE_STEPS.confirming }, 'only the second press resolves it');
   assert.equal(resolveDelete(null, true), null);
-  const group = requestDeleteGroup('g1', 'Weekend');
-  assert.deepEqual(resolveDelete(group, true), { kind: 'group', id: 'g1', name: 'Weekend', step: DELETE_STEPS.confirming });
-  assert.equal(requestDeleteGroup(null, 'x'), null);
   assert.deepEqual(hideChats(['9'], ['1', '2', '1']), ['9', '1', '2'], 'the hidden list is a set, in order');
-  assert.deepEqual(forgetChats(['1', '9'], { '1': 'g1', '9': 'g2' }, ['1']), { order: ['9'], placement: { '9': 'g2' } }, 'a hidden chat leaves the order and the placement too');
+  assert.deepEqual(forgetChats(['1', '9'], ['1']), ['9'], 'a hidden chat leaves the order too');
 });
 
-test('the group actions act on the first press, and the confirm modal is the only delete gate', () => {
-  // Adding and creating return the next arrangement directly: neither carries a pending step, so nothing stands
-  // between the press and the result.
-  assert.deepEqual(addChatsToGroup({}, ['1'], 'g1'), { '1': 'g1' });
-  const made = groupFromSelection([], {}, ['1'], { id: 'g2', name: 'Family' });
-  assert.deepEqual(made.groups, [{ id: 'g2', name: 'Family' }]);
-  assert.equal(Object.hasOwn(made, 'step') || Object.hasOwn(made.groups[0], 'step'), false, 'a group action is its result, not a pending step');
+test('the confirm modal is the only delete gate', () => {
   // The delete gate is the only gate: an object that never went through requestDelete cannot resolve, however it is
   // confirmed.
   assert.equal(resolveDelete(requestDelete(['1']), false), null, 'the first press resolves nothing');
@@ -1017,4 +961,38 @@ test('the icon set is drawn from the tokens, one stroked glyph per name, in the 
     assert.ok(css.includes('.icon[data-icon="' + name + '"] { --icon-glyph: url("data:image/svg+xml,' + encodeURIComponent(svg) + '"); }'), name + ' is in the stylesheet');
   }
   assert.ok(iconSvg(glyphs['arrow-left'], tokens.icon).includes('stroke-width="1.7"'), 'the back arrow keeps Chela\'s finer weight');
+});
+
+// Conversations and groups are the message service's own (issue 326).
+test('what is typed for a new conversation becomes addresses, and anything else is said back', () => {
+  assert.deepEqual(parseRecipients(' +1 (555) 555-0100, friend@example.com;\nfriend@example.com '), { addresses: ['+1 (555) 555-0100', 'friend@example.com'], invalid: [] });
+  assert.deepEqual(parseRecipients('Avery, 12'), { addresses: [], invalid: ['Avery', '12'] });
+  assert.equal(isAddress('a@b'), true);
+  assert.equal(isAddress('hello'), false);
+});
+
+test('the composer suggests the people this list talks to one to one, by name or address, newest first', () => {
+  const chats = [
+    { id: '1', name: 'Avery Quinn', isGroup: false, participants: ['+15555550100'], lastMessageAt: '2026-01-02T00:00:00.000Z' },
+    { id: '2', name: 'Weekend', isGroup: true, participants: ['+15555550100', 'b@example.com'], lastMessageAt: '2026-01-03T00:00:00.000Z' },
+    { id: '3', name: '', isGroup: false, participants: ['bea@example.com'], lastMessageAt: '2026-01-04T00:00:00.000Z' },
+  ];
+  assert.deepEqual(recipientSuggestions(chats, '').map((s) => s.address), ['bea@example.com', '+15555550100'], 'groups are not people');
+  assert.deepEqual(recipientSuggestions(chats, 'avery').map((s) => s.name), ['Avery Quinn']);
+  assert.deepEqual(recipientSuggestions(chats, '0100').map((s) => s.chatId), ['1'], 'an address matches too');
+  assert.deepEqual(recipientSuggestions(chats, '', { exclude: ['bea@example.com'] }).map((s) => s.chatId), ['1'], 'someone already chosen is not offered again');
+});
+
+test('a selection in Edit becomes one group of everyone in it, each once, and a changed chat replaces the one held', () => {
+  const chats = [
+    { id: '1', isGroup: false, participants: ['a@example.com'], lastMessageAt: '2026-01-01T00:00:00.000Z' },
+    { id: '2', isGroup: true, participants: ['a@example.com', 'b@example.com'], lastMessageAt: '2026-01-02T00:00:00.000Z' },
+    { id: '3', isGroup: false, participants: ['c@example.com'], lastMessageAt: '2026-01-03T00:00:00.000Z' },
+  ];
+  assert.deepEqual(groupAddresses(chats, ['1', '2']), ['a@example.com', 'b@example.com']);
+  const renamed = upsertChat(chats, { id: '2', name: 'Lake trip' });
+  assert.equal(renamed.find((c) => c.id === '2').name, 'Lake trip');
+  assert.equal(renamed.find((c) => c.id === '2').participants.length, 2, 'what the change did not name is kept');
+  const added = upsertChat(chats, { id: '9', isGroup: true, participants: ['d@example.com', 'e@example.com'], lastMessageAt: '2026-01-04T00:00:00.000Z' });
+  assert.equal(added[0].id, '9', 'a new conversation joins at its place in the order');
 });

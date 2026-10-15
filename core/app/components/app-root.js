@@ -4,11 +4,11 @@ import { createApiClient } from '../../kit/api.js';
 import { press, respond } from '../../kit/press.js';
 import { revealField } from '../../kit/scroll.js';
 import {
-  orderChats, applyMessageToChats, chatTitle, emptyFilters, UNGROUPED, SORT_ORDERS, SORT_LABELS, normalizeSort,
+  orderChats, applyMessageToChats, chatTitle, emptyFilters, SORT_ORDERS, SORT_LABELS, normalizeSort,
   SEARCH_MODES, SEARCH_MODE_LABELS, addTerm, removeTerm, setTermMode,
   sortChats, filterChats, setAllChecked, allChecked, checkedCount,
-  groupFromSelection, removeGroup, clearGroupPlacement, hideChats, forgetChats,
-  requestDelete, requestDeleteGroup, resolveDelete,
+  hideChats, forgetChats, groupAddresses, upsertChat, parseMessagingLink, linkTarget,
+  requestDelete, resolveDelete,
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction, reactionUnsupported } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
@@ -21,7 +21,7 @@ import { localAttachment, toBase64 } from '../rules/attach.js';
 const foldFor = (list, chats, chatId) => foldReactions(list, platformOf((chats || []).find((c) => c.id === chatId)));
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
-import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, serverUpdateNotice } from '../rules/notifications.js';
+import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, messageTarget, noticeTarget, serverUpdateNotice } from '../rules/notifications.js';
 import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
@@ -31,17 +31,18 @@ import { screenFor } from '../rules/screens.js';
 import { SLOP, isEdgeStart, isHorizontal, progressFor, settlesOpenAt, velocityFor } from '../rules/drawer.js';
 import { controlLayout } from '../rules/bar-layout.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, TYPE_SIZE_VARS } from '../rules/theme.js';
-import { ICON_TOKENS, unreadTotal, iconColours, iconPalette, parseGlyph, renderIcon } from '../rules/icon.js';
-import { ICON_MASTERS } from '../rules/app-icons-spec.js';
+import { ICON_TOKENS, unreadTotal } from '../rules/icon.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
 import { CHATS_DEFAULT, CHATS_MIN, clampChatsWidth, chatsWidthFrom, dividerBounds, dividerKey, dragChatsWidth } from '../rules/divider.js';
-import { iconToApply } from '../rules/app-icons.js';
+import { iconToApply, themeMatch } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
 import { pageZoomAttempt } from '../rules/zoom.js';
 import './app-onboarding.js';
 import './app-chat-list.js';
+import './app-compose.js';
+import './app-group-info.js';
 import './app-conversation.js';
 import './app-settings.js';
 import './app-about.js';
@@ -49,8 +50,25 @@ import './app-image-viewer.js';
 import './app-slide-confirm.js';
 
 const API_VERSION = 1;
+// A burst of arrivals in the conversation on screen is one read on the Mac (issue 323).
+const READ_COALESCE_MS = 600;
+const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+// Ask the Mac to mark a conversation read, at most once per READ_COALESCE_MS for the same one, so a burst of arrivals
+// is one read (issue 323). A page with no client that can mark a read (a test's stand-in) asks nothing.
+function readOnMac(page, chatId) {
+  if (!chatId || !page || typeof page.client?.markRead !== 'function') return;
+  const id = String(chatId);
+  if (!page.readTimers) page.readTimers = new Map();
+  if (page.readTimers.has(id)) return;
+  page.readTimers.set(id, setTimeout(() => {
+    page.readTimers.delete(id);
+    if (typeof page.client?.markRead === 'function') page.client.markRead(id).catch(() => {});
+  }, READ_COALESCE_MS));
+}
+// How many earlier pages a pressed notice may load looking for its message (issue 331): fifty messages a page, so a
+// notice for anything newer than a thousand messages back lands on it, and an older one opens its conversation.
+const REVEAL_PAGES = 20;
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
-const newGroupId = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const normalizeUrl = (u) => {
   const s = String(u || '').trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(s) ? s : 'https://' + s;
@@ -60,6 +78,8 @@ class AppRoot extends KitElement {
   static properties = {
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
     conn: { state: true }, problem: { state: true }, hasMore: { state: true }, sending: { state: true },
+    // The message a pressed notice leads to, handed to the conversation to bring into view (issue 331).
+    revealing: { state: true },
     // The live typing state of the open conversation (issue 230): { chatId, kind, at } for another of our signed-in
     // devices, or null. Held here so the page clears a stale one and never shows another conversation's.
     typing: { state: true },
@@ -96,7 +116,7 @@ class AppRoot extends KitElement {
     // and acts on the count, and the confirm gate names what a delete will remove before it removes anything.
     editing: { state: true }, checked: { state: true }, pendingDelete: { state: true },
     // Group asks for a name in a small prompt before the group is made; the name is optional.
-    naming: { state: true },
+    composing: { state: true }, groupInfo: { state: true },
     // The picture open in the viewer ({ src, alt }), raised by a preview in a message or in the composer.
     viewing: { state: true },
     // The message whose reaction is with the server, and a line said under one message when a reaction did not go.
@@ -160,7 +180,8 @@ class AppRoot extends KitElement {
     this.editing = false;
     this.checked = [];
     this.pendingDelete = null;
-    this.naming = false;
+    this.composing = null;
+    this.groupInfo = null;
     this.viewing = null;
     this.reacting = null;
     this.messageNote = null;
@@ -178,7 +199,6 @@ class AppRoot extends KitElement {
     dismissable(this, { name: 'filter', open: () => this.filterOpen, close: () => { this.filterOpen = false; } });
     dismissable(this, { name: 'sort', open: () => this.sortOpen, close: () => { this.sortOpen = false; } });
     dismissable(this, { name: 'search', open: () => this.searchOpen, close: () => { this.searchOpen = false; } });
-    dismissable(this, { name: 'group', open: () => this.naming, close: () => { this.naming = false; } });
     dismissable(this, { name: 'confirm', open: () => Boolean(this.pendingDelete), close: () => this.cancelDelete() });
     dismissable(this, { name: 'sheet', open: () => this.settingsSheetShowing && !this.sheetLeaving, close: () => this.closeView() });
     dismissable(this, { name: 'about', open: () => this.aboutSheetShowing && !this.aboutLeaving, close: () => this.pageBack() });
@@ -208,7 +228,6 @@ class AppRoot extends KitElement {
     // The app icon the shell last applied (issue 167), so a settings change that leaves the icon alone asks nothing.
     this.iconApplied = null;
     this.themePicture = null;
-    this.themePictureKey = null;
   }
 
   connectedCallback() {
@@ -217,6 +236,16 @@ class AppRoot extends KitElement {
       this.schemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
       this.onSchemeChange = () => this.applyTheme();
       this.schemeQuery.addEventListener('change', this.onSchemeChange);
+    }
+    // Coming back to the window reads the conversation on screen, which may have taken messages while it was hidden
+    // (issue 323).
+    if (typeof document !== 'undefined') {
+      this.onVisible = () => {
+        if (pageHidden() || !this.openChatId) return;
+        this.chats = this.chats.map((c) => (c.id === this.openChatId && c.unread ? { ...c, unread: 0 } : c));
+        readOnMac(this, this.openChatId);
+      };
+      document.addEventListener('visibilitychange', this.onVisible);
     }
     // The shell names its platform and product before the page boots, so the bar is drawn with the first paint and
     // only where a window exists. A phone answers call but installs no event stream, so the bar is desktop only.
@@ -232,8 +261,17 @@ class AppRoot extends KitElement {
       // toggle redraw the same glyph.
       this.offWindow = window.bridge.on('window.state', (data) => { this.maximized = Boolean(data && data.maximized); });
       this.offOpen = window.bridge.on('app.open', (data) => this.openScreen(data && data.screen));
+      this.offLink = window.bridge.on('app.link', () => this.takeLink());
+      // A notice was pressed (issue 331): the shell holds which one, and the page takes it.
+      this.offNotice = window.bridge.on('notify.opened', () => this.takeNotice());
     }
     if (typeof window !== 'undefined') this.holdPage();
+    // A messaging link may arrive while the app is away, and a phone has no event to say so: it is asked for whenever
+    // the page is shown (issue 333).
+    if (typeof document !== 'undefined') {
+      this.onShownForLink = () => { if (document.visibilityState !== 'hidden') this.takeLink(); };
+      document.addEventListener('visibilitychange', this.onShownForLink);
+    }
     this.boot();
   }
 
@@ -274,6 +312,10 @@ class AppRoot extends KitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
+    for (const t of this.readTimers?.values() || []) clearTimeout(t);
+    if (this.onShownForLink) document.removeEventListener('visibilitychange', this.onShownForLink);
+    if (typeof this.offLink === 'function') this.offLink();
     for (const [target, type, fn, options] of this.pageHolds || []) target.removeEventListener(type, fn, options);
     this.pageHolds = null;
     this.endDividerDrag();
@@ -281,6 +323,7 @@ class AppRoot extends KitElement {
     if (this.offUpdate) { this.offUpdate(); this.offUpdate = null; }
     if (this.offWindow) { this.offWindow(); this.offWindow = null; }
     if (this.offOpen) { this.offOpen(); this.offOpen = null; }
+    if (this.offNotice) { this.offNotice(); this.offNotice = null; }
     clearTimeout(this.noticeHold);
     this.noticeHold = null;
     clearTimeout(this.sheetDeadline);
@@ -319,34 +362,17 @@ class AppRoot extends KitElement {
     this.drawThemePicture();
   }
 
-  // Follow theme's picture in Settings is the app icon as the theme in force colours it, drawn by the one renderer the
-  // shells draw with (rules/icon.js) from the masters the icon pipeline mirrors for the page. Drawn once per change of
-  // scheme or colours, after the theme is in place and off the render that applied it; until then, and where the page
-  // has no canvas, Settings shows the default theme's icon (rules/app-icons.js).
+  // The theme's accent as the page resolves it, which Follow theme matches an offered icon against (issue 337).
+  themeAccent() {
+    if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return null;
+    return getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || null;
+  }
+
+  // Follow theme's picture in Settings and About is the offered icon it picks for the theme in force (issue 337), the
+  // same generated picture that icon's own tile shows.
   drawThemePicture() {
-    if (typeof document === 'undefined' || typeof document.createElement !== 'function' || !this.scheme) return;
-    const style = getComputedStyle(document.documentElement);
-    const colors = Object.fromEntries(ICON_TOKENS.map((k) => [k, style.getPropertyValue('--color-' + k).trim()]));
-    const key = JSON.stringify([this.scheme, colors]);
-    if (key === this.themePictureKey) return;
-    this.themePictureKey = key;
-    const scheme = this.scheme;
-    setTimeout(() => {
-      if (key !== this.themePictureKey) return;
-      try {
-        if (!AppRoot.iconMasters) AppRoot.iconMasters = { full: parseGlyph(ICON_MASTERS.full), small: parseGlyph(ICON_MASTERS.small) };
-        const image = renderIcon({ masters: AppRoot.iconMasters, palette: iconPalette(iconColours(colors, colors), scheme), kind: 'app', size: 144 });
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const context = canvas.getContext && canvas.getContext('2d');
-        if (!context) return;
-        context.putImageData(new ImageData(image.data, image.width, image.height), 0, 0);
-        this.themePicture = canvas.toDataURL('image/png');
-      } catch {
-        this.themePicture = null;
-      }
-    }, 0);
+    const accent = this.themeAccent();
+    this.themePicture = accent ? 'assets/app-icons/' + themeMatch(accent) + '.png' : null;
   }
 
   // The app icon chosen in Settings (issue 167), applied by the shell where its platform can: the desktop's window and
@@ -355,7 +381,7 @@ class AppRoot extends KitElement {
   // alert of its own. A shell that could not apply it answers so, and the next change asks again.
   async applyAppIcon() {
     if (!this.settingsRead) return;
-    const next = iconToApply(this.iconApplied, this.settings);
+    const next = iconToApply(this.iconApplied, this.settings, this.themeAccent());
     if (!next) return;
     this.iconApplied = next;
     try {
@@ -445,12 +471,19 @@ class AppRoot extends KitElement {
       this.chats = orderChats(chats);
       this.phase = 'ready';
       client.connect();
+      this.takeLink();
+      // Signed in, so notifications are asked for now, on every platform, rather than on the first message (issue
+      // 327). The system asks only once; after that the shell answers where it stands.
+      this.bridge('notify.permission', { request: true }).then((state) => { this.notifyPermission = state; this.registerPush(); }).catch(() => {});
       this.releaseHeldUpdate();
       this.launchCheck();
       this.noticeServerUpdate(info.serverUpdate);
       this.releaseHeldScreen();
       if (this.chats.length) await this.open(this.chats[0].id);
       this.dataset.state = 'ready';
+      // A notice pressed while the app was closed launched it (issue 331): the shell held the press, so it is taken now
+      // the conversations are here, and opens over the first conversation.
+      this.takeNotice();
     } catch (e) {
       client.close();
       this.phase = 'onboarding';
@@ -492,7 +525,24 @@ class AppRoot extends KitElement {
     return this.phase === 'ready';
   }
 
+  // A phone allowed to show notifications registers for them with the app closed (issue 347): the shell answers its
+  // push token and key, or null where push cannot work, and the server keeps one registration per signed-in device.
+  async registerPush() {
+    const client = this.client;
+    if (!client || this.notifyPermission !== 'granted') return false;
+    try {
+      const reg = await this.bridge('push.token', {});
+      if (!reg || this.client !== client) return false;
+      await client.pushRegister(reg);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async signOut(reason) {
+    // Signing out stops this phone's notifications too; the server also forgets them when the token is revoked.
+    if (this.client) this.client.pushUnregister().catch(() => {});
     if (this.client) this.client.close();
     this.client = null;
     await this.bridge('storage.delete', { key: 'server.token' });
@@ -542,10 +592,11 @@ class AppRoot extends KitElement {
       this.selecting = refresh ? null : chatId;
       if (refresh && show) this.listOpen = false;
     }
-    const wasUnread = this.chats.some((c) => c.id === chatId && c.unread);
     this.chats = this.chats.map((c) => (c.id === chatId && c.unread ? { ...c, unread: 0 } : c));
-    // Reading a conversation clears it on the Mac too, so the next client that asks sees the same count.
-    if (wasUnread && this.client) this.client.markRead(chatId).catch(() => {});
+    // Reading a conversation clears it on the Mac too, so the phone and the next client see the same count. It is asked
+    // every time a conversation opens, not only when this page counted it unread: a count this page had not caught up
+    // with (a message that arrived while it was away) still has to be read on the Mac (issue 323).
+    readOnMac(this, chatId);
     const arrived = [];
     const watch = (m) => { if (m.chatId === chatId) arrived.push(m); };
     if (!this.arrivals) this.arrivals = new Set();
@@ -571,6 +622,43 @@ class AppRoot extends KitElement {
     } finally {
       this.arrivals.delete(watch);
     }
+  }
+
+// The notice the person pressed, taken from the shell (issue 331). Taking it clears it, so a press is answered once
+  // however many times the page asks; before the app is ready the shell keeps holding it for the boot to take.
+  async takeNotice() {
+    if (this.phase !== 'ready') return false;
+    let target;
+    try {
+      target = noticeTarget(await this.bridge('notify.take', {}));
+    } catch {
+      return false;
+    }
+    if (!target) return false;
+    return this.openMessage(target);
+  }
+
+  // Opens a conversation at one message (issue 331): any sheet or viewer over it goes, the conversation opens, earlier
+  // pages load until the message is among them, and the conversation is told to bring it into view and mark it. A
+  // message that cannot be found still leaves its conversation open, which is the nearest true answer.
+  async openMessage({ chatId, messageId }) {
+    if (!this.chats.some((c) => c.id === chatId)) await this.reload();
+    if (!this.chats.some((c) => c.id === chatId)) return false;
+    this.viewing = null;
+    // A sheet over the conversation leaves with its own departure, which lands on the conversation. Setting the view here
+    // as well would drop the sheet at once and leave its departure pending, and that departure would later take down a
+    // Settings sheet opened in the meantime.
+    if (this.sheetShowing) this.closeView();
+    else this.view = 'messages';
+    this.revealing = null;
+    await this.open(chatId, { show: true });
+    if (this.openChatId !== chatId || !messageId) return false;
+    for (let page = 0; page < REVEAL_PAGES && !this.messages.some((m) => m.id === messageId) && this.hasMore; page += 1) {
+      if (!(await this.loadOlder()) || this.openChatId !== chatId) break;
+    }
+    if (!this.messages.some((m) => m.id === messageId)) return false;
+    this.revealing = { id: messageId, seq: (this.revealing?.seq || 0) + 1 };
+    return true;
   }
 
   // The Load earlier press shows itself working and drops a second press (core/kit/press.js), so no flag is kept here.
@@ -607,17 +695,24 @@ class AppRoot extends KitElement {
       const m = data.message;
       if (this.arrivals) for (const watch of this.arrivals) watch(m);
       this.reconcile(m);
-      const r = applyMessageToChats(this.chats, m, { openChatId: this.openChatId });
+      // A message that arrives in the conversation on screen is read there and then, on the Mac too (issue 323); one
+      // that arrives while the window is hidden is not, and counts as unread until the window is seen again.
+      const seen = this.openChatId && !pageHidden() ? this.openChatId : null;
+      const r = applyMessageToChats(this.chats, m, { openChatId: seen });
+      if (!m.fromMe && m.chatId === seen) readOnMac(this, m.chatId);
       if (r.known) this.chats = r.chats;
       else this.reload();
       if (m.chatId === this.openChatId) this.messages = foldFor(mergeMessages(this.messages, [m]), this.chats, m.chatId);
       if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
-        this.bridge('notify', messageNotice(title, m)).catch(() => {});
+        this.bridge('notify', { ...messageNotice(title, m), ...messageTarget(m) }).catch(() => {});
       }
     } else if (name === 'reaction') {
       if (data.chatId === this.openChatId) this.messages = applyReaction(this.messages, data);
+    } else if (name === 'chat.changed') {
+      // A conversation started, a group renamed or its people changed, on any device (issue 326).
+      this.chats = upsertChat(this.chats, data);
     } else if (name === 'chat.read') {
       // A chat read on any device clears here too, so the count is the server's and not this page's own idea.
       const id = String(data.chatId);
@@ -684,18 +779,10 @@ class AppRoot extends KitElement {
     return this.appNotices.find((n) => n.id === id)?.revision ?? null;
   }
 
-  // Close: this page only (issue 191). The card is dismissed here, and the dismissal is never a command to the shell,
-  // so closing a notice tells the server and the other devices nothing. A press re-shows only a new outcome.
-  onNoticeDismiss(e) {
-    const { id } = e.detail || {};
-    if (!id) return;
-    this.appNotices = dismissNotice(this.appNotices, id);
-    this.applyNoticeQuiet();
-  }
-
-  // Mark as read: every device (issue 191). The revision is written to the server as a setting, so the card clears here
-  // at once and the server tells every other client through settings.changed; it is read back at start, so it stays
-  // cleared after a reload. The write is optimistic: a refused or offline write still clears this page for the run.
+  // The card's one control, its X (issue 342): closing a notice marks it read on every device. The revision is written
+  // to the server as a setting, so the card clears here at once and the server tells every other client through
+  // settings.changed, and it is read back at start, so it stays cleared after a reload. The write is optimistic: a refused
+  // or offline write still clears this page for the run.
   onNoticeRead(e) {
     const { id, revision } = e.detail || {};
     if (!id) return;
@@ -1000,6 +1087,17 @@ class AppRoot extends KitElement {
 
   // A screen the shell asked for (the tray's Settings, About and Check for updates). The shell has already raised the
   // window; rules/screens.js says what the page shows, and the sheets open through the same path the gear does.
+  // The messaging link the platform handed the shell (issue 333): the conversation already held with those people
+  // opens, or the compose sheet starts one with them. Before the app is ready the link waits in the shell.
+  async takeLink() {
+    if (this.phase !== 'ready' || typeof window === 'undefined' || !window.bridge || typeof window.bridge.call !== 'function') return;
+    let url;
+    try { url = await this.bridge('link.take'); } catch { return; }
+    const target = linkTarget(this.chats, parseMessagingLink(url));
+    if (!target) return;
+    if (target.open) { this.view = 'messages'; this.open(target.open, { show: true }); } else this.composing = { mode: target.compose.length > 1 ? 'group' : 'new', preset: target.compose };
+  }
+
   openScreen(screen) {
     const target = screenFor(screen, { phase: this.phase });
     if (target === 'hold') { this.heldScreen = screen; return; }
@@ -1230,16 +1328,6 @@ class AppRoot extends KitElement {
     }
   }
 
-  chatGroups() {
-    const g = this.settings['chats.groups'];
-    return Array.isArray(g) ? g : [];
-  }
-
-  chatPlacement() {
-    const p = this.settings['chats.placement'];
-    return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
-  }
-
   chatOrder() {
     const o = this.settings['chats.order'];
     return Array.isArray(o) ? o : [];
@@ -1264,30 +1352,19 @@ class AppRoot extends KitElement {
     const chips = [];
     if (f.unread) chips.push({ key: 'unread', label: 'Unread' });
     if (f.kind) chips.push({ key: 'kind', label: f.kind === 'direct' ? 'Direct' : 'Group chats' });
-    if (f.group) {
-      const g = this.chatGroups().find((x) => x.id === f.group);
-      chips.push({ key: 'group', label: g ? g.name : 'Ungrouped' });
-    }
     if (!chips.length) return nothing;
     return html`<div class="active-filters" aria-label="Active filters">${chips.map((c) => html`<span class="active-chip">${c.label}<button type="button" class="chip-clear" aria-label=${'Clear ' + c.label} @click=${press(() => this.clearFilter(c.key))}>×</button></span>`)}</div>`;
   }
 
-  // The dropdown the filter icon opens: everything filterChats supports, which is unread, direct, group chats and the
-  // person's own groups. A filter that is on reads as pressed, and pressing it again turns it off.
+  // The dropdown the filter icon opens: everything filterChats supports, which is unread, direct and group chats. A filter that is on reads as pressed, and pressing it again turns it off.
   filterMenu() {
     const f = this.filters || emptyFilters();
-    const groups = this.chatGroups();
     const toggle = (key, value) => this.setFilters({ [key]: f[key] === value ? null : value });
     return html`<div class="filter-menu" role="group" aria-label="Filter conversations" data-dismiss="filter" data-popover data-popover-edge="top">
       <div class="filter-menu-row">
         <button type="button" class="chip" aria-pressed=${f.unread ? 'true' : 'false'} @click=${press(() => this.setFilters({ unread: !f.unread }))}>Unread</button>
         <button type="button" class="chip" aria-pressed=${f.kind === 'direct' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'direct'))}>Direct</button>
         <button type="button" class="chip" aria-pressed=${f.kind === 'group' ? 'true' : 'false'} @click=${press(() => toggle('kind', 'group'))}>Group chats</button>
-      </div>
-      <div class="filter-menu-row">
-        <button type="button" class="chip" aria-pressed=${!f.group ? 'true' : 'false'} @click=${press(() => this.setFilters({ group: null }))}>All groups</button>
-        ${groups.map((g) => html`<button type="button" class="chip" aria-pressed=${f.group === g.id ? 'true' : 'false'} @click=${press(() => toggle('group', g.id))}>${g.name}</button>`)}
-        <button type="button" class="chip" aria-pressed=${f.group === UNGROUPED ? 'true' : 'false'} @click=${press(() => toggle('group', UNGROUPED))}>Ungrouped</button>
       </div>
     </div>`;
   }
@@ -1368,7 +1445,7 @@ class AppRoot extends KitElement {
   // The rows an edit action can act on, computed with the same rules the list draws with, so the count and the rows
   // can never disagree.
   selectableIds() {
-    const visible = filterChats(this.visibleChats(), this.filters || emptyFilters(), { placement: this.chatPlacement(), texts: this.loadedTexts() });
+    const visible = filterChats(this.visibleChats(), this.filters || emptyFilters(), { texts: this.loadedTexts() });
     return sortChats(visible, { sort: this.settings['chats.sort'], locale: navigator.language }).map((c) => c.id);
   }
 
@@ -1386,13 +1463,11 @@ class AppRoot extends KitElement {
     this.checked = [];
     this.filterOpen = false;
     this.sortOpen = false;
-    this.naming = false;
   }
 
   exitEdit() {
     this.editing = false;
     this.checked = [];
-    this.naming = false;
   }
 
   setChecked(id, checked) {
@@ -1404,50 +1479,38 @@ class AppRoot extends KitElement {
     this.checked = setAllChecked(this.checked, ids, !allChecked(this.checked, ids));
   }
 
-  // Group asks for a name first. The prompt is the only step: an empty name is allowed, and the group takes the first
-  // free "Group N" (rules/chats.js), so the group exists on the prompt's own press.
-  openGroupPrompt() {
-    if (!this.selectionCount()) return;
-    this.naming = true;
-    this.updateComplete.then(() => { const el = this.querySelector('.group-name-input'); if (el) el.focus(); });
+  // A new conversation, or a group made from the selection in Edit (issue 326): both open the compose sheet, the group
+  // starting from the people of every chosen conversation. The Mac creates it, and the page opens it.
+  openCompose(mode = 'new') {
+    const preset = mode === 'group' ? groupAddresses(this.chats, this.checked) : [];
+    this.filterOpen = false;
+    this.sortOpen = false;
+    this.composing = { mode, preset };
   }
 
-  groupSelection(name) {
-    this.naming = false;
-    if (!this.checked.length) return;
-    const { groups, placement } = groupFromSelection(this.chatGroups(), this.chatPlacement(), this.checked, { id: newGroupId(), name });
-    const work = this.setSettings({ 'chats.groups': groups, 'chats.placement': placement });
-    this.exitEdit();
-    return work;
+  composed(chat) {
+    this.composing = null;
+    if (!chat) return;
+    this.chats = upsertChat(this.chats, chat);
+    if (this.editing) this.exitEdit();
+    this.view = 'messages';
+    this.open(chat.id, { show: true });
   }
 
-  onGroupNameKey(e) {
-    if (e.key === 'Enter') { e.preventDefault(); this.querySelector('.group-create')?.click(); }
+  // A group's own details, opened from its conversation's header (issue 326).
+  openGroupInfo() {
+    const chat = this.chats.find((c) => c.id === this.openChatId);
+    if (chat && chat.isGroup) this.groupInfo = { chatId: chat.id };
   }
 
-  groupPrompt() {
-    const n = this.selectionCount();
-    return html`<div class="sheet-scrim confirm-scrim">
-      <section class="confirm-modal group-prompt" data-dismiss="group" role="dialog" aria-modal="true" aria-labelledby="group-prompt-title">
-        <h2 id="group-prompt-title">Group ${n} conversation${n === 1 ? '' : 's'}</h2>
-        <input class="group-name-input" type="text" placeholder="Name (optional)" aria-label="Group name, optional" @keydown=${this.onGroupNameKey}>
-        <div class="confirm-actions">
-          <button type="button" class="chip" @click=${press(() => { this.naming = false; })}>Cancel</button>
-          <button type="button" class="button primary group-create" @click=${press(() => this.groupSelection(this.querySelector('.group-name-input').value))}>Create group</button>
-        </div>
-      </section>
-    </div>`;
+  groupChanged(chat) {
+    if (chat) this.chats = upsertChat(this.chats, chat);
   }
 
   // The first press opens the gate; only the modal's own press, a second one, resolves it. The modal is drawn only
   // while a delete is pending, so a delete cannot complete without that press.
   requestDeleteSelection() {
     this.pendingDelete = requestDelete(this.checked);
-    this.holdConfirm();
-  }
-
-  requestGroupDelete(id, name) {
-    this.pendingDelete = requestDeleteGroup(id, name);
     this.holdConfirm();
   }
 
@@ -1464,20 +1527,17 @@ class AppRoot extends KitElement {
     const pending = resolveDelete(this.pendingDelete, true);
     this.cancelDelete();
     if (!pending) return undefined;
-    if (pending.kind === 'group') {
-      return this.setSettings({ 'chats.groups': removeGroup(this.chatGroups(), pending.id), 'chats.placement': clearGroupPlacement(this.chatPlacement(), pending.id) });
-    }
-    const forget = forgetChats(this.chatOrder(), this.chatPlacement(), pending.ids);
-    const work = this.setSettings({ 'chats.hidden': hideChats(this.chatHidden(), pending.ids), 'chats.order': forget.order, 'chats.placement': forget.placement });
+    const work = this.setSettings({ 'chats.hidden': hideChats(this.chatHidden(), pending.ids), 'chats.order': forgetChats(this.chatOrder(), pending.ids) });
     this.exitEdit();
     return work;
   }
 
   // The row above the list (issue 137): a small Edit text control at the left. Pressed, it stays highlighted, every row
-  // gains a checkbox, and the row offers select-all, the count, Group, Delete and Done for the selection.
+  // gains a checkbox, and the row offers select-all, the count, Group, Delete and Done for the selection. The new
+  // conversation control sits at the row's right end (issue 326).
   editRow() {
     const toggle = html`<button type="button" class="edit-toggle" aria-pressed=${this.editing ? 'true' : 'false'} @click=${press(() => this.toggleEditing())}>Edit</button>`;
-    if (!this.editing) return html`<div class="list-tools">${toggle}</div>`;
+    if (!this.editing) return html`<div class="list-tools">${toggle}<button type="button" class="new-chat" aria-label="New conversation" title="New conversation" @click=${press(() => this.openCompose('new'))}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button></div>`;
     const ids = this.selectableIds();
     const count = checkedCount(this.checked, ids);
     const all = allChecked(this.checked, ids);
@@ -1486,7 +1546,7 @@ class AppRoot extends KitElement {
       <label class="edit-all"><input type="checkbox" class="select-all" aria-label="Select all" .checked=${all} .indeterminate=${count > 0 && !all} ?disabled=${ids.length === 0} @change=${() => this.toggleAllChecked()}></label>
       <span class="edit-count" role="status">${count} selected</span>
       <span class="edit-actions">
-        <button type="button" class="text-button edit-group" ?disabled=${count === 0} @click=${press(() => this.openGroupPrompt())}>Group</button>
+        <button type="button" class="text-button edit-group" ?disabled=${count === 0} @click=${press(() => this.openCompose('group'))}>Group</button>
         <button type="button" class="text-button danger edit-delete" ?disabled=${count === 0} @click=${press(() => this.requestDeleteSelection())}>Delete</button>
         <button type="button" class="text-button edit-done" @click=${press(() => this.exitEdit())}>Done</button>
       </span>
@@ -1498,12 +1558,9 @@ class AppRoot extends KitElement {
   // the backdrop leave everything as it was.
   confirmModal() {
     const pending = this.pendingDelete;
-    const isGroup = pending.kind === 'group';
-    const n = isGroup ? 1 : pending.ids.length;
-    const title = isGroup ? 'Delete the group "' + pending.name + '"?' : 'Delete ' + n + ' conversation' + (n === 1 ? '' : 's') + '?';
-    const body = isGroup
-      ? "The group leaves this client's list. Its conversations stay, and no message is deleted on the Mac."
-      : "They leave this client's list only. No message is deleted on the Mac.";
+    const n = pending.ids.length;
+    const title = 'Delete ' + n + ' conversation' + (n === 1 ? '' : 's') + '?';
+    const body = "They leave this client's list only. No message is deleted on the Mac.";
     return html`<div class="sheet-scrim confirm-scrim">
       <section class="confirm-modal" data-dismiss="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <h2 id="confirm-title">Are you sure?</h2>
@@ -1542,25 +1599,31 @@ class AppRoot extends KitElement {
   // the About sheet stacked above it (issues 171, 253).
   settingsBody() {
     return html`<app-settings .values=${this.settings} .serverUrl=${this.serverUrl} .busy=${this.settingsBusy} .problem=${this.settingsProblem} .scheme=${this.scheme} .info=${this.info} .host=${this.host}
-      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()}
+      @setting=${(e) => respond(e, this.setSetting(e.detail))} @settings=${(e) => respond(e, this.setSettings(e.detail))} @theme-import=${(e) => respond(e, this.importThemeUrl(e.detail))} @signout=${(e) => respond(e, this.signOut(''))} @about=${() => this.openAbout()} @back=${() => this.pageBack()} @close=${() => this.closeView()}
       .themePicture=${this.themePicture} .tab=${this.settingsTab} @tab=${(e) => { this.settingsTab = e.detail; }}></app-settings>`;
   }
 
   // The About sheet's own body (issue 253).
   aboutBody() {
-    return html`<app-about .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : 'Back to app'}
-      .values=${this.settings} .themePicture=${this.themePicture} .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @back=${() => this.pageBack()}></app-about>`;
+    return html`<app-about .info=${this.info} .host=${this.host} .backLabel=${this.aboutFrom === 'settings' ? 'Back to settings' : ''}
+      .values=${this.settings} .themePicture=${this.themePicture} .release=${this.updateStatus} @check-updates=${(e) => respond(e, this.aboutPress(e.detail))} @open-external=${(e) => this.openExternal(e.detail.url)} @groupinfo=${() => this.openGroupInfo()} @back=${() => this.pageBack()} @close=${() => this.closeView()}></app-about>`;
   }
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<div class="empty">No conversation selected.</div>`;
   }
 
   // The shell's product and platform; the app draws window chrome only where the platform has a window.
   isDesktop() {
     return ['darwin', 'win32', 'linux'].includes(String(this.host && this.host.platform || '').toLowerCase());
+  }
+
+  // The shell's platform again, for the one control a phone does not need: its own keyboard carries emoji, so the
+  // composer draws the emoji tool only where a window has a physical keyboard.
+  isPhone() {
+    return ['ios', 'android'].includes(String(this.host && this.host.platform || '').toLowerCase());
   }
 
   // The banner's action asks the shell to start a download or apply a downloaded update. The command is the one the
@@ -1745,6 +1808,8 @@ class AppRoot extends KitElement {
   // composer has no conversation behind it, so it is a single item with nothing to step to.
   openViewer(detail) {
     const d = detail || {};
+    // The preview it was opened from, which the viewer grows out of and shrinks back into (issue 316).
+    this.viewerFrom = d.from || null;
     // A shared video link (issue 243) is a single item the viewer loads from the server, not one of the conversation's
     // attachments, so it is handed over on its own rather than looked up among the conversation's media.
     if (d.linkUrl) {
@@ -1759,9 +1824,11 @@ class AppRoot extends KitElement {
       this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items: [], index: 0 };
       return;
     }
-    // The starting item is already loaded (its preview handed the src over), so the viewer shows it at once.
-    items[at] = { ...items[at], src: d.src, alt: d.alt || items[at].alt };
-    this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items, index: at };
+    // The starting item is already loaded (its preview handed the src over), so the viewer shows it at once. A Live
+    // Photo's preview is its still, not the motion the viewer plays, so that one is loaded rather than handed over.
+    const handed = items[at].part ? {} : { src: d.src };
+    items[at] = { ...items[at], ...handed, alt: d.alt || items[at].alt };
+    this.viewing = { src: handed.src || '', alt: d.alt || '', kind: items[at].kind || d.kind || 'image', items, index: at };
   }
 
   // The viewer stepped to another item: the page keeps its own idea of the open item, so a re-render does not undo it.
@@ -1778,7 +1845,7 @@ class AppRoot extends KitElement {
     // controls in the contact header instead (see mainView).
     return html`<div class="app-window" data-platform=${platform}>
       <div class="app-body">${this.body()}</div>
-      <app-notices data-dismiss-keep="sheet about" .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-dismiss=${(e) => this.onNoticeDismiss(e)} @notice-read=${(e) => this.onNoticeRead(e)}></app-notices>
+      <app-notices data-dismiss-keep="sheet about" .notices=${this.appNotices} .runAction=${(command) => this.updateAction(command)} @notice-read=${(e) => this.onNoticeRead(e)}></app-notices>
     </div>`;
   }
 
@@ -1796,23 +1863,22 @@ class AppRoot extends KitElement {
         ${this.problem ? html`<div class="banner problem" role="alert">${this.problem}</div>` : nothing}
         ${this.activeFilters()}
         ${this.editRow()}
-        <app-chat-list .chats=${this.visibleChats()} .selected=${this.selecting || this.openChatId} .texts=${this.loadedTexts()}
-          .sort=${normalizeSort(this.settings['chats.sort'])} .groups=${this.chatGroups()}
-          .placement=${this.chatPlacement()} .filters=${this.filters}
+        <app-chat-list .client=${this.client} .chats=${this.visibleChats()} .selected=${this.selecting || this.openChatId} .texts=${this.loadedTexts()}
+          .sort=${normalizeSort(this.settings['chats.sort'])} .filters=${this.filters}
           .editing=${this.editing} .checked=${this.checked}
           @select=${(e) => { this.view = 'messages'; this.open(e.detail, { show: true }); }}
           @check=${(e) => this.setChecked(e.detail.id, e.detail.checked)}
-          @groupdelete=${(e) => this.requestGroupDelete(e.detail.id, e.detail.name)}
-          @chatsettings=${(e) => respond(e, this.setSettings(e.detail.patch))}></app-chat-list>
+></app-chat-list>
       </aside>
       ${chat ? html`<button type="button" class="scrim" aria-label="Close the conversation list" @click=${press(() => this.closeDrawer())}></button>` : nothing}
       <div class="conv-divider" role="separator" aria-orientation="vertical" aria-label="Resize the conversation list" tabindex="0" @pointerdown=${(e) => this.onDividerDown(e)} @dblclick=${(e) => this.onDividerDblClick(e)} @keydown=${(e) => this.onDividerKey(e)}></div>
       <main class="main">${this.mainView(chat)}</main>
-      ${this.settingsSheetShowing ? html`<div class="sheet-scrim" data-sheet="settings" ?data-leaving=${this.sheetLeaving}><section class="sheet" data-view="settings" data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.settingsBody()}</section></div>` : nothing}
+      ${this.settingsSheetShowing ? html`<div class="sheet-scrim" data-sheet="settings" ?data-leaving=${this.sheetLeaving} ?data-under=${this.aboutSheetShowing && this.aboutFrom === 'settings' && !this.aboutLeaving} ?data-returning=${this.aboutLeaving && this.aboutFrom === 'settings'}><section class="sheet" data-view="settings" data-arrive=${this.sheetMotion || 'none'} data-dismiss="sheet" role="dialog" aria-modal="true" aria-label="Settings" @animationend=${this.onSheetAnimationEnd}>${this.settingsBody()}</section></div>` : nothing}
       ${this.aboutSheetShowing ? html`<div class="sheet-scrim about-sheet-scrim" data-sheet="about" ?data-leaving=${this.aboutLeaving}><section class="sheet" data-view="about" data-arrive=${this.aboutMotion || 'none'} data-dismiss="about" role="dialog" aria-modal="true" aria-label="About" @animationend=${this.onAboutAnimationEnd}>${this.aboutBody()}</section></div>` : nothing}
       ${this.pendingDelete ? this.confirmModal() : nothing}
-      ${this.naming ? this.groupPrompt() : nothing}
-      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
+      ${this.composing ? html`<app-compose .chats=${this.chats} .client=${this.client} .mode=${this.composing.mode} .preset=${this.composing.preset} @created=${(e) => respond(e, this.composed(e.detail))} @close=${() => { this.composing = null; }}></app-compose>` : nothing}
+      ${this.groupInfo && this.chats.find((c) => c.id === this.groupInfo.chatId) ? html`<app-group-info .chat=${this.chats.find((c) => c.id === this.groupInfo.chatId)} .client=${this.client} @changed=${(e) => this.groupChanged(e.detail)} @close=${() => { this.groupInfo = null; }}></app-group-info>` : nothing}
+      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} .from=${this.viewerFrom} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }
 }

@@ -74,14 +74,29 @@ const noSave = () => false;
 // The colour tokens the page sends for the icon: strings only, a bounded handful, never anything else it might carry.
 const iconColors = (colors) => (colors && typeof colors === 'object' && !Array.isArray(colors) ? Object.fromEntries(Object.entries(colors).filter(([k, v]) => /^[a-z][a-z-]{0,31}$/.test(k) && typeof v === 'string' && v.length <= 120).slice(0, 16)) : {});
 
-export function createHandlers({ secure, notify, info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
+// A notice's target as plain string ids, or null: the page's ids are strings, and nothing else is kept.
+const noticeIds = ({ chatId, messageId }) => {
+  const id = (v) => (typeof v === 'string' && v.length > 0 && v.length <= 200 ? v : null);
+  return id(chatId) ? { chatId: id(chatId), messageId: id(messageId) } : null;
+};
+
+export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', takeNotice = () => null, info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
     'storage.delete': async ({ key }) => secure.delete(key),
     'app.info': async () => info(),
+    // The messaging link the platform last opened this app with (issue 333), answered once.
+    'link.take': async () => takeLink(),
     'app.icon': async ({ icon }) => appIcon(String(icon ?? '')),
-    notify: async ({ title, body }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500)),
+    // A message notice carries where it leads (issue 331), kept with the notice for when it is pressed.
+    notify: async ({ title, body, chatId, messageId }) => notify(String(title ?? '').slice(0, 200), String(body ?? '').slice(0, 500), noticeIds({ chatId, messageId })),
+    // The notice last pressed, taken once (issue 331).
+    'notify.take': async () => takeNotice(),
+    // Where notifications stand (issue 327). A desktop shows them without asking; macOS asks on the first one shown.
+    'notify.permission': async () => notifyPermission(),
+    // A desktop keeps its connection open in the tray, so it has no push registration (issue 347).
+    'push.token': async () => null,
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
     // A document is offered for saving under its real name (issue 219): the page hands the bytes and the name, and the
     // shell shows its save dialog (desktop) or share or save sheet (phone).

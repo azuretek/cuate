@@ -4,7 +4,7 @@
 // an incoming text-fallback reaction, and the fold that shows one as a reaction on the message it quotes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { platformOf, platformCapabilities, reactionFallbackText, parseReactionText, foldReactions, platformReactionUnsupported } from '../app/rules/platform.js';
+import { platformOf, platformCapabilities, reactionFallbackText, parseReactionText, foldReactions, platformReactionUnsupported, serviceNote } from '../app/rules/platform.js';
 import { messageActions } from '../app/rules/messages.js';
 
 const msg = (o) => ({ id: 'FAKE-0001', chatId: '1', fromMe: false, sender: '+15555550100', text: 'Unique body text', sentAt: '2026-01-15T10:04:00.000Z', replyTo: null, attachments: [], reactions: [], ...o });
@@ -66,4 +66,19 @@ test('a disabled or partially known platform is refused in place with a message 
   assert.match(platformReactionUnsupported('sms').message, /six classic reactions/);
   assert.match(platformReactionUnsupported('unknown').message, /cannot carry a reaction/);
   assert.equal(platformCapabilities('unknown').fallback, false);
+});
+
+// Abi, 2026-10-12 and 2026-10-14: no second bubble colour; who is on the other end is told by an icon by the name and a
+// lock beside the time, and a platform the app does not know says nothing.
+test('a conversation says whether it is on Apple devices and encrypted, and an unknown one says nothing', () => {
+  const one = serviceNote({ service: 'iMessage', isGroup: false });
+  assert.deepEqual([one.apple, one.encrypted], [true, true]);
+  assert.match(one.label, /^On Apple devices\. .*end-to-end encrypted\.$/);
+  assert.match(serviceNote({ service: 'iMessage', isGroup: true }).label, /^Everyone here is on Apple devices\./);
+  for (const service of ['SMS', 'RCS']) {
+    const n = serviceNote({ service, isGroup: false });
+    assert.deepEqual([n.apple, n.encrypted], [false, false]);
+    assert.match(n.label, /text messages and are not end-to-end encrypted/);
+  }
+  assert.equal(serviceNote({ service: 'Carrier pigeon' }), null);
 });

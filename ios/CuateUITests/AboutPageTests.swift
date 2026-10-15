@@ -19,7 +19,14 @@ final class AboutPageTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let proof = app.webViews.staticTexts["about:pass"].firstMatch
-        XCTAssertTrue(proof.waitForExistence(timeout: 30), app.debugDescription)
+        // The fixture opens About and goes back before its notice (the slide, #356), which a CI simulator can take more
+        // than half a minute over, so the proof has a minute.
+        XCTAssertTrue(proof.waitForExistence(timeout: 60), app.debugDescription)
+        // The same slide as the desktop (Abi, 2026-10-13): the fixture held About rising and Settings going down and back up
+        // on their own timelines in this web view, and reports which it saw (a cut where the system reduces motion).
+        let motion = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'about:motion '")).firstMatch
+        XCTAssertTrue(motion.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(motion.label.hasPrefix("about:motion slide ") || motion.label.hasPrefix("about:motion cut "), motion.label)
         // The shell reports its channel and build (issue 192), so About shows neither as Unknown.
         let reported = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'about:build '")).firstMatch
         XCTAssertTrue(reported.waitForExistence(timeout: 5), app.debugDescription)

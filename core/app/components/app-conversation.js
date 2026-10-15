@@ -4,9 +4,12 @@ import { press, runPress, emit, respond } from '../../kit/press.js';
 import { keepScroll } from '../../kit/scroll.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { aimCarets } from '../../kit/popover.js';
-import { chatTitle, initials } from '../rules/chats.js';
+import { play, growFrom, cssVar } from '../../kit/motion.js';
+import { newArrivals } from '../../kit/rules/motion.js';
+import { chatTitle, eventText } from '../rules/chats.js';
+import './app-avatar.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
-import { platformOf, platformCapabilities } from '../rules/platform.js';
+import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
 import { typingLabel } from '../rules/typing.js';
@@ -15,6 +18,17 @@ import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
 import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
+import { splitLinks, messageLinks } from '../rules/links.js';
+import { copyToClipboard } from '../clipboard.js';
+
+// The link a press or a right click landed on, or null.
+const linkAt = (target) => (target && target.closest ? target.closest('a.message-link')?.dataset.href || null : null);
+
+// A message's text with each web address in it a link (core/app/rules/links.js). The text parts stay plain text, so
+// nothing in a message is ever read as markup.
+const linkedText = (text, open) => splitLinks(text).map((p) => (p.href
+  ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${p.text}</a>`
+  : p.text));
 
 // How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
 const LONG_PRESS_MS = 500;
@@ -35,10 +49,15 @@ function marksOf(messages) {
 
 class AppConversation extends KitElement {
   static properties = {
-    chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {},
+    chat: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {}, phone: {},
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
+    // The message a pressed notice leads to ({ id, seq }, issue 331), brought into view and marked until the person
+    // presses somewhere in the conversation or another conversation opens.
+    reveal: { attribute: false }, revealedId: { state: true },
+    // A note of the conversation's own under one message, such as Link copied: { id, text }, cleared after a moment.
+    ownNote: { state: true },
     // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, or the
     // contact when the engine can report it. Drawn in the header, cleared by the page when it goes stale.
     typing: { attribute: false },
@@ -67,6 +86,8 @@ class AppConversation extends KitElement {
     this.keepThread = keepScroll(this, { scroller: '.thread-view', items: '.bubble-row' });
     this.reacting = null;
     this.note = null;
+    this.ownNote = null;
+    this.pressLink = null;
     this.typing = null;
     this.pop = null;
     this.replyingTo = null;
@@ -89,6 +110,17 @@ class AppConversation extends KitElement {
     return emit(this, name, detail);
   }
 
+  // Older messages load as the person scrolls up to them, before they reach the top, so the history reads as one long
+  // conversation rather than a page with a button at its head: within a screen of the top, the next page is asked for
+  // once, and the place the person is on stays where it is while it lands above (the keep's anchor holds the message).
+  // The button stays for a keyboard and for a page that is shorter than its view.
+  nearTop(e) {
+    const el = e.currentTarget;
+    if (!this.hasMore || this.olderPending || !el || el.scrollTop > el.clientHeight) return;
+    this.olderPending = true;
+    Promise.resolve(this.fire('older')).catch(() => {}).finally(() => { this.olderPending = false; });
+  }
+
   // Another conversation starts where it was left, or at its latest message the first time it is opened (issue 200).
   // The conversation being left keeps the place it was last at; the one being entered is put back on its own. Because
   // this runs before the new conversation is drawn, the place read for the old one is still the old one's, never a frame
@@ -100,13 +132,48 @@ class AppConversation extends KitElement {
       this.pop = null;
       this.replyingTo = null;
       this.reactFor = null;
+      this.revealedId = null;
     }
   }
 
   updated(changed) {
+    if (changed.has('reveal') && this.reveal) this.revealMessage(this.reveal.id);
     if (changed.has('pop')) this.placePop();
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
     aimCarets(this);
+    this.arrive(changed);
+  }
+
+  // Motion comes from where a thing came from (issue 316, docs/CONVENTIONS.md). Another conversation slides in from
+  // the side it was chosen from; a message we send rises out of the composer's field into its place; a message that
+  // arrives slides up into the end of the list. A first draw and a page of older history are a place, not news, so
+  // they do not move (newArrivals).
+  arrive(changed) {
+    const chatChanged = changed.has('chat') && changed.get('chat')?.id !== this.chat?.id;
+    if (chatChanged && changed.get('chat')) {
+      const list = this.querySelector('.messages');
+      const step = parseFloat(cssVar(list, '--space-6')) || 0;
+      play(list, [{ opacity: 0, translate: step + 'px 0px' }, { opacity: 1, translate: '0px 0px' }], { duration: 'screen', easing: 'sheet-ease' });
+    }
+    if (!changed.has('messages')) return;
+    const fresh = newArrivals(changed.get('messages'), this.messages, { sameChat: !chatChanged });
+    if (!fresh.length) return;
+    const field = this.querySelector('app-composer textarea');
+    for (const { id, sent } of fresh) {
+      const row = this.rowOf(id);
+      const bubble = row && (row.querySelector('.bubble') || row);
+      if (!bubble) continue;
+      if (sent && field) {
+        // From where its text was typed: the field's start, at the field's line height, then out to its own place.
+        const r = field.getBoundingClientRect();
+        const b = bubble.getBoundingClientRect();
+        const s = b.height > 0 ? Math.min(1, r.height / b.height) : 1;
+        growFrom(bubble, { left: r.left, top: r.top + (r.height - b.height * s) / 2, width: b.width * s, height: b.height * s });
+      } else {
+        const rise = parseFloat(cssVar(bubble, '--space-4')) || 0;
+        play(bubble, [{ opacity: 0, translate: '0px ' + rise + 'px', scale: '0.96' }, { opacity: 1, translate: '0px 0px', scale: '1' }]);
+      }
+    }
   }
 
   // A menu or panel opens above its message, and below it when the list has no room above (the first messages), so
@@ -123,9 +190,30 @@ class AppConversation extends KitElement {
   }
 
   // The one menu a message has: its time on any message, and whatever messageActions offers on it.
+  // A menu opened on a link (a right click on it, or a press held on it) copies that link; opened anywhere else on the
+  // message it copies the message's first link.
   openMenu(m, e) {
     if (e) e.preventDefault();
-    this.pop = { id: m.id, kind: 'menu', side: 'above' };
+    const on = e ? linkAt(e.target) : this.pressLink;
+    this.pop = { id: m.id, kind: 'menu', side: 'above', link: on };
+  }
+
+  // A link in a message opens in the platform's browser through the shell, never in the app; app-root hands it on. A
+  // click that only ends a long press is swallowed before it reaches here (swallow), so holding a link never opens it.
+  openLink(e, href) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent('open-external', { bubbles: true, composed: true, detail: { url: href } }));
+  }
+
+  // Copy link puts the address on the clipboard and says so under the message for a moment.
+  async copyLink(m, href) {
+    this.pop = null;
+    const ok = await copyToClipboard(href);
+    clearTimeout(this.ownNoteTimer);
+    this.ownNote = { id: m.id, text: ok ? 'Link copied' : 'The link could not be copied.' };
+    this.ownNoteTimer = setTimeout(() => { this.ownNote = null; }, 2500);
+    return ok;
   }
 
   // React chooses from the composer's own emoji panel, the one used for typing, rather than a second picker. The list
@@ -150,10 +238,12 @@ class AppConversation extends KitElement {
   // A finger or the main mouse button held on a message opens its menu, as a right click does. Moving or lifting
   // first cancels, so a drag still scrolls and a click is still a click.
   pressStart(m, e) {
+    this.revealedId = null;
     const held = e.pointerType === 'touch' || (e.pointerType === 'mouse' && e.button === 0);
     if (!held || e.target?.closest?.('.message-pop')) return;
     clearTimeout(this.pressTimer);
     this.held = false;
+    this.pressLink = linkAt(e.target);
     this.pressAt = { x: e.clientX, y: e.clientY };
     this.pressTimer = setTimeout(() => { this.held = true; this.openMenu(m); }, LONG_PRESS_MS);
   }
@@ -207,6 +297,30 @@ class AppConversation extends KitElement {
     this.replyingTo = { id: threadRoot(this.messages, m.id) };
   }
 
+// A pressed notice's message (issue 331), brought into view and marked. A reply in a thread opens its thread, where
+  // it is drawn; any other message is held a third of the way down the conversation, the place the keep holds it at
+  // while pictures above it load, and given focus so a screen reader starts there.
+  async revealMessage(id) {
+    const m = (this.messages || []).find((x) => x.id === id);
+    if (!m) return;
+    const inThread = threadRoot(this.messages, id) !== id && platformCapabilities(platformOf(this.chat)).thread;
+    if (inThread) this.openThread(m);
+    else this.replyingTo = null;
+    this.revealedId = id;
+    await this.updateComplete;
+    const row = this.rowOf(id);
+    if (!row) return;
+    if (inThread) {
+      row.scrollIntoView({ block: 'center' });
+    } else {
+      const list = this.querySelector('.messages');
+      this.keep.anchor = { key: String(id), offset: Math.round((list ? list.clientHeight : 0) / 3) };
+      this.keep.restore();
+    }
+    row.focus({ preventScroll: true });
+    play(row.querySelector('.bubble') || row, [{ scale: '1 1' }, { scale: '1.04 1.04' }, { scale: '1 1' }], { duration: 'screen', easing: 'sheet-ease' });
+  }
+
   closeThread() {
     this.replyingTo = null;
   }
@@ -225,9 +339,15 @@ class AppConversation extends KitElement {
   // The menu: when the message arrived (or was sent), then Reply in thread and React as icons from the shared set.
   menu(m) {
     const actions = messageActions(m, { sending: this.sending, platform: platformOf(this.chat) });
+    // The lock sits beside the time, seen only when the menu is open, so it is there to check rather than to notice
+    // (Abi, 2026-10-14).
+    const lock = Boolean(serviceNote(this.chat)?.encrypted);
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
+    const links = messageLinks(m);
+    const link = this.pop.link && links.includes(this.pop.link) ? this.pop.link : links[0] || null;
     return html`<div class="message-pop message-menu" role="toolbar" aria-label="Message" data-dismiss="pop" data-side=${this.pop.side} data-popover data-popover-edge=${this.pop.side === 'below' ? 'top' : 'bottom'} data-popover-align=${m.fromMe ? 'end' : 'start'}>
-      <time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
+      ${lock ? html`<span class="icon message-lock" data-icon="lock" role="img" aria-label="End-to-end encrypted" title="End-to-end encrypted"></span>` : nothing}<time class="message-time" datetime="${m.sentAt}" aria-label="${(m.fromMe ? 'Sent ' : 'Received ') + when}">${when}</time>
+      ${link ? html`<button type="button" class="message-action" aria-label="Copy link" title="Copy link" data-link=${link} @click=${press(() => this.copyLink(m, link))}><span class="icon" data-icon="link" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('save') ? html`<button type="button" class="message-action" aria-label="Save" title="Save" @click=${press(() => this.save(m))}><span class="icon" data-icon="download" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('react') ? html`<button type="button" class="message-action" aria-label="React" title="React" @click=${press(() => this.openReact(m))}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>` : nothing}
@@ -256,27 +376,34 @@ class AppConversation extends KitElement {
   // conversation a reply opens its thread when pressed, the message it answers carries the reply count (threadSummary),
   // and every other message carries nothing: no line is drawn between two messages, so no pairing is implied that the
   // stored pointer does not support (issue 208).
-  bubble(it, lastMine, sms, where = 'list') {
+  bubble(it, lastMine, where = 'list') {
     const m = it.message;
+    // An event in the conversation (issue 341), such as a group photo changing, is a quiet line across it rather than a
+    // bubble: who did it and what changed, with the new photo beside the words.
+    if (m.event) {
+      return html`<div class="bubble-row event" data-id=${m.id}><div class="conv-event">${m.event.photo ? html`<app-avatar .photo=${m.event.photo} .client=${this.client}></app-avatar>` : nothing}<span>${eventText(m)}</span></div></div>`;
+    }
     const mine = m.fromMe;
     const front = where === 'thread' || !this.replyingTo;
     const targeted = this.reactFor === m.id;
     const mark = where === 'list' ? marksOf(this.messages).get(m.id) || null : null;
     const isReply = Boolean(mark && mark.root);
-    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', isReply ? 'thread-reply' : ''].filter(Boolean).join(' ');
-    const kind = mine ? (sms ? 'sms' : 'me') : 'them';
+    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', isReply ? 'thread-reply' : '', this.revealedId === m.id ? 'revealed' : ''].filter(Boolean).join(' ');
+    // Every message we send wears the theme's own colour, whatever the platform (Abi, 2026-10-12): who is on the other
+    // end is told by serviceNote, never by a second bubble colour.
+    const kind = mine ? 'me' : 'them';
     const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
     const own = myReaction(m);
     const ownGlyph = own ? reactionGlyph(own) : null;
     const busy = this.reacting === m.id;
     const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
-    const note = this.note && this.note.id === m.id ? this.note.text : '';
+    const note = this.ownNote && this.ownNote.id === m.id ? this.ownNote.text : this.note && this.note.id === m.id ? this.note.text : '';
     return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
-        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${m.text}</div>` : nothing}
+        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href))}</div>` : nothing}
         ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
@@ -288,7 +415,7 @@ class AppConversation extends KitElement {
 
   // The open thread: only its original and every reply, in order, each under its day and time, with the delivery status
   // of your last message in it, as a conversation of their own (issue 195).
-  threadView(sms) {
+  threadView() {
     const ids = threadIds(this.messages, this.replyingTo.id);
     const thread = (this.messages || []).filter((m) => ids.has(m.id));
     const lastMine = [...thread].reverse().find((m) => m.fromMe) || null;
@@ -296,7 +423,7 @@ class AppConversation extends KitElement {
     const locale = navigator.language;
     const items = groupMessages(thread, { gapMs: 0 });
     return html`<div class="thread-view">
-      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread"><div class="thread-card-head">${closeButtonHtml({ owner: 'thread', label: 'Close thread', onClose: () => this.closeThread() })}</div>${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, sms, 'thread')))}</div>
+      <div class="thread-list" role="dialog" aria-label="Thread" data-dismiss="thread"><div class="thread-card-head">${closeButtonHtml({ owner: 'thread', label: 'Close thread', onClose: () => this.closeThread() })}</div>${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : this.bubble(it, lastMine, 'thread')))}</div>
     </div>`;
   }
 
@@ -305,7 +432,7 @@ class AppConversation extends KitElement {
     const locale = navigator.language;
     const items = groupMessages(this.messages || []);
     const lastMine = [...(this.messages || [])].reverse().find((m) => m.fromMe) || null;
-    const sms = this.chat.service === 'SMS' || this.chat.service === 'RCS';
+    const note = serviceNote(this.chat);
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
@@ -313,15 +440,15 @@ class AppConversation extends KitElement {
     // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
-    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><span class="avatar" aria-hidden="true">${initials(title)}</span><div class="conv-title"><div class="chat-name">${title}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
+    return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name-row"><div class="chat-name" title=${note && !note.apple ? note.label : nothing}>${title}</div>${note && note.apple ? html`<span class="icon service-mark" data-icon="smartphone" role="img" tabindex="0" aria-label=${note.label} title=${note.label}></span>` : nothing}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
-        <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing}>
+        <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
-          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, sms, 'list'), this.threadSummary(it.message)]))}
+          ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, 'list'), this.threadSummary(it.message)]))}
         </div>
-        ${thread ? this.threadView(sms) : nothing}
+        ${thread ? this.threadView() : nothing}
       </div>
-      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 

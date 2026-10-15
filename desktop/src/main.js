@@ -18,7 +18,7 @@ import { startUpdates, checkForUpdates } from './updates.js';
 import { createLifecycle, trayTemplate, trayIcon, appMenuTemplate } from './tray.js';
 import { loadMasters, shellIcons, encodePng } from './icon-images.js';
 import { renderIcon } from '../../core/app/rules/icon.js';
-import { fixedPalette } from '../../core/app/rules/app-icons.js';
+import { fixedPalette, themeMatch } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller } from './smoke-failure.js';
@@ -41,6 +41,19 @@ function buildStamp() {
 const SMOKE = process.env.SMOKE_OUT || '';
 // Every notice the shell is asked to show while smoking, so the smoke can prove one fired and one was suppressed.
 const smokeNotices = [];
+// The notices on screen, and the target of the one last pressed, held until the page takes it (issue 331).
+const liveNotices = new Set();
+let pressedNotice = null;
+function noticePressed(target) {
+  if (!target) return;
+  pressedNotice = target;
+  const w = win && !win.isDestroyed() ? win : createWindow();
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+  // A window still loading boots and takes the press itself; one already up is told now.
+  if (!w.webContents.isLoading()) w.webContents.send('bridge:event:notify.opened', {});
+}
 // Every bridge command the page calls while smoking, so the smoke can prove the banner's action called the command it
 // says it does rather than trusting the button's label.
 const smokeCalls = [];
@@ -55,6 +68,15 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
+// The messaging link the platform last opened the app with (issue 333), until the page takes it.
+const LINK_SCHEMES = ['sms', 'smsto', 'mms', 'mmsto', 'im', 'imessage'];
+const linkFrom = (argv) => (argv || []).find((a) => typeof a === 'string' && LINK_SCHEMES.some((s) => a.toLowerCase().startsWith(s + ':'))) || null;
+let pendingLink = linkFrom(process.argv);
+// macOS hands a link over open-url, before or after the app is ready; Windows and Linux hand it as an argument.
+function handOverLink(url) {
+  pendingLink = url;
+  if (win && !win.isDestroyed()) win.webContents.send('bridge:event:app.link', {});
+}
 // The app icon chosen in Settings (issue 167): Follow theme, the default, leaves the icons to the theme (applyIcons,
 // below); a fixed palette from core/spec/app-icons.json stands in for the theme's colours in every image the shell
 // redraws, and on macOS, where the theme leaves the Dock to the bundle, it is drawn on the Dock while the app runs.
@@ -170,12 +192,22 @@ const lifecycle = createLifecycle({
 const secure = createSecureStore({ file: () => path.join(app.getPath('userData'), 'secure-store.json'), safeStorage, fs: { readFileSync, writeFileSync, existsSync, mkdirSync } });
 const handlers = createHandlers({
   secure,
-  notify: (title, body) => {
-    if (SMOKE) smokeNotices.push({ title, body });
+  takeLink: () => { const l = pendingLink; pendingLink = null; return l; },
+  notify: (title, body, target) => {
+    // Pressing a message notice raises the window and tells the page, which takes the target (issue 331).
+    const pressed = () => noticePressed(target);
+    if (SMOKE) smokeNotices.push({ title, body, target, pressed });
     if (!Notification.isSupported()) return false;
-    new Notification({ title, body }).show();
+    const n = new Notification({ title, body });
+    // Held until it is pressed or closed: a notice nothing references is collected, and its press then reaches nothing.
+    liveNotices.add(n);
+    n.on('click', () => { liveNotices.delete(n); pressed(); });
+    n.on('close', () => liveNotices.delete(n));
+    n.show();
     return true;
   },
+  notifyPermission: () => (Notification.isSupported() ? 'granted' : 'unsupported'),
+  takeNotice: () => { const t = pressedNotice; pressedNotice = null; return t; },
   // The client's own half of the build report: the version the bundle carries, the runtime versions only the shell
   // knows, and the commit and build date the packaging step stamped into the app. Nothing here reads the server.
   info: () => {
@@ -692,7 +724,7 @@ async function runSmoke(w) {
   const trayOrder = trayMenu.items.filter((i) => i.type !== 'separator').map((i) => i.id).join('|');
   trayItem('settings').click();
   const settingsRaised = await visibleWithin(true);
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))", 10000);
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))", 10000);
   w.minimize();
   for (const t0 = Date.now(); !w.isMinimized() && Date.now() - t0 < 3000;) await pause(100);
   const minimised = w.isMinimized();
@@ -1042,7 +1074,7 @@ async function runSmoke(w) {
   const sameRow = (a, b) => Boolean(a.key) && a.key === b.key && Math.abs(a.offset - b.offset) <= 2;
   const [w0, h0] = w.getSize();
   const BACK = ['Typed while', 'scrolled back', 'and a last line long enough that a narrower window has to wrap it onto more lines than the wide window needed, so the field must grow again'];
-  await js("(() => { const m = document.querySelector('.messages'); m.scrollTop = Math.round((m.scrollHeight - m.clientHeight) / 2); document.querySelector('app-composer textarea').focus(); return true; })()");
+  await js("(() => { const m = document.querySelector('.messages'); m.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 })); m.scrollTop = Math.round((m.scrollHeight - m.clientHeight) / 2); document.querySelector('app-composer textarea').focus(); return true; })()");
   await pause(400);
   const backBefore = await growPlace();
   await typeKeys(BACK);
@@ -1229,7 +1261,6 @@ async function runSmoke(w) {
   await js("document.querySelector('app-composer .staged-remove').click()");
 
   const scale = () => js("Number(document.querySelector('app-image-viewer .viewer')?.dataset.scale || 0)");
-  const viewerOpen = () => js("Boolean(document.querySelector('app-image-viewer'))");
   const openViewer = async () => {
     await js("document.querySelector('app-attachment .attachment-preview').click()");
     await waitFor("Boolean(document.querySelector('app-image-viewer .viewer-image')?.naturalWidth)", 10000);
@@ -1342,16 +1373,17 @@ async function runSmoke(w) {
   await pause(200);
 
   // The three ways out: Escape, the close control and a real click on the backdrop beside the picture.
+  // The viewer shrinks back into its preview before it goes (issue 316), so each way out is read once the viewer has
+  // finished leaving, bounded, rather than after a fixed pause.
+  const closed = async () => { try { await waitFor("!document.querySelector('app-image-viewer')", 3000); return true; } catch { return false; } };
   await key('Escape');
-  await pause(200);
-  const escapeCloses = !(await viewerOpen());
+  const escapeCloses = await closed();
   await openViewer();
   await js("document.querySelector('app-image-viewer .close-button').click()");
-  await pause(200);
-  const closeCloses = !(await viewerOpen());
+  const closeCloses = await closed();
   await openViewer();
   await mouse('left', 6, Math.round(c0.y));
-  const backdropCloses = !(await viewerOpen());
+  const backdropCloses = await closed();
   wc.removeListener('context-menu', onMenu);
   const imageViewerChecks = {
     backdrop: backdrop.sheetClass && backdrop.same.background && backdrop.same.blur && /blur/.test(backdrop.filter),
@@ -1474,9 +1506,10 @@ async function runSmoke(w) {
   const cdp = (method, params) => wc.debugger.sendCommand(method, params);
   const putSettings = (values) => fetch(srv + '/api/v1/settings', { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ values }) });
 
-  // Edit is a small text control at the left of the row above the list (issue 137); the pencil, the New group field and
-  // the Add group button are gone. Edit shows a checkbox on every row; two chats are grouped with no name and take the
-  // default; then one chat is deleted, and only carrying the slider to the end deletes it: a press on the thumb and a
+  // Edit is a small text control at the left of the row above the list (issue 137), and the new-conversation control sits
+  // at the row's right end (issue 326). Edit shows a checkbox on every row; Group on two chats opens the compose sheet
+  // with both people in it, and a named group conversation is created through the server, opened, and listed (issue
+  // 326); then one chat is deleted, and only carrying the slider to the end deletes it: a press on the thumb and a
   // drag let go halfway both leave everything as it was. Values are checked at the server.
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   const editTheme = async (name) => {
@@ -1497,6 +1530,7 @@ async function runSmoke(w) {
     return {
       label: t.textContent.trim(), first: row.firstElementChild === t, inset: t.getBoundingClientRect().left - row.getBoundingClientRect().left - pad,
       gone: !document.querySelector('.edit-button') && !document.querySelector('.new-group-name') && !document.querySelector('.add-group-button') && !document.querySelector('.add-group'),
+      newChat: (() => { const n = row.querySelector('.new-chat'); if (!n) return null; const nb = n.getBoundingClientRect(); const rb = row.getBoundingClientRect(); const tb = t.getBoundingClientRect(); return { right: Math.round(rb.right - parseFloat(getComputedStyle(row).paddingRight) - nb.right), sameLine: Math.abs((nb.top + nb.height / 2) - (tb.top + tb.height / 2)) <= 2, label: n.getAttribute('aria-label') }; })(),
       radius: getComputedStyle(t).borderTopLeftRadius,
     };
   })()`);
@@ -1509,18 +1543,16 @@ async function runSmoke(w) {
   const editRowTops = await js("[...document.querySelectorAll('.list-tools.editing > *, .list-tools.editing .edit-actions > *')].map((el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); })");
   await editTheme('15-edit-mode');
   await js("document.querySelector('.edit-group').click()");
-  await waitFor("Boolean(document.querySelector('.group-prompt .group-name-input'))");
+  await waitFor("Boolean(document.querySelector('app-compose .compose .compose-name'))");
   await pause(900);
-  // The prompt sits on the sheet backdrop, centred in the window.
-  const prompt = await js("(() => { const p = document.querySelector('.group-prompt'); const b = p.getBoundingClientRect(); return { backdrop: p.parentElement.classList.contains('sheet-scrim') && getComputedStyle(p.parentElement).position === 'fixed', dx: Math.abs(b.left + b.width / 2 - window.innerWidth / 2), dy: Math.abs(b.top + b.height / 2 - window.innerHeight / 2) }; })()");
-  await editTheme('16-group-prompt');
-  await js("document.querySelector('.group-prompt .group-create').click()");
-  const t1 = Date.now();
-  let groupedHeld = await held();
-  while (!(Array.isArray(groupedHeld['chats.groups']) && groupedHeld['chats.groups'].length === 1) && Date.now() - t1 < 10000) { await pause(200); groupedHeld = await held(); }
-  await waitFor("!document.querySelector('.group-prompt') && document.querySelector('.list-tools .edit-toggle').getAttribute('aria-pressed') === 'false' && [...document.querySelectorAll('.section-name')].some((s) => s.textContent === 'Group 1')");
-  const madeGroup = (groupedHeld['chats.groups'] || [])[0] || {};
-  const grouped = madeGroup.name === 'Group 1' && groupIds.every((id) => (groupedHeld['chats.placement'] || {})[id] === madeGroup.id);
+  // The sheet sits on the sheet backdrop, centred in the window, holding both chosen people.
+  const prompt = await js("(() => { const p = document.querySelector('app-compose .compose'); const b = p.getBoundingClientRect(); return { backdrop: p.parentElement.classList.contains('sheet-scrim') && getComputedStyle(p.parentElement).position === 'fixed', dx: Math.abs(b.left + b.width / 2 - window.innerWidth / 2), dy: Math.abs(b.top + b.height / 2 - window.innerHeight / 2), people: [...p.querySelectorAll('.compose-person')].map((x) => x.dataset.address) }; })()");
+  await editTheme('16-group-compose');
+  await js("(() => { const n = document.querySelector('app-compose .compose-name'); n.value = 'Smoke group'; n.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  await js("document.querySelector('app-compose .compose-start').click()");
+  await waitFor("!document.querySelector('app-compose') && document.querySelector('.list-tools .edit-toggle').getAttribute('aria-pressed') === 'false' && document.querySelector('.conv-head .chat-name')?.textContent === 'Smoke group'", 10000);
+  const madeGroup = ((await (await fetch(srv + '/api/v1/chats', { headers: auth })).json()).chats || []).find((c) => c.name === 'Smoke group') || {};
+  const grouped = madeGroup.isGroup === true && prompt.people.length === 2 && [...madeGroup.participants].sort().join() === [...prompt.people].sort().join() && Boolean(await js("Boolean(document.querySelector('.conv-head .conv-info'))"));
   await js("document.querySelector('.list-tools .edit-toggle').click()");
   await waitFor("document.querySelectorAll('.chat-row .chat-check').length > 0");
   const deleteId = await rowCheck('Weekend plans');
@@ -1565,6 +1597,7 @@ async function runSmoke(w) {
     active: activeBg !== 'rgba(0, 0, 0, 0)' && activeBg !== 'transparent',
     oneRow: editRowTops.length >= 5 && Math.max(...editRowTops) - Math.min(...editRowTops) <= 2,
     prompt: prompt.backdrop && prompt.dx < 2 && prompt.dy < 2,
+    newChat: Boolean(editLayout && editLayout.newChat) && Math.abs(editLayout.newChat.right) < 1 && editLayout.newChat.sameLine && editLayout.newChat.label === 'New conversation',
     grouped,
     modal: modal.title === 'Are you sure?' && modal.what === 'Delete 1 conversation?' && modal.backdrop && !modal.button,
     pressIsNotSlide: afterPress.open && !afterPress.hidden.includes(deleteId),
@@ -1577,15 +1610,21 @@ async function runSmoke(w) {
   // has to have answered first: an answer is taken for the keys it wrote (settingsAfterWrite), so one landing after the
   // reset would draw the deleted chat as hidden again.
   await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
-  const reset = await putSettings({ 'chats.hidden': [], 'chats.groups': [], 'chats.placement': {} });
+  const reset = await putSettings({ 'chats.hidden': madeGroup.id ? [madeGroup.id] : [] });
   if (!reset.ok) throw new Error('the server refused the chat arrangement reset: ' + reset.status);
   try {
-    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && !document.querySelector('.section-actions')", 10000);
+    // Only the list's rows count: the conversation header draws a .chat-name too, and the group may still be the one open.
+    await waitFor("document.querySelectorAll('.chat-row').length >= 3 && ![...document.querySelectorAll('.chat-row .chat-name')].some((n) => n.textContent === 'Smoke group')", 10000);
   } catch (e) {
-    const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], groups: s['chats.groups'], placement: s['chats.placement'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
+    const page = await js("(() => { const s = document.querySelector('app-root').settings; return { hidden: s['chats.hidden'], rows: document.querySelectorAll('.chat-row').length, busy: document.querySelector('app-root').settingsBusy }; })()");
     console.error('chat arrangement reset: ' + JSON.stringify({ page, held: await held() }));
     throw e;
   }
+  // Starting the group left it as the conversation open, and it holds no messages; every later step reads a
+  // conversation's messages, so the first listed conversation is opened again, as it was before this step.
+  // Opened as the boot opens it, with the list still showing, so the phone-width steps later find the drawer open.
+  await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
+  await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
 
   // The Edit control stays one line (it replaced Add group, which issue 122 held to this): at the smallest window the
   // shell allows and at every text size from 50% to 300%, its label renders as one line, in full. The line count is
@@ -1672,11 +1711,16 @@ async function runSmoke(w) {
   // Resizing keeps your place (issue 142). The conversation and the chat list are scrolled back, text is typed in the
   // composer with the caret inside it, and then the window is resized several times and the text size changed: each
   // view must still show the same message or row at the same height, and the composer the same text and caret. The
-  // list is made long enough to scroll with groups, which are put back afterwards.
+  // list is made long enough to scroll with group conversations made for it, which are hidden afterwards.
   const keptBefore = await held();
-  const smokeGroups = Array.from({ length: 8 }, (_, i) => ({ id: 'smoke-g' + i, name: 'Smoke group ' + (i + 1) }));
-  await putSettings({ 'chats.groups': smokeGroups, 'chats.placement': { 1: 'smoke-g1', 2: 'smoke-g4', 3: 'smoke-g7' }, 'appearance.textScale': 200 });
-  await waitFor("document.querySelectorAll('.chat-section').length >= 8 && document.documentElement.style.getPropertyValue('--font-size-md') !== ''", 10000);
+  const smokeGroups = [];
+  for (let i = 0; i < 12; i += 1) {
+    const made = await fetch(srv + '/api/v1/chats', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ addresses: ['+1555555' + String(2000 + i * 2), '+1555555' + String(2001 + i * 2)], name: 'Scroll group ' + (i + 1) }) });
+    if (!made.ok) throw new Error('the server refused a scroll group: ' + made.status);
+    smokeGroups.push((await made.json()).id);
+  }
+  await putSettings({ 'appearance.textScale': 200 });
+  await waitFor("document.querySelectorAll('.chat-row').length >= 15 && document.documentElement.style.getPropertyValue('--font-size-md') !== ''", 10000);
   await pause(400);
   const COMPOSED = 'Kept through\nevery resize';
   const place = () => js(`(() => {
@@ -1699,6 +1743,8 @@ async function runSmoke(w) {
     const m = document.querySelector('.messages');
     const rows = [...m.querySelectorAll('.bubble-row')];
     const row = rows[Math.min(2, rows.length - 1)];
+    // The person's wheel first: a view at its end leaves it only for the person (core/kit/scroll.js).
+    m.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
     m.scrollTop = row.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 7;
     const l = document.querySelector('app-chat-list');
     const room = l.scrollHeight - l.clientHeight;
@@ -1750,8 +1796,11 @@ async function runSmoke(w) {
   await pause(500);
   const dividerState = () => js("(() => { const d = document.querySelector('.conv-divider'); const s = document.querySelector('.shell'); if (!d || !s) return null; const dr = d.getBoundingClientRect(); const list = document.querySelector('.sidebar').getBoundingClientRect(); const conv = document.querySelector('.main').getBoundingClientRect(); return { x: dr.left + dr.width / 2, y: dr.top + dr.height / 2, viewport: window.innerWidth, chatW: Math.round(list.width), convW: Math.round(conv.width), role: d.getAttribute('role'), label: d.getAttribute('aria-label'), orientation: d.getAttribute('aria-orientation'), tabindex: d.getAttribute('tabindex'), cursor: getComputedStyle(d).cursor, valueNow: Number(d.getAttribute('aria-valuenow')), valueMin: Number(d.getAttribute('aria-valuemin')), valueMax: Number(d.getAttribute('aria-valuemax')) }; })()");
   const dividerPlace = () => js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const last = rows[rows.length - 1]; const l = document.querySelector('app-chat-list'); const ltop = l.getBoundingClientRect().top; const first = [...l.querySelectorAll('.chat-row')].find((r) => r.getBoundingClientRect().bottom - ltop > 0); return { bottom: last ? { id: last.dataset.id, gap: Math.round(m.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom) } : null, listTop: first ? { chat: first.dataset.chat, offset: Math.round(first.getBoundingClientRect().top - ltop) } : null }; })()");
+  // A drag is read once the divider has answered it, as a key is below: a Windows runner drew the drag's last width
+  // after the 300 ms pause, so the check read the width before it while the stored and reopened width was the new one.
   const dragDivider = async (dx) => {
     const at = await dividerState();
+    const before = await js("document.querySelector('.conv-divider').getAttribute('aria-valuenow')");
     const x0 = Math.round(at.x), y0 = Math.round(at.y);
     await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: x0, y: y0, button: 'left', buttons: 1, clickCount: 1 });
     for (let i = 1; i <= 5; i += 1) {
@@ -1759,11 +1808,17 @@ async function runSmoke(w) {
       await pause(40);
     }
     await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x0 + dx), y: y0, button: 'left', buttons: 0, clickCount: 1 });
+    try { await waitFor("document.querySelector('.conv-divider').getAttribute('aria-valuenow') !== " + JSON.stringify(before), 5000); } catch { /* unchanged, as a drag past a limit can be: reported by the check */ }
     await pause(300);
   };
+  // Each key is read once the divider has answered it, not after a fixed pause: a Windows runner drew the step later
+  // than 250 ms and the check read the old width. A key that changes nothing still ends after five seconds, and the
+  // check then reports it.
   const keyDivider = async (key) => {
+    const before = await js("document.querySelector('.conv-divider').getAttribute('aria-valuenow')");
     await js("(() => { const d = document.querySelector('.conv-divider'); d.focus(); d.dispatchEvent(new KeyboardEvent('keydown', { key: " + JSON.stringify(key) + ", bubbles: true, cancelable: true })); return true; })()");
-    await pause(250);
+    try { await waitFor("document.querySelector('.conv-divider').getAttribute('aria-valuenow') !== " + JSON.stringify(before), 5000); } catch { /* unchanged: reported by the check */ }
+    await pause(100);
   };
   // The conversation is left at its end (what was at the bottom stays there) and the list scrolled back, so each pane's
   // anchor has something to hold across every drag below.
@@ -1886,8 +1941,9 @@ async function runSmoke(w) {
   await clickRow(SWITCH_A);
   await waitFor(showsName(SWITCH_A), 10000);
   await pause(300);
-  // A scrolled back, a few messages down, so it sits at neither end.
-  await js("(() => { const m = document.querySelector('.messages'); const rows = [...m.querySelectorAll('.bubble-row')]; const r = rows[Math.min(3, rows.length - 1)]; m.scrollTop = r.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 6; m.dispatchEvent(new Event('scroll')); return true; })()");
+  // A scrolled back, a few messages down, so it sits at neither end. The person's wheel comes first: a view at its end
+  // leaves it only for the person (core/kit/scroll.js).
+  await js("(() => { const m = document.querySelector('.messages'); m.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 })); const rows = [...m.querySelectorAll('.bubble-row')]; const r = rows[Math.min(3, rows.length - 1)]; m.scrollTop = r.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 6; m.dispatchEvent(new Event('scroll')); return true; })()");
   await pause(250);
   const placeA = await firstRow();
   const switchT0 = Date.now();
@@ -2003,8 +2059,8 @@ async function runSmoke(w) {
   const blank = await js('(() => { window.__blankWatch.disconnect(); return window.__blank; })()');
   report.noBlank = blank.bubbles > 0 && blank.rows > 0 && !blank.splash && blank.busy.length === 0 && connStates.includes('reconnecting');
   console.log('no blank: ' + JSON.stringify({ blank, connStates }));
-  await putSettings({ 'chats.groups': keptBefore['chats.groups'] ?? [], 'chats.placement': keptBefore['chats.placement'] ?? {}, 'appearance.textScale': 100 });
-  await waitFor("document.querySelectorAll('.section-actions').length === 0", 10000);
+  await putSettings({ 'chats.hidden': [...(keptBefore['chats.hidden'] ?? []), ...smokeGroups], 'appearance.textScale': 100 });
+  await waitFor("![...document.querySelectorAll('.chat-name')].some((n) => n.textContent.startsWith('Scroll group'))", 10000);
 
   await js("document.querySelector('.sidebar-head .gear-button').click()");
   // The skin is a three-position switch (System, Light, Dark), one radio per position, not a dropdown (issue 112).
@@ -2089,19 +2145,33 @@ async function runSmoke(w) {
   await putSettings({ 'appearance.appIcon': 'theme', 'appearance.theme': { name: 'smoke', color: { light: { accent: '#2a6f4b' }, dark: { accent: '#7fd6a8' } } } });
   await pickSkin('light');
   await waitFor("document.documentElement.dataset.scheme === 'light' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#2a6f4b'", 10000);
+  // The shell skips a drawing identical to the last, so what is on screen is the latest drawing, whatever theme it was
+  // reported under; it counts once the icon Follow theme picked for this accent is the one applied.
+  const wantLight = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedPalette(themeMatch('#2a6f4b')) }).palette.mark;
+  for (let i = 0; i < 50 && !(appIconApplied === themeMatch('#2a6f4b') && smokeIcons.length && smokeIcons.at(-1).mark === wantLight); i += 1) await pause(100);
+  const settledLight = { ...(smokeIcons.at(-1) || {}), applied: appIconApplied, seen: smokeIcons.slice(-4).map((i) => i.scheme + ':' + i.mark) };
   report.themeLight = true;
   await pickSkin('dark');
   await waitFor("document.documentElement.dataset.scheme === 'dark' && getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#7fd6a8'", 10000);
+  // The shell skips a drawing identical to the last, so what is on screen is the latest drawing, whatever theme it was
+  // reported under; it counts once the icon Follow theme picked for this accent is the one applied.
+  const wantDark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedPalette(themeMatch('#7fd6a8')) }).palette.mark;
+  for (let i = 0; i < 50 && !(appIconApplied === themeMatch('#7fd6a8') && smokeIcons.length && smokeIcons.at(-1).mark === wantDark); i += 1) await pause(100);
+  const settledDark = { ...(smokeIcons.at(-1) || {}), applied: appIconApplied, seen: smokeIcons.slice(-4).map((i) => i.scheme + ':' + i.mark) };
   report.themeDark = true;
   report.theme = report.themeLight && report.themeDark;
   // The app's icons follow the theme and the scheme (issue 189): the page reported each to the shell, which drew the
   // tray again in that theme's colours. macOS's template is a silhouette the menu bar recolours, so there only the
   // palette is compared.
-  const iconFor = (scheme, accent) => smokeIcons.find((i) => i.scheme === scheme && i.accent === accent);
-  for (let i = 0; i < 50 && !(iconFor('light', '#2a6f4b') && iconFor('dark', '#7fd6a8')); i += 1) await pause(100);
-  const lightIcon = iconFor('light', '#2a6f4b');
-  const darkIcon = iconFor('dark', '#7fd6a8');
-  report.trayIcon = Boolean(lightIcon && darkIcon) && lightIcon.mark === '#2a6f4b' && lightIcon.mark !== darkIcon.mark && (process.platform === 'darwin' || lightIcon.tray !== darkIcon.tray);
+  // Each scheme's drawing was read once the icon Follow theme picked for it was in force (above).
+  const matchedMark = (accent) => { const v = fixedPalette(themeMatch(accent)); return shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: v }).palette.mark; };
+  const trayMarks = { light: matchedMark('#2a6f4b'), dark: matchedMark('#7fd6a8'), lightPick: themeMatch('#2a6f4b'), darkPick: themeMatch('#7fd6a8') };
+  const lightIcon = settledLight;
+  const darkIcon = settledDark;
+  // Under Follow theme the shell draws the offered icon nearest the theme's accent (issue 337), so each scheme's mark is
+  // that icon's palette, and a light and a dark theme that pick different icons draw different marks.
+  report.trayIcon = Boolean(lightIcon && darkIcon) && lightIcon.applied === trayMarks.lightPick && darkIcon.applied === trayMarks.darkPick && lightIcon.mark === trayMarks.light && darkIcon.mark === trayMarks.dark && (trayMarks.lightPick === trayMarks.darkPick || (lightIcon.mark !== darkIcon.mark && (process.platform === 'darwin' || lightIcon.tray !== darkIcon.tray)));
+  if (!report.trayIcon) console.error('tray marks: ' + JSON.stringify(trayMarks));
   console.log('tray icon: ' + JSON.stringify({ lightIcon, darkIcon, redraws: smokeIcons.length }));
   // The unread count on the icon (issue 218): the shell drew the badge at a count, exact to 9 then 9+, and kept it
   // beside the report; on Windows that is the taskbar overlay, on macOS and Linux the tray's own badge.
@@ -2282,7 +2352,7 @@ async function runSmoke(w) {
     && cards.every((c) => c.id === 'default' || ((c.wantAccent === null || c.accent === c.wantAccent) && (c.wantBg === null || c.bg === c.wantBg)))
     && new Set(cards.map((c) => c.bg + ' ' + c.accent)).size === cards.length;
   const reopenSettings = async () => {
-    await js("document.querySelector('app-settings .sheet-back').click()");
+    await js("document.querySelector('app-settings [data-close=sheet]').click()");
     await waitFor("!document.querySelector('.sheet')", 10000);
     await js("document.querySelector('.sidebar-head .gear-button').click()");
     await waitFor("document.querySelectorAll('app-settings .theme-card').length > 0 && !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running')", 10000);
@@ -2331,6 +2401,53 @@ async function runSmoke(w) {
   await putSettings({ 'notifications.updateAvailable': true });
   report.notices = report.noticeFired && report.noticeSuppressed;
 
+  // A pressed message notice opens its conversation at its message (issue 331): a notice raised through the bridge for
+  // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
+  // leaves that conversation open with that message in view, marked and focused.
+  const pressFrom = await js("document.querySelector('app-root').openChatId");
+  // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
+  // in force (Settings, for the steps that follow) is put back once the press is checked.
+  const pressView = await js("document.querySelector('app-root').view");
+  const pressList = await js("document.querySelector('app-root').listOpen");
+  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
+  smokeNotices.length = 0;
+  let pressSeen = null;
+  if (pressTo) {
+    await js("window.bridge.call('notify', " + JSON.stringify({ title: 'Smoke notice', body: 'Pressed', ...pressTo }) + ')');
+    const raised = smokeNotices.find((n) => n.title === 'Smoke notice');
+    if (raised) raised.pressed();
+    const rowSel = '.bubble-row.revealed[data-id=' + JSON.stringify(pressTo.messageId) + ']';
+    try {
+      await waitFor("document.querySelector('app-root').openChatId === " + JSON.stringify(pressTo.chatId) + ' && Boolean(document.querySelector(' + JSON.stringify(rowSel) + '))', 10000);
+    } catch { /* measured below */ }
+    pressSeen = await js("(() => { const row = document.querySelector(" + JSON.stringify(rowSel) + "); const open = document.querySelector('app-root').openChatId; if (!row) return { row: false, open }; const view = row.closest('.thread-view') || row.closest('.messages'); const a = row.getBoundingClientRect(); const b = view.getBoundingClientRect(); return { row: true, open, inView: a.top >= b.top - 1 && a.top < b.bottom, focused: document.activeElement === row }; })()");
+  }
+  const pressChecks = {
+    target: Boolean(pressTo),
+    raised: smokeNotices.some((n) => n.title === 'Smoke notice' && n.target && n.target.chatId === pressTo?.chatId && n.target.messageId === pressTo?.messageId),
+    opened: pressSeen?.open === pressTo?.chatId,
+    inView: pressSeen?.inView === true,
+    marked: pressSeen?.row === true,
+    focused: pressSeen?.focused === true,
+    takenOnce: (await js("window.bridge.call('notify.take', {})")) === null,
+  };
+  report.noticeOpens = Object.values(pressChecks).every(Boolean);
+  console.log('notice opens: ' + JSON.stringify({ checks: pressChecks, pressTo, pressSeen }));
+  if (pressFrom) await js("document.querySelector('app-root').open(" + JSON.stringify(pressFrom) + ', { show: true })');
+  // Opening to show a conversation closes the phone's list drawer; the later steps expect it as it was.
+  await js("document.querySelector('app-root').listOpen = " + JSON.stringify(Boolean(pressList)));
+  if (pressView && pressView !== 'messages') {
+    // The press took the sheet down with its departure; once it has gone, the gear brings Settings back as a person would.
+    // Putting the drawer back re-renders the sidebar, so the gear is waited for too, not assumed (issue 349).
+    await waitFor("!document.querySelector('.sheet') && Boolean(document.querySelector('.sidebar-head .gear-button'))", 10000);
+    await js("document.querySelector('.sidebar-head .gear-button').click()");
+    const sheetState = () => js("JSON.stringify({ view: document.querySelector('app-root').view, sheet: Boolean(document.querySelector('.sheet')), gear: Boolean(document.querySelector('.sidebar-head .gear-button')), tabs: document.querySelectorAll('app-settings .settings-tab').length, moving: document.querySelector('.sheet') ? document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running') : null })");
+    let back = false;
+    for (const t0 = Date.now(); !back && Date.now() - t0 < 8000;) { back = await js("Boolean(document.querySelector('app-settings .settings-tab')) && !(document.querySelector('.sheet') ? document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running') : false)"); if (!back) await pause(200); }
+    if (!back) console.error('settings back: ' + (await sheetState()));
+    report.settingsBack = back;
+  } else { report.settingsBack = true; }
+
   // The update banner runs the whole flow in the app: an available state offers the download, the button's action
   // calls the bridge command it says it does, the download shows its progress, ready offers the restart, and a failure
   // says so. The shell records every bridge command the page calls, so the assertion reads the command actually sent.
@@ -2365,18 +2482,22 @@ async function runSmoke(w) {
   smokeCalls.length = 0;
   await js("document.querySelector('.app-notice .close-button').click()");
   await pause(300);
-  report.updateBannerCleared = await js("!document.querySelector('.app-notice')") && smokeCalls.length === 0;
+  // Closing marks the notice read on every device (issue 342): it writes a setting, so the page re-applies its settings to
+  // the shell, but it never runs an update command.
+  report.updateBannerCleared = await js("!document.querySelector('.app-notice')") && !smokeCalls.some((c) => /^updates\.(download|install|check)/.test(c));
   // The same update event updates one card and its progress node, without replaying arrival.
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.2,canInstall:true})");
   await waitFor("Boolean(document.querySelector('.app-notice-progress'))");
   await js("window.noticeProofNode = document.querySelector('.app-notice-progress'); document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.8,canInstall:true})");
   await waitFor("document.querySelector('.app-notice-progress')?.value === 0.8");
   report.noticeInPlace = await js("window.noticeProofNode === document.querySelector('.app-notice-progress') && document.querySelectorAll('.app-notice').length === 1");
-  await js("document.querySelector('.close-button').click()");
+  await js("document.querySelector('.app-notice .close-button').click()");
   await waitFor("!document.querySelector('.app-notice')");
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.9,canInstall:true})");
   report.noticeDismissed = await js("!document.querySelector('.app-notice')");
   report.updates = report.updateDownloadAction && report.updateBanner && report.updateInstallAction && report.updateFailure && report.updateBannerCleared && report.noticeInPlace && report.noticeDismissed && report.noticeFloor;
+  // A red updates check names the step that failed, and the bridge calls a close made, rather than one bare false.
+  if (!report.updates) console.error('updates: ' + JSON.stringify({ download: report.updateDownloadAction, banner: report.updateBanner, install: report.updateInstallAction, failure: report.updateFailure, cleared: report.updateBannerCleared, inPlace: report.noticeInPlace, dismissed: report.noticeDismissed, floor: report.noticeFloor, calls: smokeCalls }));
 
   // Issue 167: the sections are tabs, one per section the schema declares and in its order, and every setting is
   // reached from one. Each tab is pressed in turn: its section alone shows, and every key it offers is drawn inside
@@ -2414,8 +2535,9 @@ async function runSmoke(w) {
   const iconChoice = (id) => "document.querySelector('app-settings .app-icon-choice[data-icon-id=\"" + id + "\"]')";
   await waitFor("[...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)", 10000).catch(() => {});
   const iconPictures = await js("[...document.querySelectorAll('app-settings .app-icon-choice img')].length === " + appIconCount + " && [...document.querySelectorAll('app-settings .app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0)");
-  // Follow theme is the live drawing (a data URL); every other choice is its own generated picture.
-  const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src').startsWith('data:image/png')");
+  // Follow theme shows the picture of the offered icon nearest the theme's accent (issue 337), its own generated picture.
+  const accentNow = await js("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()");
+  const themePicture = await js(iconChoice('theme') + ".querySelector('img').getAttribute('src')") === 'assets/app-icons/' + themeMatch(accentNow) + '.png';
   const iconPick = 'rosa_dark';
   const fixedOf = (id) => { const c = appIconVariants.find((i) => i.id === id); return { scheme: c.scheme, colors: c.colors }; };
   await waitFor('Boolean(' + iconChoice(iconPick) + ') && !' + iconChoice(iconPick) + '.disabled', 10000);
@@ -2457,7 +2579,7 @@ async function runSmoke(w) {
   // corners rather than the label alone. A press INSIDE the card, and a drag that starts inside and is released over
   // the backdrop, must both leave the page where it is; only a press that both starts and ends on the backdrop
   // returns. This is the desktop smoke's check for what the sibling app proves with its own per-page overflow probes.
-  const sheetHit = (tag) => js('(() => { const b = document.querySelector("' + tag + ' .sheet-back"); if (!b) return false; const r = b.getBoundingClientRect(); const y = r.top + r.height / 2; const pts = [[r.left + 2, y], [r.left + r.width / 2, y], [r.right - 2, y]]; return pts.every(function (q) { const el = document.elementFromPoint(q[0], q[1]); return Boolean(el) && b.contains(el); }); })()');
+  const sheetHit = (tag) => js('(() => { const b = document.querySelector("' + tag + ' [data-close=sheet]"); if (!b) return false; const r = b.getBoundingClientRect(); const cx = r.left + r.width / 2; const cy = r.top + r.height / 2; const k = r.width * 0.35; const pts = [[cx, cy], [cx - k, cy], [cx + k, cy], [cx, cy - k], [cx, cy + k]]; return pts.every(function (q) { const el = document.elementFromPoint(q[0], q[1]); return Boolean(el) && b.contains(el); }); })()');
   const pressSheet = (downSel, upSel) => js('(() => {' +
     ' var down = ' + JSON.stringify(downSel) + '; var up = ' + JSON.stringify(upSel) + ';' +
     ' var scrim = document.querySelector(".sheet-scrim");' +
@@ -2474,7 +2596,7 @@ async function runSmoke(w) {
     const originalMinimum = w.getMinimumSize();
     w.setMinimumSize(320, 400);
     const originalTheme = nativeTheme.themeSource;
-    const geometry = "(() => { const card = document.querySelector('.app-notice'); if (!card) return false; const r = card.getBoundingClientRect(); const controls = [...document.querySelectorAll('.conv-head button, .sidebar-head button, app-composer button, app-composer textarea')]; return r.width > 200 && r.left >= 0 && r.right <= innerWidth && controls.every((b) => { const q = b.getBoundingClientRect(); return !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; }); })()";
+    const geometry = "(() => { const card = document.querySelector('.app-notice'); if (!card) return false; const r = card.getBoundingClientRect(); const mac = document.querySelector('.app-window')?.dataset.platform === 'darwin'; const lights = { left: 0, top: 0, right: 16 + 56, bottom: 32 }; const controls = [...document.querySelectorAll('.window-control, app-composer button, app-composer textarea')]; const clearOf = (q) => !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; window.__noticeTop = Math.round(r.top); return (!mac || (r.top <= 16 && clearOf(lights))) && r.width > 200 && r.left >= 0 && r.right <= innerWidth && controls.every((b) => { const q = b.getBoundingClientRect(); return !q.width || !q.height || r.right <= q.left || r.left >= q.right || r.bottom <= q.top || r.top >= q.bottom; }); })()";
     // On a phone the notice must clear EVERY control the visible surface offers, the open drawer's included: its Edit
     // control, its rows and the conversation's own header and composer. Each state is read once it has settled, and
     // what the card lands on is named in the report, so a failure says which control was covered rather than only that
@@ -2516,7 +2638,7 @@ async function runSmoke(w) {
     report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     report.updates = report.updates && report.noticeReducedMotion;
-    await js("document.querySelector('.close-button').click()");
+    await js("document.querySelector('.app-notice .close-button').click()");
     await waitFor("!document.querySelector('.app-notice')");
     w.setMinimumSize(...originalMinimum);
     w.setSize(...originalSize);
@@ -2525,7 +2647,7 @@ async function runSmoke(w) {
   const sheetVisible = () => js("Boolean(document.querySelector('.sheet'))");
   const sideways = async () => js("(() => { const d = document.documentElement; return { inner: window.innerWidth, doc: d.scrollWidth, body: document.body.scrollWidth }; })()");
 
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))");
   report.sheetHitArea = await sheetHit('app-settings');
   await pressSheet('card', 'card');
   await pause(200);
@@ -2540,7 +2662,7 @@ async function runSmoke(w) {
 
   // Escape is the keyboard's own way back, and the strip names the key that does it.
   await js("document.querySelector('.sidebar-head .gear-button').click()");
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))");
   await js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
   await waitFor("!document.querySelector('.sheet')", 10000);
   report.sheetEscapeReturns = !(await sheetVisible());
@@ -2548,7 +2670,7 @@ async function runSmoke(w) {
   // The card is only as wide as its content needs: at a narrow window the page and the card must not scroll sideways.
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   await js("document.querySelector('.sidebar-head .gear-button').click()");
-  await waitFor("Boolean(document.querySelector('app-settings .sheet-back'))");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]'))");
   await cdp('Emulation.setDeviceMetricsOverride', { width: 400, height: 720, deviceScaleFactor: 1, mobile: false });
   await pause(300);
   const narrowSettings = await sideways();
@@ -2559,7 +2681,7 @@ async function runSmoke(w) {
   await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
   await waitFor('window.innerWidth === 375', 5000);
   await pause(400);
-  const phonePage = await js("(() => { const s = document.querySelector('.sheet').getBoundingClientRect(); const b = document.querySelector('app-settings .sheet-back'); const vis = (e) => Boolean(e) && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0; const narrow = b.querySelector('.sheet-back-narrow'); const icon = narrow && narrow.querySelector('.icon'); return { fills: Math.abs(s.left) < 1 && Math.abs(s.width - innerWidth) < 1 && s.top > 1 && s.bottom >= innerHeight - 60, narrow: vis(narrow), wide: vis(b.querySelector('.sheet-back-wide')), esc: vis(b.querySelector('.sheet-esc')), label: narrow ? narrow.querySelector('.sheet-back-label').textContent.trim() : '', icon: icon ? icon.dataset.icon : '', iconDrawn: vis(icon), blur: (() => { const cs = getComputedStyle(document.querySelector('.sheet-scrim')); return /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''); })() }; })()");
+  const phonePage = await js("(() => { const sheet = document.querySelector('.sheet'); const s = sheet.getBoundingClientRect(); const x = document.querySelector('app-settings [data-close=sheet]'); const vis = (e) => Boolean(e) && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0; const icon = x && x.querySelector('.icon'); const cs = getComputedStyle(sheet); return { floats: s.left > 1 && s.right < innerWidth - 1 && s.top > 1 && s.bottom < innerHeight, rounded: parseFloat(cs.borderTopLeftRadius) > 0 && parseFloat(cs.borderBottomLeftRadius) > 0, handle: vis(document.querySelector('app-settings .sheet-handle')), x: vis(x), label: x ? x.getAttribute('aria-label') : '', icon: icon ? icon.dataset.icon : '', iconDrawn: vis(icon), blur: (() => { const sc = getComputedStyle(document.querySelector('.sheet-scrim')); return /blur/.test(sc.backdropFilter || sc.webkitBackdropFilter || ''); })() }; })()");
   const phoneWalk = await tabWalk();
   await showTab('appearance');
   nativeTheme.themeSource = 'light';
@@ -2573,7 +2695,7 @@ async function runSmoke(w) {
   nativeTheme.themeSource = 'light';
   await pause(300);
   await shot('05i-settings-phone-behavior.png');
-  report.phoneSettings = phonePage.fills && phonePage.blur && phonePage.narrow && !phonePage.wide && !phonePage.esc && phonePage.label === 'Back to chats' && phonePage.icon === 'messages-square' && phonePage.iconDrawn && tabsOk(phoneWalk);
+  report.phoneSettings = phonePage.floats && phonePage.rounded && phonePage.handle && phonePage.blur && phonePage.x && phonePage.label === 'Close settings' && phonePage.icon === 'x' && phonePage.iconDrawn && tabsOk(phoneWalk);
   if (!report.phoneSettings) console.error('phone settings: ' + JSON.stringify({ phonePage, phoneWalk }));
   // Issue 253: the About row is the last thing in every tab's own body at 390px too, reached by scrolling that tab's
   // body to its end; the walk above runs the same check at the phone's 375.
@@ -2590,10 +2712,56 @@ async function runSmoke(w) {
   // (issues 244, 253): open it with the last tab in force, so the way back can be checked to land there.
   await showTab('device');
 
+  // The way into About and back out, at a phone's width (Abi, 2026-10-12, 2026-10-13): the About row sits apart from
+  // the section above it, About rises from the bottom edge while the Settings card slides down out of the way, and the
+  // back press slides Settings straight back up while About goes down: one travel each way, never a resize, and
+  // nothing moving once About has gone. Every frame is sampled where each card is drawn.
+  // Motion is measured with motion on: a CI host with animation off reports reduced motion, where a sheet cuts
+  // straight to its place by design, so the earlier preference is put back afterwards.
+  const motionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  // A host with animation off had cut each sheet into place; switching motion on restarts that arrival, so it is let
+  // finish before anything is measured.
+  await js("(() => { for (const a of document.getAnimations()) a.finish(); return true; })()");
+  await pause(300);
+  report.aboutRowGap = await js("(() => { const panel = document.querySelector('app-settings .sheet-section:not([hidden])'); const row = panel && panel.querySelector('.settings-about-row'); const prev = row && row.previousElementSibling; if (!prev) return null; return Math.round(row.getBoundingClientRect().top - prev.getBoundingClientRect().bottom); })()");
+  const settingsRest = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
+  const sampleSheets = "(() => { window.__frames = []; const t0 = performance.now(); const tick = () => { const a = document.querySelector('.sheet[data-view=about]'); const s = document.querySelector('.sheet[data-view=settings]'); const ar = a && a.getBoundingClientRect(); const sr = s && s.getBoundingClientRect(); window.__frames.push({ t: Math.round(performance.now() - t0), about: ar ? Math.round(ar.top) : null, aboutH: ar ? Math.round(ar.height) : null, settings: sr ? Math.round(sr.top) : null, settingsW: sr ? Math.round(sr.width) : null }); if (performance.now() - t0 < 1600) requestAnimationFrame(tick); }; requestAnimationFrame(tick); return true; })()";
+  await js(sampleSheets);
+  await js("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()");
+  await pause(1700);
+  const riseFrames = await js('window.__frames');
+  const riseSeen = riseFrames.filter((f) => f.about !== null);
+  const aboutRest = riseSeen[riseSeen.length - 1];
+  const vh = await js('window.innerHeight');
+  const settingsDown = riseFrames[riseFrames.length - 1].settings;
+  // About rises: first drawn at least half its height below its rest, only ever moving up. Settings goes down: it
+  // ends below the screen, it only ever moves down, and it never changes width.
+  report.aboutRises = Boolean(aboutRest) && riseSeen.length > 3 && riseSeen[0].about - aboutRest.about >= aboutRest.aboutH / 2 && riseSeen.every((f, i) => i === 0 || f.about <= riseSeen[i - 1].about + 1);
+  const settingsOut = riseFrames.filter((f) => f.settings !== null);
+  report.settingsSlidesDown = settingsDown >= vh - 2 && settingsOut.every((f, i) => i === 0 || f.settings >= settingsOut[i - 1].settings - 1) && new Set(settingsOut.map((f) => f.settingsW)).size === 1;
+  if (!report.aboutRises || !report.settingsSlidesDown) console.error('about rises: ' + JSON.stringify({ settingsRest, settingsDown, vh, frames: riseFrames.slice(0, 50) }));
+  await js(sampleSheets);
+  await js("document.querySelector('app-about .sheet-back').click()");
+  await pause(1700);
+  const backFrames = await js('window.__frames');
+  const lastAbout = backFrames.reduce((at, f, i) => (f.about !== null ? i : at), -1);
+  const back = backFrames.filter((f) => f.settings !== null);
+  // One motion: Settings is already on its way up while About is still drawn, it only ever moves up, it arrives where
+  // it rested before, and nothing moves once About has gone.
+  const upEarly = backFrames.slice(0, lastAbout + 1).some((f) => f.settings !== null && f.settings < settingsDown - 20);
+  const onlyUp = back.every((f, i) => i === 0 || f.settings <= back[i - 1].settings + 1);
+  const stillAfter = backFrames.slice(lastAbout + 1).every((f) => f.settings === null || Math.abs(f.settings - settingsRest) <= 1);
+  report.aboutBackSmooth = lastAbout >= 0 && upEarly && onlyUp && stillAfter && new Set(back.map((f) => f.settingsW)).size === 1;
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: motionWas }] });
+  if (!report.aboutBackSmooth) console.error('about back: ' + JSON.stringify({ settingsRest, settingsDown, lastAbout, upEarly, onlyUp, stillAfter, frames: backFrames.slice(0, 60) }));
+  await waitFor("!document.querySelector('app-about')", 5000);
+  await pause(300);
+
   // About: a page of its own on every platform (issue 171), opened from Settings' last row, every value from the half
   // that owns it, and checked at the same narrow width. Its structure is read the same way at a phone's width and at the
   // desktop's, and the two must match: one component, one page, whatever the window.
-  const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back-label') || {}).textContent || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
+  const aboutStructure = "(() => { const a = document.querySelector('app-about'); const i = a && a.querySelector('.about-icon'); return a ? JSON.stringify({ title: (a.querySelector('.sheet-title') || {}).textContent || '', back: (a.querySelector('.sheet-back') || { getAttribute: () => '' }).getAttribute('aria-label') || '', parts: [...a.querySelectorAll('.sheet-body > [data-section]')].map((s) => s.dataset.section), icon: Boolean(i && i.complete && i.naturalWidth > 0 && i.getBoundingClientRect().width > 0 && i.getBoundingClientRect().top < a.querySelector('[data-action=check-updates]').getBoundingClientRect().top), check: Boolean(a.querySelector('button[data-action=check-updates]')), rows: [...a.querySelectorAll('.about-row')].map((r) => r.dataset.key) }) : null; })()";
   const aboutRow = await js("(() => { const s = document.querySelector('app-settings'); const panel = s && s.querySelector('.sheet-section:not([hidden])'); const row = panel && panel.lastElementChild; const tabs = [...s.querySelectorAll('.settings-tab')].map((t) => t.dataset.tab); return Boolean(row && row.classList.contains('settings-about-row') && row.querySelector('button[data-action=about]') && tabs.length > 0 && !tabs.includes('about') && !document.querySelector('app-settings app-about')); })()");
   await js("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()");
   await waitFor(aboutShown);
@@ -2666,16 +2834,53 @@ async function runSmoke(w) {
   const aboutOrder = ['product', 'version', 'channel', 'build', 'commit', 'builtAt', 'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt', 'platform', 'arch', 'electron', 'chromium', 'node', 'installSource', 'packaged', 'updateChannel', 'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion'];
   const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')), unknown: [...document.querySelectorAll('app-about .about-row .about-value-text')].some((e) => e.textContent === 'Unknown') }))()");
   // Back from About returns to Settings, the page it was pushed over.
+  // The same slide on the desktop (Abi, 2026-10-13): Settings waits below the screen while About is up, and the back
+  // press slides it straight up as About goes down, keeping its width, at rest once About has gone.
+  const deskMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await js("(() => { for (const a of document.getAnimations()) a.finish(); return true; })()");
+  await pause(300);
+  const deskVh = await js('window.innerHeight');
+  const deskUnder = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
+  await js(sampleSheets);
   await js("document.querySelector('app-about .sheet-back').click()");
-  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings .sheet-back')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
+  await pause(1700);
+  const deskFrames = await js('window.__frames');
+  const deskLast = deskFrames.reduce((at, f, i) => (f.about !== null ? i : at), -1);
+  const deskBack = deskFrames.filter((f) => f.settings !== null);
+  const deskRest = deskBack.length ? deskBack[deskBack.length - 1].settings : null;
+  report.aboutBackDesktop = deskUnder >= deskVh - 2 && deskLast >= 0 && deskFrames.slice(0, deskLast + 1).some((f) => f.settings !== null && f.settings < deskUnder - 20) && deskBack.every((f, i) => i === 0 || f.settings <= deskBack[i - 1].settings + 1) && deskFrames.slice(deskLast + 1).every((f) => f.settings === null || Math.abs(f.settings - deskRest) <= 1) && new Set(deskBack.map((f) => f.settingsW)).size === 1;
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: deskMotionWas }] });
+  if (!report.aboutBackDesktop) console.error('about back desktop: ' + JSON.stringify({ deskVh, deskUnder, deskLast, frames: deskFrames.slice(0, 60) }));
+  report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
   report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.every((k) => aboutOrder.includes(k)) && aboutSeen.keys.join('|') === aboutOrder.filter((k) => aboutSeen.keys.includes(k)).join('|') && !aboutSeen.unknown && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
   if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
-  report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout;
-  if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout }));
-  await js("document.querySelector('app-settings .sheet-back').click()");
+  // A drag on the sheet's header, made with the real pointer (issue 338): a short, slow one springs the card back into
+  // place and leaves it open; one past a quarter of the card's height lets it go.
+  const headDrag = async (fraction) => {
+    const at = await js("(() => { const g = document.querySelector('app-settings .sheet-heading').getBoundingClientRect(); const c = document.querySelector('.sheet').getBoundingClientRect(); return { x: Math.round(g.left + g.width / 2), y: Math.round(g.top + g.height / 2), h: c.height }; })()");
+    const dy = Math.round(at.h * fraction);
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+    await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= 8; i += 1) { await pause(40); await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y + Math.round((dy * i) / 8), button: 'left', buttons: 1 }); }
+    await pause(40);
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y + dy, button: 'left', buttons: 0, clickCount: 1 });
+    return dy;
+  };
+  const shortDrag = await headDrag(0.08);
+  await pause(700);
+  report.sheetDragSprings = await js("Boolean(document.querySelector('app-settings')) && !document.querySelector('.sheet').style.getPropertyValue('--sheet-drag') && !document.querySelector('.sheet').hasAttribute('data-dragging')");
+  const longDrag = await headDrag(0.6);
+  report.sheetDragCloses = await waitFor("!document.querySelector('app-settings')", 5000).then(() => true, () => false);
+  if (!report.sheetDragSprings || !report.sheetDragCloses) console.error('sheet drag: ' + JSON.stringify({ shortDrag, longDrag, springs: report.sheetDragSprings, closes: report.sheetDragCloses }));
+  await js("document.querySelector('.sidebar-head .gear-button').click()");
+  await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]')) && !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running')", 10000);
+  report.sheet = report.sheetHitArea && report.sheetInsideKeeps && report.sheetDragKeeps && report.sheetBackdropReturns && report.sheetEscapeReturns && report.sheetHitAreaAbout && report.sheetWidthSettings && report.sheetWidthAbout && report.sheetDragSprings && report.sheetDragCloses;
+  if (!report.sheet) console.error('sheet: ' + JSON.stringify({ hit: report.sheetHitArea, inside: report.sheetInsideKeeps, drag: report.sheetDragKeeps, backdrop: report.sheetBackdropReturns, escape: report.sheetEscapeReturns, hitAbout: report.sheetHitAreaAbout, wSettings: report.sheetWidthSettings, wAbout: report.sheetWidthAbout, dragSprings: report.sheetDragSprings, dragCloses: report.sheetDragCloses }));
+  await js("document.querySelector('app-settings [data-close=sheet]').click()");
   await waitFor("Boolean(document.querySelector('.sidebar .chat-row'))");
 
   // The phone: one pane at a time. The conversation is the pane; the list is a drawer that slides in over it from the
@@ -2766,6 +2971,15 @@ async function runSmoke(w) {
   for (const t0 = Date.now(); !drawerOpen(drawer) && Date.now() - t0 < 3000; drawer = await drawerParts()) await pause(100);
   report.phoneDrawer = drawerOpen(drawer);
   if (!report.phoneDrawer) console.error('phone drawer: ' + JSON.stringify(drawer));
+  // The conversation list scrolls to the screen's bottom edge (Abi, 2026-10-12): with a home-indicator inset, the
+  // list's scroller reaches the bottom of the drawer, and scrolled to its end the last row still clears the inset.
+  await js("(() => { document.documentElement.style.setProperty('--shell-inset-bottom', '34px'); return true; })()");
+  await pause(300);
+  const listEdge = await js("(() => { const side = document.querySelector('.sidebar'); const list = document.querySelector('app-chat-list'); const was = list.scrollTop; list.scrollTop = list.scrollHeight; const rows = list.querySelectorAll('.chat-row'); const last = rows[rows.length - 1]; const s = side.getBoundingClientRect(); const l = list.getBoundingClientRect(); const out = { listBottom: Math.round(l.bottom), sideBottom: Math.round(s.bottom), lastBottom: last ? Math.round(last.getBoundingClientRect().bottom) : null }; list.scrollTop = was; return out; })()");
+  report.listToEdge = listEdge.lastBottom !== null && Math.abs(listEdge.listBottom - listEdge.sideBottom) <= 2 && listEdge.lastBottom <= listEdge.sideBottom - 34;
+  if (!report.listToEdge) console.error('list to edge: ' + JSON.stringify(listEdge));
+  await js("(() => { document.documentElement.style.removeProperty('--shell-inset-bottom'); return true; })()");
+  await pause(200);
   await shot('07-phone-list.png');
   // A tap still selects a chat and closes the drawer, unchanged by the gesture.
   await js("document.querySelector('.sidebar .chat-row').click()");
@@ -2907,8 +3121,8 @@ async function runSmoke(w) {
     { name: 'emoji', pane: 'conversation', open: "document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()", panel: 'app-composer .emoji-picker' },
     { name: 'message-menu', pane: 'conversation', open: '(() => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); return true; })()', panel: DISMISS_ROW + ' .message-menu' },
     { name: 'thread', pane: 'conversation', open: '(async () => { const b = document.querySelector(' + dq(DISMISS_ROW + ' .bubble') + '); b.scrollIntoView({ block: "center" }); b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); const sel = ' + dq(DISMISS_ROW + ' .message-action[aria-label="Reply in thread"]') + '; for (let i = 0; i < 50 && !document.querySelector(sel); i += 1) await new Promise((r) => setTimeout(r, 50)); document.querySelector(sel).click(); return true; })()', panel: '.thread-view .thread-list' },
-    { name: 'group', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-group').click()", panel: '.group-prompt' },
-    { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.group-prompt)' },
+    { name: 'group', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-group').click()", panel: 'app-compose .compose' },
+    { name: 'confirm', pane: 'list', edit: true, open: "document.querySelector('.list-tools .edit-delete').click()", panel: '.confirm-modal:not(.compose)' },
     // On a phone Settings is a page that fills the screen (issue 167), so there is no outside to press: its way back is
     // the strip at its top, pressed there with a finger, which must close it and reach nothing underneath.
     { name: 'sheet', pane: 'list', phonePage: true, open: "document.querySelector('.sidebar-head .gear-button').click()", panel: '.sheet' },
@@ -2985,7 +3199,7 @@ async function runSmoke(w) {
       await pause(300);
       await shot('20-dismiss-' + width + '-' + p.name + '-light.png');
       const target = !opened ? null : phone && p.phonePage
-        ? await js("(() => { const b = document.querySelector('.sheet .sheet-back'); if (!b) return null; const r = b.getBoundingClientRect(); window.dismissHits = 0; return { sel: 'back strip', x: r.left + r.width / 2, y: r.top + r.height / 2, over: 'sheet-back' }; })()")
+        ? await js("(() => { const b = document.querySelector('.sheet [data-close=sheet]'); if (!b) return null; const r = b.getBoundingClientRect(); window.dismissHits = 0; return { sel: 'X', x: r.left + r.width / 2, y: r.top + r.height / 2, over: 'close-button' }; })()")
         : await dismissTarget(p.panel);
       const before = await js(dismissState);
       if (target) await dismissPress(target.x, target.y, phone);
@@ -3162,7 +3376,12 @@ async function runSmoke(w) {
       }
       await resetSurfaces();
       const points = geo ? geo.points : {};
-      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag && !p.strip) && Object.values(clicks).every(Boolean);
+      // On macOS the notice stack starts at the window's top edge, inside the header's drag strip by design (#358): its
+      // card and its X are no-drag regions over the strip, so there a point may sit on the strip as long as the region
+      // it lands in is no-drag and the press closes it, which the clicks below prove. Every other surface, and the
+      // notice elsewhere, stays off the strip entirely.
+      const overStrip = name === 'notice' && process.platform === 'darwin';
+      const ok = Boolean(geo) && Object.values(points).every((p) => p.hit && !p.drag && (overStrip || !p.strip)) && Object.values(clicks).every(Boolean);
       closeControlChecks[label + ':' + name] = ok;
       if (!ok) console.error('close control failed: ' + label + ' ' + name + ' ' + JSON.stringify({ geo, clicks }));
     }
@@ -3380,12 +3599,16 @@ app.whenReady().then(() => {
   }
   // The Dock icon, and a second launch, raise the window the tray holds.
   app.on('activate', () => lifecycle.show());
-  app.on('second-instance', () => lifecycle.show());
+  app.on('second-instance', (_e, argv) => { const l = linkFrom(argv); if (l) handOverLink(l); lifecycle.show(); });
+  // This app answers the platform's messaging links (issue 333). A development run registers nothing, so a checkout
+  // never takes the links from the installed app.
+  if (app.isPackaged && !SMOKE) for (const s of LINK_SCHEMES) app.setAsDefaultProtocolClient(s);
 });
 
 // A quit the platform asks for (the Dock's Quit, a log out, an update's restart) lets the window close; the tray's Quit
 // marks it the same way before it asks.
 app.on('before-quit', () => lifecycle.markQuitting());
+app.on('open-url', (e, url) => { e.preventDefault(); handOverLink(url); if (app.isReady()) lifecycle.show(); });
 
 // Closing the window never reaches here, because it hides; the window is only destroyed while quitting. The handler is
 // kept so Electron's default, quitting once every window has closed, can never be the way the app ends.

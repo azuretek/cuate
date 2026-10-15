@@ -62,7 +62,7 @@ app-root { display: block; height: 100%; }
 .shell { display: grid; grid-template-columns: var(--chats-width, var(--size-sidebar)) 1fr; height: 100%; }
 /* The two headers run up behind the status bar and the list runs down behind the home indicator, so the bars take the
    header's and the list's own surface; the content starts below and ends above them (issue 175). */
-.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--role-sidebar-edge); background: var(--role-sidebar); color: var(--role-sidebar-fg); padding-block-end: var(--inset-bottom); padding-inline-start: var(--inset-left); }
+.sidebar { display: flex; flex-direction: column; min-height: 0; border-right: var(--size-border) solid var(--role-sidebar-edge); background: var(--role-sidebar); color: var(--role-sidebar-fg); padding-inline-start: var(--inset-left); }
 /* The divider between the chats list and the conversation (issues 217 and 215). It sits on the seam at --chats-width,
    the width the page writes from the chosen setting, over the token's size-sidebar before a choice is made; the grab
    affordance is a pill the pointer reveals on hover and grows on press, and at rest nothing is drawn. Only the pill is
@@ -125,7 +125,9 @@ app-root { display: block; height: 100%; }
 .banner.problem { color: var(--color-danger); }
 
 app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
-.chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); }
+/* The list scrolls all the way to the screen's bottom edge, so rows pass under it as they scroll; the room for the home
+   indicator is the list's own end padding instead of the panel's, so the last row can still be scrolled clear of it. */
+.chat-list { list-style: none; margin: 0; padding: 0 var(--space-2) calc(var(--space-2) + var(--inset-bottom)); }
 .chat-row { position: relative; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); cursor: pointer; outline: none; transition: background var(--motion-fast) var(--motion-ease); }
 .chat-row:hover { background: var(--role-row-hover); color: var(--role-row-hover-fg); }
 .chat-row:hover .chat-time, .chat-row:hover .chat-preview { color: var(--role-row-hover-fg); }
@@ -156,9 +158,12 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble-row.mine { align-items: flex-end; }
 .sender { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: 0 var(--space-3) var(--space-1); }
 .bubble { max-width: var(--size-bubble-max); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A link in a message is the bubble's own text colour, underlined, so it reads on either side's bubble in any theme;
+   a long address wraps anywhere rather than widening the bubble. Holding it opens the message menu, so the platform's
+   own link callout and drag are off. */
+.message-link { color: inherit; text-decoration: underline; overflow-wrap: anywhere; cursor: pointer; -webkit-touch-callout: none; -webkit-user-drag: none; }
 .bubble.them { background: var(--role-received); color: var(--role-received-fg); }
 .bubble.me { background: var(--role-sent); color: var(--role-sent-fg); }
-.bubble.sms { background: var(--color-bubble-sms); color: var(--color-bubble-sms-fg); }
 .bubble.state-sending { opacity: 0.7; }
 .bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }
 /* Reactions float at the bubble's top outer corner, the top right of a received message and the top left of a sent
@@ -171,15 +176,32 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */
 .bubble-row:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); border-radius: var(--radius-lg); }
+/* The message a pressed notice opened (issue 331), marked like a focused message until the person presses in the conversation. */
+.bubble-row.revealed .bubble-body { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); border-radius: var(--radius-lg); }
 @media (hover: none) { .bubble-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; } }
 .bubble-body { position: relative; display: flex; flex-direction: column; align-items: flex-start; max-width: var(--size-bubble-max); }
 .bubble-row.mine .bubble-body { align-items: flex-end; }
 .bubble-body > .bubble, .bubble-body > app-attachment { max-width: 100%; }
-.message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: var(--space-1); z-index: 3; }
-.message-pop[data-side="below"] { bottom: auto; top: 100%; margin: var(--space-1) 0 0; }
+/* A menu or panel grows out of the message it opened on (issue 316): from its edge nearest the message, on the
+   shared grow timing, so it reads as coming from there rather than appearing. It grows on the vertical axis only,
+   which leaves every horizontal measure, the caret's aim included, exactly where it lands. */
+@keyframes pop-grow { from { opacity: 0; transform: scaleY(0.85); } to { opacity: 1; transform: none; } }
+/* The menu stands off the bubble by its caret's height plus a step, so the caret's tip points at the bubble without
+   crossing the bubble's own outline (issue 345). */
+.message-pop { position: absolute; left: 0; bottom: 100%; margin-bottom: calc(var(--size-caret) / 2 + var(--space-1)); z-index: 3; transform-origin: left bottom; animation: pop-grow var(--motion-grow) var(--motion-ease) both; }
+.message-pop[data-side="below"] { bottom: auto; top: 100%; margin: calc(var(--size-caret) / 2 + var(--space-1)) 0 0; transform-origin: left top; }
+.bubble-row.mine .message-pop { transform-origin: right bottom; }
+.bubble-row.mine .message-pop[data-side="below"] { transform-origin: right top; }
+@media (prefers-reduced-motion: reduce) { .message-pop { animation: none; } }
 .bubble-row.mine .message-pop { left: auto; right: 0; }
 .message-menu { display: flex; align-items: center; gap: var(--space-2); min-width: max-content; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-pill); box-shadow: var(--role-menu-shadow); }
 .message-time { font-size: var(--font-size-xs); color: var(--color-fg-muted); white-space: nowrap; }
+/* Encrypted, beside the time in a message's menu: the time's own muted colour, smaller than the actions. */
+.message-lock { width: var(--space-3); height: var(--space-3); color: var(--color-fg-muted); flex: none; margin-inline-end: calc(var(--space-1) * -1); }
+/* Beside the name, a conversation on Apple devices: muted, and explained on hover or focus. */
+.chat-name-row { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.service-mark { width: var(--space-3); height: var(--space-3); color: var(--color-fg-muted); flex: none; cursor: help; border-radius: var(--radius-sm); }
+.service-mark:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
 .message-menu .message-time:only-child { padding-inline-end: var(--space-2); }
 .message-action { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); cursor: pointer; }
 .message-action:hover, .message-action:focus-visible { background: var(--color-bg-sunken); color: var(--color-fg); outline: none; }
@@ -250,8 +272,12 @@ app-link-card { display: inline-block; max-width: var(--size-bubble-max); margin
 .link-card-play:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
 
 app-composer { display: block; flex: none; position: relative; border-top: var(--size-border) solid var(--role-divider); background: var(--role-composer-bar); padding-block-end: var(--inset-bottom); }
-.composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
-.composer textarea { flex: 1; resize: none; background: var(--role-composer-field); color: var(--role-composer-field-fg); box-shadow: 0 0 0 var(--size-border) var(--role-composer-field-ring); border: var(--size-border) solid var(--role-composer-field-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
+/* The row's controls sit on the field's last line: on one line they are centred on the field, and as the field grows
+   they stay level with its bottom line, as a phone's own message app does. The field's one-line height is worked out
+   from its type, the body line height, its padding and its border, so the lift is right at every text size; the
+   controls were bottom-aligned to the field's border and sat below its middle, more so on a phone's larger type. */
+.composer { --composer-type: var(--font-size-md); --composer-one-line: calc(var(--composer-type) * var(--font-line) + 2 * var(--space-2) + 2 * var(--size-border)); display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
+.composer textarea { flex: 1; font-size: var(--composer-type); line-height: var(--font-line); resize: none; background: var(--role-composer-field); color: var(--role-composer-field-fg); box-shadow: 0 0 0 var(--size-border) var(--role-composer-field-ring); border: var(--size-border) solid var(--role-composer-field-border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); max-height: var(--size-composer-max); overflow-y: hidden; outline: none; }
 /* The field grows with its text and scrolls only past its maximum, where the composer marks it (issue 139). */
 .composer textarea.scrolls { overflow-y: auto; }
 /* A letter in the field's type, never seen: its size changes with the text size and the font, and the composer sets
@@ -273,6 +299,8 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
    own picker and the emoji control its panel beside the field rather than as a sheet (issue 187). Each is a square from
    the tool size token and draws a glyph from the icon set at the icon size token, like the app's other icon buttons. */
 .composer-tools { display: flex; align-items: flex-end; gap: var(--space-1); }
+/* The lift onto the field's last line, from the composer rule above. */
+.composer > .composer-tools, .composer > button.send { margin-bottom: calc((var(--composer-one-line) - var(--size-tool)) / 2); }
 .tool { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-tool); height: var(--size-tool); padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-fg-muted); cursor: pointer; }
 .tool:hover { background: var(--color-bg-sunken); }
 .tool:disabled { opacity: 0.4; cursor: default; }
@@ -332,8 +360,8 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .action-button[data-press]::after { content: none; animation: none; }
 .action-button[data-press="pending"] { cursor: progress; }
 
-/* Settings and About are the two pages of the app's one sheet surface: a top strip that is itself the back control, the
-   page's title and its one-line description, then its sections. Settings ends with the row that opens About, a page of
+/* Settings and About are the two pages of the app's one sheet surface: a header with the page's title and its one-line
+   description, its round X and, over another sheet, its round back arrow (issue 338), then its sections. Settings ends with the row that opens About, a page of
    its own on every platform (issue 171). The chrome is drawn by app-sheet. */
 app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 /* A row that opens another page: the whole row is the control, the value beside its label, and the chevron at its end. */
@@ -354,17 +382,20 @@ app-settings, app-about { display: flex; flex-direction: column; flex: 1 1 auto;
 /* What the update the button follows has reached (issue 192): the notice's own words, and a download's bar. */
 /* Settings and About are the app's two sheets (issue 253), each with its own arrival below; no page fades in place. */
 app-sheet { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
-.sheet-back { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-back); padding: 0 var(--space-3); border: 0; border-bottom: var(--size-border) solid var(--role-back-border); border-radius: 0; background: var(--role-back); color: var(--role-back-fg); cursor: pointer; text-align: left; flex: none; }
-.sheet-back:hover { background: var(--role-back-hover); color: var(--role-back-fg); }
-.sheet-back:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
-/* The strip draws one of two ways back: the arrow and the page's own label, or below the phone breakpoint, on a page
-   that returns to the chats list, the chats icon and "Back to chats" (issue 168). The phone block picks between them. */
-.sheet-back-wide, .sheet-back-narrow { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.sheet-back-narrow { display: none; }
-.sheet-back-icon { display: inline-flex; width: var(--size-back-icon); height: var(--size-back-icon); }
-.sheet-back-icon .icon { width: 100%; height: 100%; }
-.sheet-esc { margin-left: auto; padding: var(--space-1) var(--space-2); border: var(--size-border) solid var(--role-back-border); border-radius: var(--radius-sm); background: var(--role-back); color: var(--role-back-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); text-transform: uppercase; }
-.sheet-head { flex: none; padding: var(--space-4) var(--space-4) var(--space-2); }
+/* The handle and the header are the sheet's grip (issue 338): a drag that starts on either moves the card, so the page
+   takes no touch scrolling or text selection there. The handle is drawn on a phone only. */
+.sheet-grip { flex: none; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.sheet[data-dragging] .sheet-grip { cursor: grabbing; }
+.sheet-handle { display: none; width: var(--size-sheet-handle-w); height: var(--size-sheet-handle-h); margin: var(--space-2) auto 0; border-radius: var(--radius-pill); background: color-mix(in oklab, var(--color-fg-muted) 55%, transparent); }
+.sheet-head { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-2); }
+.sheet-heading { flex: 1 1 auto; min-width: 0; }
+/* The back arrow is drawn as the send button is, and the X is the shared close button in the same solid look, so the
+   sheet's two ways out and the composer's one action read as one family of controls (issue 338). */
+.sheet-back { flex: none; display: grid; place-items: center; width: var(--size-tool); height: var(--size-tool); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--role-button); color: var(--role-button-fg); cursor: pointer; }
+.sheet-back .icon { width: var(--size-send-icon); height: var(--size-send-icon); }
+.sheet-back:hover { background: var(--role-button-hover); }
+.sheet-back:active { background: var(--role-button-press); }
+.sheet-back:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .sheet-title { margin: 0; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); }
 .sheet-desc { margin: var(--space-1) 0 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-body { min-height: 0; min-width: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
@@ -404,13 +435,18 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .app-icon-choice:hover { background: var(--color-bg-sunken); }
 .app-icon-choice[aria-checked="true"] { border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-border) var(--color-accent); }
 .app-icon-choice:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
-.app-icon-tile { position: relative; display: block; }
+/* Each picture is half its card's width: at the card's full width it read about twice the size it should,
+   on a phone and on the desktop alike. The tile is what is halved, so the Follow theme disc stays on the picture's
+   corner, and the cards keep the theme grid's columns. */
+.app-icon-tile { position: relative; display: block; width: 50%; margin-inline: auto; }
 .app-icon-picture { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: var(--radius-sm); }
 .app-icon-name { font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Follow theme is not a colour: the same drawing as every other choice, marked by a small half-accent, half-foreground
    disc so it reads as the theme-following one rather than its own artwork (issue 246). */
 .app-icon-choice[data-icon-id="theme"] .app-icon-follow { position: absolute; right: var(--space-1); bottom: var(--space-1); width: var(--space-3); height: var(--space-3); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-bg-raised); background: linear-gradient(var(--color-accent) 50%, var(--color-fg) 50%); }
 .sheet-section-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
+/* The About row stands apart from the group above it, the same gap the sheet's own groups keep (Abi, 2026-10-12). */
+.settings-about-row { margin-top: var(--space-4); }
 .sheet-section-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-rows { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); overflow: hidden; min-width: 0; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-top: var(--size-border) solid var(--color-border); min-width: 0; }
@@ -560,7 +596,8 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
   /* iOS zooms the whole page in when a control whose font is below 16px takes focus, and that zoom is what pushed the
      send control and the bubble edges off the right of a phone screen while the keyboard was open. The composer's own
      field takes the floor here; min-width keeps a long word from widening the row past the viewport. */
-  .composer textarea { min-width: 0; font-size: var(--font-size-lg); }
+  .composer { --composer-type: var(--font-size-lg); }
+  .composer textarea { min-width: 0; }
   /* The panel takes the width of the composer rather than spilling off a narrow screen. */
   .emoji-picker { left: var(--space-2); right: var(--space-2); width: auto; }
 }
@@ -578,7 +615,7 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
    join it. The search field, the filter menu, the sort and the gear draw in the page header, where the filters live.
    Every colour and length comes from the tokens. */
 .list-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: var(--size-border) solid var(--color-border); flex: none; }
-.row-group, .group-rename, .group-name-input { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
+.compose-name, .group-info-name, .group-info-add { background: var(--color-bg); color: var(--color-fg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); min-width: 0; }
 /* The search field and its mode are one box (issue 133): the mode is a small dropdown at the field's left edge, the
    field takes the rest, and the box takes the accent while either has focus. */
 .search-box { flex: 1; display: flex; align-items: stretch; min-width: 0; background: var(--role-search); color: var(--role-search-fg); border: var(--size-border) solid var(--role-search-border); border-radius: var(--radius-sm); overflow: hidden; }
@@ -604,7 +641,6 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .chat-sections { display: flex; flex-direction: column; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
 .section-name { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
-.section-actions { display: flex; align-items: center; gap: var(--space-1); }
 .icon-button { display: inline-flex; align-items: center; background: none; border: 0; color: var(--color-fg-muted); cursor: pointer; padding: 0 var(--space-1); border-radius: var(--radius-sm); }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
 .list-empty, .section-empty { margin: 0; padding: var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
@@ -658,8 +694,10 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    apps sees one design rather than two. Nothing here names a colour or a length of its own: the dim is the token the
    drawer's scrim already uses, and every duration and curve is a motion token. */
 @keyframes surface-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes sheet-up-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes sheet-down-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+/* A sheet travels from just past the screen's bottom edge, wherever it rests (Abi, 2026-10-13): --sheet-travel is
+   that distance, set per layout below, so the desktop's centred card and the phone's bottom card move the same way. */
+@keyframes sheet-up-in { from { transform: translateY(var(--sheet-travel)); } to { transform: translateY(0); } }
+@keyframes sheet-down-out { from { transform: translateY(0); } to { transform: translateY(var(--sheet-travel)); } }
 @keyframes surface-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes surface-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 
@@ -669,33 +707,42 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 /* The card is only as wide as its content needs, up to a sensible maximum, and it is centred in the backdrop rather
    than a fixed wide sheet. The 460px ceiling is the token a paragraph, a form or a short list is read at; below the
    window's own width the card yields to it, and the backdrop's own padding keeps it off the edges. */
-.sheet { position: relative; z-index: 4; display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.sheet { position: relative; z-index: 4; translate: 0 var(--sheet-drag, 0); display: flex; flex-direction: column; width: fit-content; height: fit-content; max-width: min(var(--size-sheet), 100%); max-height: 100%; overflow: hidden; background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+/* Settings keeps one height whichever tab is open (issue 342): the card stands at its full height and a short tab's
+   rows sit at the top, so switching tabs never resizes the card under the pointer. */
+.sheet[data-view="settings"] { height: min(var(--size-sheet-max), 100%); }
 /* Either sheet arrives from the bottom edge (issue 253). */
+/* Centred in the backdrop, the card clears the bottom edge after half the screen and half itself. */
+.sheet { --sheet-travel: calc(50dvh + 50% + var(--space-4)); }
 .sheet[data-arrive="up"] { animation: sheet-up-in var(--motion-sheet-in) var(--motion-sheet-ease) both; }
 /* The About sheet is a later layer ABOVE the Settings sheet it is stacked over (issue 253): above the settings
    backdrop and card, and below the notices, which draw above every surface. */
 .sheet-scrim[data-sheet="about"] { z-index: 5; }
 .sheet-scrim[data-sheet="about"] .sheet { z-index: 6; }
+/* With About stacked over it, the Settings card slides down out of the way as About rises, and slides back up as About
+   goes down (Abi, 2026-10-13): one travel each way on the sheet's own timing, never a resize. data-under holds it
+   below while About is up; data-returning carries the slide back up while About leaves. */
+.sheet-scrim[data-under] > .sheet { translate: 0 var(--sheet-travel); transition: translate var(--motion-sheet-in) var(--motion-sheet-ease); }
+.sheet-scrim[data-returning] > .sheet { transition: translate var(--motion-sheet-out) var(--motion-sheet-ease); }
+@media (prefers-reduced-motion: reduce) { .sheet-scrim[data-under] > .sheet, .sheet-scrim[data-returning] > .sheet { transition: none; } }
 /* On a phone the sheet keeps the card's own treatment (issue 253): the backdrop's blur and dim over the conversation,
-   the card's edge, rounded top corners and shadow, anchored to the bottom edge, with the safe areas kept clear of the
-   strip and the last row. The strip at the top is the way back, and a phone has no Escape key to name on it. This block
-   follows the card's own rules, so it wins over them. */
+   the card's edge and shadow, with the safe areas kept clear. This block follows the card's own rules, so it wins over
+   them. */
 @media (max-width: 640px) {
-  /* On a phone the sheet is the same floating card the desktop draws (issue 253), not a page that replaces the view: the
-     card is anchored to the bottom edge and rises over the conversation, whose blurred, dimmed backdrop is the sheet's
-     own (.sheet-scrim). Only the system bars keep the card clear, and a focused field scrolls into sight with room to
-     spare above the keyboard. */
-  .sheet-scrim { align-items: flex-end; padding: var(--inset-top) var(--inset-right) calc(var(--inset-bottom) + var(--space-3)) var(--inset-left); }
+  /* On a phone the sheet is a floating card (issues 253 and 338), not a page that replaces the view: inset from every
+     edge with every corner rounded, so the conversation shows around it, only as tall as its content, and rising from the
+     bottom over the conversation's blurred, dimmed backdrop (.sheet-scrim). Its handle shows, since a phone closes it by
+     dragging down. A focused field scrolls into sight with room to spare above the keyboard. */
+  .sheet-scrim { align-items: flex-end; padding: calc(var(--inset-top) + var(--space-3)) calc(var(--inset-right) + var(--space-3)) calc(var(--inset-bottom) + var(--space-3)) calc(var(--inset-left) + var(--space-3)); }
   /* The card is capped by the room the two system bars leave as well as the floating ceiling: min(90vh, 100%) of the
      backdrop's padded box, so its top can never rise under the status bar (issue 253). */
-  .sheet { width: 100%; max-width: none; max-height: min(var(--size-sheet-max), 100%); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .sheet { width: 100%; max-width: none; max-height: min(var(--size-sheet-max), 100%); border-radius: var(--radius-sheet); }
+  /* At the bottom of the backdrop, the card clears the edge after its own height and the room below it. */
+  .sheet { --sheet-travel: calc(100% + var(--space-3) + var(--inset-bottom)); }
+  .sheet-handle { display: block; }
+  .sheet-head { padding-top: var(--space-2); }
   .sheet-body { scroll-padding-block: var(--space-4); }
   app-settings { width: auto; }
-  .sheet-esc { display: none; }
-  /* A page that returns to the chats list says so with the chats icon, as the conversation's own way back does (issue
-     168). */
-  .sheet-back[data-narrow] .sheet-back-wide { display: none; }
-  .sheet-back[data-narrow] .sheet-back-narrow { display: inline-flex; }
 }
 /* Each sheet says leaving for itself, so the sheet and its dim leave together without taking the OTHER sheet with
    them, and each leaves back the way it came (issue 253): both rise from the bottom edge, so both return to it. */
@@ -723,23 +770,20 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    click (which skips the region check) still works. Every popover is no-drag, which punches a hole in the strip for the
    panel and its options; the trigger controls already carry no-drag themselves. */
 [data-popover] { -webkit-app-region: no-drag; }
-/* The one caret a popover wears (issue 217; restyled in #227; the seam cut in #241): the panel's own edge raised into a
-   triangle that points at the control that opened it, so the menu reads as belonging to that control and not stuck on
-   top of it. Every popover carries data-popover and the edge it sits on (data-popover-edge); the kit's aimCarets() reads
-   the control from the same dismiss pair the popover already uses and sets --caret-x, so a new menu gets its caret for
-   free. One --size-caret token sizes the drawn width for desktop and the phone width alike, and the triangle is drawn
-   the whole of it. Two triangles layer in the popover's own stacking context: the outer carries the panel's border
-   token at the panel's own one border weight, the inner the panel's surface token. Each base sits --caret-overlap
-   (exactly one border width) inside the panel, and the inner spans the WHOLE --size-caret at its base, so the panel's
-   border is not drawn across the span the caret occupies: its edge breaks to become the triangle's two sides, with no
-   seam, no gap and no double line where they meet, the same on both edges and in every theme. */
-[data-popover] { --caret-size: var(--size-caret); --caret-tip: calc(var(--size-caret) * 0.8); --caret-overlap: var(--size-border); }
-[data-popover]::before,
-[data-popover]::after { content: ''; position: absolute; left: var(--caret-x, 50%); width: 0; height: 0; transform: translateX(-50%); pointer-events: none; border-left: calc(var(--caret-size) / 2) solid transparent; border-right: calc(var(--caret-size) / 2) solid transparent; }
-[data-popover][data-popover-edge="top"]::before { top: calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip)); border-bottom: var(--caret-tip) solid var(--role-menu-border); }
-[data-popover][data-popover-edge="top"]::after { top: calc(var(--caret-overlap) - var(--caret-tip)); border-bottom: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2); border-right-width: calc(var(--caret-size) / 2); }
-[data-popover][data-popover-edge="bottom"]::before { bottom: calc(var(--caret-overlap) - var(--size-border) - var(--caret-tip)); border-top: var(--caret-tip) solid var(--role-menu-border); }
-[data-popover][data-popover-edge="bottom"]::after { bottom: calc(var(--caret-overlap) - var(--caret-tip)); border-top: calc(var(--caret-tip) - var(--size-border)) solid var(--role-menu); border-left-width: calc(var(--caret-size) / 2); border-right-width: calc(var(--caret-size) / 2); }
+/* The one caret a popover wears (issue 217; restyled in #227; the seam cut in #241; then one shape): the panel's own
+   edge raised into a triangle that points at the control that opened it, so the menu reads as belonging to that control
+   and not stuck on top of it. Every popover carries data-popover and the edge it sits on (data-popover-edge); the kit's
+   aimCarets() reads the control from the same dismiss pair the popover already uses and sets --caret-x, so a new menu
+   gets its caret for free. One --size-caret token is the drawn WIDTH of the triangle at the panel's edge, for the
+   desktop and the phone alike, and the triangle is the top corner of a square turned 45 degrees. The square carries the
+   panel's own surface and its two outward edges carry the panel's border token at the panel's own one border weight, and
+   it is placed so its body covers the panel's border across the span the caret occupies. The outline therefore reads as
+   one stroke, along the panel, up the near side of the caret, over its tip and down the far side, with no seam across
+   the base and no second, lighter edge inside the triangle, the same on both edges and in every theme. */
+[data-popover] { --caret-size: var(--size-caret); --caret-side: calc(var(--size-caret) / 1.41421); --caret-lift: calc((var(--size-border) + var(--caret-side) / 2) * -1); }
+[data-popover]::before { content: ''; position: absolute; left: var(--caret-x, 50%); width: var(--caret-side); height: var(--caret-side); pointer-events: none; background: var(--role-menu); border-top: var(--size-border) solid var(--role-menu-border); border-left: var(--size-border) solid var(--role-menu-border); }
+[data-popover][data-popover-edge="top"]::before { top: var(--caret-lift); transform: translateX(-50%) rotate(45deg); }
+[data-popover][data-popover-edge="bottom"]::before { bottom: var(--caret-lift); transform: translateX(-50%) rotate(225deg); }
 
 
 /* Edit is a small text control, not an icon (issue 137): a rounded highlight on hover and, while edit mode is on, a
@@ -788,6 +832,11 @@ app-slide-confirm { display: block; }
    viewer. Every value is a token. */
 .attachment-preview { display: block; max-width: 100%; padding: 0; border: var(--size-border) solid var(--color-image-edge); border-radius: var(--radius-lg); background: var(--color-bg-sunken); box-shadow: var(--shadow-image); overflow: hidden; cursor: zoom-in; transition: box-shadow var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
 .attachment-preview:hover { box-shadow: var(--shadow-md); }
+/* A video or a Live Photo is its picture with a small play mark in the corner, drawn as the viewer's own round controls
+   are (a raised disc in the page's colours), so it reads as playable on any picture and in either scheme. */
+.attachment-preview[data-moves] { position: relative; }
+.media-play { position: absolute; left: var(--space-2); bottom: var(--space-2); display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-sm); pointer-events: none; }
+.media-play .icon { --icon-size: calc(var(--size-message-action) / 2); margin-left: calc(var(--size-border) * 2); }
 .attachment-preview:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .attachment-preview .attachment-image { border-radius: 0; }
 app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
@@ -800,7 +849,11 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* The viewer draws on the sheet's own backdrop (.sheet-scrim, above), so the blur and the dim are that one treatment.
    The picture fits the stage, and the zoom is a transform the component sets as plain numbers. While a finger or a
    drag moves it there is no transition, so it stays under the pointer; a click, a key or a double tap animates. */
+/* The viewer is the shared scrim, but never a bottom sheet: on a phone the scrim's own rule pushes its content to the
+   bottom edge, which put the picture at the foot of the screen and off the centre the zoom rules measure from. The
+   picture is laid out in the middle of the safe area and the rules lift it to the top (issue 315). */
 .viewer { z-index: 7; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.sheet-scrim.viewer { align-items: center; justify-content: center; padding: var(--inset-top) var(--inset-right) var(--inset-bottom) var(--inset-left); }
 .viewer-image { --zoom-x: 0; --zoom-y: 0; --zoom-scale: 1; flex: none; display: block; max-width: 100%; max-height: 100%; min-width: 0; min-height: 0; object-fit: contain; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); transform: translate(calc(var(--zoom-x) * 1px), calc(var(--zoom-y) * 1px)) scale(var(--zoom-scale)); transform-origin: center; transition: transform var(--motion-normal) var(--motion-ease); cursor: zoom-in; -webkit-user-drag: none; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
 .viewer[data-zoomed="true"] .viewer-image { cursor: grab; }
 .viewer[data-gesture="on"] .viewer-image { transition: none; cursor: grabbing; }
@@ -812,15 +865,30 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    backdrop under it is no-drag too (issue 213), so the whole circle answers wherever it lands. */
 .viewer > .close-button { position: absolute; top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); right: calc(var(--inset-right) + var(--space-4)); z-index: 1; }
 .app-window[data-platform="darwin"] .viewer > .close-button { top: calc(var(--inset-top) + var(--size-window-strip) + var(--space-3)); }
-.viewer-zoom { position: absolute; bottom: var(--space-4); left: 50%; transform: translateX(-50%); z-index: 1; margin: 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg-muted); font-size: var(--font-size-xs); box-shadow: var(--shadow-sm); pointer-events: none; }
-/* The media viewer's step controls (issue 181): one each side, drawn from the shared icon set and the same tokens as
-   every other control, pushing the viewer to the previous or next item. The end it cannot go past is drawn dimmed and
-   inert, so the edge of the conversation's media is visible, not a dead press. */
-.viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-sm); cursor: pointer; }
-.viewer-nav:hover, .viewer-nav:focus-visible { background: var(--color-bg-sunken); outline: none; }
-.viewer-nav:disabled { opacity: 0.35; cursor: default; }
-.viewer-prev { left: var(--space-4); }
-.viewer-next { right: var(--space-4); }
+/* The viewer's controls are one family (issue 325), so they read as designed rather than as defaults: every one is
+   the close control's height, the same pill, the same frosted raised surface over the picture, the same edge and
+   shadow, and they answer the pointer the same way, on the shared motion tokens. The step controls sit centred on
+   either side; one bar sits centred at the foot and holds the Live Photo's play control, where the item is in the
+   conversation's media and the zoom, so nothing floats on its own in a corner. The play control is the bar's widest
+   and is labelled, in the accent, so it is not missed. */
+.viewer { --viewer-control: var(--size-close-lg); --viewer-glass: color-mix(in srgb, var(--color-bg-raised) 84%, transparent); }
+.viewer > .close-button, .viewer-nav, .viewer-bar { border: var(--size-border) solid var(--color-image-edge); background: var(--viewer-glass); -webkit-backdrop-filter: blur(calc(var(--size-scrim-blur) * 3)) saturate(1.4); backdrop-filter: blur(calc(var(--size-scrim-blur) * 3)) saturate(1.4); box-shadow: var(--shadow-md); animation: surface-scrim-in var(--motion-screen) var(--motion-ease) both; }
+.viewer-nav, .viewer-control { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: var(--viewer-control); min-width: var(--viewer-control); margin: 0; padding: 0; border-radius: var(--radius-pill); color: var(--color-fg); font: inherit; cursor: pointer; transition: background var(--motion-normal) var(--motion-ease), color var(--motion-normal) var(--motion-ease), scale var(--motion-normal) var(--motion-ease), opacity var(--motion-normal) var(--motion-ease); }
+.viewer-nav .icon, .viewer-control .icon { display: block; width: calc(var(--viewer-control) * 0.45); height: calc(var(--viewer-control) * 0.45); pointer-events: none; }
+.viewer-nav:hover, .viewer-control:hover { background: var(--color-bg-raised); }
+.viewer-nav:focus-visible, .viewer-control:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--size-border); }
+.viewer-nav:active:not(:disabled), .viewer-control:active:not(:disabled) { scale: 0.94; }
+.viewer-nav:disabled, .viewer-control:disabled { opacity: 0.35; cursor: default; }
+.viewer-nav { position: absolute; top: 50%; translate: 0 -50%; z-index: 1; }
+.viewer-prev { left: calc(var(--inset-left) + var(--space-4)); }
+.viewer-next { right: calc(var(--inset-right) + var(--space-4)); }
+.viewer-bar { position: absolute; left: 50%; translate: -50% 0; bottom: calc(var(--inset-bottom) + var(--space-4)); z-index: 1; box-sizing: border-box; display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); white-space: nowrap; }
+.viewer-play { padding: 0 var(--space-4) 0 var(--space-3); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-sm); font-weight: 600; text-transform: uppercase; }
+.viewer-play:hover { background: color-mix(in srgb, var(--color-accent) 88%, var(--color-fg)); }
+.viewer-play[aria-pressed="true"] { background: var(--color-bg-sunken); color: var(--color-fg); }
+.viewer-count, .viewer-zoom { display: inline-flex; align-items: center; height: var(--viewer-control); margin: 0; padding: 0 var(--space-3); color: var(--color-fg-muted); font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; pointer-events: none; }
+.viewer-count + .viewer-zoom { border-left: var(--size-border) solid var(--color-image-edge); }
+@media (prefers-reduced-motion: reduce) { .viewer > .close-button, .viewer-nav, .viewer-bar { animation: none; } .viewer-nav, .viewer-control { transition: none; } }
 /* A video is drawn like a picture, with the viewer's own rounded edge and shadow; its first frame stands in for the
    picture until it plays. */
 .viewer video.viewer-image { background: var(--color-bg-sunken); }
@@ -837,6 +905,12 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .close-button .icon { display: block; width: 50%; height: 50%; pointer-events: none; }
 .close-button:hover { color: var(--color-fg); background: var(--color-bg-sunken); }
 .close-button:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
+/* The solid look is the send button's (issue 338): a filled accent circle at the composer's tool size, the glyph at the
+   send arrow's fraction, and the same hover and press fills. */
+.close-button[data-look="solid"] { --close-size: var(--size-tool); border: 0; background: var(--role-button); color: var(--role-button-fg); }
+.close-button[data-look="solid"] .icon { width: var(--size-send-icon); height: var(--size-send-icon); }
+.close-button[data-look="solid"]:hover { background: var(--role-button-hover); color: var(--role-button-fg); }
+.close-button[data-look="solid"]:active { background: var(--role-button-press); }
 .sheet-scrim, .app-notice { -webkit-app-region: no-drag; }
 
 /* Floating notice geometry: clear header controls and reserve the composer below. The stack scrolls, which clips
@@ -844,14 +918,20 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    the card where a 4px inset puts it. */
 /* The stack draws above every other surface (issue 191): the chats, a conversation and its thread view, Settings,
    About and every sheet, a confirm and the media viewer, so an update notice is always seen. Its z-index is the
-   highest in this file, which core/test/app-notices.test.js holds, and it starts below the header, so it never covers
-   the window controls. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet
+   highest in this file, which core/test/app-notices.test.js holds. It sits as high as the window allows without covering
+   a window control, so the height differs by platform (Abi, 2026-10-13): at the top edge on a phone, which has none;
+   below the minimise, maximise and close controls the page draws at the right on Windows and Linux, which is the side
+   the stack sits on; and at the top edge on macOS, whose traffic lights are at the left, kept clear by holding the
+   stack's left edge past them. The card is no-drag, so inside the Mac's drag strip a press still reaches it. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet
    stays up; see the band below for where it sits then. */
-app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header) + var(--space-3)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 8; }
+app-notices { position: absolute; top: calc(var(--inset-top) + var(--space-2)); right: max(var(--inset-right), var(--space-4)); left: max(var(--inset-left), var(--space-4)); pointer-events: none; z-index: 8; }
 .app-window { position: relative; }
-.app-window[data-platform="darwin"] app-notices { top: calc(var(--size-header) + var(--size-window-strip) + var(--space-3)); }
+.app-window[data-platform="win32"] app-notices, .app-window[data-platform="linux"] app-notices { top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); }
+.app-window[data-platform="darwin"] app-notices { left: max(var(--inset-left), var(--size-window-lights)); }
 .app-notice-stack { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); max-height: var(--size-notice-stack); overflow-y: auto; padding: var(--space-4); margin: calc(var(--space-1) - var(--space-4)); }
-.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-notice); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: inset var(--space-1) 0 0 var(--role-notice-stripe), var(--shadow-md); font-size: var(--font-size-sm); pointer-events: auto; animation: notice-in var(--motion-normal) var(--motion-ease); }
+.app-notice { display: flex; align-items: flex-start; gap: var(--space-2); width: var(--size-notice); max-width: 100%; padding: var(--space-3); border: var(--size-border) solid var(--role-notice-border); border-radius: var(--radius-lg); background: var(--role-notice); color: var(--role-notice-fg); box-shadow: var(--shadow-lg); font-size: var(--font-size-sm); pointer-events: auto; animation: notice-in var(--motion-normal) var(--motion-ease); }
+/* A notice is drawn as the Settings and About cards are (issue 342): the raised card, its plain border, its corners and
+   its shadow, and its X the solid one drawn as the send button is, so every card over the app reads as one family. */
 .app-notice-body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .app-notice-icon { color: var(--role-notice-icon); flex: none; }
 .app-notice .muted { color: var(--role-notice-muted); }
@@ -860,12 +940,11 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
 .app-notice[data-tone="ok"] .app-notice-icon { color: var(--color-bubble-sms); }
 .app-notice .icon { display: block; }
 .app-notice-progress { width: 100%; height: var(--space-1); accent-color: var(--color-accent); }
-.app-notice-action { pointer-events: auto; border: 0; border-radius: var(--radius-sm); background: none; color: var(--role-notice-action); cursor: pointer; padding: var(--space-1); }
-.app-notice-action { align-self: flex-start; font-weight: var(--font-weight-medium); }
-.app-notice-action:hover { background: var(--role-notice-hover); }
-.app-notice-read { flex: none; pointer-events: auto; border: 0; border-radius: var(--radius-pill); background: none; color: var(--role-notice-action); cursor: pointer; padding: var(--space-1); }
-.app-notice-read:hover { background: var(--role-notice-hover); }
-.app-notice-read .icon { display: block; }
+/* The notice's one action (issue 342), drawn as the send button is: a filled accent pill under its words, so a card
+   carries one control to close it and, when there is something to do, one to do it. */
+.app-notice-action { pointer-events: auto; align-self: flex-start; border: 0; border-radius: var(--radius-pill); background: var(--role-button); color: var(--role-button-fg); cursor: pointer; padding: var(--space-1) var(--space-3); font-weight: var(--font-weight-medium); }
+.app-notice-action:hover { background: var(--role-button-hover); }
+.app-notice-action:active { background: var(--role-button-press); }
 @keyframes notice-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 @keyframes notice-down { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .app-notice { animation-name: notice-down; } }
@@ -875,8 +954,42 @@ app-notices { position: absolute; top: calc(var(--inset-top) + var(--size-header
    stack around it does not, so the surface behind keeps its gestures everywhere but on a card. */
 @media (max-width: 640px) {
   .app-notice-stack { align-items: stretch; }
-  .app-notice { width: auto; }
+  .app-notice { width: auto; border-radius: var(--radius-sheet); }
 }
 @media (prefers-reduced-motion: reduce) { .app-notice { animation: none; } }
 /* Raised surfaces keep the foreground supplied by their theme. */
 .filter-menu, .message-menu, .attachment-file, .emoji-picker, .sheet-rows, .staged-file, .load-older { color: var(--color-bg-raised-fg); }
+
+/* Starting a conversation and a group's details (issue 326). The new-conversation control sits at the right end of
+   the row with Edit, the group details control in the conversation's header, both drawn from the shared icon set at the
+   tool size. The compose sheet is the confirm card: a To field that gathers people as chips, the people this list
+   already talks to offered as they are typed, and a name field once there is more than one. */
+.list-tools .new-chat, .conv-info { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-tool); height: var(--size-tool); padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--color-accent); cursor: pointer; transition: background var(--motion-normal) var(--motion-ease); }
+.list-tools .new-chat { margin-left: auto; }
+.new-chat .icon, .conv-info .icon { display: block; width: 60%; height: 60%; pointer-events: none; }
+.new-chat:hover, .conv-info:hover { background: var(--color-bg-sunken); }
+.new-chat:focus-visible, .conv-info:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: calc(-1 * var(--size-border)); }
+.compose-field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); background: var(--color-bg); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); }
+.compose-field:focus-within { border-color: var(--color-accent); }
+.compose-label { color: var(--color-fg-muted); font-size: var(--font-size-sm); padding-right: var(--space-1); }
+.compose-to { flex: 1; min-width: 0; border: 0; background: none; color: inherit; font: inherit; padding: var(--space-1); outline: none; }
+.compose-suggestions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.compose-suggestion { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-2); border: 0; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.compose-suggestion:hover, .compose-suggestion:focus-visible { background: var(--color-bg-sunken); outline: none; }
+.compose-problem { color: var(--color-danger); font-size: var(--font-size-sm); }
+.confirm-modal .compose-problem { color: var(--color-danger); }
+.group-info-row { display: flex; align-items: center; gap: var(--space-2); }
+.group-info-row > input { flex: 1; }
+.group-info-heading { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
+.group-info-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.group-info-person { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) 0; border-bottom: var(--size-border) solid var(--color-border); }
+.group-info-person:last-child { border-bottom: 0; }
+
+/* A conversation's avatar is its group photo when it has one (issue 341), cropped to the avatar's own circle; the
+   element is only a wrapper, so the avatar keeps its place in the row's layout. */
+app-avatar { display: contents; }
+.avatar.photo { padding: 0; overflow: hidden; }
+.avatar.photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* An event in a conversation (issue 341) is a quiet centred line, the new photo beside the words. */
+.bubble-row.event { justify-content: center; }
+.conv-event { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) auto; color: var(--color-fg-muted); font-size: var(--font-size-xs); }

@@ -44,7 +44,7 @@ test('a resync that refetches the open conversation mid-load still shows the ima
 
 test('a load that lands after the element moved to another attachment is dropped', async () => {
   const { el, pending } = element();
-  show(el, structuredClone(photo));
+  show(el, { ...photo, id: 'att00000000003' });
   show(el, { ...photo, id: 'att00000000002' });
   assert.equal(pending.length, 2);
   pending[0].reject(new Error('gone'));
@@ -54,4 +54,25 @@ test('a load that lands after the element moved to another attachment is dropped
   pending[1].resolve(new Blob(['new']));
   await new Promise((r) => setTimeout(r, 0));
   assert.ok(el.src);
+});
+
+// A row is reused as the conversation re-renders, so its attachment changes under it (a refetch, a switch away and
+// back, older messages landing above). A picture already fetched is drawn again at once from what is held, with no
+// second request and no placeholder, which is what keeps the row its height and the conversation where it was.
+test('a picture already fetched is drawn again at once, without asking the server', async () => {
+  const first = element();
+  show(first.el, { ...photo, id: 'att00000000010' });
+  first.pending[0].resolve(new Blob(['png']));
+  await new Promise((r) => setTimeout(r, 0));
+  const held = first.el.src;
+  assert.ok(held);
+  show(first.el, { ...photo, id: 'att00000000011' });
+  assert.equal(first.el.src, '', 'a picture never fetched starts as the placeholder');
+  show(first.el, { ...photo, id: 'att00000000010' });
+  assert.equal(first.el.src, held, 'the held picture is back in the same step');
+  assert.equal(first.pending.length, 2, 'only the picture never fetched was asked for');
+  const other = element();
+  show(other.el, { ...photo, id: 'att00000000010' });
+  assert.equal(other.el.src, held, 'another row showing the same picture draws it too');
+  assert.equal(other.pending.length, 0);
 });

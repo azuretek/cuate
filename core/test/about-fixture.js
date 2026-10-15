@@ -28,6 +28,74 @@
   root.openSettings();
   await until(() => document.querySelector('app-settings [data-action=about]'), 'the About row in Settings');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the sheet to arrive');
+  // The same slide as the desktop (Abi, 2026-10-13), and what a phone can hold without depending on its frame rate.
+  // This is the same page every shell draws, and the desktop smoke measures the whole slide in a real browser on all
+  // three desktop platforms (settingsSlidesDown, aboutBackDesktop). Here each phone is held to: the spec's own motion
+  // tokens, applied; the arrival keyframes on the incoming sheet and a transition that carries the sheet underneath;
+  // About's own rise, read from its timeline (a style flush creates it, it is paused in the same task, and it is read
+  // at its start and its end); Settings leaving its rest and ending below the screen at an unchanged width; and the
+  // back press putting Settings back exactly where it was. A CI simulator drew one frame a second, so nothing here is
+  // sampled by frame. Where the system asks for reduced motion each sheet is a straight cut by design, and only where
+  // each ends up is held.
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const rootStyle = getComputedStyle(document.documentElement);
+  const tokenOf = (name) => rootStyle.getPropertyValue("--motion-" + name).trim();
+  const sheet = (view) => document.querySelector(".sheet[data-view=" + view + "]");
+  const topOf = (view) => (sheet(view) ? Math.round(sheet(view).getBoundingClientRect().top) : null);
+  const width = (view) => (sheet(view) ? Math.round(sheet(view).getBoundingClientRect().width) : null);
+  // Every animation moving a sheet, by the sheet it moves: the arrival keyframes, or the transition carrying the sheet
+  // underneath. A scrim's own fade moves no sheet, and a briefly highlighted control is not a sheet's motion.
+  // A finished animation that fills forwards stays in getAnimations(), so only one still running counts as motion.
+  const movingOf = (view) => document.getAnimations().filter((x) => x.playState !== "finished" && x.effect && x.effect.target && x.effect.target.closest && x.effect.target.closest(".sheet[data-view=" + view + "]") && x.effect.getComputedTiming && Number(x.effect.getComputedTiming().duration) >= 200);
+  const describe = (list) => (list || []).map((x) => (x.effect.target.className || x.effect.target.tagName) + ":" + Math.round(Number(x.effect.getComputedTiming().duration)) + "ms:" + x.playState).join(", ");
+  const hold = (all, fraction) => { for (const x of all) { x.pause(); x.currentTime = Number(x.effect.getComputedTiming().duration) * fraction; } };
+  const settle = (view) => { for (const x of movingOf(view)) x.finish(); };
+  const motions = { about: [], settings: [] };
+  const settingsRest = topOf("settings");
+  const settingsWidth = width("settings");
+  const vh = window.innerHeight;
+  // The motion the spec names, applied on this platform: the arrival keyframes and the durations both sheets slide on.
+  const arrival = document.querySelector(".sheet[data-arrive=up]");
+  const wiring = {
+    inToken: tokenOf("sheet-in"),
+    outToken: tokenOf("sheet-out"),
+    // size/motion are the spec's own, held to it by the generated tokens (core/test/tokens.test.js).
+    specIn: '500ms',
+    specOut: '400ms',
+    arrival: arrival ? getComputedStyle(arrival).animationName : null,
+  };
+  if (!(wiring.inToken === wiring.specIn && wiring.outToken === wiring.specOut)) throw new Error("motion: the sheet tokens are " + wiring.inToken + " and " + wiring.outToken + ", not the spec's " + wiring.specIn + " and " + wiring.specOut);
+  if (!reduced && wiring.arrival !== "sheet-up-in") throw new Error("motion: an arriving sheet runs " + wiring.arrival + ", not the arrival keyframes");
+  document.querySelector("app-settings [data-action=about]").click();
+  await root.updateComplete;
+  let aboutStart = null;
+  if (!reduced) {
+    const rise = movingOf("about");
+    motions.about = rise;
+    if (!rise.length) throw new Error("motion: opening About moves no About sheet");
+    hold(rise, 0);
+    aboutStart = topOf("about");
+  }
+  // The sheet underneath is carried by a transition in this same web view: its computed transition names the property
+  // that moves it, which is what the desktop smoke then measures frame by frame.
+  const under = sheet("settings") ? getComputedStyle(sheet("settings")).transitionProperty : "";
+  if (!reduced && !/translate|transform/.test(under)) throw new Error("motion: the sheet underneath is carried by " + (under || "nothing"));
+  settle("about");
+  settle("settings");
+  await until(() => !movingOf("about").length && !movingOf("settings").length, "About to arrive");
+  const aboutRest = topOf("about");
+  const settingsDown = topOf("settings");
+  if (!(settingsDown >= vh - 2)) throw new Error("motion: Settings waits at " + settingsDown + ", not below the screen (" + vh + ")");
+  if (!(settingsDown > settingsRest)) throw new Error("motion: Settings never moved, resting at " + settingsRest + " and ending at " + settingsDown);
+  if (width("settings") !== settingsWidth) throw new Error("motion: Settings changed width going down");
+  if (!reduced && !(aboutStart - aboutRest >= sheet("about").getBoundingClientRect().height / 2)) throw new Error("motion: About started at " + aboutStart + ", not below its rest at " + aboutRest);
+  document.querySelector("app-about .sheet-back").click();
+  await root.updateComplete;
+  settle("about");
+  settle("settings");
+  await until(() => !document.querySelector("app-about") && !movingOf("about").length && !movingOf("settings").length, "About to close");
+  if (Math.abs(topOf("settings") - settingsRest) > 1 || width("settings") !== settingsWidth) throw new Error("motion: Settings came back to " + topOf("settings") + " at " + width("settings") + " wide, not " + settingsRest + " at " + settingsWidth);
+  const motionReport = (reduced ? 'cut' : 'slide') + ' about=[' + describe(motions.about) + '] under=' + under + ' in=' + wiring.inToken + ' arrival=' + wiring.arrival + ' settingsRest=' + settingsRest + ' settingsDown=' + settingsDown + ' aboutStart=' + aboutStart;
   // The About row is on every Settings page (issue 244), so no tab has to be picked first.
   document.querySelector('app-settings [data-action=about]').click();
   const about = () => document.querySelector('app-about');
@@ -89,7 +157,12 @@
   reported.textContent = reported.getAttribute('aria-label');
   Object.assign(reported.style, { position: 'fixed', bottom: '0', right: '0', zIndex: '9999', fontSize: '1px' });
   document.body.append(reported);
-  window.aboutProof = { ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: shownLabel(button), command: button.dataset.command, channel, build };
+  const motionMark = document.createElement('output');
+  motionMark.setAttribute('aria-label', 'about:motion ' + motionReport);
+  motionMark.textContent = motionMark.getAttribute('aria-label');
+  Object.assign(motionMark.style, { position: 'fixed', top: '0', left: '0', zIndex: '9999', fontSize: '1px' });
+  document.body.append(motionMark);
+  window.aboutProof = { motion: motionReport, ok: document.documentElement.dataset.scheme === scheme, scheme, parts, notice: noticeText, button: shownLabel(button), command: button.dataset.command, channel, build };
 })().catch((error) => {
   window.aboutProof = { ok: false, error: error.message };
   document.body.textContent = 'about fixture failed: ' + error.message;

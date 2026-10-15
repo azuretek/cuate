@@ -12,6 +12,7 @@ Shared documentation for Cuate. One product with several shells, so anything tru
 | [FEATURES.md](FEATURES.md) | What works today, and the test that proves each. |
 | [MCP.md](MCP.md) | Both are generated from [core/spec/api.json](../core/spec/api.json), the one owner of the routes, the models and the events. |
 | [OBSERVABILITY.md](OBSERVABILITY.md) | What Cuate measures, where the numbers can be read, and what it deliberately does not measure. |
+| [PUSH.md](PUSH.md) | A phone gets a notification for a new message even when the app is closed. |
 | [READ-AND-TYPING.md](READ-AND-TYPING.md) | The engine interface, not a timer or a local read mark, determines what we can say about another person (issue #72). |
 | [RELEASE.md](RELEASE.md) | A push to main that changes a shipped path produces a test build: the desktop apps, the server and the Android APK, one version, one GitHub prerelease |
 | [ROTATION-TESTS.md](ROTATION-TESTS.md) | The existing iOS and Android PR pipelines run a populated conversation through portrait, landscape and portrait again. |

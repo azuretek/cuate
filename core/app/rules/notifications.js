@@ -69,6 +69,24 @@ export function serverUpdateNotice(outcome) {
 // The native notice for an incoming message: the chat's title, and the message's own text exactly as it arrived, so
 // an emoji reads in the notice as it does in the conversation. A message with no text reads as the link it is, or its
 // attachment, never as a payload's raw name (issue 238).
+// Where a message notice leads (issue 331): the conversation and the message it announced, carried with the notice so a
+// press on it opens that conversation at that message, on every platform. Ids travel as strings, the shape the page
+// and every shell already use.
+export function messageTarget(m) {
+  if (!m || m.chatId == null || m.id == null) return {};
+  return { chatId: String(m.chatId), messageId: String(m.id) };
+}
+
+// The target a shell hands back when a notice is pressed, or null for anything that is not one. A shell answers what
+// it was given, but a press may arrive from a notice an older build raised, so nothing is trusted that is not a plain id.
+export function noticeTarget(value) {
+  if (!value || typeof value !== 'object') return null;
+  const id = (v) => (typeof v === 'string' || typeof v === 'number') && String(v).length > 0 && String(v).length <= 200 ? String(v) : null;
+  const chatId = id(value.chatId);
+  if (!chatId) return null;
+  return { chatId, messageId: id(value.messageId) };
+}
+
 export function messageNotice(title, m) {
   const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
   return { title, body: messageSummary(m) || (count > 1 ? count + ' attachments' : 'Attachment') };

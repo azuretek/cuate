@@ -1,9 +1,35 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
-import { isMediaAttachment, mediaKind } from '../rules/media.js';
+import { isMediaAttachment, mediaKind, isLivePhoto } from '../rules/media.js';
 
 const needsJpeg = (a) => /heic|heif/i.test(a.mime);
+
+// The pictures and videos already fetched, held in memory for the life of the page by attachment id (and the form it
+// was asked for), most recently used last. A conversation's rows are reused as it re-renders (a refetch, a switch to
+// another conversation and back, older messages landing above), so a row's attachment changes under it; drawing the
+// held bytes at once, rather than a placeholder until the server answers again, is what keeps every row the height it
+// was and the conversation where the person left it. Bounded, and the oldest is let go when it is full.
+export const HELD_MEDIA_MAX = 400;
+const held = new Map();
+const heldKey = (a) => String(a.id) + (needsJpeg(a) ? ':jpeg' : '');
+export function heldMedia(a) {
+  if (!a || !isMediaAttachment(a)) return '';
+  const key = heldKey(a);
+  const url = held.get(key);
+  if (!url) return '';
+  held.delete(key);
+  held.set(key, url);
+  return url;
+}
+export function holdMedia(a, url) {
+  held.set(heldKey(a), url);
+  while (held.size > HELD_MEDIA_MAX) {
+    const [key, old] = held.entries().next().value;
+    held.delete(key);
+    URL.revokeObjectURL(old);
+  }
+}
 const mediaLabel = (kind) => (kind === 'video' ? 'video' : 'image');
 
 // A document (a PDF or any other file that is not a picture or a video) is saved rather than viewed (issue 219): the
@@ -48,21 +74,45 @@ class AppAttachment extends KitElement {
     this.linkUrl = '';
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this.release();
+  // The bytes belong to the held set above, which lets them go, so an element leaving the page keeps nothing to free.
+  // An attachment already held is drawn in the same render that brings it, never a placeholder first.
+  willUpdate(changed) {
+    if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
+      this.failed = false;
+      this.src = heldMedia(this.attachment);
+    }
   }
 
-  release() {
-    if (this.src) URL.revokeObjectURL(this.src);
-    this.src = '';
+  // Only what is seen is fetched: a picture is asked for when its row comes within a screen of the view, so a long
+  // conversation does not pull every picture it holds the moment it opens, and one scrolled toward is there before it
+  // is reached. Where there is no observer (a test, an old engine) it is fetched at once, as before.
+  // A row reused for another message re-arms the watch, so its new picture waits to be seen as a fresh one does.
+  fetchWhenSeen() {
+    if (typeof IntersectionObserver !== 'function' || !this.isConnected) {
+      this.load();
+      return;
+    }
+    if (!this.watch) {
+      this.watch = new IntersectionObserver((entries) => {
+        if (!entries.some((x) => x.isIntersecting)) return;
+        this.watch.disconnect();
+        if (!this.src && !this.failed) this.load();
+      }, { rootMargin: '100% 0px' });
+    }
+    this.watch.disconnect();
+    this.watch.observe(this);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.watch) this.watch.disconnect();
   }
 
   updated(changed) {
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
-      this.release();
       this.failed = false;
-      this.load();
+      this.src = heldMedia(this.attachment);
+      if (!this.src) this.fetchWhenSeen();
     }
   }
 
@@ -74,7 +124,9 @@ class AppAttachment extends KitElement {
     if (!isMediaAttachment(a) || !this.client) return;
     try {
       const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined });
-      if (this.attachment?.id === a.id) this.src = URL.createObjectURL(blob);
+      const url = heldMedia(a) || URL.createObjectURL(blob);
+      holdMedia(a, url);
+      if (this.attachment?.id === a.id) this.src = url;
     } catch {
       if (this.attachment?.id === a.id) this.failed = true;
     }
@@ -84,13 +136,15 @@ class AppAttachment extends KitElement {
   // the attachment and its kind so the viewer can step to the conversation's other media (issue 181).
   open() {
     if (!this.src) return;
+    // The preview itself goes with the press, so the viewer grows out of it and shrinks back into it (issue 316).
+    const from = this.querySelector('img, video') || this;
     // A still that previews a linked video hands the viewer the link, not an attachment of ours, so the viewer plays
     // the video the server holds (issue 243). Otherwise the attachment opens as itself, exactly as before.
     if (this.linkUrl) {
-      this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || 'Video', linkUrl: this.linkUrl, kind: 'video' } }));
+      this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || 'Video', linkUrl: this.linkUrl, kind: 'video', from } }));
       return;
     }
-    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: mediaKind(this.attachment) || 'image' } }));
+    this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { from, src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: isLivePhoto(this.attachment) ? 'video' : mediaKind(this.attachment) || 'image' } }));
   }
 
   // Pressing a document offers to save it under its real name. The press stops here, so the message it sits in never
@@ -113,7 +167,11 @@ class AppAttachment extends KitElement {
       const media = kind === 'video'
         ? html`<video class="attachment-image" src=${this.src} muted playsinline preload="metadata" aria-label=${a.name}></video>`
         : html`<img class="attachment-image" src=${this.src} alt=${a.name}>`;
-      return html`<button type="button" class="attachment-preview" aria-label=${'Open ' + a.name} @click=${press(() => this.open())}>${media}</button>`;
+      // Anything that moves, a video or a Live Photo, is drawn as its picture with a small play mark in its corner, so it
+      // reads as something that plays before it is pressed; pressing it plays it in the viewer.
+      const moves = kind === 'video' || isLivePhoto(a);
+      const label = (moves ? 'Play ' : 'Open ') + a.name;
+      return html`<button type="button" class="attachment-preview" aria-label=${label} data-moves=${moves ? 'true' : nothing} @click=${press(() => this.open())}>${media}${moves ? html`<span class="media-play" aria-hidden="true"><span class="icon" data-icon="play"></span></span>` : nothing}</button>`;
     }
     if (a.missing || a.local || !this.client) return html`<div class="attachment-file"><span class="attachment-name">${a.name}</span>${a.missing ? html`<span class="muted small"> Not on the Mac</span>` : nothing}</div>`;
     return html`<button type="button" class="attachment-file" aria-label=${'Save ' + a.name} title=${'Save ' + a.name} @click=${press((e) => this.save(e))}><span class="icon" data-icon="download" aria-hidden="true"></span><span class="attachment-name">${a.name}</span></button>`;

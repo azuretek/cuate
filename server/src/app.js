@@ -2,7 +2,8 @@
 // in the Authorization header whose scope covers it. The routes themselves live one per module in ./routes, mounted
 // here by the id they declare in the spec.
 import http from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, watch } from 'node:fs';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
@@ -19,6 +20,7 @@ import { allows as scopeAllows } from './scopes.js';
 import { createExporter } from './export.js';
 import { createWebhooks } from './webhooks.js';
 import { createTyping } from './typing.js';
+import { createPush } from './push.js';
 import { configPath, loadConfig, saveConfig } from './config.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
@@ -57,11 +59,16 @@ function readJson(req, max) {
   });
 }
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+// The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (Abi, 2026-10-14).
+const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
+
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
   const LIST_TTL_MS = 5 * 60 * 1000;
+  // The failsafe interval for the database watch, in milliseconds.
+  const READ_SYNC_MS = readSyncMs;
   const events = [];
   const clients = new Set();
   let seq = 0;
@@ -93,12 +100,19 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     for (const c of clients) if (c.authed && c.ws.readyState === 1 && (!except || c.id !== except)) c.ws.send(frame);
     webhooks.enqueue(name, data);
   };
-  const typing = createTyping({ publish });
+  // Our typing reaches the other person through the engine unless the switch is off (issue 319).
+  const typing = createTyping({ publish, log: log.child('typing'), outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
+  // A phone with the app open shows its own notice, so only phones with no open connection get a push (issue 347).
+  const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
   engine.on((name, data) => {
-    if (name === 'message.new') noteMessage(data.message);
+    if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
     // The engine only reports inbound typing when the switch is on and a bridge is already running; with it off this
     // never fires, so no contact indicator is invented (issue 230).
-    if (name === 'typing.incoming') { if (config.typing && config.typing.incoming) typing.incoming(data); return; }
+    if (name === 'typing.incoming') {
+      if (config.typing && config.typing.incoming) typing.incoming(data);
+      else log.child('typing').emit('typing.incoming', { chat: String(data.chatId), typing: Boolean(data.typing), resolved: true, published: false });
+      return;
+    }
     publish(name, data);
   });
   engine.onState((s) => {
@@ -127,15 +141,29 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return Math.min(hi, Math.max(lo, Number(v)));
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
-  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0 });
+  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind }, senderName: m.senderName || null } : {}) });
   // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
   let listing = null;
+  // A conversation read on another device (the phone, Messages on the Mac) lowers its unread count in the engine and
+  // nowhere else (issue 323): each fresh list is compared with the one it replaces, and a count that fell is told to
+  // every client as chat.read, the same event a read in this app sends. A count that rose is a new message, which the
+  // message stream already carries.
   const readChats = (limit) => {
     if (!listing) {
-      listing = engine.chats({ limit })
-        .then((chats) => { held = { chats, limit, at: Date.now() }; })
+      listing = engine.chats({ limit, photos: true })
+        .then((chats) => {
+          const before = held ? new Map(held.chats.map((c) => [String(c.id), Number(c.unread) || 0])) : null;
+          held = { chats, limit, at: Date.now() };
+          if (before) {
+            for (const c of chats) {
+              const was = before.get(String(c.id));
+              const now = Number(c.unread) || 0;
+              if (was !== undefined && now < was) publish('chat.read', { chatId: String(c.id), unread: now });
+            }
+          }
+        })
         .finally(() => { listing = null; });
     }
     return listing;
@@ -155,10 +183,29 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       readChats(held.limit).catch(() => {});
       return;
     }
+    // A group photo that changed live is the group's picture from now on (issue 341).
+    if (m.event && m.event.kind === 'groupPhoto') held.chats[at] = { ...held.chats[at], photo: m.event.photo };
     const chat = held.chats[at];
     if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
+    // An arriving message from someone else raises the held count by the same rule every client raises its own
+    // (applyMessageToChats in core/app/rules/chats.js), so a read on another device before the next read of the list is
+    // seen as the count falling and told as chat.read. Without this the list never saw the rise, so it never saw the fall,
+    // and the message stayed unread in the app (Abi, 2026-10-14).
+    const unread = !m.fromMe ? (Number(chat.unread) || 0) + 1 : chat.unread;
     held.chats.splice(at, 1);
-    held.chats.unshift({ ...chat, lastMessageAt: m.sentAt });
+    held.chats.unshift({ ...chat, unread, lastMessageAt: m.sentAt });
+  };
+  // After a conversation is created or a group changes, the list is read fresh (a read already in flight may predate the
+  // change, so it is let finish and the list read again) and the changed chat is told to every client (issue 326).
+  const freshChats = async () => {
+    if (listing) await listing.catch(() => {});
+    await readChats(held ? held.limit : paging.chats.default);
+    return held.chats;
+  };
+  const chatChanged = async (match) => {
+    const chat = (await freshChats()).find(match) || null;
+    if (chat) publish('chat.changed', chat);
+    return chat;
   };
   // A conversation read on one device clears here too: the held list drops its count and every client is told,
   // so the number a client shows is the server's, never its own idea.
@@ -213,13 +260,14 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform, diagnostics,
-    send, react: send.react, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm,
+    send, react: send.react, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm, chatChanged,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),
     exporter,
     webhooks,
+    push,
     mac,
     restarts,
     // How a theme URL is fetched; injected so a test can stand in for the network.
@@ -401,6 +449,45 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     ws.on('error', (e) => log.emit('ws.error', { error: e.message }));
   }
 
+  // A change to the engine's own database (a read on another device, a chat renamed or its photo changed, a message that
+  // arrived while the bridge was between events) is an EVENT, and the list is read again the moment it settles, so a
+  // change made anywhere reaches every client in about DB_SETTLE_MS rather than at the next poll (Abi, 2026-10-14). The
+  // database is SQLite in WAL mode, so the change lands in chat.db-wal as often as in chat.db: the directory is watched
+  // and both names are taken. The interval below is only a failsafe for a watcher that could not start or an event the
+  // filesystem coalesced away, never the mechanism.
+  const refresh = () => { if (held && [...clients].some((c) => c.authed)) readChats(held.limit).catch(() => {}); };
+  const DB_SETTLE_MS = 120;
+  let dbWatch = null;
+  let dbTimer = null;
+  let closeWatch = () => {};
+  if (typeof dbPath !== 'string' || dbPath === '') log.emit('db.watch', { ok: false, reason: 'not configured' });
+  else {
+    try {
+      const dir = path.dirname(dbPath);
+      const base = path.basename(dbPath);
+      dbWatch = watch(dir, { persistent: false });
+      // A write to a file already there arrives as a change; one that creates it (the -wal on a fresh database) arrives as
+      // a rename. Both are the database changing, so both are taken.
+      const changed = (_event, name) => {
+        const file = String(name || '');
+        if (file && file !== base && file !== base + '-wal' && file !== base + '-shm') return;
+        log.emit('db.changed', { kind: file === base ? 'db' : file === base + '-wal' ? 'wal' : 'other' });
+        clearTimeout(dbTimer);
+        dbTimer = setTimeout(refresh, DB_SETTLE_MS);
+        dbTimer.unref?.();
+      };
+      dbWatch.on('change', changed);
+      dbWatch.on('rename', changed);
+      dbWatch.on('error', (e) => log.emit('db.watch', { ok: false, reason: 'watch failed: ' + (e && e.code ? e.code : 'unknown') }));
+      log.emit('db.watch', { ok: true, reason: 'watching' });
+    } catch (e) {
+      log.emit('db.watch', { ok: false, reason: 'watch failed: ' + (e && e.code ? e.code : 'unknown') });
+    }
+  }
+  closeWatch = () => { dbTimer && clearTimeout(dbTimer); dbWatch?.close(); dbWatch = null; };
+  const readSync = setInterval(refresh, READ_SYNC_MS);
+  readSync.unref();
+
   const beat = setInterval(() => {
     for (const c of clients) {
       if (!c.alive) { c.ws.terminate(); continue; }
@@ -444,6 +531,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       webhooks.close();
       typing.stopAll();
       clearInterval(beat);
+      clearInterval(readSync);
+      closeWatch();
       for (const c of clients) {
         try { c.ws.close(1012, 'restarting'); } catch { /* gone */ }
         setTimeout(() => c.ws.terminate(), 1000).unref();

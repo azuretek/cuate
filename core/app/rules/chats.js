@@ -1,5 +1,5 @@
-// Pure: the chat list's rules. The list can be sorted, filtered and gathered into person-made groups; only the
-// arrangement lives here, so a group never changes which chats or messages exist.
+// Pure: the chat list's rules. The list can be sorted, filtered and searched; only the arrangement lives here. A group
+// is the message service's own group conversation (issue 326), never an arrangement made in this app.
 export const SORT_ORDERS = ['recent', 'name', 'name-desc'];
 
 // The sort choices named the way a person reads them. The page header's sort control and the list's own order share
@@ -12,9 +12,6 @@ export function normalizeSort(sort) {
   return SORT_ORDERS.includes(sort) ? sort : 'recent';
 }
 
-// A chat placed in no group is drawn under this pseudo-group, so nothing disappears when it is left out of one.
-export const UNGROUPED = 'ungrouped';
-
 // The search reads a term one of two ways: Contact reads the chat's name and its participants, Full text reads the
 // message text the client holds for it. The mode is chosen per term (issue 133).
 export const SEARCH_MODES = ['contact', 'text'];
@@ -23,7 +20,7 @@ export const SEARCH_MODE_LABELS = { contact: 'Contact', text: 'Full text' };
 // `text` and `mode` are what is being typed, which filters live; `terms` are the committed search terms, each with its
 // own mode, and every one of them must match.
 export function emptyFilters() {
-  return { unread: false, group: null, kind: null, text: '', mode: 'contact', terms: [] };
+  return { unread: false, kind: null, text: '', mode: 'contact', terms: [] };
 }
 
 export function orderChats(chats) {
@@ -102,35 +99,18 @@ export function emptyListText(filters = {}) {
   return terms.length ? 'No conversations match ' + termsSentence(terms) + '.' : 'No conversations match these filters.';
 }
 
-// Filters compose: each one that is set narrows the list and clearing one leaves the others alone. The group filter
-// reads placement, where UNGROUPED means the chats that are in no group. Every committed term and the text being typed
-// must all match, so each term refines the one before.
-export function filterChats(chats, filters = {}, { placement = {}, texts = {} } = {}) {
+// Filters compose: each one that is set narrows the list and clearing one leaves the others alone. Every committed
+// term and the text being typed must all match, so each term refines the one before.
+export function filterChats(chats, filters = {}, { texts = {} } = {}) {
   const f = { ...emptyFilters(), ...filters };
   const terms = [...(Array.isArray(f.terms) ? f.terms : []), { text: f.text, mode: f.mode }];
   return chats.filter((c) => {
     if (f.unread && !(c.unread > 0)) return false;
-    if (f.group) {
-      const g = placement[c.id] || null;
-      if (f.group === UNGROUPED ? g : g !== f.group) return false;
-    }
     if (f.kind === 'direct' && c.isGroup) return false;
     if (f.kind === 'group' && !c.isGroup) return false;
     if (!terms.every((t) => matchesTerm(c, t, { texts }))) return false;
     return true;
   });
-}
-
-// The list drawn as sections: the person's groups in their own order, then the chats in no group. A chat whose group
-// is gone counts as ungrouped, so it is never hidden.
-export function groupSections(chats, { groups = [], placement = {} } = {}) {
-  const byGroup = new Map(groups.map((g) => [g.id, []]));
-  const ungrouped = [];
-  for (const c of chats) {
-    const g = placement[c.id];
-    (g && byGroup.has(g) ? byGroup.get(g) : ungrouped).push(c);
-  }
-  return [...groups.map((g) => ({ id: g.id, name: g.name, chats: byGroup.get(g.id) })), { id: UNGROUPED, name: 'Ungrouped', chats: ungrouped }];
 }
 
 // The list's sections follow the sort in force (issue 217): newest first by day (Today, Yesterday, Earlier), or by
@@ -168,41 +148,6 @@ export function listSections(chats, { sort = 'recent', now = 0 } = {}) {
   return sections;
 }
 
-// A group made without a name takes the first "Group N" not already in use, so two unnamed groups never read alike.
-export function defaultGroupName(groups = []) {
-  const taken = new Set(groups.map((g) => g.name));
-  let n = 1;
-  while (taken.has('Group ' + n)) n += 1;
-  return 'Group ' + n;
-}
-
-// Groups are pure lists too: create, rename and reorder are new lists, never edits in place. The name is optional.
-export function addGroup(groups, { id, name }) {
-  return [...groups, { id, name: String(name || '').trim() || defaultGroupName(groups) }];
-}
-
-export function renameGroup(groups, id, name) {
-  return groups.map((g) => (g.id === id ? { ...g, name: String(name || '').trim() || g.name } : g));
-}
-
-export function moveGroup(groups, id, delta) {
-  const list = [...groups];
-  const i = list.findIndex((g) => g.id === id);
-  const j = i < 0 ? -1 : i + delta;
-  if (i < 0 || j < 0 || j >= list.length) return list;
-  [list[i], list[j]] = [list[j], list[i]];
-  return list;
-}
-
-// A chat is in at most one group: placing it moves it, and placing it in no group drops its entry. The arrangement is
-// keyed by chat id, so renaming the chat or a member keeps it where it was put.
-export function placeChat(placement, chatId, groupId) {
-  const out = { ...placement };
-  if (groupId && groupId !== UNGROUPED) out[chatId] = groupId;
-  else delete out[chatId];
-  return out;
-}
-
 // A group nobody has named reaches us with the chat's own identifier as its name, so the list read
 // "chat323392484988469066" where it should read the people in it (issue #80). An identifier is not a name, so those
 // fall through to the participants, joined the way a person would say them, and then to a plain label.
@@ -225,10 +170,18 @@ import { messageSummary } from './payload.js';
 export function chatPreview(chat) {
   const m = chat.lastMessage;
   if (!m) return '';
+  if (m.event) return eventText(m);
   // A message that carries an inline object reads as the object, not as the placeholder character, and one with nothing
   // readable left is the attachment it actually is (issue #80). A payload reads as the link it is, never as its name
   // (issue 238).
   return (m.fromMe ? 'You: ' : '') + messageSummary({ ...m, text: stripInlineObjects(m.text) });
+}
+
+// The words for an event in a conversation (issue 341): who did it, then what changed.
+export function eventText(m) {
+  const who = m.fromMe ? 'You' : String(m.senderName || m.sender || 'Someone');
+  if (m.event && m.event.kind === 'groupPhoto') return who + ' changed the group photo';
+  return '';
 }
 
 export function initials(name) {
@@ -247,7 +200,8 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
   const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
   const out = chats.slice();
-  out[i] = { ...c, unread, lastMessageAt: message.sentAt, lastMessage };
+  const photo = message.event && message.event.kind === 'groupPhoto' ? { photo: message.event.photo } : {};
+  out[i] = { ...c, ...photo, unread, lastMessageAt: message.sentAt, lastMessage: message.event ? { ...lastMessage, event: { kind: message.event.kind }, senderName: message.senderName || null } : lastMessage };
   return { chats: orderChats(out), known: true };
 }
 
@@ -274,39 +228,16 @@ export function checkedCount(checked = [], ids = []) {
   return ids.filter((id) => checked.includes(id)).length;
 }
 
-// Adding a selection to a group is the single-row placement applied to each id.
-export function addChatsToGroup(placement = {}, ids = [], groupId) {
-  return ids.reduce((acc, id) => placeChat(acc, id, groupId), { ...placement });
-}
-
-// A brand new group takes the selection with it, so both changes travel in one settings patch.
-export function groupFromSelection(groups = [], placement = {}, ids = [], { id, name } = {}) {
-  return { groups: addGroup(groups, { id, name }), placement: addChatsToGroup(placement, ids, id) };
-}
-
-// A group leaves the list and every placement that pointed at it goes with it, so no chat keeps a group that is gone.
-export function removeGroup(groups = [], id) {
-  return groups.filter((g) => g.id !== id);
-}
-
-export function clearGroupPlacement(placement = {}, groupId) {
-  const out = {};
-  for (const [chatId, g] of Object.entries(placement)) if (g !== groupId) out[chatId] = g;
-  return out;
-}
-
 // Delete is a client-side hide: a chat leaves this client's list and nothing on the server is touched. The hidden
 // ids are a setting, so every device one person uses draws the same list.
 export function hideChats(hidden = [], ids = []) {
   return [...new Set([...hidden, ...ids])];
 }
 
-// A hidden chat also leaves the manual order and the placement, so what is drawn and what is kept stay in step.
-export function forgetChats(order = [], placement = {}, ids = []) {
+// A hidden chat also leaves the manual order, so what is drawn and what is kept stay in step.
+export function forgetChats(order = [], ids = []) {
   const gone = new Set(ids);
-  const outPlacement = {};
-  for (const [chatId, g] of Object.entries(placement)) if (!gone.has(chatId)) outPlacement[chatId] = g;
-  return { order: order.filter((id) => !gone.has(id)), placement: outPlacement };
+  return order.filter((id) => !gone.has(id));
 }
 
 // The confirm gate. A delete request opens the modal with the ids it names and nothing else, and only a second,
@@ -319,13 +250,82 @@ export function requestDelete(ids = []) {
   return unique.length ? { ids: unique, step: DELETE_STEPS.confirming } : null;
 }
 
-export function requestDeleteGroup(id, name) {
-  return id ? { kind: 'group', id, name: String(name || 'this group'), step: DELETE_STEPS.confirming } : null;
-}
-
-// The second, explicit press. It resolves any pending delete, a selection of chats or a single group, and nothing
-// else does, so no delete reaches its action on one press.
+// The second, explicit press. It resolves a pending delete of a selection of chats, and nothing else does, so no delete reaches its action on one press.
 export function resolveDelete(pending, confirmed) {
   if (!pending || pending.step !== DELETE_STEPS.confirming || confirmed !== true) return null;
   return pending;
+}
+
+// A new conversation names its people as addresses, a phone number or an email (issue 326). What is typed is split on
+// commas, semicolons and line breaks; each part is kept once, and a part that is neither is reported back, never sent.
+const ADDRESS = /^(\+?[0-9][0-9 ().-]{2,30}|[^\s@]{1,64}@[^\s@]{1,190})$/;
+export const isAddress = (a) => typeof a === 'string' && ADDRESS.test(a.trim());
+
+export function parseRecipients(text = '') {
+  const parts = String(text).split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+  const addresses = [];
+  const invalid = [];
+  for (const p of parts) (isAddress(p) ? addresses : invalid).push(p);
+  return { addresses: [...new Set(addresses)], invalid };
+}
+
+// The people the composer offers as it is typed into: every person this list already talks to one to one, by the
+// name the list shows and the address the conversation uses, matched on either, the newest conversation first.
+export function recipientSuggestions(chats = [], query = '', { exclude = [], limit = 8 } = {}) {
+  const q = String(query).trim().toLocaleLowerCase();
+  const seen = new Set(exclude);
+  const out = [];
+  for (const c of orderChats(chats)) {
+    if (c.isGroup || !Array.isArray(c.participants) || c.participants.length !== 1) continue;
+    const address = c.participants[0];
+    if (seen.has(address)) continue;
+    const name = chatTitle(c);
+    if (q && !name.toLocaleLowerCase().includes(q) && !String(address).toLocaleLowerCase().includes(q)) continue;
+    seen.add(address);
+    out.push({ address, name, chatId: c.id });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+// A selection in Edit becomes one group conversation (issue 326): the people of every chosen conversation, each once.
+export function groupAddresses(chats = [], ids = []) {
+  const want = new Set(ids);
+  const out = [];
+  for (const c of chats) if (want.has(c.id)) for (const a of c.participants || []) if (!out.includes(a)) out.push(a);
+  return out;
+}
+
+// A chat the server says changed (created, renamed, a member added or removed) replaces the one the list holds, or
+// joins it, and the list keeps its order.
+export function upsertChat(chats = [], chat) {
+  if (!chat || chat.id == null) return chats;
+  const i = chats.findIndex((c) => c.id === chat.id);
+  const out = i < 0 ? [...chats, chat] : chats.map((c, k) => (k === i ? { ...c, ...chat } : c));
+  return orderChats(out);
+}
+
+// A messaging link another app hands us when this app is the default for messages (issue 333): sms:, smsto:, mms:,
+// mmsto:, im: and imessage:, each naming one or more people (commas between them) and maybe a body. The platform's own
+// link is parsed here once, for every shell; a link naming nobody, or anything that is not a phone number or an email,
+// is not a messaging link.
+const LINK = /^(sms|smsto|mms|mmsto|im|imessage):(?:\/\/)?([^?]*)(?:\?(.*))?$/i;
+export function parseMessagingLink(url) {
+  const m = LINK.exec(String(url || '').trim());
+  if (!m) return null;
+  let people;
+  try { people = decodeURIComponent(m[2]); } catch { return null; }
+  const addresses = [...new Set(people.split(/[,;]/).map((p) => p.trim()).filter(Boolean))];
+  if (!addresses.length || !addresses.every(isAddress)) return null;
+  let body = '';
+  if (m[3]) { try { body = new URLSearchParams(m[3]).get('body') || ''; } catch { body = ''; } }
+  return { addresses, body };
+}
+
+// Where a messaging link lands: the conversation already held with exactly those people, or a new one started with them.
+export function linkTarget(chats = [], link) {
+  if (!link) return null;
+  const want = [...link.addresses].sort().join('\n');
+  const hit = orderChats(chats).find((c) => Array.isArray(c.participants) && c.isGroup === link.addresses.length > 1 && [...c.participants].sort().join('\n') === want);
+  return hit ? { open: hit.id } : { compose: link.addresses };
 }

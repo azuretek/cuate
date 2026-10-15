@@ -2,9 +2,10 @@ import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { press } from '../../kit/press.js';
+import { growFrom, play } from '../../kit/motion.js';
 import { closeButtonHtml } from './close-button.js';
 import { pressOutside } from '../../kit/rules/dismiss.js';
-import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey } from '../rules/zoom.js';
+import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey, drawnY } from '../rules/zoom.js';
 import { swipeStep } from '../rules/media.js';
 
 // The image viewer: one picture or video, large, over the app. It draws on the settings sheet's own backdrop (the same
@@ -38,8 +39,13 @@ const needsJpeg = (item) => /heic|heif/i.test(String(item && item.mime || ''));
 class AppImageViewer extends KitElement {
   static properties = {
     src: {}, alt: {}, kind: {}, view: { state: true }, moving: { state: true },
+    // A Live Photo shows its still, and its motion plays over it on the play control: the motion's URL, and whether it is
+    // playing or could not be loaded.
+    motion: { state: true }, playing: { state: true }, motionFailed: { state: true },
     // The conversation's media, in order, and the one on screen. The page hands them in; the viewer steps between them.
     items: { attribute: false }, index: { attribute: false }, client: { attribute: false },
+    // The preview the viewer was opened from: it grows out of it and, closed on the same item, shrinks back into it.
+    from: { attribute: false },
   };
 
   constructor() {
@@ -53,6 +59,9 @@ class AppImageViewer extends KitElement {
     this.view = zoomFit();
     this.moving = false;
     this.failed = false;
+    this.motion = '';
+    this.playing = false;
+    this.motionFailed = false;
     this.pointers = new Map();
     this.gesture = null;
     this.lastTap = null;
@@ -68,6 +77,8 @@ class AppImageViewer extends KitElement {
   connectedCallback() {
     super.connectedCallback();
     this.opener = document.activeElement;
+    // The item it opened on, which a close shrinks back into its preview only while it is still on screen.
+    this.openedAt = this.index;
     document.addEventListener('keydown', this.onKey);
     document.addEventListener('gesturestart', this.onGesture);
     document.addEventListener('gesturechange', this.onGesture);
@@ -78,6 +89,7 @@ class AppImageViewer extends KitElement {
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('gesturestart', this.onGesture);
     document.removeEventListener('gesturechange', this.onGesture);
+    this.resized?.disconnect();
     for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();
     // Focus goes back to the preview that opened the viewer, so a keyboard reader is where they were.
@@ -86,6 +98,11 @@ class AppImageViewer extends KitElement {
 
   firstUpdated() {
     this.querySelector('.close-button')?.focus();
+    // The top lift depends on the stage's height, so a resize (a rotation, a window drag) redraws the picture's place.
+    if (typeof ResizeObserver === 'function' && this.stage()) {
+      this.resized = new ResizeObserver(() => this.updated());
+      this.resized.observe(this.stage());
+    }
     // The item the page asked for: a single picture or video it handed over (a staged preview), or one of the media
     // items in the conversation, resolved by id.
     if (this.items.length) this.show(this.index);
@@ -95,12 +112,42 @@ class AppImageViewer extends KitElement {
     const img = this.picture();
     if (!img) return;
     img.style.setProperty('--zoom-x', String(this.view.x));
-    img.style.setProperty('--zoom-y', String(this.view.y));
+    // The picture opens at the top of the stage (issue 315), lifted by the rules until a zoom makes it fill the stage.
+    img.style.setProperty('--zoom-y', String(drawnY(this.view, this.box())));
     img.style.setProperty('--zoom-scale', String(this.view.scale));
   }
 
+  // Closing on the item it opened on shrinks the picture back into its preview while the scrim fades (issue 316);
+  // on another item, or with nowhere visible to go back to, the scrim fades with the picture in it.
+  // With nothing to animate (reduced motion, or a page that cannot) it closes at once.
   close() {
-    this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+    if (this.closing) return undefined;
+    const done = () => { this.closing = false; this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true })); };
+    const img = this.picture();
+    const to = img ? this.returnRect() : null;
+    const fade = play(this.stage(), [{ opacity: 1 }, { opacity: 0 }], { duration: 'screen', easing: 'sheet-ease', fill: 'forwards' });
+    if (!fade) return done();
+    this.closing = true;
+    const back = to ? growFrom(img, to, { origin: this.layoutCentre(img), back: true, duration: 'screen', easing: 'sheet-ease' }) : fade.finished.catch(() => {});
+    return back.then(done);
+  }
+
+  // Where the preview is now, if it is still on screen and this is the item it opened: a rectangle to grow from or
+  // shrink back into, or null.
+  returnRect() {
+    const el = this.from;
+    if (!el || !el.isConnected || this.index !== this.openedAt || typeof el.getBoundingClientRect !== 'function') return null;
+    const r = el.getBoundingClientRect();
+    const vh = typeof innerHeight === 'number' ? innerHeight : 0;
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && (!vh || r.top < vh) ? r : null;
+  }
+
+  // The picture's layout centre: its drawn centre less the pan and lift its transform wears.
+  layoutCentre(img) {
+    const r = img.getBoundingClientRect();
+    const x = parseFloat(img.style.getPropertyValue('--zoom-x')) || 0;
+    const y = parseFloat(img.style.getPropertyValue('--zoom-y')) || 0;
+    return { x: r.left + r.width / 2 - x, y: r.top + r.height / 2 - y };
   }
 
   stage() {
@@ -114,8 +161,21 @@ class AppImageViewer extends KitElement {
   // What the rules need: the fitted picture (its layout size, which the transform does not change) and the stage.
   box() {
     const img = this.picture();
+    const area = this.area();
+    return { width: img ? img.offsetWidth : 0, height: img ? img.offsetHeight : 0, stageWidth: area.width, stageHeight: area.height, anchor: 'center' };
+  }
+
+  // The stage's content box on screen: the room inside its safe-area padding, where the picture is laid out and
+  // where the rules' centre is, so a point and the top lift are measured from the same place the picture sits.
+  area() {
     const stage = this.stage();
-    return { width: img ? img.offsetWidth : 0, height: img ? img.offsetHeight : 0, stageWidth: stage ? stage.clientWidth : 0, stageHeight: stage ? stage.clientHeight : 0 };
+    if (!stage) return { left: 0, top: 0, width: 0, height: 0 };
+    const r = stage.getBoundingClientRect();
+    const cs = getComputedStyle(stage);
+    const px = (v) => parseFloat(v) || 0;
+    const left = r.left + px(cs.paddingLeft);
+    const top = r.top + px(cs.paddingTop);
+    return { left, top, width: Math.max(0, r.width - px(cs.paddingLeft) - px(cs.paddingRight)), height: Math.max(0, r.height - px(cs.paddingTop) - px(cs.paddingBottom)) };
   }
 
   max() {
@@ -123,9 +183,9 @@ class AppImageViewer extends KitElement {
     return zoomMax(img && img.offsetWidth ? img.naturalWidth / img.offsetWidth : 1);
   }
 
-  // A point on the screen, measured from the stage's centre, which is where the rules measure from.
+  // A point on the screen, measured from the centre of the stage's content box, which is where the rules measure from.
   point(e) {
-    const r = this.stage().getBoundingClientRect();
+    const r = this.area();
     return { x: e.clientX - (r.left + r.width / 2), y: e.clientY - (r.top + r.height / 2) };
   }
 
@@ -139,6 +199,9 @@ class AppImageViewer extends KitElement {
     const list = Array.isArray(this.items) ? this.items : [];
     this.view = zoomFit();
     this.failed = false;
+    this.motion = '';
+    this.playing = false;
+    this.motionFailed = false;
     if (!list.length) return;
     const at = Math.max(0, Math.min(list.length - 1, Number(i) || 0));
     this.index = at;
@@ -156,7 +219,7 @@ class AppImageViewer extends KitElement {
       // and never the site; every other item is one of our own attachments.
       const blob = item.linkUrl
         ? await this.client.linkMedia(item.linkUrl)
-        : await this.client.attachment(item.attachmentId, { format: needsJpeg(item) ? 'jpeg' : undefined });
+        : await this.client.attachment(item.attachmentId, item.part ? { part: item.part } : { format: needsJpeg(item) ? 'jpeg' : undefined });
       const url = URL.createObjectURL(blob);
       this.urls.set(item.id, url);
       const current = this.items[this.index];
@@ -169,6 +232,29 @@ class AppImageViewer extends KitElement {
       const current = this.items[this.index];
       if (current && current.id === item.id) this.failed = true;
     }
+  }
+
+  // A Live Photo's play control: the motion plays once over the still, muted and inline, and the still is back when it
+  // ends or the control is pressed again. The motion is the attachment's live part, which the server serves as an MP4
+  // every platform can play; it is fetched on the first press only, and kept for the viewer's life like any other item.
+  async playMotion() {
+    const item = this.items[this.index];
+    if (!item || !item.live) return;
+    if (this.playing) { this.playing = false; return; }
+    const key = item.id + ':live';
+    if (!this.urls.has(key)) {
+      try {
+        const blob = await this.client.attachment(item.attachmentId, { part: 'live' });
+        this.urls.set(key, URL.createObjectURL(blob));
+      } catch {
+        if (this.items[this.index] === item) this.motionFailed = true;
+        return;
+      }
+    }
+    if (this.items[this.index] !== item) return;
+    this.motion = this.urls.get(key);
+    this.motionFailed = false;
+    this.playing = true;
   }
 
   // Move one item in the conversation's media, staying put at the ends. The page hears the move so its own idea of the
@@ -208,10 +294,12 @@ class AppImageViewer extends KitElement {
   }
 
   onDown = (e) => {
-    // The page's own drag (the phone's drawer, from the left edge) must not start under the viewer. A press on the
-    // close control, a step control or a video's own controls is theirs, not a pan's.
+    // The page's own drag (the phone's drawer, from the left edge) must not start under the viewer. A press on any of
+    // the viewer's controls or a video's own controls is theirs, not a pan's: the stage captures the pointer for a pan,
+    // and a captured pointer's click lands on the stage, so a control it captured never heard its own press (the Live
+    // Photo play control did nothing, issue 325).
     e.stopPropagation();
-    if (e.target.closest && (e.target.closest('.close-button') || e.target.closest('.viewer-nav') || e.target.closest('video'))) return;
+    if (e.target.closest && e.target.closest('button, video, .viewer-bar')) return;
     try { this.stage().setPointerCapture(e.pointerId); } catch { /* a synthetic pointer has nothing to capture */ }
     const p = this.point(e);
     this.pointers.set(e.pointerId, p);
@@ -301,8 +389,21 @@ class AppImageViewer extends KitElement {
   };
 
   // The fitted size is known only once the picture has loaded; start from fit against it.
-  onLoad = () => {
+  onLoad = async () => {
     this.view = zoomFit();
+    // The first picture grows out of the preview it was opened from, once it is laid out at fit.
+    if (this.grown) return;
+    this.grown = true;
+    await this.updateComplete;
+    const img = this.picture();
+    const from = this.returnRect();
+    if (!img || !from) return;
+    // The picture's first place (fit, lifted to the top) is drawn at once rather than through the zoom transition, so
+    // the grow is measured against where the picture ends, not a frame of it sliding there.
+    img.style.transition = 'none';
+    this.updated();
+    img.getBoundingClientRect();
+    growFrom(img, from, { origin: this.layoutCentre(img) }).then(() => { img.style.transition = ''; });
   };
 
   render() {
@@ -310,9 +411,18 @@ class AppImageViewer extends KitElement {
     const at = Math.max(0, Math.min(list.length ? list.length - 1 : 0, Number(this.index) || 0));
     const label = this.alt || (this.kind === 'video' ? 'Video' : 'Image');
     const hasNav = list.length > 1;
+    const live = Boolean(list[at] && list[at].live) && this.kind === 'image';
     const media = this.kind === 'video'
       ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
-      : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
+      : live && this.playing && this.motion
+        ? html`<video class="viewer-image viewer-motion" src=${this.motion} aria-label=${label} autoplay muted playsinline @ended=${() => { this.playing = false; }}></video>`
+        : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
+    const playLabel = this.motionFailed ? 'The motion could not be loaded' : this.playing ? 'Show the photo' : 'Play the Live Photo';
+    // The controls are one family (issue 325): the step controls either side, the close control in its corner, and one
+    // bar centred at the foot holding the Live Photo's play control, where the item sits in the conversation's media
+    // and the zoom. The play control is the bar's widest, labelled, so it is not missed.
+    const play = live ? html`<button type="button" class="viewer-control viewer-play" aria-label=${playLabel} title=${playLabel} aria-pressed=${this.playing ? 'true' : 'false'} ?disabled=${this.motionFailed} @click=${press(() => this.playMotion())}><span class="icon" data-icon="play" aria-hidden="true"></span><span class="viewer-play-label">Live</span></button>` : nothing;
+    const count = hasNav ? html`<span class="viewer-count">${at + 1} of ${list.length}</span>` : nothing;
     return html`<div class="sheet-scrim viewer" data-dismiss="viewer" role="dialog" aria-modal="true" aria-label=${label}
         data-scale=${String(this.view.scale)} data-zoomed=${this.view.scale > 1.001 ? 'true' : 'false'} data-gesture=${this.moving ? 'on' : 'off'}
         data-index=${at} data-count=${list.length} data-kind=${this.kind}
@@ -322,7 +432,7 @@ class AppImageViewer extends KitElement {
       ${hasNav ? html`<button type="button" class="viewer-nav viewer-prev" aria-label="Previous item" title="Previous item" ?disabled=${at <= 0} @click=${press(() => this.go('prev'))}><span class="icon" data-icon="chevron-left" aria-hidden="true"></span></button>` : nothing}
       ${hasNav ? html`<button type="button" class="viewer-nav viewer-next" aria-label="Next item" title="Next item" ?disabled=${at >= list.length - 1} @click=${press(() => this.go('next'))}><span class="icon" data-icon="chevron-right" aria-hidden="true"></span></button>` : nothing}
       ${closeButtonHtml({ owner: 'viewer', label: 'Close', size: 'lg', onClose: () => this.close() })}
-      <p class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</p>
+      <div class="viewer-bar" role="toolbar" aria-label="Media controls">${play}${count}<span class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</span></div>
     </div>`;
   }
 }

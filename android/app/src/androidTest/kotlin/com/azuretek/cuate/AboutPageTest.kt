@@ -67,12 +67,16 @@ class AboutPageTest {
             val view = webView(activity.findViewById(android.R.id.content))!!
             view.evaluateJavascript(script) { value -> result = value; done.countDown() }
         }
-        assertTrue("JavaScript callback timed out", done.await(5, TimeUnit.SECONDS))
+        // The answer waits for the page's main thread, which on the CI emulator is shared with frames of about a second
+        // each and with Play services updating in the background, so a single answer took over 5 s there. The caller's
+        // own deadline bounds the wait; this only catches an answer that will never come.
+        assertTrue("JavaScript callback timed out", done.await(JS_ANSWER_SECONDS, TimeUnit.SECONDS))
         return result
     }
 
     private fun awaitProof(scenario: ActivityScenario<MainActivity>): JSONObject {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+        // A minute: the fixture opens About and goes back before its notice (the slide, #356).
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
         var result = "null"
         do {
             instrumentation.waitForIdleSync()
@@ -240,6 +244,10 @@ class AboutPageTest {
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             val proof = awaitProof(scenario)
+            // The same slide as the desktop (Abi, 2026-10-13): the fixture held About rising and Settings going down and back
+            // up on their own timelines in this web view, and reports which it saw (a cut where the system reduces motion).
+            val motion = proof.optString("motion")
+            assertTrue("About and Settings moved as the desktop's do: $motion", motion.startsWith("slide ") || motion.startsWith("cut "))
             assertTrue("About draws its icon, Check for updates and the build: " + proof, proof.getString("parts") == "identity|updates|build")
             assertTrue("The notice offers the newer build: " + proof, proof.getString("notice").contains("Version $offered is available"))
             assertTrue("About's button is the notice's Download: " + proof, proof.getString("button") == "Download" && proof.getString("command") == "updates.download")

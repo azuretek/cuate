@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { LOCK_METHODS, MAC_DEFAULTS } from './mac.js';
 import { ALL_EVENTS, DEFAULT_EVENTS, eventNames, isLoopback } from './webhooks.js';
+import { PUSH_RELAY } from './push.js';
 
 const LEVELS = ['debug', 'info', 'notice', 'warn', 'error', 'fatal'];
 
@@ -17,13 +18,18 @@ export const DEFAULTS = Object.freeze({
   // Inbound typing is present and OFF: the ordinary database watch reports none, and the only source is an injected
   // v2 bridge (imsg bridge.events.subscribe). Turning this on needs an already-running bridge and is not something
   // this server starts (issue 230).
-  typing: { incoming: false },
+  // Outgoing typing is ON: while one of our devices types in a conversation, the engine shows the other person the
+  // indicator, where it can (issue 319).
+  typing: { incoming: false, outgoing: true },
   attachmentsRoot: null,
   sending: { enabled: false, perMinute: 20 },
   previews: 40,
   log: { level: 'notice', syslog: null },
   mac: macDefaults(),
   webhooks: { endpoints: [] },
+  // Push notifications go through the relay in our Firebase project, which only passes on what this server already
+  // sealed for one phone (issue 347, docs/PUSH.md). null switches push off; a self-built app points this at its own.
+  push: { relay: PUSH_RELAY },
 });
 
 /** A hook endpoint with its defaults filled in. A 2d endpoint's single `secret` is read as its current secret. */
@@ -46,6 +52,7 @@ export function normalizeConfig(raw = {}) {
     ...given(raw),
     engine: { ...DEFAULTS.engine, ...given(raw.engine) },
     typing: { ...DEFAULTS.typing, ...given(raw.typing) },
+    push: { ...DEFAULTS.push, ...given(raw.push) },
     sending: { ...DEFAULTS.sending, ...given(raw.sending) },
     log: { ...DEFAULTS.log, ...given(raw.log) },
     mac: {
@@ -64,6 +71,8 @@ export function normalizeConfig(raw = {}) {
   if (c.engine.live !== null && typeof c.engine.live !== 'string') problems.push('engine.live must be text or null');
   if (c.attachmentsRoot !== null && typeof c.attachmentsRoot !== 'string') problems.push('attachmentsRoot must be a path or null');
   if (typeof c.typing.incoming !== 'boolean') problems.push('typing.incoming must be true or false');
+  if (typeof c.typing.outgoing !== 'boolean') problems.push('typing.outgoing must be true or false');
+  if (c.push.relay !== null && !(typeof c.push.relay === 'string' && (/^https:\/\/[^\s]+$/.test(c.push.relay) || isLoopback(c.push.relay)))) problems.push('push.relay must be an https URL, or null to switch push off');
   if (typeof c.sending.enabled !== 'boolean') problems.push('sending.enabled must be true or false');
   if (!Number.isInteger(c.sending.perMinute) || c.sending.perMinute < 1 || c.sending.perMinute > 600) problems.push('sending.perMinute must be from 1 to 600');
   if (!Number.isInteger(c.previews) || c.previews < 0 || c.previews > 500) problems.push('previews must be from 0 to 500');
