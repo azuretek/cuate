@@ -172,6 +172,7 @@ const checks = [
   { key: 'react', bound: 'true', value: (report) => report.react, test: (v) => v === true },
   { key: 'reply', bound: 'true', value: (report) => report.reply, test: (v) => v === true },
   { key: 'document', bound: 'true', value: (report) => report.document, test: (v) => v === true },
+  { key: 'pdfPreview', bound: 'true', value: (report) => report.pdfPreview, test: (v) => v === true },
   { key: 'dismiss', bound: 'true', value: (report) => report.dismiss, test: (v) => v === true },
   { key: 'placeholder', bound: 'true', value: (report) => report.placeholder, test: (v) => v === true },
   { key: 'trayIcon', bound: 'true', value: (report) => report.trayIcon, test: (v) => v === true },

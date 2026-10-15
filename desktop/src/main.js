@@ -1,11 +1,11 @@
 // The desktop shell: one window hosting core's app page over app://bundle, plus the host bridge. Nothing about the
 // app lives here; the name comes from core/spec/naming.json.
 import { app, BrowserWindow, protocol, ipcMain, Menu, Tray, nativeImage, safeStorage, Notification, shell, nativeTheme, dialog } from 'electron';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHandlers, createSecureStore, mimeFor } from './bridge-handlers.js';
+import { createHandlers, createSecureStore, createFileOpener, mimeFor } from './bridge-handlers.js';
 import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
 import { controlLayout } from '../../core/app/rules/bar-layout.js';
@@ -60,6 +60,18 @@ const smokeCalls = [];
 // Every document the page asked to save while smoking, so the smoke can prove the press reached the shell under the
 // file's real name rather than opening anything (issue 219).
 const smokeSaves = [];
+// Open in, while smoking (issue 374): the copy is written as it is for a person, and what was written is recorded in
+// place of opening another app, so the run proves the copy and never launches anything on the machine it runs on.
+const smokeOpens = [];
+const fileOpener = createFileOpener({
+  root: path.join(app.getPath('temp'), naming.slug + '-open-' + process.pid),
+  fs: { mkdirSync, mkdtempSync, writeFileSync, rmSync },
+  openPath: async (file) => {
+    if (!SMOKE) return shell.openPath(file);
+    smokeOpens.push({ file, name: path.basename(file), bytes: existsSync(file) ? statSync(file).size : -1 });
+    return '';
+  },
+});
 
 app.setName(naming.product);
 if (SMOKE) app.setPath('userData', path.join(SMOKE, 'user-data'));
@@ -241,6 +253,9 @@ const handlers = createHandlers({
     writeFileSync(picked.filePath, Buffer.from(data, 'base64'));
     return true;
   },
+  // Open in (issue 374): a temporary copy, opened in the system's default app for its type and removed when the app
+  // quits.
+  openFile: ({ name, mime, data }) => fileOpener.open({ name, mime, data }),
   // About's Check for updates runs the tray's own check and answers the state it reported, so the page draws the same
   // notice the event carries (issue 171).
   checkUpdates: () => {
@@ -1205,21 +1220,94 @@ async function runSmoke(w) {
   report.reply = Object.values(replyChecks).every(Boolean) && Object.values(reactionGeometry).every(Boolean);
   console.log('reply: ' + JSON.stringify({ checks: replyChecks, replied, landed, marks, phoneMarks, fixtureThread, fixturePhoneThread }));
 
-  // A document (issue 219): the booking PDF is a save control on a message in no thread; pressing it offers to save it
-  // under its real name and never opens a thread.
+  // A document (issues 219 and 374): the booking PDF is a file control on a message in no thread; pressing it opens it
+  // in the media viewer, never a thread, and the viewer draws its pages with the bundled pdf.js, zooms them, and
+  // offers Open in and Save. Every press here is a real pointer press, which is what a person's is.
   const docSel = '.messages .bubble-row[data-id="FAKE-0019"]';
-  await js(`(() => { const r = document.querySelector(${q(docSel)}); if (r) r.scrollIntoView({ block: 'center' }); return true; })()`);
+  // A wait that answers whether the state was reached, so a missed state is a failed check with its measurements,
+  // not a thrown run.
+  const reached = async (expr, ms) => { try { await waitFor(expr, ms); return true; } catch { return false; } };
+  const docPressAt = async (sel) => {
+    const p = await js(`(() => { const el = document.querySelector(${q(sel)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    if (!p) return false;
+    wc.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+    await pause(30);
+    wc.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+    await pause(30);
+    wc.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+    await pause(180);
+    return true;
+  };
+  // The conversation follows its newest message and leaves its end only for the person (core/kit/scroll.js), so a
+  // scrollIntoView is put straight back and a pointer press would land on nothing. The document is scrolled to as a
+  // person does, with the wheel over the conversation, until it is in view. Electron's wheel sign is the platform's,
+  // so a turn that moved the row further away is reversed.
+  const docRowAt = () => js(`(() => { const r = document.querySelector(${q(docSel)}); const m = document.querySelector('.messages'); if (!r || !m) return null; const b = r.getBoundingClientRect(); const v = m.getBoundingClientRect(); return { top: b.top - v.top, bottom: v.bottom - b.bottom, x: Math.round(v.left + v.width / 2), y: Math.round(v.top + v.height / 2) }; })()`);
+  const docMiss = (p) => (p ? Math.max(0, -p.top) + Math.max(0, -p.bottom) : Infinity);
+  let wheelSign = 1;
+  for (const t0 = Date.now(); Date.now() - t0 < 10000;) {
+    const p = await docRowAt();
+    if (!p || docMiss(p) === 0) break;
+    const deltaY = (p.top < 0 ? 1 : -1) * wheelSign * 120;
+    wc.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+    wc.sendInputEvent({ type: 'mouseWheel', x: p.x, y: p.y, deltaX: 0, deltaY });
+    await pause(150);
+    if (docMiss(await docRowAt()) > docMiss(p)) wheelSign = -wheelSign;
+  }
   await pause(300);
   await both('16h-document');
-  const docMark = await js(`(() => { const r = document.querySelector(${q(docSel)}); if (!r) return null; const b = r.querySelector('.attachment-file'); return { marked: r.classList.contains('thread-reply'), tag: b && b.tagName, label: b && b.getAttribute('aria-label') }; })()`);
+  const docMark = await js(`(() => { const r = document.querySelector(${q(docSel)}); if (!r) return null; const b = r.querySelector('.attachment-file'); return { marked: r.classList.contains('thread-reply'), tag: b && b.tagName, label: b && b.getAttribute('aria-label'), opens: b && b.dataset.opens }; })()`);
+  await docPressAt(docSel + ' .attachment-file');
+  const docViewerOpen = await reached("document.querySelector('app-image-viewer .viewer')?.dataset.kind === 'pdf'", 5000);
+  const docDrawn = await reached("document.querySelectorAll('app-image-viewer .viewer-page[data-drawn=\"true\"]').length >= 1", 15000);
+  // The first page is one filled square (server/src/engine/fake.js): its middle pixel is that colour once it is drawn.
+  const pdfState = () => js(`(() => {
+    const v = document.querySelector('app-image-viewer .viewer');
+    const pages = [...document.querySelectorAll('app-image-viewer .viewer-page')];
+    const canvas = pages[0] && pages[0].querySelector('canvas');
+    let pixel = null;
+    if (canvas && canvas.width) { const d = canvas.getContext('2d').getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data; pixel = [d[0], d[1], d[2]]; }
+    const bar = v && v.querySelector('.viewer-bar');
+    return { kind: v && v.dataset.kind, state: v && v.dataset.docState, scale: v && Number(v.dataset.scale), pages: pages.length, drawn: pages.filter((p) => p.dataset.drawn === 'true').length, width: pages[0] ? pages[0].getBoundingClientRect().width : 0, bitmap: canvas ? canvas.width : 0, pixel, count: bar && bar.querySelector('.viewer-count')?.textContent, open: Boolean(bar && bar.querySelector('.viewer-open')), save: Boolean(bar && bar.querySelector('.viewer-save')), thread: Boolean(document.querySelector('.thread-view')) };
+  })()`);
+  const pdfAtFit = await pdfState();
+  await both('16i-pdf-viewer');
+  await docPressAt('app-image-viewer .viewer-zoom-in');
+  await reached("Number(document.querySelector('app-image-viewer .viewer')?.dataset.scale) > 1", 3000);
+  await reached(`(() => { const c = document.querySelector('app-image-viewer .viewer-page canvas'); return Boolean(c) && c.width > ${pdfAtFit.bitmap || 0}; })()`, 5000);
+  const pdfZoomed = await pdfState();
+  await both('16j-pdf-zoomed');
   smokeSaves.length = 0;
-  await js(`document.querySelector(${q(docSel + ' .attachment-file')}).click()`);
+  smokeOpens.length = 0;
+  await docPressAt('app-image-viewer .viewer-save');
   for (let i = 0; i < 40 && !smokeSaves.length; i += 1) await pause(100);
+  await docPressAt('app-image-viewer .viewer-open');
+  for (let i = 0; i < 40 && !smokeOpens.length; i += 1) await pause(100);
   const docSave = smokeSaves[0] || null;
-  const docAfter = await js(`({ thread: Boolean(document.querySelector('.thread-view')), marked: document.querySelector(${q(docSel)})?.classList.contains('thread-reply') })`);
-  const documentChecks = { found: Boolean(docMark), button: docMark?.tag === 'BUTTON', label: docMark?.label === 'Save booking.pdf', unmarked: docMark ? docMark.marked === false : false, saved: docSave?.name === 'booking.pdf' && docSave?.mime === 'application/pdf', bytes: docSave ? docSave.bytes > 0 : false, noThread: docAfter.thread === false && docAfter.marked === false };
+  const docOpen = smokeOpens[0] || null;
+  await docPressAt('app-image-viewer .close-button');
+  await reached("!document.querySelector('app-image-viewer')", 5000);
+  const docAfter = await js(`({ viewer: Boolean(document.querySelector('app-image-viewer')), thread: Boolean(document.querySelector('.thread-view')), marked: document.querySelector(${q(docSel)})?.classList.contains('thread-reply') })`);
+  // The copies Open in wrote are removed with the run's folder when the app quits.
+  const openRoot = docOpen ? path.dirname(path.dirname(docOpen.file)) : '';
+  const copyWritten = Boolean(docOpen) && existsSync(docOpen.file);
+  const cleaned = fileOpener.cleanup() && Boolean(openRoot) && !existsSync(openRoot);
+  const nearColour = (p, want) => Array.isArray(p) && p.every((v, i) => Math.abs(v - want[i]) <= 12);
+  const documentChecks = { found: Boolean(docMark), button: docMark?.tag === 'BUTTON', label: docMark?.label === 'Open booking.pdf', opensViewer: docMark?.opens === 'viewer', unmarked: docMark ? docMark.marked === false : false, noThread: docAfter.thread === false && docAfter.marked === false && pdfAtFit.thread === false, closed: docAfter.viewer === false };
   report.document = Object.values(documentChecks).every(Boolean);
-  console.log('document: ' + JSON.stringify({ checks: documentChecks, docMark, docSave, docAfter }));
+  console.log('document: ' + JSON.stringify({ checks: documentChecks, docMark, docAfter }));
+  const pdfChecks = {
+    opened: docViewerOpen && pdfAtFit.kind === 'pdf' && pdfAtFit.state === 'ready',
+    everyPage: pdfAtFit.pages === 2 && pdfAtFit.count === '2 pages',
+    drawn: docDrawn && pdfAtFit.drawn >= 1 && nearColour(pdfAtFit.pixel, [204, 77, 51]),
+    zoomed: pdfZoomed.scale === 1.25 && pdfZoomed.width > pdfAtFit.width * 1.2 && pdfZoomed.bitmap > pdfAtFit.bitmap && nearColour(pdfZoomed.pixel, [204, 77, 51]),
+    actions: pdfAtFit.open && pdfAtFit.save,
+    saved: docSave?.name === 'booking.pdf' && docSave?.mime === 'application/pdf' && docSave.bytes > 0,
+    openedIn: docOpen?.name === 'booking.pdf' && docOpen.bytes > 0 && copyWritten,
+    cleaned,
+  };
+  report.pdfPreview = Object.values(pdfChecks).every(Boolean);
+  console.log('pdf preview: ' + JSON.stringify({ checks: pdfChecks, pdfAtFit, pdfZoomed, docSave, docOpen: docOpen && { name: docOpen.name, bytes: docOpen.bytes } }));
 
   // Pictures (issue 126): a received picture and a staged one both show an aspect-correct, dressed preview, and the
   // viewer opens over the sheet's own blurred, darkened backdrop. The desktop drives the viewer with real mouse input
@@ -3610,6 +3698,9 @@ app.whenReady().then(() => {
 // A quit the platform asks for (the Dock's Quit, a log out, an update's restart) lets the window close; the tray's Quit
 // marks it the same way before it asks.
 app.on('before-quit', () => lifecycle.markQuitting());
+// The copies Open in wrote this run go with it (issue 374): another app may still hold one open, which the system
+// allows, and none is left behind in the temporary directory.
+app.on('will-quit', () => { try { fileOpener.cleanup(); } catch { /* a copy another app holds is the system's to clear */ } });
 app.on('open-url', (e, url) => { e.preventDefault(); handOverLink(url); if (app.isReady()) lifecycle.show(); });
 
 // Closing the window never reaches here, because it hides; the window is only destroyed while quitting. The handler is

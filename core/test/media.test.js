@@ -125,5 +125,5 @@ test('a video attachment is a media preview that opens the viewer, never a save 
   const still = words(attachment.render.call({ attachment: { id: 'att-s', name: 'sunset.png', mime: 'image/png', missing: false }, client: {}, failed: false, src: 'blob:s' }));
   assert.ok(!still.includes('media-play') && still.includes('Open sunset.png'), 'a plain picture wears no play mark');
   const file = words(attachment.render.call({ attachment: { id: 'att-d', name: 'booking.pdf', mime: 'application/pdf', missing: false }, client: {}, failed: false, src: '' }));
-  assert.ok(file.includes('attachment-file') && file.includes('Save booking.pdf') && !file.includes('attachment-preview'), 'a document is still saved, not shown');
+  assert.ok(file.includes('attachment-file') && file.includes('Open booking.pdf') && !file.includes('attachment-preview'), 'a document is a file control that opens it (issue 374), never a media preview');
 });
