@@ -245,6 +245,7 @@ var engine = (() => {
     isGroupPhotoRow: () => isGroupPhotoRow,
     isHorizontal: () => isHorizontal,
     isLivePhoto: () => isLivePhoto,
+    isMachineName: () => isMachineName,
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
@@ -2295,10 +2296,23 @@ var engine = (() => {
     return Number.isFinite(t) ? new Date(t).toISOString() : null;
   };
   var stripTarget = (g) => String(g).replace(/^(?:p:\d+\/|bp:)/, "");
+  var MACHINE_NAME = /^(?:chat[0-9]+|[0-9a-f]{24,40}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+  var guidTail = (g) => String(g || "").split(";").pop();
+  function isMachineName(name, chat = {}) {
+    const n = String(name || "").trim();
+    if (!n) return false;
+    if (MACHINE_NAME.test(n)) return true;
+    const own = [chat.identifier, guidTail(chat.guid)].map((v) => String(v || "").trim()).filter(Boolean);
+    return own.includes(n);
+  }
+  function chatName(c) {
+    const name = c.is_group ? String(c.display_name || c.contact_name || "").trim() : String(c.display_name || c.contact_name || c.name || c.identifier || "").trim();
+    return c.is_group && isMachineName(name, c) ? "" : name;
+  }
   function mapChat(c) {
     return {
       id: String(c.id),
-      name: String(c.display_name || c.contact_name || c.name || c.identifier || "").trim(),
+      name: chatName(c),
       isGroup: Boolean(c.is_group),
       service: c.service ? String(c.service) : "iMessage",
       participants: Array.isArray(c.participants) ? c.participants.map(String) : [],
@@ -2501,10 +2515,9 @@ var engine = (() => {
     }
     return sections;
   }
-  var CHAT_IDENTIFIER = /^chat[0-9]+$/i;
   function chatTitle(chat) {
     const name = String(chat.name || "").trim();
-    if (name && !CHAT_IDENTIFIER.test(name)) return name;
+    if (name && !isMachineName(name, chat)) return name;
     const people = (chat.participants || []).map((p) => String(p).trim()).filter(Boolean);
     if (people.length === 1) return people[0];
     if (people.length === 2) return people[0] + " and " + people[1];
