@@ -166,6 +166,14 @@ test('no shell wears a platform accent: the phone shells and the page take their
   assert.match(css, /::selection\s*\{[^}]*background:\s*var\(--color-selection\)/, 'selected text is drawn in the theme\'s selection colour');
 });
 
+test('the vendored pdf.js build is the pinned one (issue 374)', () => {
+  const pins = {
+    'core/kit/vendor/pdfjs/pdf.min.js': '57456c8e0c81e46be31174b499ef77f2b9f5ee46d04412ba627320a36755d4c2',
+    'core/kit/vendor/pdfjs/pdf.worker.min.js': '9536359f1b8367850d485731ca1d5e45c159a7b7a0912325e539937aa21ceb18',
+  };
+  for (const [f, pin] of Object.entries(pins)) assert.equal(createHash('sha256').update(readFileSync(path.join(ROOT, f))).digest('hex'), pin, f);
+});
+
 test('the vendored Lit build is the pinned one', () => {
   const h = createHash('sha256').update(readFileSync(path.join(ROOT, 'core/kit/vendor/lit-core.min.js'))).digest('hex');
   assert.equal(h, 'f607f470475d8ab790754cb70f72cdbe2390c4a57ab59df6cdb360eeb72bd87c');
