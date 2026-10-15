@@ -163,6 +163,11 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
    own link callout and drag are off. */
 .message-link { color: inherit; text-decoration: underline; overflow-wrap: anywhere; cursor: pointer; -webkit-touch-callout: none; -webkit-user-drag: none; }
 .bubble.them { background: var(--role-received); color: var(--role-received-fg); }
+/* The other person typing (issue 390): an incoming bubble of three dots at the foot of the conversation. Its motion is
+   played by core/kit/motion.js, so under reduced motion the dots are simply still. */
+.typing-row { display: flex; align-items: flex-start; margin-top: var(--space-4); }
+.typing-bubble { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-3); white-space: normal; }
+.typing-dot { width: var(--size-typing-dot); height: var(--size-typing-dot); border-radius: var(--radius-pill); background: var(--color-fg-muted); }
 .bubble.me { background: var(--role-sent); color: var(--role-sent-fg); }
 .bubble.state-sending { opacity: 0.7; }
 .bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }

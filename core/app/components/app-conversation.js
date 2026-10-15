@@ -12,7 +12,7 @@ import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReac
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
-import { typingLabel } from '../rules/typing.js';
+import { typingNote, typingBubble, typingPulse, TYPING_BUBBLE_LABEL } from '../rules/typing.js';
 import { windowControlsHtml } from './window-controls.js';
 import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
@@ -64,8 +64,9 @@ class AppConversation extends KitElement {
     reveal: { attribute: false }, revealedId: { state: true },
     // A note of the conversation's own under one message, such as Link copied: { id, text }, cleared after a moment.
     ownNote: { state: true },
-    // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, or the
-    // contact when the engine can report it. Drawn in the header, cleared by the page when it goes stale.
+    // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, a quiet note in
+    // the header, or the other person when the engine reports it, a bubble of three dots at the foot of the conversation
+    // (issue 390). Cleared by the page when it stops or goes stale.
     typing: { attribute: false },
     // The menu open on one message ({ id, kind: 'menu', side }), the thread open over the conversation and being
     // replied to ({ id } of its first message), and the message the composer's emoji panel is choosing a reaction for
@@ -148,6 +149,26 @@ class AppConversation extends KitElement {
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
     aimCarets(this);
     this.arrive(changed);
+    this.animateTyping();
+  }
+
+  // The other person's typing bubble rises into the foot of the conversation the way an arriving message does, and its
+  // dots pulse in turn for as long as it is up (issue 390). Both play through the kit, so under reduced motion the
+  // bubble still shows and its dots are still. A bubble that goes and comes back is a new element, and plays again.
+  animateTyping() {
+    const row = this.querySelector('.messages > .typing-row');
+    if (!row) {
+      this.typingRow = null;
+      return;
+    }
+    if (this.typingRow === row) return;
+    this.typingRow = row;
+    const bubble = row.querySelector('.typing-bubble');
+    const rise = parseFloat(cssVar(bubble, '--space-4')) || 0;
+    play(bubble, [{ opacity: 0, translate: '0px ' + rise + 'px', scale: '0.96' }, { opacity: 1, translate: '0px 0px', scale: '1' }]);
+    const lift = parseFloat(cssVar(bubble, '--space-1')) || 0;
+    const dots = [...row.querySelectorAll('.typing-dot')];
+    dots.forEach((dot, i) => play(dot, typingPulse(i, dots.length, lift), { duration: 'typing', easing: 'ease', iterations: Infinity }));
   }
 
   // Motion comes from where a thing came from (issue 316, docs/CONVENTIONS.md). Another conversation slides in from
@@ -359,6 +380,13 @@ class AppConversation extends KitElement {
     </div>`;
   }
 
+  // The other person typing (issue 390): an incoming bubble of three dots under the newest message. It is not a
+  // message (no .bubble-row), so no message selector, menu or scroll anchor ever takes it, and the conversation's keep
+  // follows it at the end like any growth there while a reader scrolled up stays on the message they were on.
+  typingRowHtml() {
+    return html`<div class="typing-row" data-key="typing"><div class="bubble them typing-bubble" role="status" aria-label=${TYPING_BUBBLE_LABEL}><span class="typing-dot" aria-hidden="true"></span><span class="typing-dot" aria-hidden="true"></span><span class="typing-dot" aria-hidden="true"></span></div></div>`;
+  }
+
   // What the composer's field says: Reply while a thread is open, as on the phone (issue 195).
   composerPlaceholder() {
     if (!this.sending) return 'Sending is off on the server';
@@ -441,7 +469,7 @@ class AppConversation extends KitElement {
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    const typing = typingLabel(this.typing, now);
+    const typing = typingNote(this.typing, now);
     // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
@@ -450,6 +478,7 @@ class AppConversation extends KitElement {
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
           ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, 'list'), this.threadSummary(it.message)]))}
+          ${typingBubble(this.typing, now) ? this.typingRowHtml() : nothing}
         </div>
         ${thread ? this.threadView() : nothing}
       </div>
