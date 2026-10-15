@@ -31,6 +31,7 @@ export default {
     const { createLogSink } = await import('../syslog.js');
     const { createDiagnostics } = await import('../diagnostics.js');
     const { createMac } = await import('../mac.js');
+    const { createContacts } = await import('../contacts.js');
     const { createRestarts } = await import('../watchdog.js');
     const { startMacCare } = await import('../mac-care.js');
     // The process's own sink is stdout and stderr, which launchd keeps on the Mac. When a collector is configured,
@@ -98,7 +99,10 @@ export default {
     // The database the engine reads is watched, so a change made anywhere (a read on the phone, a chat renamed) reaches
     // every client at once rather than at the next poll (Abi, 2026-10-14). Only the engine that has a database.
     const dbPath = config.engine.kind === 'imsg' ? messagesDatabasePath(config) : null;
-    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, dbPath, mac, restarts, diagnostics, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
+    // The system Contacts store names and pictures a one-to-one chat (issue 393); a Mac that has not allowed
+    // Contacts simply reads as no contacts, so nothing here can stop the server.
+    const contacts = createContacts({ log: logger.child('contacts'), dataDir });
+    const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, contacts, dbPath, mac, restarts, diagnostics, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
     publish = srv.publish;
     let updater = null;
     if (L) {

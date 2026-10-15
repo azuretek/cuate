@@ -20,7 +20,9 @@ const avconvert = (src, out) => new Promise((resolve, reject) => execFile('avcon
 export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform, convertMotion = avconvert }) {
   // The recorded path is real, and inside the attachments folder or Messages' sticker cache beside it (a sticker's
   // picture is kept there, issue 341), or there is nothing to serve.
-  const roots = () => [attachmentsRoot, attachmentsRoot ? path.join(path.dirname(attachmentsRoot), 'StickerCache') : null].filter(Boolean);
+  // The Contacts cache joins the Messages folders: a contact's picture is served by the same route, from the data
+  // folder's own contacts folder (issue 393), and from nowhere else.
+  const roots = () => [attachmentsRoot, attachmentsRoot ? path.join(path.dirname(attachmentsRoot), 'StickerCache') : null, dataDir ? path.join(dataDir, 'contacts') : null].filter(Boolean);
   async function inside(recorded) {
     const expanded = recorded.startsWith('~/') ? path.join(os.homedir(), recorded.slice(2)) : recorded;
     const real = await realpath(expanded).catch(() => null);

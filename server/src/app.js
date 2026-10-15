@@ -62,7 +62,7 @@ function readJson(req, max) {
 // The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (Abi, 2026-10-14).
 const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
@@ -150,17 +150,42 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // nowhere else (issue 323): each fresh list is compared with the one it replaces, and a count that fell is told to
   // every client as chat.read, the same event a read in this app sends. A count that rose is a new message, which the
   // message stream already carries.
+  // The system Contacts store names and pictures a one-to-one chat (issue 393). A chat the store does not know, and
+  // every group, is left exactly as the engine reported it, so a Mac with no Contacts shows what it showed before.
+  const applyContacts = async (chats) => {
+    if (!contacts) return chats;
+    const out = [];
+    for (const chat of chats) {
+      if (chat.isGroup) { out.push(chat); continue; }
+      const found = await contacts.forHandles(chat.participants || []).catch(() => null);
+      if (!found) { out.push(chat); continue; }
+      let photo = chat.photo || null;
+      if (!photo) {
+        const pic = await contacts.photo(found.record).catch(() => null);
+        if (pic) {
+          store.putAttachment(pic.id, pic.file, pic.mime, pic.name);
+          photo = { id: pic.id, name: pic.name, mime: pic.mime, bytes: pic.bytes };
+        }
+      }
+      out.push({ ...chat, name: chat.name || found.name, photo });
+    }
+    return out;
+  };
   const readChats = (limit) => {
     if (!listing) {
       listing = engine.chats({ limit, photos: true })
+        .then(applyContacts)
         .then((chats) => {
-          const before = held ? new Map(held.chats.map((c) => [String(c.id), Number(c.unread) || 0])) : null;
+          const before = held ? new Map(held.chats.map((c) => [String(c.id), c])) : null;
           held = { chats, limit, at: Date.now() };
           if (before) {
             for (const c of chats) {
               const was = before.get(String(c.id));
-              const now = Number(c.unread) || 0;
-              if (was !== undefined && now < was) publish('chat.read', { chatId: String(c.id), unread: now });
+              if (was === undefined) continue;
+              const unread = Number(c.unread) || 0;
+              if (unread < (Number(was.unread) || 0)) publish('chat.read', { chatId: String(c.id), unread });
+              // A contact renamed or repictured reaches every client as the chat changing (issue 393).
+              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id)) publish('chat.changed', c);
             }
           }
         })
@@ -488,6 +513,10 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const readSync = setInterval(refresh, READ_SYNC_MS);
   readSync.unref();
 
+  // A contact renamed or repictured on the Mac is the same event as a chat changing (issue 393): the list is read
+  // again and every client is told, so the new name or picture is drawn at once rather than at the next poll.
+  const stopContactsWatch = contacts && contacts.watchStore ? contacts.watchStore(() => refresh()) : () => {};
+
   const beat = setInterval(() => {
     for (const c of clients) {
       if (!c.alive) { c.ws.terminate(); continue; }
@@ -532,6 +561,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       typing.stopAll();
       clearInterval(beat);
       clearInterval(readSync);
+      stopContactsWatch();
       closeWatch();
       for (const c of clients) {
         try { c.ws.close(1012, 'restarting'); } catch { /* gone */ }
