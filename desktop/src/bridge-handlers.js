@@ -71,6 +71,10 @@ const noIcons = () => false;
 // A document pressed in a conversation (issue 219). A shell with nowhere to save answers false.
 const noSave = () => false;
 
+// A shell with no contact editor of its own (issue 393): Windows and Linux desktops report contactsEditor false, so
+// the page draws no Edit contact control there, and this is only the safe default under the real handler.
+const noContactEditor = () => false;
+
 // Open in (issue 374). A shell with no other app to hand a file to answers false.
 const noOpen = () => false;
 
@@ -121,7 +125,7 @@ const noticeIds = ({ chatId, messageId }) => {
   return id(chatId) ? { chatId: id(chatId), messageId: id(messageId) } : null;
 };
 
-export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', takeNotice = () => null, info, openExternal, saveFile = noSave, openFile = noOpen, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons, textScale = async () => null }) {
+export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', takeNotice = () => null, info, contactsEdit = noContactEditor, openExternal, saveFile = noSave, openFile = noOpen, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons, textScale = async () => null }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -139,6 +143,8 @@ export function createHandlers({ secure, takeLink = () => null, notify, notifyPe
     // A desktop keeps its connection open in the tray, so it has no push registration (issue 347).
     'push.token': async () => null,
     'open.external': async ({ url }) => openExternal(String(url ?? '')),
+    // Edit contact (issue 393): the shell opens the system's own editor on the address the conversation is with.
+    'contacts.edit': async ({ handle }) => contactsEdit(String(handle ?? '').slice(0, 200)),
     // A document is offered for saving under its real name (issue 219): the page hands the bytes and the name, and the
     // shell shows its save dialog (desktop) or share or save sheet (phone).
     'file.save': async (args) => saveFile(fileArgs(args ?? {})),

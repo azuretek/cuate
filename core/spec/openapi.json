@@ -1800,6 +1800,12 @@
           },
           "photo": {
             "$ref": "#/components/schemas/Attachment"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Contact"
+            }
           }
         },
         "required": [
@@ -1808,7 +1814,27 @@
           "isGroup",
           "service",
           "participants",
-          "unread"
+          "unread",
+          "members"
+        ],
+        "additionalProperties": false
+      },
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "photo": {
+            "$ref": "#/components/schemas/Attachment"
+          }
+        },
+        "required": [
+          "handle",
+          "name"
         ],
         "additionalProperties": false
       },

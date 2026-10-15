@@ -1,31 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleKey, contactFor, contactName, contactIndex } from '../app/rules/contacts.js';
+import { digitsOf, phoneKey, nationalKey, handleKey, contactFor, contactName, contactIndex } from '../app/rules/contacts.js';
 
-// Synthetic records only (server/test/fixtures.test.js holds the same rule for captures).
+// Synthetic records only.
 
-test('a handle matches a contact by its last ten digits or its lower cased email (issue 393)', () => {
-  assert.equal(handleKey('+1 (555) 010-1234'), '5550101234');
-  assert.equal(handleKey('555-010-1234'), '5550101234');
+const ONE = { given: 'Ada', family: 'Lovelace', phones: ['+1 555 010 1234'], emails: ['ada@example.com'] };
+const SAME_TAIL = { given: 'Grace', family: 'Hopper', phones: ['+44 5550 101234'], emails: [] };
+
+test('a phone keeps its country code, and a short string is never treated as a phone (issue 393)', () => {
+  assert.equal(phoneKey('+1 (555) 010-1234'), '+15550101234');
+  assert.equal(phoneKey('0044 5550 101234'), '+445550101234');
+  assert.equal(phoneKey('555-010-1234'), '5550101234');
+  assert.equal(nationalKey('+15550101234'), '5550101234');
+  assert.equal(nationalKey('101234'), '');
   assert.equal(handleKey('Ada@Example.com '), 'ada@example.com');
   assert.equal(handleKey(''), '');
-  assert.equal(handleKey(null), '');
-  assert.equal(handleKey('123'), '123');
+  assert.equal(digitsOf(null), '');
 });
 
-test('a short string is compared as text, never by a slice that would match every short handle', () => {
-  assert.equal(handleKey('12'), '12');
-  assert.notEqual(handleKey('12'), handleKey('34'));
+test('an address is matched in its international form with its country code (issue 393)', () => {
+  const index = contactIndex([ONE]);
+  assert.equal(contactFor(['+15550101234'], index).given, 'Ada');
+  assert.equal(contactFor(['ada@example.com'], index).given, 'Ada');
 });
 
-test('the chat finds the record of the first of its own handles the store knows (issue 393)', () => {
-  const index = contactIndex([
-    { given: 'Ada', family: 'Lovelace', phones: ['+1 555 010 1234'], emails: [] },
-    { given: 'Grace', family: 'Hopper', phones: [], emails: ['Grace@Example.com'] },
-  ]);
-  assert.equal(contactFor(['5550109999', '555-010-1234'], index).given, 'Ada');
-  assert.equal(contactFor(['grace@example.com'], index).given, 'Grace');
+test('a national number meets a contact through the last ten digits only when one record claims that tail (issue 393)', () => {
+  const index = contactIndex([ONE]);
+  assert.equal(contactFor(['5550101234'], index).given, 'Ada');
+  assert.equal(contactFor(['101234'], index), null);
+});
+
+test('two numbers that share their last ten digits in different countries never draw each other person (issue 393)', () => {
+  const index = contactIndex([ONE, SAME_TAIL]);
+  // The tail is claimed twice, so it names nobody; each full number still names its own person.
+  assert.equal(contactFor(['5550101234'], index), null);
+  assert.equal(contactFor(['+15550101234'], index).given, 'Ada');
+  assert.equal(contactFor(['+445550101234'], index).given, 'Grace');
+});
+
+test('a key two records claim is an ambiguity, and a chat with no matching address names nobody (issue 393)', () => {
+  const shared = [{ given: 'Ada', phones: [], emails: ['house@example.com'] }, { given: 'Grace', phones: [], emails: ['house@example.com'] }];
+  const index = contactIndex(shared);
+  assert.equal(contactFor(['house@example.com'], index), null);
   assert.equal(contactFor(['nobody@example.com'], index), null);
+  assert.equal(contactFor([], index), null);
   assert.equal(contactFor(['5550101234'], null), null);
 });
 
@@ -38,11 +56,8 @@ test('a record draws its nickname first, then given and family, then its organis
   assert.equal(contactName(null), '');
 });
 
-test('two records that share a key keep the first, so a key never flips between them', () => {
-  const index = contactIndex([
-    { given: 'Ada', phones: ['5550101234'] },
-    { given: 'Augusta', phones: ['5550101234'] },
-  ]);
-  assert.equal(index.get('5550101234').given, 'Ada');
-  assert.equal(contactIndex(null).size, 0);
+test('a record held twice still answers once, and its own two numbers never collide with each other (issue 393)', () => {
+  const index = contactIndex([{ given: 'Ada', phones: ['+15550101234', '+15550101234'] }]);
+  assert.equal(contactFor(['5550101234'], index).given, 'Ada');
+  assert.equal(contactIndex(null).exact.size, 0);
 });

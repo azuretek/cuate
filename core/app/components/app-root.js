@@ -1633,7 +1633,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .host=${this.host} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<header class="conv-head conv-head--empty">${this.emptyControls()}</header><div class="empty">${EMPTY_PANE}</div>`;
   }
 

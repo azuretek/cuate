@@ -371,6 +371,12 @@
       "unread": "number",
       "lastMessageAt": "string?",
       "lastMessage": "Preview?",
+      "photo": "Attachment?",
+      "members": "Contact[]"
+    },
+    "Contact": {
+      "handle": "string",
+      "name": "string",
       "photo": "Attachment?"
     },
     "Preview": {
