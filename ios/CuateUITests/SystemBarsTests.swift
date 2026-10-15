@@ -61,9 +61,9 @@ final class SystemBarsTests: XCTestCase {
     private func keyboardHolds(_ app: XCUIApplication, scheme: String, kind: String) {
         SystemSurface.requireOurs(app)
         if kind == "settings" {
-            keysMarker(app).tap()
+            guard openSettings(app) else { return }
             let field = app.webViews.descendants(matching: .any)["bars-field"].firstMatch
-            XCTAssertTrue(field.waitForExistence(timeout: 20), app.debugDescription)
+            XCTAssertTrue(field.waitForExistence(timeout: 20), "The marker's click reached the page (it reports keys:settings:), but the Settings field never appeared: " + app.debugDescription)
             field.tap()
         } else {
             let composer = app.webViews.textViews.firstMatch
@@ -102,6 +102,32 @@ final class SystemBarsTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         XCTAssertTrue(last.isEmpty, "With the keyboard up on \(kind) (\(scheme)): " + last.joined(separator: "; ") + SystemSurface.failureSuffix(app))
+    }
+
+    /// Presses the keys marker until the page reports `keys:settings:`, which its click handler sets before anything else
+    /// (core/test/system-bars-fixture.js), so the step waits on the state it needs rather than on one tap. A tap made
+    /// just after the keyboard has come up on the composer can be lost: XCTest finds and taps the button, and the page
+    /// never sees a click (issue 384). Past the deadline it fails saying the click never reached the page, with what each
+    /// press saw, so a lost tap is told apart from a Settings sheet that would not open.
+    private func openSettings(_ app: XCUIApplication) -> Bool {
+        let reached = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "keys:settings:")).firstMatch
+        let deadline = Date().addingTimeInterval(30)
+        var presses: [String] = []
+        repeat {
+            if reached.exists { return true }
+            let marker = keysMarker(app)
+            let keyboard = app.keyboards.firstMatch.exists ? "keyboard up at \(app.keyboards.firstMatch.frame.minY)" : "keyboard down"
+            guard marker.exists else {
+                presses.append("no marker (\(keyboard))")
+                _ = marker.waitForExistence(timeout: 2)
+                continue
+            }
+            presses.append("\(marker.isHittable ? "hittable" : "not hittable") at \(marker.frame), \(keyboard), web view \(app.webViews.firstMatch.frame), label \(marker.label)")
+            marker.tap()
+            if reached.waitForExistence(timeout: 3) { return true }
+        } while Date() < deadline
+        XCTFail("The keys marker was pressed \(presses.count) times and its click never reached the page (it never reported keys:settings:). Each press: " + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
+        return false
     }
 
     /// A pinch on the conversation leaves the page at scale 1: only the media viewer zooms (issue 180).
