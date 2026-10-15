@@ -123,6 +123,16 @@ let iconState = { scheme: 'light', colors: {}, unread: 0 };
 let iconKey = null;
 let windowIconKey = null;
 let dockIconKey = null;
+// The icon every desktop notification carries on Windows and Linux (issue 360), redrawn with the window icon so a
+// notice wears the app icon in force; null on macOS, where the bundle's icon is the notification's.
+let noticeIcon = null;
+let noticeIconKey = null;
+function refreshNoticeIcon(out) {
+  const key = out.notice ? JSON.stringify(out.palette) : null;
+  if (key === noticeIconKey) return;
+  noticeIcon = out.notice ? { image: nativeFrom([{ scale: 1, image: out.notice }]), raw: out.notice, mark: out.palette.mark } : null;
+  noticeIconKey = key;
+}
 const smokeIcons = [];
 // The badge the smoke draws at a count, whatever the page's own unread is, so the proof always has a counted image.
 let smokeBadge = null;
@@ -144,6 +154,7 @@ function applyIcons(next = {}) {
       dockIconKey = dockKey;
     }
   }
+  refreshNoticeIcon(out);
   if (out.key === iconKey) return true;
   iconKey = out.key;
   if (tray) {
@@ -196,9 +207,13 @@ const handlers = createHandlers({
   notify: (title, body, target) => {
     // Pressing a message notice raises the window and tells the page, which takes the target (issue 331).
     const pressed = () => noticePressed(target);
-    if (SMOKE) smokeNotices.push({ title, body, target, pressed });
+    // The app icon in force, drawn as the window icon is (issue 360); before the page has reported its theme, the
+    // state the shell holds.
+    if (!noticeIconKey && process.platform !== 'darwin') refreshNoticeIcon(shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, ...iconState, fixed: appIconFixed }));
+    const icon = noticeIcon;
+    if (SMOKE) smokeNotices.push({ title, body, target, pressed, icon: icon ? icon.mark : null, image: icon ? icon.raw : null });
     if (!Notification.isSupported()) return false;
-    const n = new Notification({ title, body });
+    const n = new Notification(icon ? { title, body, icon: icon.image } : { title, body });
     // Held until it is pressed or closed: a notice nothing references is collected, and its press then reaches nothing.
     liveNotices.add(n);
     n.on('click', () => { liveNotices.delete(n); pressed(); });
@@ -2549,10 +2564,25 @@ async function runSmoke(w) {
   const fixedMark = shellIcons({ platform: process.platform, masters: iconMasters, tokens: tokenSpec.color, fixed: fixedOf(iconPick) }).palette.mark;
   const iconDrawn = smokeIcons.length > 0 && smokeIcons.at(-1).mark === fixedMark;
   const iconMarked = await js(iconChoice(iconPick) + ".getAttribute('aria-checked') === 'true'");
+  // A desktop notification wears the app icon in force (issue 360): on Windows and Linux the fixed palette's, drawn
+  // as the window icon is; on macOS none of ours, so the bundle's icon stands. Raised through the page's own bridge.
+  const noticeIconOf = async (title) => {
+    smokeNotices.length = 0;
+    await js("window.bridge.call('notify', " + JSON.stringify({ title, body: 'Icon' }) + ')');
+    const raised = smokeNotices.find((n) => n.title === title);
+    return raised ? { icon: raised.icon, image: raised.image } : { icon: undefined };
+  };
+  const noticeFixed = await noticeIconOf('Icon notice fixed');
+  if (noticeFixed.image) { try { writeFileSync(path.join(SMOKE, 'notice-icon-' + iconPick + '.png'), encodePng(noticeFixed.image)); } catch { /* a capture never fails the smoke */ } }
   await waitFor('!' + iconChoice(appIconSpec.default) + '.disabled', 10000);
   await js(iconChoice(appIconSpec.default) + '.click()');
   for (let i = 0; i < 50 && appIconApplied !== appIconSpec.default; i += 1) await pause(200);
   const themeAgain = smokeIcons.at(-1).mark !== fixedMark;
+  const noticeDefault = await noticeIconOf('Icon notice default');
+  if (noticeDefault.image) { try { writeFileSync(path.join(SMOKE, 'notice-icon-' + appIconSpec.default + '.png'), encodePng(noticeDefault.image)); } catch { /* a capture never fails the smoke */ } }
+  const noticeWant = process.platform === 'darwin' ? { fixed: null, default: null } : { fixed: fixedMark, default: smokeIcons.at(-1).mark };
+  report.noticeIcon = noticeFixed.icon === noticeWant.fixed && noticeDefault.icon === noticeWant.default && (process.platform === 'darwin' || noticeFixed.icon !== noticeDefault.icon);
+  console.log('notice icon: ' + JSON.stringify({ platform: process.platform, fixed: noticeFixed.icon, default: noticeDefault.icon, want: noticeWant }));
   report.appIcon = iconPictures && themePicture && iconHeld && iconApplied && iconDrawn && iconMarked && themeAgain && appIconApplied === appIconSpec.default && (await held())['appearance.appIcon'] === appIconSpec.default;
   if (!report.appIcon) console.error('app icon: ' + JSON.stringify({ iconPictures, themePicture, iconHeld, iconApplied, iconDrawn, iconMarked, themeAgain, now: appIconApplied }));
 
