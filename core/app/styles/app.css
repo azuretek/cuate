@@ -176,8 +176,9 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */
 .bubble-row:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); border-radius: var(--radius-lg); }
-/* The message a pressed notice opened (issue 331), marked like a focused message until the person presses in the conversation. */
-.bubble-row.revealed .bubble-body { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); border-radius: var(--radius-lg); }
+/* The message a pressed notice opened (issue 331) holds focus so a screen reader starts there, and is never marked
+   (issue 368): arriving at it is enough, so its focus draws no ring. */
+.bubble-row.revealed:focus-visible { outline: none; }
 @media (hover: none) { .bubble-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; } }
 .bubble-body { position: relative; display: flex; flex-direction: column; align-items: flex-start; max-width: var(--size-bubble-max); }
 .bubble-row.mine .bubble-body { align-items: flex-end; }
