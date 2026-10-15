@@ -13,7 +13,7 @@ import { BUILD_SPEC as ABOUT_SPEC } from '../app/rules/build-spec.js';
 import { pressOutside } from '../kit/rules/dismiss.js';
 import { slideProgress, slideConfirms, slideRelease, slideKey, SLIDE_CONFIRM_AT } from '../app/rules/slide.js';
 import { NOTICE_TYPES, NOTICE_UPDATE_STATES, SILENT_UPDATE_STATES, noticeEnabled, updateNotice, updateNoticeKey, messageNotice } from '../app/rules/notifications.js';
-import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars, themeFonts, contrastRatio } from '../app/rules/theme.js';
+import { resolveScheme, themeVars, themeName, importTweakcn, importSummary, cssVarName, importTheme, safeValue, themeId, addTheme, removeTheme, themeChoices, swatchVars, MAX_THEMES, TEXT_SCALES, TYPE_SIZE_VARS, textScale, textScaleVars, themeFonts, contrastRatio, textScaleInForce, textFollowsSystem, systemTextScale } from '../app/rules/theme.js';
 import { mapChat, mapMessage, mapReaction, NO_CHAT_ID } from '../app/rules/engine-imsg.js';
 import { validate } from '../kit/rules/schema.js';
 import { scrub } from '../kit/rules/scrub.js';
@@ -280,8 +280,8 @@ test('an import says what it carried and names each refused value once, and an e
 
 test('the settings page draws the schema and writes the value a control gives', () => {
   const fields = settingsFields();
-  assert.deepEqual(fields.slice(0, 2).map((f) => f.key), ['appearance.skin', 'appearance.textScale']);
-  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScale', 'appearance.appIcon', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'every key the schema declares lands in one section, once, in the schema order');
+  assert.deepEqual(fields.slice(0, 3).map((f) => f.key), ['appearance.skin', 'appearance.textScaleSystem', 'appearance.textScale']);
+  assert.deepEqual(settingsGroups().flatMap((g) => g.fields.map((f) => f.key)), ['appearance.skin', 'appearance.textScaleSystem', 'appearance.textScale', 'appearance.appIcon', 'notifications.newMessage', 'notifications.updateAvailable', 'notifications.updateReady', 'notifications.errors', 'updates.autoDownload', 'updates.serverAuto'], 'every key the schema declares lands in one section, once, in the schema order');
   const groupIds = settingsGroups().map((g) => g.id);
   for (const [key, spec] of Object.entries(SETTINGS_SCHEMA.keys)) assert.ok(groupIds.includes(spec.group), key + ' names a declared group, so a typo cannot quietly move it');
   for (const g of settingsGroups().filter((g) => g.kind === 'settings')) assert.ok(g.fields.length > 0, g.id + ' has at least one setting');
@@ -302,7 +302,7 @@ test('the settings page draws the schema and writes the value a control gives', 
   assert.equal(settingValue(skin, { 'appearance.skin': 'dark' }), 'dark', 'the server value wins');
   assert.equal(coerceSetting(size, '150'), 150, 'a percentage control sends a number, not a string');
   assert.equal(coerceSetting(skin, 'dark'), 'dark');
-  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScale': 125, 'appearance.appIcon': 'naranja_dark', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
+  assert.deepEqual(mergeSettings({ 'appearance.textScale': 125 }), { 'appearance.skin': 'system', 'appearance.textScaleSystem': false, 'appearance.textScale': 125, 'appearance.appIcon': 'naranja_dark', 'notifications.newMessage': true, 'notifications.updateAvailable': true, 'notifications.updateReady': true, 'notifications.errors': true, 'updates.autoDownload': false, 'updates.serverAuto': true });
 });
 
 test('there is no density setting, and the skin and the text size are a switch and percentage choices (issue 112)', () => {
@@ -333,7 +333,9 @@ test('a text size percentage scales every type token, and 100% writes nothing', 
   assert.equal(textScale(14), 100, 'a size stored under the old pixel field is never read as a percentage');
   assert.equal(textScale('200'), 200);
   assert.equal(textScale(110), 100, 'a value no control offers reads as 100, so the page can always be put back');
-  assert.deepEqual(textScaleVars(110, base), []);
+  assert.deepEqual(textScaleVars(textScaleInForce({ 'appearance.textScaleSystem': false, 'appearance.textScale': 110 }), base), [], 'a stored value no stop holds draws 100');
+  assert.deepEqual(textScaleVars(117, base)[2], ['--font-size-md', 'calc(14px * 1.17)'], 'a system size need not be a stop');
+  assert.deepEqual(textScaleVars(20, base), [], 'a percentage outside the range of the stops writes nothing');
 });
 
 test('a theme URL answer in tweakcn registry form converts through the same converter as a paste', () => {
@@ -995,4 +997,40 @@ test('a selection in Edit becomes one group of everyone in it, each once, and a 
   assert.equal(renamed.find((c) => c.id === '2').participants.length, 2, 'what the change did not name is kept');
   const added = upsertChat(chats, { id: '9', isGroup: true, participants: ['d@example.com', 'e@example.com'], lastMessageAt: '2026-01-04T00:00:00.000Z' });
   assert.equal(added[0].id, '9', 'a new conversation joins at its place in the order');
+});
+
+test('text size follows the system by default, and a size someone chose is kept (issue 369)', () => {
+  const sys = settingsFields().find((f) => f.key === 'appearance.textScaleSystem');
+  assert.equal(sys.type, 'toggle');
+  assert.equal(settingValue(sys, {}), true, 'on for anyone who never chose a size');
+  assert.equal(settingValue(sys, { 'appearance.textScale': 150 }), false, 'a size chosen before the switch existed keeps the switch off');
+  assert.equal(settingValue(sys, { 'appearance.textScale': 100 }), true, 'a stored 100 is the default, not a choice');
+  assert.equal(settingValue(sys, { 'appearance.textScale': 150, 'appearance.textScaleSystem': true }), true, 'a stored switch wins');
+  assert.equal(textFollowsSystem({ 'appearance.textScaleSystem': false }), false);
+  assert.equal(textScaleInForce({}, 117), 117, 'following the system draws its size, stop or not');
+  assert.equal(textScaleInForce({}, null), 100, 'a shell with no system size (macOS) draws 100');
+  assert.equal(textScaleInForce({ 'appearance.textScaleSystem': false, 'appearance.textScale': 150 }, 117), 150, 'a chosen size ignores the system');
+  assert.equal(textScaleInForce({ 'appearance.textScale': 125 }, 200), 125, 'a size chosen before the switch is kept');
+  assert.equal(systemTextScale(1000), 300, 'held to the largest stop');
+  assert.equal(systemTextScale(10), 50, 'held to the smallest stop');
+  assert.equal(systemTextScale('abc'), 100);
+  assert.equal(systemTextScale(null), 100);
+});
+
+test('the system text size is a bridge command every shell answers and an event it sends on a change (issue 369)', () => {
+  const spec = JSON.parse(readFileSync(new URL('../spec/host-bridge.json', import.meta.url), 'utf8'));
+  assert.ok(spec.commands['display.textScale'], 'the page asks for it');
+  assert.deepEqual(spec.events['display.textScale'].args, { percent: 'number?' }, 'and is told when it changes');
+  const src = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8');
+  const naming = JSON.parse(src('core/spec/naming.json'));
+  const ios = 'ios/' + naming.product + '/HostBridge.swift';
+  const android = 'android/app/src/main/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/';
+  assert.match(src('desktop/src/bridge-handlers.js'), /'display\.textScale': async \(\) => textScale\(\)/);
+  assert.match(src('desktop/src/main.js'), /bridge:event:display\.textScale/);
+  assert.match(src(ios), /case "display\.textScale":/);
+  assert.match(src(ios), /UIContentSizeCategory\.didChangeNotification[\s\S]*emit\("display\.textScale"/);
+  assert.match(src(android + 'HostBridge.kt'), /"display\.textScale" -> success\(systemTextScale\(/);
+  assert.match(src('android/app/src/main/AndroidManifest.xml'), /configChanges="[^"]*fontScale/, 'a font size change keeps the page, which is told');
+  assert.match(src(android + 'MainActivity.kt'), /textScaleChanged\(newConfig\.fontScale\)/);
+  assert.match(src('core/app/components/app-root.js'), /bridge\.on\('display\.textScale'/, 'the page listens rather than polls');
 });

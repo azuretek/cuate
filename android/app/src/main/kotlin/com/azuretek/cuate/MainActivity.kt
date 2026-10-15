@@ -98,8 +98,9 @@ class MainActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
-            // Only the media viewer zooms, in the page (issue 180): the web view itself never zooms, and the page's
-            // text size is the text-size setting's rather than the system font scale applied on top of it.
+            // Only the media viewer zooms, in the page (issue 180): the web view itself never zooms. The system font size
+            // reaches the page through the bridge (display.textScale, issue 369), and the page scales its own type by it,
+            // so the web view's own text zoom stays at 100 rather than applying it a second time.
             settings.setSupportZoom(false)
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
@@ -241,6 +242,8 @@ class MainActivity : Activity() {
         // follows the system through its own media query and reports the scheme it then drew.
         cover.setBackgroundColor(getColor(R.color.surface))
         applyBarIcons()
+        // A font size change keeps the page too (issue 369), and the page is told the new size.
+        shellBridge?.textScaleChanged(newConfig.fontScale)
     }
 
     /**

@@ -364,9 +364,36 @@ export function textScale(value) {
   return TEXT_SCALES.includes(n) ? n : 100;
 }
 
-// The declarations a percentage writes, given what each type size resolves to before scaling.
+// The system's text size as a percentage (issue 369), as a shell reports it: iOS Dynamic Type, the Android font
+// size, the Windows Text size slider, the GNOME text scaling factor. It is the system's own value rather than one of
+// the slider's stops, held to the stops' range; a shell that has none (macOS, or a failed read) answers null, read as 100.
+export function systemTextScale(value) {
+  const n = Number(value);
+  if (value === null || value === undefined || value === '' || !Number.isFinite(n) || n <= 0) return 100;
+  return Math.round(Math.min(Math.max(...TEXT_SCALES), Math.max(Math.min(...TEXT_SCALES), n)));
+}
+
+// Whether text follows the system (issue 369). The switch is on by default, so a person who never chose a size gets
+// their system's; one who chose a size before the switch existed keeps it, because a stored percentage other than 100
+// with no stored switch reads as the switch off.
+export function textFollowsSystem(values = {}) {
+  const v = values || {};
+  if (Object.hasOwn(v, 'appearance.textScaleSystem')) return v['appearance.textScaleSystem'] !== false;
+  return !(Object.hasOwn(v, 'appearance.textScale') && textScale(v['appearance.textScale']) !== 100);
+}
+
+// The percentage in force: the system's while text follows it, else the chosen stop (a value no stop holds reads as
+// 100, so the page can always be put back).
+export function textScaleInForce(values = {}, system = null) {
+  return textFollowsSystem(values) ? systemTextScale(system) : textScale((values || {})['appearance.textScale']);
+}
+
+// The declarations a percentage in force writes (textScaleInForce), given what each type size resolves to before
+// scaling. A system size need not be a stop, so any percentage in the stops' range is drawn as given; anything else
+// reads as 100 and writes nothing.
 export function textScaleVars(percent, base = {}) {
-  const p = textScale(percent);
+  const n = Number(percent);
+  const p = Number.isFinite(n) && n >= Math.min(...TEXT_SCALES) && n <= Math.max(...TEXT_SCALES) ? n : 100;
   if (p === 100) return [];
   const out = [];
   for (const name of TYPE_SIZE_VARS) {
