@@ -80,7 +80,7 @@ const noticeIds = ({ chatId, messageId }) => {
   return id(chatId) ? { chatId: id(chatId), messageId: id(messageId) } : null;
 };
 
-export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', takeNotice = () => null, info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons }) {
+export function createHandlers({ secure, takeLink = () => null, notify, notifyPermission = () => 'unsupported', takeNotice = () => null, info, openExternal, saveFile = noSave, checkUpdates = () => null, configureUpdates = () => false, downloadUpdates = () => false, installUpdate = () => false, windowControls = noWindow, appearance = noAppearance, appIcon = noAppIcon, icons = noIcons, textScale = async () => null }) {
   return {
     'storage.get': async ({ key }) => secure.get(key),
     'storage.set': async ({ key, value }) => secure.set(key, value),
@@ -117,6 +117,8 @@ export function createHandlers({ secure, takeLink = () => null, notify, notifyPe
     'window.toggleMaximize': async () => windowControls.toggleMaximize(),
     'window.close': async () => windowControls.close(),
     'window.appearance': async ({ scheme, background }) => appearance(scheme === 'dark' ? 'dark' : 'light', String(background ?? '')),
+    // The system's text size (issue 369), or null where the platform has none.
+    'display.textScale': async () => textScale(),
     'icon.redraw': async ({ scheme, colors, unread }) => icons({ scheme: scheme === 'dark' ? 'dark' : 'light', colors: iconColors(colors), unread: Number.isFinite(unread) ? Math.max(0, Math.floor(unread)) : 0 }),
   };
 }
