@@ -13,7 +13,7 @@
 // its keys, 'device' draws its own rows, and 'about' draws the one row that opens the About page. About is a page of
 // its own on every platform (issue 171), reached from that row and from the tray, and aboutRows() below is the one
 // owner of what it shows and in which order.
-import { TEXT_SCALES } from './theme.js';
+import { TEXT_SCALES, textFollowsSystem } from './theme.js';
 import { reportRows, UNKNOWN } from '../../kit/rules/build.js';
 import { BUILD_SPEC } from './build-spec.js';
 import { APP_ICONS } from './app-icons-spec.js';
@@ -36,6 +36,8 @@ export const SETTINGS_SCHEMA = {
   ],
   keys: {
     'appearance.skin': { group: 'appearance', label: 'Appearance', type: 'segmented', options: ['system', 'light', 'dark'], labels: { system: 'System', light: 'Light', dark: 'Dark' }, default: 'system' },
+    // Text size follows the system's by default (issue 369): each device its own. Moving the slider turns this off.
+    'appearance.textScaleSystem': { group: 'appearance', label: 'Match system text size', type: 'toggle', default: true },
     'appearance.textScale': { group: 'appearance', label: 'Text size', type: 'scale', options: TEXT_SCALES, default: 100 },
     // The app icon (issues 167 and 246): every colour is one family with a paper Light variant and a bright Dark one,
     // from core/spec/app-icons.json, plus Follow theme. Each is drawn as its own picture, held by the server like every
@@ -156,6 +158,8 @@ export function optionLabel(field, option) {
 
 // The value to show for a key: what the server holds, else the schema's default.
 export function settingValue(field, values) {
+  // A size chosen before the system switch existed keeps the switch off (issue 369).
+  if (field.key === 'appearance.textScaleSystem') return textFollowsSystem(values);
   return values && Object.hasOwn(values, field.key) ? values[field.key] : field.default;
 }
 
