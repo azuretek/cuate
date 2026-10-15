@@ -898,6 +898,43 @@ async function runSmoke(w) {
   };
   report.emojiPanel = Object.values(emojiPanelChecks).every(Boolean);
   console.log('emoji panel: ' + JSON.stringify({ checks: emojiPanelChecks, before: emojiBefore, after: emojiAfter, recents: emojiRecents, order: emojiOrder }));
+
+  // Skin tones (issue 392): an emoji with tones is one slot; a right click and a long press each open its tones over
+  // it, wearing the caret; the release that ends a long press inserts nothing; a tone chosen is inserted, drawn in the
+  // slot from then on, and closes the tones; Escape closes the tones and leaves the panel open.
+  const toneTab = await js("(() => { const tab = [...document.querySelectorAll('app-emoji-picker .emoji-tab')].find((t) => t.textContent.trim() === 'People'); if (!tab) return false; tab.click(); return true; })()");
+  const waveCell = "document.querySelector('app-emoji-picker .emoji-cell.toned[data-base=\"\u{1F44B}\"]')";
+  await waitFor('Boolean(' + waveCell + ')', 5000);
+  const toneSlots = await js("(() => { const cells = [...document.querySelectorAll('app-emoji-picker .emoji-grid .emoji-cell')]; return { cells: cells.length, toned: cells.filter((c) => /[\u{1F3FB}-\u{1F3FF}]/u.test(c.textContent)).length, waves: cells.filter((c) => c.dataset.base === '\u{1F44B}').length }; })()");
+  const fieldValue = "document.querySelector('app-composer textarea').value";
+  await js('(() => { const c = ' + waveCell + '; c.scrollIntoView({ block: "center" }); c.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })); return true; })()');
+  await waitFor("Boolean(document.querySelector('app-emoji-picker .emoji-tones'))", 5000);
+  await pause(400);
+  const toneOpen = await js('(() => { const pop = document.querySelector("app-emoji-picker .emoji-tones"); const cell = ' + waveCell + '; const panel = document.querySelector("app-emoji-picker .emoji-picker").getBoundingClientRect(); const p = pop.getBoundingClientRect(); const c = cell.getBoundingClientRect(); return { choices: pop.querySelectorAll(".emoji-cell").length, expanded: cell.getAttribute("aria-expanded"), caret: pop.hasAttribute("data-popover") && pop.style.getPropertyValue("--caret-x") !== "", inside: p.left >= panel.left - 1 && p.right <= panel.right + 1, over: p.bottom <= c.top + 1 || p.top >= c.bottom - 1, field: ' + fieldValue + ' }; })()');
+  await shot('03e-emoji-tones-light.png');
+  await js("(() => { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); return true; })()");
+  await pause(150);
+  const toneEscape = await js("({ tones: Boolean(document.querySelector('app-emoji-picker .emoji-tones')), panel: Boolean(document.querySelector('app-emoji-picker .emoji-picker')) })");
+  await js('(() => { const c = ' + waveCell + '; const r = c.getBoundingClientRect(); const at = { bubbles: true, cancelable: true, pointerId: 7, pointerType: "mouse", button: 0, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }; c.dispatchEvent(new PointerEvent("pointerdown", at)); window.toneRelease = () => { c.dispatchEvent(new PointerEvent("pointerup", at)); c.dispatchEvent(new MouseEvent("click", { ...at, detail: 1 })); }; return true; })()');
+  await pause(800);
+  await js('(() => { window.toneRelease(); return true; })()');
+  await pause(150);
+  const toneHeld = await js('({ tones: Boolean(document.querySelector("app-emoji-picker .emoji-tones")), field: ' + fieldValue + ' })');
+  const tonePick = await js("(() => { const cells = [...document.querySelectorAll('app-emoji-picker .emoji-tones .emoji-cell')]; const c = cells[3]; if (!c) return null; const char = c.textContent; c.click(); return char; })()");
+  await pause(300);
+  const toneAfter = await js('({ tones: Boolean(document.querySelector("app-emoji-picker .emoji-tones")), field: ' + fieldValue + ', slot: ' + waveCell + '?.textContent })');
+  await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+  const emojiToneChecks = {
+    tab: toneTab === true,
+    oneSlot: toneSlots.waves === 1 && toneSlots.toned === 0 && toneSlots.cells > 50,
+    rightClick: toneOpen.choices === 6 && toneOpen.expanded === 'true' && toneOpen.caret && toneOpen.inside && toneOpen.over && toneOpen.field === '',
+    escape: !toneEscape.tones && toneEscape.panel,
+    longPress: toneHeld.tones && toneHeld.field === '',
+    picked: typeof tonePick === 'string' && /[\u{1F3FB}-\u{1F3FF}]/u.test(tonePick) && toneAfter.field === tonePick && !toneAfter.tones,
+    remembered: toneAfter.slot === tonePick,
+  };
+  report.emojiTones = Object.values(emojiToneChecks).every(Boolean);
+  console.log('emoji tones: ' + JSON.stringify({ checks: emojiToneChecks, slots: toneSlots, open: toneOpen, escape: toneEscape, held: toneHeld, pick: tonePick, after: toneAfter }));
   await js("document.querySelector('app-composer button.tool[aria-label=\"Emoji\"]').click()");
 
   // The composer's attach and emoji controls (issue 187): compact icon buttons, sized and spaced from the tokens, the

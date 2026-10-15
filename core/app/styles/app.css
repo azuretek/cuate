@@ -322,6 +322,15 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-grid { flex: 1; min-height: 0; }
 .emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
 .emoji-cell:hover { background: var(--color-bg-sunken); }
+/* An emoji this device cannot draw, shown in a message by its name rather than as an empty box (issue 392). */
+.emoji-fallback { display: inline-block; padding: 0 var(--space-1); border-radius: var(--radius-sm); background: var(--color-bg-sunken); color: var(--color-fg); font-size: var(--font-size-xs); }
+/* A toned emoji opens its tones on a long press or a right click (issue 392), so a long press on it is never a text
+   selection or the system's callout. */
+.emoji-cell.toned { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+/* The tones of one emoji float over the panel, over the emoji they tone, wearing the shared caret. Their place is set
+   by script through custom properties, kept inside the panel. */
+.emoji-tones { position: absolute; left: var(--tones-x); top: var(--tones-y); display: grid; grid-template-columns: repeat(6, var(--size-emoji)); gap: var(--space-1); max-width: calc(100% - var(--space-3) * 2); max-height: calc(var(--size-picker-h) - var(--space-3) * 2); overflow-y: auto; padding: var(--space-2); background: var(--role-menu); color: var(--role-menu-fg); border: var(--size-border) solid var(--role-menu-border); border-radius: var(--radius-md); box-shadow: var(--role-menu-shadow); z-index: 4; }
+.emoji-tones .emoji-cell[aria-checked="true"] { background: var(--color-selection); }
 .emoji-empty { flex: 1; min-height: 0; padding: var(--space-3); text-align: center; }
 /* A staged file sits above the field until it is sent or removed. */
 .composer-staged { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4) 0; }
