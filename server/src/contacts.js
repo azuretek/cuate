@@ -10,6 +10,7 @@ import { watch } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import { sendShape, sniff } from './file-type.js';
 import path from 'node:path';
 import { contactIndex, contactFor, contactName } from '../../core/app/rules/contacts.js';
 
@@ -144,12 +145,14 @@ export function createContacts({ run = macRun, log = null, dataDir = null, ttlMs
     if (photos.has(record)) return photos.get(record);
     const bytes = Buffer.from(String(record.photo), 'base64');
     if (!bytes.length) return null;
+    const mime = sniff(bytes);
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mime)) return null;
     const id = createHash('sha256').update(bytes).digest('base64url').slice(0, 22);
     const dir = path.join(dataDir, 'contacts');
-    const file = path.join(dir, id + '.jpg');
+    const file = path.join(dir, sendShape({ name: id, bytes }).name);
     await mkdir(dir, { recursive: true });
     await writeFile(file, bytes);
-    const made = { id, mime: 'image/jpeg', name: 'Contact photo', bytes: bytes.length, file };
+    const made = { id, mime, name: 'Contact photo', bytes: bytes.length, file };
     photos.set(record, made);
     return made;
   }
@@ -160,7 +163,7 @@ export function createContacts({ run = macRun, log = null, dataDir = null, ttlMs
     let timer = null;
     let w = null;
     try {
-      w = watch(watchDir, { persistent: false }, () => {
+      w = watch(watchDir, { persistent: false, recursive: true }, () => {
         clearTimeout(timer);
         timer = setTimeout(() => { timer = null; loadedAt = 0; onChange(); }, 300);
         timer.unref?.();

@@ -7,8 +7,8 @@ import { execFile } from 'node:child_process';
 const NL = String.fromCharCode(10);
 
 // The program osascript runs: find the person by the address the conversation carries, then show them. A phone is
-// compared by its last ten digits and an email by its lower-cased text, the same keys core matches contacts on
-// (core/app/rules/contacts.js), so the editor opens on the person the app drew rather than on a near miss.
+// compared by its full digits and an email by its lower-cased text. Exactly one matching card is required;
+// an ambiguous address is refused rather than opening another person's card.
 const program = (want) => [
   "ObjC.import('Contacts');",
   'const app = Application("Contacts");',

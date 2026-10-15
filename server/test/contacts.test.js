@@ -11,7 +11,7 @@ const STORE = {
   authorized: true,
   status: 3,
   contacts: [
-    { given: 'Ada', family: 'Lovelace', phones: ['+1 (555) 010-1234'], emails: ['ada@example.com'], photo: Buffer.from('picture-one').toString('base64') },
+    { given: 'Ada', family: 'Lovelace', phones: ['+1 (555) 010-1234'], emails: ['ada@example.com'], photo: Buffer.from([255, 216, 255, 1]).toString('base64') },
     { given: 'Grace', middle: 'B', family: 'Hopper', nickname: 'Amazing Grace', organization: 'Navy', phones: [], emails: ['grace@example.com'] },
   ],
 };
@@ -42,11 +42,11 @@ test('a picture is written once, keyed by its bytes, so a changed picture is a n
   const rec = (await first.forHandles(['5550101234'])).record;
   const one = await first.photo(rec);
   assert.equal(one.mime, 'image/jpeg');
-  assert.equal(one.bytes, Buffer.from('picture-one').length);
-  assert.deepEqual(readFileSync(one.file), Buffer.from('picture-one'));
+  assert.equal(one.bytes, Buffer.from([255, 216, 255, 1]).length);
+  assert.deepEqual(readFileSync(one.file), Buffer.from([255, 216, 255, 1]));
   assert.equal((await first.photo(rec)).id, one.id);
 
-  const changed = createContacts({ run: fake({ authorized: true, status: 3, contacts: [{ given: 'Ada', phones: ['5550101234'], photo: Buffer.from('picture-two').toString('base64') }] }), dataDir: dir });
+  const changed = createContacts({ run: fake({ authorized: true, status: 3, contacts: [{ given: 'Ada', phones: ['5550101234'], photo: Buffer.from([255, 216, 255, 2]).toString('base64') }] }), dataDir: dir });
   const two = await changed.photo((await changed.forHandles(['5550101234'])).record);
   assert.notEqual(two.id, one.id);
 });
@@ -73,4 +73,15 @@ test('empty, denied and failed reads have different diagnostic states', async ()
   const c = createContacts({run:async () => { throw Error('failed'); }});
   await c.load();
   assert.equal(c.status().state, 'error');
+});
+
+
+test('contact photos preserve their image type and reject arbitrary bytes', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'contacts-type-'));
+  const c = createContacts({run:fake(STORE),dataDir:dir});
+  const png = Buffer.from([137,80,78,71,13,10,26,10]);
+  const picture = await c.photo({photo:png.toString('base64')});
+  assert.equal(picture.mime,'image/png');
+  assert.ok(picture.file.endsWith('.png'));
+  assert.equal(await c.photo({photo:Buffer.from('not an image').toString('base64')}),null);
 });

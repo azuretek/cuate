@@ -73,10 +73,10 @@ export async function runDoctor({
     const st = await store.load().then(() => store.status()).catch(() => ({ state: 'error', status: null, count: 0, reason: 'error' }));
     if (st.state === 'ok') ok('the Contacts store is readable, ' + st.count + ' people');
     else if (st.state === 'empty') ok('the Contacts store is readable and holds nobody');
-    else if (st.state === 'not_determined') warn('the Contacts store has never been allowed for the program that starts the server (macOS state not determined): the first read asks on the Mac, and nothing is read until it is allowed');
+    else if (st.state === 'not_determined') warn('the Contacts store has never been allowed for the program that starts the server (macOS state not determined): this headless check does not request permission; inspect the running server diagnostics before requesting any permission change');
     else if (st.state === 'denied') bad('the Contacts store was denied for the program that starts the server: switch Contacts on for it in System Settings, Privacy & Security, Contacts, then run doctor again');
     else if (st.state === 'restricted') bad('the Contacts store is restricted by the system and cannot be read here');
-    else bad('the Contacts store could not be read' + (st.reason ? ' (' + st.reason + ')' : '') + ': run doctor on the Mac the server runs on, and allow Contacts for the program that starts it');
+    else bad('the Contacts store could not be read' + (st.reason ? ' (' + st.reason + ')' : '') + ': inspect the running server diagnostics; a read error alone does not establish a permission denial');
   }
   if (config.sending.enabled) {
     ok('sending is on, at most ' + config.sending.perMinute + ' a minute');
