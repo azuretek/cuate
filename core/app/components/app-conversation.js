@@ -7,7 +7,7 @@ import { aimCarets } from '../../kit/popover.js';
 import { play, growFrom, cssVar } from '../../kit/motion.js';
 import { newArrivals } from '../../kit/rules/motion.js';
 import { chatTitle, eventText } from '../rules/chats.js';
-import { hasContactEditor } from '../rules/contacts.js';
+import { hasContactEditor, handleKey } from '../rules/contacts.js';
 import './app-avatar.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel, editRefusal } from '../rules/messages.js';
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
@@ -504,7 +504,7 @@ class AppConversation extends KitElement {
     const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
     const note = this.ownNote && this.ownNote.id === m.id ? this.ownNote.text : this.note && this.note.id === m.id ? this.note.text : '';
     return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
-      ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${m.senderName || m.sender || ''}</div>` : nothing}
+      ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${(this.chat.members || []).find((member) => handleKey(member.handle) === handleKey(m.sender))?.name || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
