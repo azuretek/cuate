@@ -23,6 +23,7 @@ import { fixedPalette, themeMatch } from '../../core/app/rules/app-icons.js';
 import { lockZoom } from './zoom-lock.js';
 import { runDesign } from './design-capture.js';
 import { retainSmokeFailure, captureRenderer, smokeTraceInstaller, drawerTraceInstaller, listClosedBy, surfaceLeftBy, sanitizeText } from './smoke-failure.js';
+import { awaitNotice, dismissNotice } from './smoke-notice.js';
 import { runRegionProbe } from './region-probe.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -926,7 +927,7 @@ async function runSmoke(w) {
   await waitFor("!document.querySelector('.sheet') && (document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000);
   await pause(300);
   await shot('04-tray-check-updates.png');
-  await js("document.querySelector('.app-notice .close-button').click()");
+  await dismissNotice({ js });
   await waitFor("!document.querySelector('.app-notice')", 5000);
   w.close();
   await visibleWithin(false);
@@ -2810,7 +2811,7 @@ async function runSmoke(w) {
   const floorMs = Number.parseFloat(await js("getComputedStyle(document.documentElement).getPropertyValue('--motion-min-visible')"));
   report.noticeFloor = Number.isFinite(floorMs) && floorMs > 0 && Date.now() - checkSeen >= floorMs / 2;
   smokeCalls.length = 0;
-  await js("document.querySelector('.app-notice .close-button').click()");
+  await dismissNotice({ js });
   await pause(300);
   // Closing marks the notice read on every device (issue 342): it writes a setting, so the page re-applies its settings to
   // the shell, but it never runs an update command.
@@ -2821,7 +2822,7 @@ async function runSmoke(w) {
   await js("window.noticeProofNode = document.querySelector('.app-notice-progress'); document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.8,canInstall:true})");
   await waitFor("document.querySelector('.app-notice-progress')?.value === 0.8");
   report.noticeInPlace = await js("window.noticeProofNode === document.querySelector('.app-notice-progress') && document.querySelectorAll('.app-notice').length === 1");
-  await js("document.querySelector('.app-notice .close-button').click()");
+  await dismissNotice({ js });
   await waitFor("!document.querySelector('.app-notice')");
   await js("document.querySelector('app-root').onUpdate({state:'downloading',version:'9.9.10',percent:0.9,canInstall:true})");
   report.noticeDismissed = await js("!document.querySelector('.app-notice')");
@@ -2984,7 +2985,7 @@ async function runSmoke(w) {
     report.noticeReducedMotion = await js("getComputedStyle(document.querySelector('.app-notice')).animationName === 'none'");
     await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
     report.updates = report.updates && report.noticeReducedMotion;
-    await js("document.querySelector('.app-notice .close-button').click()");
+    await dismissNotice({ js });
     await waitFor("!document.querySelector('.app-notice')");
     w.setMinimumSize(...originalMinimum);
     w.setSize(...originalSize);
@@ -3135,7 +3136,8 @@ async function runSmoke(w) {
   await js("window.__sheetTop = document.querySelector('.sheet[data-view=about]') && document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top");
   const noticeSeen = "(() => { const n = document.querySelector('.app-notice'); const d = n && n.querySelector('.close-button'); if (!d || !(n.textContent || '').includes('does not update itself')) return false; const r = d.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const sheet = document.querySelector('.sheet[data-view=about]'); return Boolean(top && top.closest('.close-button') && sheet && document.querySelector('app-about') && Math.abs(sheet.getBoundingClientRect().top - window.__sheetTop) < 1); })()";
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
-  report.aboutPhoneNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
+  const phoneNoticeRead = await awaitNotice({ js, waitFor }, noticeSeen, 10000);
+  report.aboutPhoneNotice = phoneNoticeRead.seen;
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
   await pause(300);
   await shot('06g-about-phone-notice.png');
@@ -3143,7 +3145,7 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06h-about-phone-notice-dark.png');
   nativeTheme.themeSource = 'light';
-  await js("document.querySelector('.app-notice .close-button').click()");
+  await dismissNotice({ js });
   await waitFor("!document.querySelector('.app-notice')", 5000);
   await cdp('Emulation.clearDeviceMetricsOverride', {});
   await pause(300);
@@ -3163,7 +3165,8 @@ async function runSmoke(w) {
   // sheet to where it was just before the notice appeared.
   await js("window.__sheetTop = document.querySelector('.sheet[data-view=about]') && document.querySelector('.sheet[data-view=about]').getBoundingClientRect().top");
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
-  report.aboutCheckNotice = await waitFor(noticeSeen, 10000).then(() => true, () => false);
+  const checkNoticeRead = await awaitNotice({ js, waitFor }, noticeSeen, 10000);
+  report.aboutCheckNotice = checkNoticeRead.seen;
   await waitFor("!document.querySelector('app-about [data-action=check-updates]').dataset.press", 5000).catch(() => {});
   await pause(300);
   await shot('06e-about-check-notice.png');
@@ -3171,12 +3174,15 @@ async function runSmoke(w) {
   await pause(300);
   await shot('06f-about-check-notice-dark.png');
   nativeTheme.themeSource = 'light';
-  await js("document.querySelector('.app-notice .close-button').click()");
+  await dismissNotice({ js });
   await waitFor("!document.querySelector('.app-notice')", 5000);
   // A second press after the notice was dismissed is a new question, so its answer shows again.
   await js("document.querySelector('app-about [data-action=check-updates]').click()");
-  report.aboutCheckAgain = await waitFor("(document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000).then(() => true, () => false);
-  await js("document.querySelector('.app-notice .close-button').click()");
+  const againNoticeRead = await awaitNotice({ js, waitFor }, "(document.querySelector('.app-notice')?.textContent || '').includes('does not update itself')", 10000);
+  report.aboutCheckAgain = againNoticeRead.seen;
+  // What each About notice wait measured, so a notice that did not appear fails the about check with what was there.
+  report.aboutNotices = { phone: phoneNoticeRead, check: checkNoticeRead, again: againNoticeRead };
+  await dismissNotice({ js });
   await waitFor("!document.querySelector('.app-notice')", 5000);
   // The client's own build and the server's, in chela's order, each value copyable, the links, and the one action that
   // copies the lot.
@@ -3206,7 +3212,7 @@ async function runSmoke(w) {
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
   report.aboutBackTab = await js(tabSel('device') + "?.getAttribute('aria-selected') === 'true'");
   report.about = report.aboutBackTab && report.aboutPage && report.aboutSameEverywhere && report.aboutPhoneNotice && report.aboutCheckNotice && report.aboutCheckAgain && report.aboutBack && aboutSeen.keys.every((k) => aboutOrder.includes(k)) && aboutSeen.keys.join('|') === aboutOrder.filter((k) => aboutSeen.keys.includes(k)).join('|') && !aboutSeen.unknown && aboutSeen.copyable && aboutSeen.links.join('|') === 'source|licence|report' && aboutSeen.electron === process.versions.electron && aboutSeen.copyAll;
-  if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, back: report.aboutBack, ...aboutSeen }));
+  if (!report.about) console.error('about: ' + JSON.stringify({ page: report.aboutPage, same: report.aboutSameEverywhere, phoneNotice: report.aboutPhoneNotice, phone: phoneAbout, desktop: desktopAbout, notice: report.aboutCheckNotice, again: report.aboutCheckAgain, notices: report.aboutNotices, back: report.aboutBack, ...aboutSeen }));
   await smokeStep('sheet drag');
   // A drag on the sheet's header, made with the real pointer (issue 338): a short, slow one springs the card back into
   // place and leaves it open; one past a quarter of the card's height lets it go.
