@@ -14,6 +14,9 @@ class AppComposer extends KitElement {
     // The message being replied to ({ id }), or null, and the message the emoji panel is choosing a reaction for, or
     // null. The composer repeats neither message's text: the conversation shows the thread itself (issue 169).
     replyTo: { attribute: false }, reactFor: { attribute: false },
+    // The message being edited ({ id, text }), or null (issue 391): its words fill the field, Send saves the edit, and
+    // Escape leaves them as they were.
+    editing: { attribute: false },
     emojiOpen: { state: true }, frequent: { state: true }, staged: { state: true }, stageProblem: { state: true },
     // A phone: its own keyboard carries emoji, so the composer's emoji tool is the desktop's (the panel is still the
     // one a reaction opens, and that path opens it itself).
@@ -29,6 +32,7 @@ class AppComposer extends KitElement {
     this.maxBytes = undefined;
     this.replyTo = null;
     this.reactFor = null;
+    this.editing = null;
     this.emojiOpen = false;
     this.frequent = [];
     this.staged = null;
@@ -90,6 +94,20 @@ class AppComposer extends KitElement {
   // Choosing a message to reply to puts the caret in the field, ready to type the reply.
   updated(changed) {
     if (changed.has('replyTo') && this.replyTo) this.field()?.focus();
+    // Choosing Edit puts the message's words in the field with the caret at their end; leaving the edit empties it.
+    if (changed.has('editing')) {
+      const t = this.field();
+      const was = changed.get('editing');
+      if (t && this.editing && (!was || was.id !== this.editing.id)) {
+        t.value = this.editing.text;
+        this.grow({ currentTarget: t });
+        t.focus();
+        t.setSelectionRange(t.value.length, t.value.length);
+      } else if (t && !this.editing && was) {
+        t.value = '';
+        this.grow({ currentTarget: t });
+      }
+    }
     this.watchFit();
     // The attach menu and the emoji panel wear the shared caret, aimed at the tool button that opened each (issue 217).
     aimCarets(this);
@@ -132,7 +150,10 @@ class AppComposer extends KitElement {
     const text = t.value.trim();
     const file = this.staged;
     if ((!text && !file) || this.disabled) return undefined;
-    const work = emit(this, 'send', { text, file, replyTo: this.replyTo ? this.replyTo.id : null });
+    if (this.editing && !text) return undefined;
+    const work = this.editing
+      ? emit(this, 'send', { text, file: null, replyTo: null, editOf: this.editing.id })
+      : emit(this, 'send', { text, file, replyTo: this.replyTo ? this.replyTo.id : null });
     this.staged = null;
     this.stageProblem = '';
     this.setPreview(null);
@@ -145,6 +166,10 @@ class AppComposer extends KitElement {
 
   // Escape with a panel open is the kit's, which closes the panel before the field sees the key.
   key(e) {
+    if (e.key === 'Escape' && this.editing) {
+      this.dispatchEvent(new CustomEvent('edit-cancel'));
+      return;
+    }
     if (e.key === 'Escape' && this.replyTo) {
       this.cancelReply();
       return;
@@ -305,7 +330,7 @@ class AppComposer extends KitElement {
         </div>`
       : nothing}<form class="composer" @submit=${this.onSubmit}>
       <div class="composer-tools">
-        <button type="button" class="tool" aria-label="Attach" ?disabled=${this.disabled} @click=${press(() => this.openAttach())}><span class="icon" data-icon="paperclip" aria-hidden="true"></span></button>
+        <button type="button" class="tool" aria-label="Attach" ?disabled=${this.disabled || Boolean(this.editing)} @click=${press(() => this.openAttach())}><span class="icon" data-icon="paperclip" aria-hidden="true"></span></button>
         <input type="file" hidden @change=${this.picked}>
         ${this.phone ? nothing : html`<button type="button" class="tool" aria-label="Emoji" aria-haspopup="dialog" data-dismiss-keep="emoji" aria-expanded=${this.emojiOpen ? 'true' : 'false'} ?disabled=${this.disabled} @click=${press(() => this.toggleEmoji())}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>`}
       </div>

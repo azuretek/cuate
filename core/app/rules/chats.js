@@ -205,6 +205,19 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   return { chats: orderChats(out), known: true };
 }
 
+// An edited message changes the chat's preview when it is the message the preview shows (issue 391): the same time and
+// the same side. The preview carries no id, so an older message's edit leaves it alone, and nothing moves in the list.
+export function applyEditToChats(chats, message) {
+  const i = chats.findIndex((c) => c.id === message.chatId);
+  if (i < 0) return chats;
+  const c = chats[i];
+  const last = c.lastMessage;
+  if (!last || last.sentAt !== message.sentAt || Boolean(last.fromMe) !== Boolean(message.fromMe)) return chats;
+  const out = chats.slice();
+  out[i] = { ...c, lastMessage: { ...last, text: message.text, link: message.link || last.link || null, edited: true } };
+  return out;
+}
+
 // The edit mode's own rules: which rows are checked and what a selection does. Everything here is pure, so the list
 // draws the selection and the page acts on it, and the confirm gate is tested without a browser.
 

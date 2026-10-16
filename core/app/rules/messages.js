@@ -55,7 +55,9 @@ export const canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) &&
 // by answering another person; and Save when the message carries a file that is really there (a picture or a
 // video, or a document) to write to the platform's photo library or downloads folder. Sending off on the server
 // offers nothing to send, and so nothing to save either. A platform the app cannot name offers neither.
-export function messageActions(m, { sending = false, platform = 'imessage' } = {}) {
+// Edit (issue 391) is offered on your own text message where editRefusal finds nothing against it, and only when the
+// engine says it can edit (`edit`), so the app never offers what the Mac cannot do.
+export function messageActions(m, { sending = false, platform = 'imessage', edit = false, now = 0 } = {}) {
   if (!sending || !canTarget(m)) return [];
   const caps = platformCapabilities(platform);
   const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
@@ -63,7 +65,41 @@ export function messageActions(m, { sending = false, platform = 'imessage' } = {
   if (savable) actions.push('save');
   if (!m.fromMe && caps.thread) actions.push('reply');
   if (caps.tapback || caps.fallback) actions.push('react');
+  if (edit && !editRefusal(m, { platform, now })) actions.push('edit');
   return actions;
+}
+
+// How long after sending a message the platform lets its sender change it (issue 391): fifteen minutes on the message
+// service, the platform's own window, after which the Mac refuses the edit.
+export const EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+// Why this message cannot be edited, as [code, the reason in words], or null when it can. The app offers Edit only where
+// this answers null, and the server checks the same rule before it asks the engine, so the two cannot disagree. Only
+// your own message, on a platform that carries an edit, with text and no file, within the window, and (when the new
+// words are given) to words that differ from the ones it has.
+export function editRefusal(m, { platform = 'imessage', now = 0, text = null } = {}) {
+  if (!m || !canTarget(m) || m.event) return ['edit_unknown', 'That message cannot be edited.'];
+  if (!m.fromMe) return ['edit_not_yours', 'Only your own message can be edited.'];
+  if (!platformCapabilities(platform).edit) return ['edit_unsupported', 'This conversation cannot carry an edit, so the message stays as it was sent.'];
+  if ((Array.isArray(m.attachments) && m.attachments.length) || !String(m.text || '').trim()) return ['edit_unsupported', 'Only the words of a text message can be edited.'];
+  const sent = Date.parse(m.sentAt);
+  if (!Number.isFinite(sent) || now - sent > EDIT_WINDOW_MS) return ['edit_window', 'A message can be edited for 15 minutes after it is sent.'];
+  if (text !== null) {
+    const next = String(text).trim();
+    if (!next) return ['bad_text', 'An edit needs some words.'];
+    if (next === String(m.text).trim()) return ['edit_same', 'The message already says that.'];
+  }
+  return null;
+}
+
+// An edited message replaces the one it changes, wherever it is loaded, and carries the mark (issue 391). Its reactions
+// and its place in a thread are the message's own and are kept; a message not loaded here is left alone.
+export function applyEdit(messages, edited) {
+  const i = messages.findIndex((m) => m.id === edited.id);
+  if (i < 0) return messages;
+  const out = messages.slice();
+  out[i] = { ...messages[i], text: edited.text, link: edited.link ?? messages[i].link ?? null, edited: true };
+  return out;
 }
 
 // The first message of the thread a message belongs to, followed up through replyTo (a parent not loaded included).
