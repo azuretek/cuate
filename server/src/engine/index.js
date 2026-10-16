@@ -43,7 +43,9 @@ const omit = (o, keys) => {
   return c;
 };
 
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false }) {
+// edits: where the adapter learns which messages were edited (edits.js reads the Messages store; the fake keeps its own),
+// or null where there is no such source, in which case nothing is ever marked edited and no edit event is told.
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -75,6 +77,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // Whether the engine can show our typing to the other person: imsg lists `typing` in status.methods only where it can
   // (macOS, with its bridge ready), so an engine that cannot is never asked (issue 319).
   let canType = false;
+  // Whether the engine can edit one of our messages: imsg lists `message.edit` in status.methods only while its bridge
+  // is ready and reports the selector Messages edits with, so an engine that cannot is never asked (issue 391).
+  let canEdit = false;
   // The link's own record, so the log and the diagnostics can say what happened: the generation of the current
   // child, how long it had been up, the last request that failed, and the restart history.
   let gen = 0;
@@ -254,6 +259,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     if (current !== c) return; // a newer start replaced this one, or the child died
     canReadStatus = Array.isArray(st?.methods) && st.methods.includes('message.send_status');
     canType = Array.isArray(st?.methods) && st.methods.includes('typing');
+    canEdit = Array.isArray(st?.methods) && st.methods.includes('message.edit');
     // capabilities is the engine's own block (an older release omits it, so it stays null). The reaction sender
     // reads it through supportsEmojiTapback to decide whether an arbitrary emoji can be sent.
     setState({ version: st && st.version != null ? String(st.version) : null, capabilities: st && typeof st.capabilities === 'object' ? st.capabilities : null });
@@ -271,7 +277,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     if (current !== c) return;
     const ready = isReady({ alive: c.alive, databaseReady, subscribed, subscribeUnsupported });
     markReady(ready);
-    log.emit('engine.start', { kind, version: state.version, ready });
+    log.emit('engine.start', { kind, version: state.version, ready, edit: canEdit });
+    if (ready) primeEdits();
     // Present and OFF by default (issue 230): the only source of another person typing is a bridge that is already
     // running, which this server never starts. The switch, and the engine advertising the method, must both be on.
     // Whether inbound typing is being listened for, and why not when it is not, is logged once per engine start, so a
@@ -335,8 +342,80 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
         if (e.code === -32601) canReadStatus = false; // request() already logged the failure
       }
     }
+    markEdited(page);
     return { messages: page, hasMore: list.length > limit };
   }
+
+  // --- Edits (issue 391) ---
+  // The engine answers a message's current text, so a read already serves the edited words; what it does not say is
+  // that the message was edited, so a page is marked from the store's own record, and a message the store records as
+  // edited carries `edited: true` through every read and reload.
+  function markEdited(list) {
+    if (!edits || !list.length) return list;
+    try {
+      const found = edits.among(list.filter((m) => !m.id.startsWith('row:')).map((m) => m.id));
+      for (const m of list) if (found.has(m.id)) m.edited = true;
+    } catch (e) {
+      log.emit('edit.failed', { error: String(e && e.message ? e.message : e) });
+    }
+    return list;
+  }
+  // The live half: each scan asks the store for the rows edited since the last one, reads each again from the engine
+  // (so its text is mapped by the same rule as every other message) and tells it as message.edited. The cursor starts at
+  // the newest edit the store holds when the engine first comes up, so a start never replays old edits. One scan runs at
+  // a time; a scan asked for while one runs runs again once it ends, so an edit that landed during it is not missed.
+  let editCursor = null;
+  let scanning = null;
+  let rescan = false;
+  function primeEdits() {
+    if (!edits || editCursor !== null) return;
+    try {
+      editCursor = edits.latest();
+    } catch (e) {
+      log.emit('edit.failed', { error: String(e && e.message ? e.message : e) });
+    }
+  }
+  async function editedMessage(row) {
+    const r = await request('messages.after', { since_rowid: Math.max(0, row.rowid - 1), chat_id: Number(row.chatId), limit: 1, attachments: true }, timeoutMs, ['attachments']);
+    const raw = (r && Array.isArray(r.messages) ? r.messages : []).find((m) => Number(m.id) === row.rowid && !m.is_reaction);
+    return raw ? { ...toModel(raw), edited: true } : null;
+  }
+  async function scanOnce() {
+    let found = 0;
+    for (let pass = 0; pass < 10; pass += 1) {
+      const page = edits.since(editCursor);
+      for (const row of page.rows) {
+        const message = await editedMessage(row);
+        if (message && message.chatId !== '0') {
+          found += 1;
+          emit('message.edited', { message });
+        }
+      }
+      editCursor = page.cursor;
+      if (!page.more) break;
+    }
+    return found;
+  }
+  function scanEdits() {
+    if (!edits || !state.ready) return Promise.resolve(0);
+    if (editCursor === null) { primeEdits(); return Promise.resolve(0); }
+    if (scanning) { rescan = true; return scanning; }
+    scanning = (async () => {
+      let found = 0;
+      try {
+        do {
+          rescan = false;
+          found += await scanOnce();
+        } while (rescan);
+        if (found) log.emit('edit.scan', { found });
+      } catch (e) {
+        log.emit('edit.failed', { error: String(e && e.message ? e.message : e) });
+      }
+      return found;
+    })().finally(() => { scanning = null; });
+    return scanning;
+  }
+  if (edits && typeof edits.onChange === 'function') edits.onChange(() => { scanEdits(); });
 
   // The engine's own resumable sweep: one cursor over message ROWID order, across every chat, in pages the
   // engine bounds itself (messages.after tops out at 500 rows). An export reads this rather than paging every
@@ -459,8 +538,19 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return sendOut({ ...base, kind: type }, 'tapback');
   };
 
+  // imsg's bridge `message.edit` replaces the text of one of our own messages by its guid (issue 391). The edit reaches
+  // every client the way one made on another device does: the store records it and the next scan tells it, which is
+  // asked for at once here rather than left to the database watch.
+  async function edit(chatId, messageId, text) {
+    if (!canEdit) return { ok: false, uncertain: false, unsupported: true, code: 'edit_unsupported' };
+    const r = await sendOut({ chat_id: Number(chatId), message_guid: String(messageId), text: String(text) }, 'message.edit');
+    if (r.ok) scanEdits();
+    return r.ok ? { ok: true } : r;
+  }
+
   function stop() {
     stopping = true;
+    try { edits?.close?.(); } catch { /* already closed */ }
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     const c = current;
     current = null;
@@ -481,6 +571,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     sendText,
     sendFile,
     react,
+    edit,
+    scanEdits,
+    canEdit: () => canEdit,
     supportsEmojiTapback,
     typing,
     canType: () => canType,
@@ -493,6 +586,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       kind: state.kind,
       version: state.version,
       ready: state.ready,
+      // Whether this engine can edit one of our messages now (issue 391): the app offers Edit only where it can.
+      edit: canEdit,
       restarts,
       uptimeMs: current ? Date.now() - current.startedAt : null,
       readyMs: readySince ? Date.now() - readySince : null,

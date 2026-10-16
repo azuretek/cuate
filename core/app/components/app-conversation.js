@@ -9,11 +9,11 @@ import { newArrivals } from '../../kit/rules/motion.js';
 import { chatTitle, eventText } from '../rules/chats.js';
 import { hasContactEditor } from '../rules/contacts.js';
 import './app-avatar.js';
-import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel } from '../rules/messages.js';
+import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel, editRefusal } from '../rules/messages.js';
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
-import { typingLabel } from '../rules/typing.js';
+import { typingNote, typingBubble, typingPulse, TYPING_BUBBLE_LABEL } from '../rules/typing.js';
 import { windowControlsHtml } from './window-controls.js';
 import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
@@ -65,13 +65,17 @@ class AppConversation extends KitElement {
     reveal: { attribute: false }, revealedId: { state: true },
     // A note of the conversation's own under one message, such as Link copied: { id, text }, cleared after a moment.
     ownNote: { state: true },
-    // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, or the
-    // contact when the engine can report it. Drawn in the header, cleared by the page when it goes stale.
+    // The live typing state of the conversation on screen (issue 230): another of our signed-in devices, a quiet note in
+    // the header, or the other person when the engine reports it, a bubble of three dots at the foot of the conversation
+    // (issue 390). Cleared by the page when it stops or goes stale.
     typing: { attribute: false },
     // The menu open on one message ({ id, kind: 'menu', side }), the thread open over the conversation and being
     // replied to ({ id } of its first message), and the message the composer's emoji panel is choosing a reaction for
     // (issues 169 and 183).
     pop: { state: true }, replyingTo: { state: true }, reactFor: { state: true },
+    // Whether the engine can edit a message (issue 391), handed down from the page, and the message being edited
+    // ({ id, text }) while its words are in the composer.
+    canEdit: {}, editing: { state: true },
   };
 
   constructor() {
@@ -101,6 +105,8 @@ class AppConversation extends KitElement {
     this.pop = null;
     this.replyingTo = null;
     this.reactFor = null;
+    this.canEdit = false;
+    this.editing = null;
     this.pressTimer = null;
     this.swallowClick = { handleEvent: (e) => this.swallow(e), capture: true };
     // The message menu and an open thread close on a press outside them and on Escape, through the kit's one behaviour
@@ -150,6 +156,7 @@ class AppConversation extends KitElement {
       this.pop = null;
       this.replyingTo = null;
       this.reactFor = null;
+      this.editing = null;
       this.revealedId = null;
     }
   }
@@ -160,6 +167,26 @@ class AppConversation extends KitElement {
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
     aimCarets(this);
     this.arrive(changed);
+    this.animateTyping();
+  }
+
+  // The other person's typing bubble rises into the foot of the conversation the way an arriving message does, and its
+  // dots pulse in turn for as long as it is up (issue 390). Both play through the kit, so under reduced motion the
+  // bubble still shows and its dots are still. A bubble that goes and comes back is a new element, and plays again.
+  animateTyping() {
+    const row = this.querySelector('.messages > .typing-row');
+    if (!row) {
+      this.typingRow = null;
+      return;
+    }
+    if (this.typingRow === row) return;
+    this.typingRow = row;
+    const bubble = row.querySelector('.typing-bubble');
+    const rise = parseFloat(cssVar(bubble, '--space-4')) || 0;
+    play(bubble, [{ opacity: 0, translate: '0px ' + rise + 'px', scale: '0.96' }, { opacity: 1, translate: '0px 0px', scale: '1' }]);
+    const lift = parseFloat(cssVar(bubble, '--space-1')) || 0;
+    const dots = [...row.querySelectorAll('.typing-dot')];
+    dots.forEach((dot, i) => play(dot, typingPulse(i, dots.length, lift), { duration: 'typing', easing: 'ease', iterations: Infinity }));
   }
 
   // Motion comes from where a thing came from (issue 316, docs/CONVENTIONS.md). Another conversation slides in from
@@ -349,13 +376,31 @@ class AppConversation extends KitElement {
   }
 
   onSend(detail) {
+    if (detail && detail.editOf) {
+      const messageId = detail.editOf;
+      this.editing = null;
+      return this.fire('edit', { messageId, text: detail.text });
+    }
     this.replyingTo = null;
     return this.fire('send', detail);
   }
 
+  // Edit puts the message's words in the composer (issue 391); Send saves the change and Escape leaves it as it was. The
+  // window is checked again when Edit is pressed, so a menu left open past it offers nothing that would be refused.
+  startEdit(m) {
+    this.pop = null;
+    this.reactFor = null;
+    if (editRefusal(m, { platform: platformOf(this.chat), now: Date.now() })) return;
+    this.editing = { id: m.id, text: m.text };
+  }
+
+  cancelEdit() {
+    this.editing = null;
+  }
+
   // The menu: when the message arrived (or was sent), then Reply in thread and React as icons from the shared set.
   menu(m) {
-    const actions = messageActions(m, { sending: this.sending, platform: platformOf(this.chat) });
+    const actions = messageActions(m, { sending: this.sending, platform: platformOf(this.chat), edit: Boolean(this.canEdit), now: Date.now() });
     // The lock sits beside the time, seen only when the menu is open, so it is there to check rather than to notice
     // (Abi, 2026-10-14).
     const lock = Boolean(serviceNote(this.chat)?.encrypted);
@@ -368,12 +413,21 @@ class AppConversation extends KitElement {
       ${actions.includes('save') ? html`<button type="button" class="message-action" aria-label="Save" title="Save" @click=${press(() => this.save(m))}><span class="icon" data-icon="download" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('reply') ? html`<button type="button" class="message-action" aria-label="Reply in thread" title="Reply in thread" @click=${press(() => this.openThread(m))}><span class="icon" data-icon="reply" aria-hidden="true"></span></button>` : nothing}
       ${actions.includes('react') ? html`<button type="button" class="message-action" aria-label="React" title="React" @click=${press(() => this.openReact(m))}><span class="icon" data-icon="smile-plus" aria-hidden="true"></span></button>` : nothing}
+      ${actions.includes('edit') ? html`<button type="button" class="message-action" aria-label="Edit" title="Edit" @click=${press(() => this.startEdit(m))}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button>` : nothing}
     </div>`;
+  }
+
+  // The other person typing (issue 390): an incoming bubble of three dots under the newest message. It is not a
+  // message (no .bubble-row), so no message selector, menu or scroll anchor ever takes it, and the conversation's keep
+  // follows it at the end like any growth there while a reader scrolled up stays on the message they were on.
+  typingRowHtml() {
+    return html`<div class="typing-row" data-key="typing"><div class="bubble them typing-bubble" role="status" aria-label=${TYPING_BUBBLE_LABEL}><span class="typing-dot" aria-hidden="true"></span><span class="typing-dot" aria-hidden="true"></span><span class="typing-dot" aria-hidden="true"></span></div></div>`;
   }
 
   // What the composer's field says: Reply while a thread is open, as on the phone (issue 195).
   composerPlaceholder() {
     if (!this.sending) return 'Sending is off on the server';
+    if (this.editing) return 'Edit message';
     return this.replyingTo ? 'Reply' : 'Message';
   }
 
@@ -405,7 +459,7 @@ class AppConversation extends KitElement {
     const targeted = this.reactFor === m.id;
     const mark = where === 'list' ? marksOf(this.messages).get(m.id) || null : null;
     const isReply = Boolean(mark && mark.root);
-    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted ? 'targeted' : '', isReply ? 'thread-reply' : '', this.revealedId === m.id ? 'revealed' : ''].filter(Boolean).join(' ');
+    const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted || (this.editing && this.editing.id === m.id) ? 'targeted' : '', isReply ? 'thread-reply' : '', this.revealedId === m.id ? 'revealed' : ''].filter(Boolean).join(' ');
     // Every message we send wears the theme's own colour, whatever the platform (Abi, 2026-10-12): who is on the other
     // end is told by serviceNote, never by a second bubble colour.
     const kind = mine ? 'me' : 'them';
@@ -425,6 +479,7 @@ class AppConversation extends KitElement {
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
       </div>
+      ${m.edited ? html`<div class="edited-mark">Edited</div>` : nothing}
       ${label ? html`<div class="delivery">${label}${m.note ? ' \u00b7 ' + m.note : ''}</div>` : nothing}
       ${note ? html`<div class="message-note" role="status">${note}</div>` : nothing}
     </div>`;
@@ -453,7 +508,7 @@ class AppConversation extends KitElement {
     const thread = Boolean(this.replyingTo);
     const title = chatTitle(this.chat);
     const detail = this.chat.isGroup ? this.chat.participants.length + ' people' : '';
-    const typing = typingLabel(this.typing, now);
+    const typing = typingNote(this.typing, now);
     // On a phone the way back to the chats list is the chats icon from the shared set, named for where it goes, never a
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
@@ -462,10 +517,11 @@ class AppConversation extends KitElement {
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
           ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, 'list'), this.threadSummary(it.message)]))}
+          ${typingBubble(this.typing, now) ? this.typingRowHtml() : nothing}
         </div>
         ${thread ? this.threadView() : nothing}
       </div>
-      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} @send=${(e) => respond(e, this.onSend(e.detail))} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} .editing=${this.editing} @send=${(e) => respond(e, this.onSend(e.detail))} @edit-cancel=${() => this.cancelEdit()} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 

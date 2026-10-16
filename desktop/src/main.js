@@ -719,8 +719,127 @@ async function runSmoke(w) {
     console.log('send once: ' + JSON.stringify({ double, bubblesSent, serverHeld }));
     report.sent = true;
   }
+  // Edits (issue 391). The live message's sender edits it on their phone once we have answered it (the fake engine's
+  // FAKE_LIVE_EDIT): the new words replace the old in the open conversation, live, marked Edited, and a reload keeps
+  // them. Then our own message, just sent, is edited from its menu: Edit puts its words in the composer, Send saves the
+  // change, and the new words replace the old in the conversation, in the chat list's preview and on the server.
+  const liveEdit = process.env.SMOKE_LIVE_EDIT;
+  const ownEdit = process.env.SMOKE_EDIT_TEXT;
+  if (live && liveEdit && text && ownEdit) {
+    await smokeStep('edit made on another device');
+    const q = JSON.stringify;
+    const rowWith = (words) => "[...document.querySelectorAll('.messages .bubble-row')].find((r) => (r.querySelector('.bubble')?.textContent || '').trim() === " + q(words) + ")";
+    const markedRow = (words) => "(() => { const r = " + rowWith(words) + "; return Boolean(r && r.querySelector('.edited-mark')?.textContent.trim() === 'Edited'); })()";
+    await waitFor(markedRow(liveEdit), 20000);
+    const editChecks = { remote: true };
+    editChecks.remoteOldGone = await js("!(" + rowWith(live) + ")");
+    await js("document.querySelector('app-root').reload()");
+    await pause(800);
+    editChecks.remoteKept = await js(markedRow(liveEdit));
+    await smokeStep('edit our own message');
+    const ownSel = await js("(() => { const r = " + rowWith(text) + "; return r ? '.bubble-row[data-id=\"' + r.dataset.id + '\"]' : null; })()");
+    editChecks.ownFound = Boolean(ownSel);
+    if (ownSel) {
+      await js("(() => { const b = document.querySelector(" + q(ownSel + ' .bubble') + "); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 })); return true; })()");
+      await waitFor("Boolean(document.querySelector(" + q(ownSel + ' .message-menu .message-action[aria-label="Edit"]') + "))", 10000);
+      editChecks.menuIcon = await js("document.querySelector(" + q(ownSel + ' .message-menu .message-action[aria-label="Edit"] .icon') + ")?.dataset.icon === 'pencil'");
+      await js("document.querySelector(" + q(ownSel + ' .message-menu .message-action[aria-label="Edit"]') + ").click()");
+      await waitFor("document.querySelector('app-composer textarea').value === " + q(text), 10000);
+      editChecks.composer = await js("(() => { const t = document.querySelector('app-composer textarea'); return t.placeholder === 'Edit message' && !document.querySelector('.message-menu'); })()");
+      await shot('03b-editing.png');
+      await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = " + q(ownEdit) + "; document.querySelector('app-composer button.send').click(); return true; })()");
+      await waitFor(markedRow(ownEdit), 20000);
+      editChecks.ownOldGone = await js("!(" + rowWith(text) + ")");
+      editChecks.composerCleared = await js("document.querySelector('app-composer textarea').value === '' && document.querySelector('app-composer textarea').placeholder !== 'Edit message'");
+      editChecks.preview = await js("(() => { const r = document.querySelector('app-root'); const c = r.chats.find((x) => x.id === r.openChatId); return Boolean(c && c.lastMessage && c.lastMessage.text === " + q(ownEdit) + ") && [...document.querySelectorAll('.chat-preview')].some((p) => p.textContent.includes(" + q(ownEdit) + ")); })()");
+      const chatId = await js("document.querySelector('app-root').openChatId");
+      const held = await (await fetch(process.env.SMOKE_SERVER_URL + '/api/v1/chats/' + encodeURIComponent(chatId) + '/messages?limit=100', { headers: { authorization: 'Bearer ' + process.env.SMOKE_TOKEN } })).json();
+      editChecks.server = (held.messages || []).some((m) => m.text === ownEdit && m.edited === true) && !(held.messages || []).some((m) => m.text === text);
+      await shot('03c-edited.png');
+    }
+    report.edit = Object.values(editChecks).every(Boolean);
+    console.log('edit: ' + JSON.stringify({ checks: editChecks }));
+  }
   await pause(300);
   await shot('03-after-send.png');
+
+  // The other person typing (issue 390): an incoming bubble of three dots at the foot of the conversation, under the
+  // newest message, gone when typing stops. The event goes through the page's own event handler, the path the server's
+  // typing event takes. A view at its end follows the bubble in, a reader scrolled up stays on their message, the dots
+  // move only where motion is allowed, and our own other device typing is a quiet header note, never the bubble.
+  {
+    const typingEvent = (kind, on) => js(`(() => { const r = document.querySelector('app-root'); r.onEvent({ name: 'typing', data: { chatId: r.openChatId, kind: ${JSON.stringify(kind)}, typing: ${on} } }); return true; })()`);
+    const typingState = () => js(`(() => {
+      const list = document.querySelector('.messages');
+      const row = document.querySelector('.messages > .typing-row');
+      const bubble = row && row.querySelector('.typing-bubble');
+      const rows = [...list.querySelectorAll('.bubble-row')];
+      const lastRow = rows[rows.length - 1];
+      const dots = row ? [...row.querySelectorAll('.typing-dot')] : [];
+      return {
+        shown: Boolean(row), last: Boolean(row) && list.lastElementChild === row,
+        below: Boolean(row && lastRow) && row.getBoundingClientRect().top >= lastRow.getBoundingClientRect().bottom - 1,
+        role: bubble ? bubble.getAttribute('role') : null, label: bubble ? bubble.getAttribute('aria-label') : null,
+        dots: dots.length, moving: dots.filter((d) => d.getAnimations().some((a) => a.playState === 'running')).length,
+        drawn: dots.length > 0 && dots.every((d) => { const b = d.getBoundingClientRect(); return b.width > 0 && b.height > 0; }),
+        headerLine: document.querySelector('.conv-head .typing')?.textContent || '',
+        fromEnd: Math.round(list.scrollHeight - list.scrollTop - list.clientHeight), scrollTop: Math.round(list.scrollTop),
+      };
+    })()`);
+    const typingCdp = (method, params) => { if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); return wc.debugger.sendCommand(method, params); };
+    const typingMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+    await typingCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    // At the end of the conversation: the bubble appears under the newest message and the view follows it in.
+    await js("(() => { const l = document.querySelector('.messages'); l.scrollTop = l.scrollHeight; return true; })()");
+    await pause(300);
+    await typingEvent('contact', true);
+    await waitFor("Boolean(document.querySelector('.messages > .typing-row'))", 5000).catch(() => {});
+    await pause(400);
+    const atEnd = await typingState();
+    await shot('03b-typing.png');
+    await typingEvent('contact', false);
+    await waitFor("!document.querySelector('.messages > .typing-row')", 5000).catch(() => {});
+    await pause(200);
+    const cleared = await typingState();
+    // A reader scrolled up is not moved when it appears or goes.
+    await js("(() => { const l = document.querySelector('.messages'); l.dispatchEvent(new WheelEvent('wheel', { deltaY: -400 })); l.scrollTop = Math.max(0, l.scrollHeight - l.clientHeight * 2 - 200); return true; })()");
+    await pause(400);
+    const upBefore = await typingState();
+    await typingEvent('contact', true);
+    await pause(400);
+    const upShown = await typingState();
+    await typingEvent('contact', false);
+    await pause(400);
+    const upGone = await typingState();
+    // Reduced motion: the bubble still shows and its dots are still.
+    await typingCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await typingEvent('contact', true);
+    await pause(400);
+    const reduced = await typingState();
+    await typingEvent('contact', false);
+    await typingCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: typingMotionWas }] });
+    // Our own other device typing: a quiet header note, never the other person's bubble.
+    await typingEvent('device', true);
+    await pause(300);
+    const device = await typingState();
+    await typingEvent('device', false);
+    await pause(300);
+    const deviceGone = await typingState();
+    await js("(() => { const l = document.querySelector('.messages'); l.dispatchEvent(new WheelEvent('wheel', { deltaY: 400 })); l.scrollTop = l.scrollHeight; return true; })()");
+    await pause(300);
+    const typingChecks = {
+      appears: atEnd.shown && atEnd.last && atEnd.below && atEnd.role === 'status' && atEnd.label === 'typing' && atEnd.dots === 3 && atEnd.drawn,
+      followsEnd: atEnd.fromEnd <= 2,
+      animates: atEnd.moving === 3,
+      noHeaderLine: atEnd.headerLine === '',
+      clears: !cleared.shown,
+      readerKept: upShown.shown && Math.abs(upShown.scrollTop - upBefore.scrollTop) <= 1 && Math.abs(upGone.scrollTop - upBefore.scrollTop) <= 1 && upBefore.fromEnd > 2,
+      reducedStill: reduced.shown && reduced.dots === 3 && reduced.moving === 0,
+      deviceNote: !device.shown && /another device/.test(device.headerLine) && !deviceGone.shown && deviceGone.headerLine === '',
+    };
+    report.typingBubble = Object.values(typingChecks).every(Boolean);
+    console.log('typing bubble: ' + JSON.stringify({ checks: typingChecks, atEnd, cleared, upBefore, upShown, upGone, reduced, device, deviceGone }));
+  }
 
   // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
   // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a

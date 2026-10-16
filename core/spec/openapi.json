@@ -456,6 +456,71 @@
         }
       }
     },
+    "/api/v1/chats/{chatId}/messages/{messageId}/text": {
+      "put": {
+        "operationId": "edit",
+        "summary": "PUT /api/v1/chats/:chatId/messages/:messageId/text",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "send",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chatId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/attachments": {
       "post": {
         "operationId": "upload",
@@ -1363,6 +1428,26 @@
         }
       }
     },
+    "message.edited": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/SERVER.md, Hooks).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
     "reaction": {
       "post": {
         "requestBody": {
@@ -1615,6 +1700,9 @@
             "type": "string"
           },
           "ready": {
+            "type": "boolean"
+          },
+          "edit": {
             "type": "boolean"
           },
           "restarts": {
@@ -1895,6 +1983,9 @@
           },
           "senderName": {
             "type": "string"
+          },
+          "edited": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1977,6 +2068,9 @@
           },
           "event": {
             "$ref": "#/components/schemas/MessageEventKind"
+          },
+          "edited": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2112,6 +2206,38 @@
         },
         "required": [
           "emoji"
+        ],
+        "additionalProperties": false
+      },
+      "EditRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "EditResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "messageId",
+          "text"
         ],
         "additionalProperties": false
       },

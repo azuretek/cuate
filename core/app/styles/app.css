@@ -163,6 +163,11 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
    own link callout and drag are off. */
 .message-link { color: inherit; text-decoration: underline; overflow-wrap: anywhere; cursor: pointer; -webkit-touch-callout: none; -webkit-user-drag: none; }
 .bubble.them { background: var(--role-received); color: var(--role-received-fg); }
+/* The other person typing (issue 390): an incoming bubble of three dots at the foot of the conversation. Its motion is
+   played by core/kit/motion.js, so under reduced motion the dots are simply still. */
+.typing-row { display: flex; align-items: flex-start; margin-top: var(--space-4); }
+.typing-bubble { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-3); white-space: normal; }
+.typing-dot { width: var(--size-typing-dot); height: var(--size-typing-dot); border-radius: var(--radius-pill); background: var(--color-fg-muted); }
 .bubble.me { background: var(--role-sent); color: var(--role-sent-fg); }
 .bubble.state-sending { opacity: 0.7; }
 .bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }
@@ -172,6 +177,8 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble-row.mine .reactions { right: auto; left: 0; transform: translate(-50%, -50%); }
 .reaction { background: none; border: 0; padding: 0; color: var(--color-fg-muted); }
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+/* A message changed after it was sent says so under its bubble, quietly, on its own side (issue 391). */
+.edited-mark { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
 /* A message's actions (issues 138 and 169). A long press with a finger, a long click with the mouse or a right click
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */

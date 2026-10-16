@@ -27,12 +27,14 @@ export function platformOf(chat) {
 //  - thread: a reply that stays in a thread
 //  - emoji: any emoji as a reaction (only the bridge path, and only when the engine advertises the versioned
 //    capability; the version gate lives in messages.js)
+//  - edit: changing a message after it was sent (issue 391), which only the message service carries; SMS and RCS
+//    send no edit, so one made there would never reach the other person
 // A platform the app cannot name carries nothing and offers nothing.
 export const PLATFORM_CAPABILITIES = {
-  imessage: { tapback: true, fallback: false, thread: true, emoji: true },
-  sms: { tapback: false, fallback: true, thread: false, emoji: false },
-  rcs: { tapback: false, fallback: true, thread: false, emoji: false },
-  unknown: { tapback: false, fallback: false, thread: false, emoji: false },
+  imessage: { tapback: true, fallback: false, thread: true, emoji: true, edit: true },
+  sms: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
+  rcs: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
+  unknown: { tapback: false, fallback: false, thread: false, emoji: false, edit: false },
 };
 
 export function platformCapabilities(platform) {

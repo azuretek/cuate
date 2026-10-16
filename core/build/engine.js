@@ -42,6 +42,7 @@ var engine = (() => {
     DRAG_MAX: () => DRAG_MAX,
     DRAG_MIN: () => DRAG_MIN,
     EDGE: () => EDGE,
+    EDIT_WINDOW_MS: () => EDIT_WINDOW_MS,
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
     EMOJI_TAPBACK_VERSION: () => EMOJI_TAPBACK_VERSION,
@@ -104,6 +105,7 @@ var engine = (() => {
     TRAY_BADGE: () => TRAY_BADGE,
     TRAY_CROP: () => TRAY_CROP,
     TYPE_SIZE_VARS: () => TYPE_SIZE_VARS,
+    TYPING_BUBBLE_LABEL: () => TYPING_BUBBLE_LABEL,
     TYPING_TTL_MS: () => TYPING_TTL_MS,
     UNKNOWN: () => UNKNOWN,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
@@ -134,6 +136,8 @@ var engine = (() => {
     appIconFor: () => appIconFor,
     appIconVariants: () => appIconVariants,
     appUpdateNotice: () => appUpdateNotice,
+    applyEdit: () => applyEdit,
+    applyEditToChats: () => applyEditToChats,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     applyTyping: () => applyTyping,
@@ -195,6 +199,7 @@ var engine = (() => {
     dragThreshold: () => dragThreshold,
     drawnY: () => drawnY,
     durationMs: () => durationMs,
+    editRefusal: () => editRefusal,
     emojiFallbackParts: () => emojiFallbackParts,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
@@ -414,7 +419,9 @@ var engine = (() => {
     topLift: () => topLift,
     transferDetail: () => transferDetail,
     typingActive: () => typingActive,
-    typingLabel: () => typingLabel,
+    typingBubble: () => typingBubble,
+    typingNote: () => typingNote,
+    typingPulse: () => typingPulse,
     unreadTotal: () => unreadTotal,
     unsupportedBanner: () => unsupportedBanner,
     updateBanner: () => updateBanner,
@@ -517,6 +524,8 @@ var engine = (() => {
       // `text` is the message being reacted to, carried only so the server can compose the platform's own text
       // fallback where the conversation is not on the message service (issue 184); it is not sent otherwise.
       react: (chatId, messageId, { emoji, remove = false, text = "" }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...remove ? { remove: true } : {}, ...text ? { text } : {} }),
+      // The new words for one of our own messages (issue 391); the server answers the words it sent.
+      edit: (chatId, messageId, text) => call("PUT", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/text`, { text }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
       // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
@@ -2569,6 +2578,16 @@ var engine = (() => {
     out[i] = { ...c, ...photo, unread, lastMessageAt: message.sentAt, lastMessage: message.event ? { ...lastMessage, event: { kind: message.event.kind }, senderName: message.senderName || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
+  function applyEditToChats(chats, message) {
+    const i = chats.findIndex((c2) => c2.id === message.chatId);
+    if (i < 0) return chats;
+    const c = chats[i];
+    const last = c.lastMessage;
+    if (!last || last.sentAt !== message.sentAt || Boolean(last.fromMe) !== Boolean(message.fromMe)) return chats;
+    const out = chats.slice();
+    out[i] = { ...c, lastMessage: { ...last, text: message.text, link: message.link || last.link || null, edited: true } };
+    return out;
+  }
   function toggleChecked(checked = [], id) {
     return checked.includes(id) ? checked.filter((x) => x !== id) : [...checked, id];
   }
@@ -3034,10 +3053,10 @@ var engine = (() => {
     return "unknown";
   }
   var PLATFORM_CAPABILITIES = {
-    imessage: { tapback: true, fallback: false, thread: true, emoji: true },
-    sms: { tapback: false, fallback: true, thread: false, emoji: false },
-    rcs: { tapback: false, fallback: true, thread: false, emoji: false },
-    unknown: { tapback: false, fallback: false, thread: false, emoji: false }
+    imessage: { tapback: true, fallback: false, thread: true, emoji: true, edit: true },
+    sms: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
+    rcs: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
+    unknown: { tapback: false, fallback: false, thread: false, emoji: false, edit: false }
   };
   function platformCapabilities(platform) {
     return PLATFORM_CAPABILITIES[platform] || PLATFORM_CAPABILITIES.unknown;
@@ -3157,7 +3176,7 @@ var engine = (() => {
   }
   var MESSAGE_GUID = /^[A-Za-z0-9_-]{1,128}$/;
   var canTarget = (m) => Boolean(m) && MESSAGE_GUID.test(String(m.id)) && !m.state;
-  function messageActions(m, { sending = false, platform = "imessage" } = {}) {
+  function messageActions(m, { sending = false, platform = "imessage", edit = false, now = 0 } = {}) {
     if (!sending || !canTarget(m)) return [];
     const caps = platformCapabilities(platform);
     const savable = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && !a.local && !a.missing);
@@ -3165,7 +3184,30 @@ var engine = (() => {
     if (savable) actions.push("save");
     if (!m.fromMe && caps.thread) actions.push("reply");
     if (caps.tapback || caps.fallback) actions.push("react");
+    if (edit && !editRefusal(m, { platform, now })) actions.push("edit");
     return actions;
+  }
+  var EDIT_WINDOW_MS = 15 * 60 * 1e3;
+  function editRefusal(m, { platform = "imessage", now = 0, text = null } = {}) {
+    if (!m || !canTarget(m) || m.event) return ["edit_unknown", "That message cannot be edited."];
+    if (!m.fromMe) return ["edit_not_yours", "Only your own message can be edited."];
+    if (!platformCapabilities(platform).edit) return ["edit_unsupported", "This conversation cannot carry an edit, so the message stays as it was sent."];
+    if (Array.isArray(m.attachments) && m.attachments.length || !String(m.text || "").trim()) return ["edit_unsupported", "Only the words of a text message can be edited."];
+    const sent = Date.parse(m.sentAt);
+    if (!Number.isFinite(sent) || now - sent > EDIT_WINDOW_MS) return ["edit_window", "A message can be edited for 15 minutes after it is sent."];
+    if (text !== null) {
+      const next = String(text).trim();
+      if (!next) return ["bad_text", "An edit needs some words."];
+      if (next === String(m.text).trim()) return ["edit_same", "The message already says that."];
+    }
+    return null;
+  }
+  function applyEdit(messages, edited) {
+    const i = messages.findIndex((m) => m.id === edited.id);
+    if (i < 0) return messages;
+    const out = messages.slice();
+    out[i] = { ...messages[i], text: edited.text, link: edited.link ?? messages[i].link ?? null, edited: true };
+    return out;
   }
   function threadRoot(messages, id) {
     return rootIn(new Map((messages || []).map((m) => [m.id, m])), id);
@@ -4234,7 +4276,6 @@ var engine = (() => {
 
   // core/app/rules/typing.js
   var TYPING_TTL_MS = 8e3;
-  var ELLIPSIS = "\u2026";
   function typingActive(state, now) {
     return Boolean(state) && Number.isFinite(state.at) && now - state.at < TYPING_TTL_MS;
   }
@@ -4243,9 +4284,26 @@ var engine = (() => {
     if (!event.typing) return null;
     return { chatId: String(chatId), kind: event.kind === "contact" ? "contact" : "device", at: now };
   }
-  function typingLabel(state, now) {
-    if (!typingActive(state, now)) return "";
-    return state.kind === "contact" ? "typing" + ELLIPSIS : "You're typing on another device";
+  function typingNote(state, now) {
+    if (!typingActive(state, now) || state.kind !== "device") return "";
+    return "You're typing on another device";
+  }
+  function typingBubble(state, now) {
+    return typingActive(state, now) && state.kind === "contact";
+  }
+  var TYPING_BUBBLE_LABEL = "typing";
+  function typingPulse(index, count, lift) {
+    const n = Math.max(1, count);
+    const span = 0.6 / n;
+    const peak = 0.2 + index * span;
+    const rest = { opacity: 0.4, translate: "0px 0px" };
+    return [
+      { offset: 0, ...rest },
+      { offset: Math.max(0, peak - span), ...rest },
+      { offset: peak, opacity: 1, translate: "0px " + -Math.abs(lift) + "px" },
+      { offset: Math.min(1, peak + span), ...rest },
+      { offset: 1, ...rest }
+    ];
   }
 
   // core/app/rules/bar-layout.js

@@ -78,7 +78,7 @@ It sends one JSON line per syslog message (RFC 5424) over TCP, framed with the o
 
 ## Hooks
 
-The server can send every event it publishes, the same ones a connected app hears, to any number of receivers. An event is a message (`message.new`, `reaction`) or an action the server takes or sees (`chat.read`, `settings.changed`, `mac.state`, `server.state`); a sent message arrives as `message.new` with `isFromMe`. Reading, listing, searching and exporting are not events. The list is `events` in `core/spec/api.json`, so an event added there can be hooked with no other change, and the OpenAPI document gives each one's data under `webhooks`.
+The server can send every event it publishes, the same ones a connected app hears, to any number of receivers. An event is a message (`message.new`, `message.edited`, `reaction`) or an action the server takes or sees (`chat.read`, `settings.changed`, `mac.state`, `server.state`); a sent message arrives as `message.new` with `isFromMe`. Reading, listing, searching and exporting are not events. The list is `events` in `core/spec/api.json`, so an event added there can be hooked with no other change, and the OpenAPI document gives each one's data under `webhooks`.
 
 ```sh
 node server/src/main.js hooks add tool https://tool.example/in --events message.new,chat.read

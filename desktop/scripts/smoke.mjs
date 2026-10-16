@@ -33,6 +33,10 @@ const cli = path.join(root, 'server/src/main.js');
 const run = (...args) => execFileSync(process.execPath, [cli, ...args, '--data', data], { encoding: 'utf8' });
 const LIVE = 'A live message from the fake engine';
 const SENT = 'Sent from the desktop smoke';
+// The live message's words once its sender edits them on another device, and the words our own sent message is edited to
+// (issue 391).
+const LIVE_EDIT = 'A live message, edited on another device';
+const SENT_EDIT = 'Sent from the desktop smoke, then edited';
 
 // When the app is killed before it can retain its own state (the deadline below), or exits without a
 // report, keep a bounded, sanitized note of how it ended. The app's own failure.json is authoritative and
@@ -51,7 +55,7 @@ function writeFailureNote(exitCode, applicationOutput, timeout = null) {
 run('init', '--engine', 'fake', '--port', '0');
 const token = run('token', 'create', '--scope', 'device', '--name', 'smoke').trim().split('\n').pop().trim();
 run('sending', 'on');
-const server = spawn(process.execPath, [cli, 'run', '--data', data], { env: { ...process.env, FAKE_LIVE: LIVE }, stdio: ['ignore', 'pipe', 'inherit'] });
+const server = spawn(process.execPath, [cli, 'run', '--data', data], { env: { ...process.env, FAKE_LIVE: LIVE, FAKE_LIVE_EDIT: LIVE_EDIT }, stdio: ['ignore', 'pipe', 'inherit'] });
 const port = await new Promise((resolve, reject) => {
   let buf = '';
   const fail = (error) => { clearTimeout(t); server.kill('SIGTERM'); rmSync(data, { recursive: true, force: true }); reject(error); };
@@ -70,7 +74,7 @@ const port = await new Promise((resolve, reject) => {
 });
 
 const electron = packed || createRequire(path.join(root, 'desktop', 'package.json'))('electron');
-const env = { ...process.env, SMOKE_OUT: out, SMOKE_SERVER_URL: 'http://127.0.0.1:' + port, SMOKE_TOKEN: token, SMOKE_LIVE_TEXT: LIVE, SMOKE_SEND_TEXT: SENT, SMOKE_THEME_FIXTURE: path.join(root, 'core/fixtures/themes/elegant-luxury.json') };
+const env = { ...process.env, SMOKE_OUT: out, SMOKE_SERVER_URL: 'http://127.0.0.1:' + port, SMOKE_TOKEN: token, SMOKE_LIVE_TEXT: LIVE, SMOKE_SEND_TEXT: SENT, SMOKE_LIVE_EDIT: LIVE_EDIT, SMOKE_EDIT_TEXT: SENT_EDIT, SMOKE_THEME_FIXTURE: path.join(root, 'core/fixtures/themes/elegant-luxury.json') };
 const appProc = spawn(electron, packed ? [] : [path.join(root, 'desktop')], { env, stdio: ['ignore', 'pipe', 'inherit'] });
 const smokeTimeoutMs = resolveSmokeTimeoutMs();
 let report = null;
@@ -117,6 +121,8 @@ const checks = [
   { key: 'appMenu', bound: 'true', value: (report) => report.appMenu, test: (v) => v === true },
   { key: 'live', bound: 'true', value: (report) => report.live, test: (v) => v === true },
   { key: 'sent', bound: 'true', value: (report) => report.sent, test: (v) => v === true },
+  { key: 'edit', bound: 'an edit made on another device and one made here each replace the words live, marked Edited, in the conversation, the list preview and on reload (issue 391)', value: (report) => report.edit, test: (v) => v === true },
+  { key: 'typingBubble', bound: 'the other person typing draws three dots under the newest message and clears, a reader scrolled up is not moved, and our other device is a header note (issue 390)', value: (report) => report.typingBubble, test: (v) => v === true },
   { key: 'composerGrows', bound: 'true', value: (report) => report.composerGrows, test: (v) => v === true },
   { key: 'closeToTray', bound: 'true', value: (report) => report.closeToTray, test: (v) => v === true },
   { key: 'tray', bound: 'true', value: (report) => report.tray, test: (v) => v === true },
