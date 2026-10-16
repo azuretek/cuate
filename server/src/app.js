@@ -106,6 +106,9 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
   engine.on((name, data) => {
     if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
+    // An edit made anywhere changes the held preview when it is the message the preview shows (issue 391), so a list
+    // read after the event agrees with it.
+    if (name === 'message.edited') noteEdit(data.message);
     // The engine only reports inbound typing when the switch is on and a bridge is already running; with it off this
     // never fires, so no contact indicator is invented (issue 230).
     if (name === 'typing.incoming') {
@@ -141,7 +144,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return Math.min(hi, Math.max(lo, Number(v)));
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
-  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind }, senderName: m.senderName || null } : {}) });
+  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind }, senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}) });
   // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
@@ -194,6 +197,11 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     const unread = !m.fromMe ? (Number(chat.unread) || 0) + 1 : chat.unread;
     held.chats.splice(at, 1);
     held.chats.unshift({ ...chat, unread, lastMessageAt: m.sentAt });
+  };
+  const noteEdit = (m) => {
+    const id = String(m.chatId);
+    const current = previews.get(id);
+    if (current && current.sentAt === m.sentAt && Boolean(current.fromMe) === Boolean(m.fromMe)) previews.set(id, preview(m));
   };
   // After a conversation is created or a group changes, the list is read fresh (a read already in flight may predate the
   // change, so it is let finish and the list read again) and the changed chat is told to every client (issue 326).
@@ -260,7 +268,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const exporter = createExporter({ engine, dataDir, log: log.child('export') });
   const ctx = {
     json, fail, badRequest, readJson, engine, store, config, naming, apiSpec, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, epoch, platform, diagnostics,
-    send, react: send.react, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm, chatChanged,
+    send, react: send.react, edit: send.edit, paging, typing, mapLimit, intParam, chatIdOk, preview, chatList, loadPreview, previews, markRead, publish, warm, chatChanged,
     attachments: createAttachments({ attachmentsRoot, dataDir, platform }),
     uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),
@@ -456,6 +464,9 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // and both names are taken. The interval below is only a failsafe for a watcher that could not start or an event the
   // filesystem coalesced away, never the mechanism.
   const refresh = () => { if (held && [...clients].some((c) => c.authed)) readChats(held.limit).catch(() => {}); };
+  // An edit made on another device is a change to the same database (issue 391): the engine reads which rows changed
+  // and tells each as message.edited.
+  const scanEdits = () => { if (engine.scanEdits) engine.scanEdits().catch(() => {}); };
   const DB_SETTLE_MS = 120;
   let dbWatch = null;
   let dbTimer = null;
@@ -473,7 +484,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
         if (file && file !== base && file !== base + '-wal' && file !== base + '-shm') return;
         log.emit('db.changed', { kind: file === base ? 'db' : file === base + '-wal' ? 'wal' : 'other' });
         clearTimeout(dbTimer);
-        dbTimer = setTimeout(refresh, DB_SETTLE_MS);
+        dbTimer = setTimeout(() => { refresh(); scanEdits(); }, DB_SETTLE_MS);
         dbTimer.unref?.();
       };
       dbWatch.on('change', changed);
@@ -485,7 +496,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     }
   }
   closeWatch = () => { dbTimer && clearTimeout(dbTimer); dbWatch?.close(); dbWatch = null; };
-  const readSync = setInterval(refresh, READ_SYNC_MS);
+  const readSync = setInterval(() => { refresh(); scanEdits(); }, READ_SYNC_MS);
   readSync.unref();
 
   const beat = setInterval(() => {

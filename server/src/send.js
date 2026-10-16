@@ -9,7 +9,7 @@ import os from 'node:os';
 import nodePath from 'node:path';
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
-import { tapbackType, reactionUnsupported, EMOJI_TAPBACK_VERSION } from '../../core/app/rules/messages.js';
+import { tapbackType, reactionUnsupported, EMOJI_TAPBACK_VERSION, editRefusal } from '../../core/app/rules/messages.js';
 import { platformCapabilities, reactionFallbackText, platformReactionUnsupported, platformThreadUnsupported } from '../../core/app/rules/platform.js';
 import { internalPayload } from './file-type.js';
 
@@ -30,6 +30,7 @@ export function createSender({ engine, store, config, log, platformOfChat = () =
   const recent = [];
   const inFlight = new Set();
   const reacting = new Set();
+  const editing = new Set();
   let held = false;
 
   // The update gate, the switch and the rate window every send passes. A refusal here costs nothing.
@@ -205,10 +206,61 @@ export function createSender({ engine, store, config, log, platformOfChat = () =
     }
   }
 
-  // The sender stays one function, as every caller has it; the reaction path and the update gate ride on it. A
-  // reaction going out counts as in flight, so an update waits for it too.
+  // Change the words of one of our own messages (issue 391). The rule the app offers Edit by (editRefusal in core) is
+  // checked here against the message as the engine holds it, so a request outside it (someone else's message, a file,
+  // SMS or RCS, past the fifteen-minute window) is refused in place and never reaches the engine; an engine that cannot
+  // edit is refused the same way, never asked. An edit is a send: it passes the same gate, switch and rate window.
+  const EDIT_LOOKBACK = 100;
+  async function edit(chatId, { messageId, text }) {
+    const words = String(text || '').trim();
+    if (!words) return { http: 400, error: ['bad_text', 'An edit needs some words.'] };
+    if (!engine.canEdit || !engine.canEdit()) {
+      log.emit('send.refused', { reason: 'edit_unsupported', chat: chatId });
+      return { http: 422, error: ['edit_unsupported', 'The Mac cannot edit a message right now: it needs the engine bridge running.'] };
+    }
+    let message;
+    try {
+      const page = await engine.messages(chatId, { limit: EDIT_LOOKBACK });
+      message = page.messages.find((m) => m.id === messageId) || null;
+    } catch {
+      return { http: 502, error: ['edit_failed', 'The server could not read that conversation, so nothing was changed.'] };
+    }
+    const refusal = editRefusal(message, { platform: await platformOfChat(chatId), now: now(), text: words });
+    if (refusal) {
+      log.emit('send.refused', { reason: refusal[0], chat: chatId });
+      return { http: refusal[0] === 'bad_text' ? 400 : 422, error: refusal };
+    }
+    const key = chatId + '/' + messageId;
+    if (editing.has(key)) return { http: 409, error: ['in_flight', 'An edit to that message is still being sent.'] };
+    const refused = admit(chatId);
+    if (refused) return refused;
+    const refund = charge();
+    editing.add(key);
+    const body = { status: 'edited', messageId, text: words };
+    try {
+      const r = await engine.edit(chatId, messageId, words);
+      if (r.ok) return { http: 200, body };
+      if (r.uncertain) {
+        log.emit('send.uncertain', { chat: chatId, code: r.code });
+        return { http: 202, body: { ...body, status: 'uncertain' } };
+      }
+      if (r.unsupported) {
+        refund();
+        log.emit('send.refused', { reason: 'edit_unsupported', chat: chatId });
+        return { http: 422, error: ['edit_unsupported', 'The Mac cannot edit a message right now: it needs the engine bridge running.'] };
+      }
+      log.emit('send.failed', { chat: chatId, code: r.code, error: r.error || null });
+      return { http: 502, error: ['edit_failed', 'The Mac did not change the message.'] };
+    } finally {
+      editing.delete(key);
+    }
+  }
+
+  // The sender stays one function, as every caller has it; the reaction path, the edit path and the update gate ride
+  // on it. A reaction or an edit going out counts as in flight, so an update waits for it too.
   send.react = react;
-  send.inFlight = () => inFlight.size + reacting.size;
+  send.edit = edit;
+  send.inFlight = () => inFlight.size + reacting.size + editing.size;
   send.hold = () => { held = true; };
   send.release = () => { held = false; };
   return send;

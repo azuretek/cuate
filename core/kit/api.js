@@ -74,6 +74,8 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     // `text` is the message being reacted to, carried only so the server can compose the platform's own text
     // fallback where the conversation is not on the message service (issue 184); it is not sent otherwise.
     react: (chatId, messageId, { emoji, remove = false, text = '' }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`, { emoji, ...(remove ? { remove: true } : {}), ...(text ? { text } : {}) }),
+    // The new words for one of our own messages (issue 391); the server answers the words it sent.
+    edit: (chatId, messageId, text) => call('PUT', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/text`, { text }),
     upload: ({ name, mime, data }) => call('POST', '/api/v1/attachments', { name, mime, data }),
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
     // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start

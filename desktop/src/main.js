@@ -686,6 +686,47 @@ async function runSmoke(w) {
     console.log('send once: ' + JSON.stringify({ double, bubblesSent, serverHeld }));
     report.sent = true;
   }
+  // Edits (issue 391). The live message's sender edits it on their phone once we have answered it (the fake engine's
+  // FAKE_LIVE_EDIT): the new words replace the old in the open conversation, live, marked Edited, and a reload keeps
+  // them. Then our own message, just sent, is edited from its menu: Edit puts its words in the composer, Send saves the
+  // change, and the new words replace the old in the conversation, in the chat list's preview and on the server.
+  const liveEdit = process.env.SMOKE_LIVE_EDIT;
+  const ownEdit = process.env.SMOKE_EDIT_TEXT;
+  if (live && liveEdit && text && ownEdit) {
+    await smokeStep('edit made on another device');
+    const q = JSON.stringify;
+    const rowWith = (words) => "[...document.querySelectorAll('.messages .bubble-row')].find((r) => (r.querySelector('.bubble')?.textContent || '').trim() === " + q(words) + ")";
+    const markedRow = (words) => "(() => { const r = " + rowWith(words) + "; return Boolean(r && r.querySelector('.edited-mark')?.textContent.trim() === 'Edited'); })()";
+    await waitFor(markedRow(liveEdit), 20000);
+    const editChecks = { remote: true };
+    editChecks.remoteOldGone = await js("!(" + rowWith(live) + ")");
+    await js("document.querySelector('app-root').reload()");
+    await pause(800);
+    editChecks.remoteKept = await js(markedRow(liveEdit));
+    await smokeStep('edit our own message');
+    const ownSel = await js("(() => { const r = " + rowWith(text) + "; return r ? '.bubble-row[data-id=\"' + r.dataset.id + '\"]' : null; })()");
+    editChecks.ownFound = Boolean(ownSel);
+    if (ownSel) {
+      await js("(() => { const b = document.querySelector(" + q(ownSel + ' .bubble') + "); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 4, clientY: r.top + 4 })); return true; })()");
+      await waitFor("Boolean(document.querySelector(" + q(ownSel + ' .message-menu .message-action[aria-label="Edit"]') + "))", 10000);
+      editChecks.menuIcon = await js("document.querySelector(" + q(ownSel + ' .message-menu .message-action[aria-label="Edit"] .icon') + ")?.dataset.icon === 'pencil'");
+      await js("document.querySelector(" + q(ownSel + ' .message-menu .message-action[aria-label="Edit"]') + ").click()");
+      await waitFor("document.querySelector('app-composer textarea').value === " + q(text), 10000);
+      editChecks.composer = await js("(() => { const t = document.querySelector('app-composer textarea'); return t.placeholder === 'Edit message' && !document.querySelector('.message-menu'); })()");
+      await shot('03b-editing.png');
+      await js("(() => { const t = document.querySelector('app-composer textarea'); t.value = " + q(ownEdit) + "; document.querySelector('app-composer button.send').click(); return true; })()");
+      await waitFor(markedRow(ownEdit), 20000);
+      editChecks.ownOldGone = await js("!(" + rowWith(text) + ")");
+      editChecks.composerCleared = await js("document.querySelector('app-composer textarea').value === '' && document.querySelector('app-composer textarea').placeholder !== 'Edit message'");
+      editChecks.preview = await js("(() => { const r = document.querySelector('app-root'); const c = r.chats.find((x) => x.id === r.openChatId); return Boolean(c && c.lastMessage && c.lastMessage.text === " + q(ownEdit) + ") && [...document.querySelectorAll('.chat-preview')].some((p) => p.textContent.includes(" + q(ownEdit) + ")); })()");
+      const chatId = await js("document.querySelector('app-root').openChatId");
+      const held = await (await fetch(process.env.SMOKE_SERVER_URL + '/api/v1/chats/' + encodeURIComponent(chatId) + '/messages?limit=100', { headers: { authorization: 'Bearer ' + process.env.SMOKE_TOKEN } })).json();
+      editChecks.server = (held.messages || []).some((m) => m.text === ownEdit && m.edited === true) && !(held.messages || []).some((m) => m.text === text);
+      await shot('03c-edited.png');
+    }
+    report.edit = Object.values(editChecks).every(Boolean);
+    console.log('edit: ' + JSON.stringify({ checks: editChecks }));
+  }
   await pause(300);
   await shot('03-after-send.png');
 

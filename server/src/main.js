@@ -11,7 +11,7 @@ process.on('warning', (w) => {
   process.stderr.write(w.name + ': ' + w.message + '\n');
 });
 
-const { defaultDataDir, messagesAttachmentsRoot } = await import('./paths.js');
+const { defaultDataDir, messagesAttachmentsRoot, messagesDatabasePath } = await import('./paths.js');
 const { openStore } = await import('./store.js');
 const { loadCommands } = await import('./commands/index.js');
 
@@ -62,13 +62,15 @@ function engineSetup(config) {
   if (config.engine.kind === 'fake') {
     const root = path.join(dataDir, 'fake-attachments');
     return import('./engine/fake.js').then(({ createFakeImsg }) => {
-      const world = createFakeImsg({ attachmentsRoot: root, liveText: process.env.FAKE_LIVE || config.engine.live || null });
-      return { makeTransport: () => world.transport(), attachmentsRoot: root };
+      const world = createFakeImsg({ attachmentsRoot: root, liveText: process.env.FAKE_LIVE || config.engine.live || null, liveEdit: process.env.FAKE_LIVE_EDIT || null });
+      return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits };
     });
   }
-  return import('./engine/child.js').then(({ childTransport }) => ({
+  // Which messages were edited is read from the Messages store the engine reads, read-only (issue 391).
+  return Promise.all([import('./engine/child.js'), import('./engine/edits.js')]).then(([{ childTransport }, { createEditReader }]) => ({
     makeTransport: (log) => childTransport({ bin: config.engine.bin, args: ['rpc', ...(config.engine.db ? ['--db', config.engine.db] : [])], log }),
     attachmentsRoot: config.attachmentsRoot || messagesAttachmentsRoot(),
+    edits: createEditReader({ dbPath: messagesDatabasePath(config) }),
   }));
 }
 

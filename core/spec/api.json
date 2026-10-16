@@ -115,6 +115,14 @@
       "returns": "ReactionResult"
     },
     {
+      "id": "edit",
+      "method": "PUT",
+      "path": "/api/v1/chats/:chatId/messages/:messageId/text",
+      "scope": "send",
+      "body": "EditRequest",
+      "returns": "EditResult"
+    },
+    {
       "id": "upload",
       "method": "POST",
       "path": "/api/v1/attachments",
@@ -288,6 +296,7 @@
   },
   "events": {
     "message.new": "MessageEvent",
+    "message.edited": "MessageEvent",
     "reaction": "ReactionEvent",
     "chat.read": "ChatRead",
     "chat.changed": "Chat",
@@ -323,6 +332,7 @@
       "kind": "string",
       "version": "string?",
       "ready": "boolean",
+      "edit": "boolean?",
       "restarts": "number?",
       "uptimeMs": "number?",
       "readyMs": "number?",
@@ -381,7 +391,8 @@
       "link": "LinkCard?",
       "payloads": "number?",
       "event": "MessageEventKind?",
-      "senderName": "string?"
+      "senderName": "string?",
+      "edited": "boolean?"
     },
     "MessageList": {
       "messages": "Message[]",
@@ -402,7 +413,8 @@
       "link": "LinkCard?",
       "payloads": "number",
       "reactions": "Reaction[]",
-      "event": "MessageEventKind?"
+      "event": "MessageEventKind?",
+      "edited": "boolean?"
     },
     "Attachment": {
       "id": "string",
@@ -437,6 +449,14 @@
       "emoji": "string",
       "remove": "boolean?",
       "text": "string?"
+    },
+    "EditRequest": {
+      "text": "string"
+    },
+    "EditResult": {
+      "status": "string",
+      "messageId": "string",
+      "text": "string"
     },
     "ReactionResult": {
       "status": "string",
