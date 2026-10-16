@@ -175,8 +175,18 @@
   // The motion takes the still's box from the moment it is drawn, and its time advances. Every frame until it plays is
   // measured, so a moment drawn at another size, the empty box, is caught rather than missed between two looks.
 
-  const deadline = performance.now() + 15000;
-  while (performance.now() < deadline) {
+  // A cold native player can report playing long after the press. Startup has its own finite budget; the
+  // unchanged progress budget starts only once that real media event was observed, not while fetch/play is pending.
+  const startupDeadline = performance.now() + 60000;
+  let progressDeadline = null;
+  while (true) {
+    const now = performance.now();
+    if (progressDeadline === null && now >= startupDeadline) { trace.note('startup-timeout'); break; }
+    if (progressDeadline === null && trace.has('media:playing')) {
+      progressDeadline = now + 15000;
+      trace.note('progress-window-start');
+    }
+    if (progressDeadline !== null && now >= progressDeadline) { trace.note('progress-timeout'); break; }
     const v = video();
     if (v) {
       observation.sample(v, box);
@@ -188,7 +198,7 @@
     if (observation.passed) break;
     await new Promise(requestAnimationFrame);
   }
-  observation.sample(video(), box);
+  observation.sample(null, box);
   if (!observation.passed) { say('live:fail the motion never played ' + state()); return; }
   const wrongBox = observation.wrongBox;
   if (wrongBox) { say('live:fail the motion was drawn at ' + wrongBox.w + 'x' + wrongBox.h + ', not the still\'s ' + stillBox.w + 'x' + stillBox.h + ' ' + state()); return; }

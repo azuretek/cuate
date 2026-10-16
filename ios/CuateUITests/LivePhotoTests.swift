@@ -32,7 +32,7 @@ final class LivePhotoTests: XCTestCase {
             return
         }
         guard pressLive(app, marker: marker) else { printTrace(app); return }
-        settle(marker, on: "label BEGINSWITH 'live:pass' OR label BEGINSWITH 'live:fail'", timeout: 40)
+        settle(marker, on: "label BEGINSWITH 'live:pass' OR label BEGINSWITH 'live:fail'", timeout: 100)
         // The page's verdict in the log, passed or failed, so a run says what the motion did.
         print("live photo verdict: " + marker.label)
         printTrace(app)
