@@ -150,6 +150,7 @@ app-chat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; }
 app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .conv-head { display: flex; align-items: center; gap: var(--space-3); height: calc(var(--size-header) + var(--inset-top)); padding: var(--inset-top) var(--space-4) 0; border-bottom: var(--size-border) solid var(--role-divider); background: var(--role-conv-head); flex: none; }
 .conv-title { flex: 1; min-width: 0; }
+.history-space { flex-shrink: 0; height: var(--history-height); }
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; }
 .load-older { align-self: center; margin-bottom: var(--space-3); background: var(--color-bg-raised); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); cursor: pointer; }
 .separator { align-self: center; margin: var(--space-4) 0 var(--space-2); font-size: var(--font-size-xs); color: var(--color-fg-muted); }

@@ -127,3 +127,12 @@ test('a video attachment is a media preview that opens the viewer, never a save 
   const file = words(attachment.render.call({ attachment: { id: 'att-d', name: 'booking.pdf', mime: 'application/pdf', missing: false }, client: {}, failed: false, src: '' }));
   assert.ok(file.includes('attachment-file') && file.includes('Open booking.pdf') && !file.includes('attachment-preview'), 'a document is a file control that opens it (issue 374), never a media preview');
 });
+
+
+test('opening a repeated attachment selects the clicked message occurrence', () => {
+  const items = [
+    { id: 'shared-file', attachmentId: 'shared-file', messageId: 'first-message' },
+    { id: 'shared-file', attachmentId: 'shared-file', messageId: 'second-message' },
+  ];
+  assert.equal(mediaIndex(items, 'shared-file', { messageId: 'second-message' }), 1);
+});

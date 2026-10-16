@@ -39,6 +39,7 @@ export class KeepScroll {
     this.onScroll = () => this.record();
     this.resized = null;
     this.added = null;
+    this.observed = new Set();
     this.shape = null;
     // The scrollTop this controller last wrote, so the scroll event that write raises is never read as the person's.
     this.written = null;
@@ -100,6 +101,7 @@ export class KeepScroll {
     this.el.removeEventListener('scroll', this.onScroll);
     for (const type of INPUTS) this.el.removeEventListener(type, this.onInput);
     if (this.resized) this.resized.disconnect();
+    this.observed.clear();
     if (this.added) this.added.disconnect();
     this.el = null;
   }
@@ -108,8 +110,10 @@ export class KeepScroll {
   // size) changes what sits above the anchor without the view itself changing size.
   observeItems() {
     if (!this.resized || !this.el) return;
-    this.resized.observe(this.el);
-    for (const child of this.el.children) this.resized.observe(child);
+    const current = new Set([this.el, ...this.el.children]);
+    for (const node of this.observed) if (!current.has(node)) this.resized.unobserve(node);
+    for (const node of current) if (!this.observed.has(node)) this.resized.observe(node);
+    this.observed = current;
   }
 
   measure() {

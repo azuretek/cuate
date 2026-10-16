@@ -10,16 +10,17 @@ globalThis.document = { createTreeWalker() { return {}; }, createComment() { ret
 let urls = 0;
 URL.createObjectURL = () => 'blob:' + ++urls;
 URL.revokeObjectURL = () => {};
-await import('../app/components/app-attachment.js');
+const { heldMedia } = await import('../app/components/app-attachment.js');
 const AppAttachment = defined['app-attachment'];
 
 const photo = { id: 'att00000000001', name: 'photo.png', mime: 'image/png', missing: false };
 const element = () => {
   const el = Object.create(AppAttachment.prototype);
   el.src = '';
+  el.isConnected = true;
   el.failed = false;
   const pending = [];
-  el.client = { attachment: (id) => new Promise((resolve, reject) => { pending.push({ id, resolve, reject }); }) };
+  el.client = { attachment: (id, options) => new Promise((resolve, reject) => { pending.push({ id, options, resolve, reject }); }) };
   return { el, pending };
 };
 // What a render does when the attachment property changes.
@@ -75,4 +76,18 @@ test('a picture already fetched is drawn again at once, without asking the serve
   show(other.el, { ...photo, id: 'att00000000010' });
   assert.equal(other.el.src, held, 'another row showing the same picture draws it too');
   assert.equal(other.pending.length, 0);
+});
+
+
+test('evicting a row cancels its fetch and ignores bytes that arrive after disconnection', async () => {
+  const { el, pending } = element();
+  const attachment = { ...photo, id: 'evicted-photo' };
+  show(el, attachment);
+  el.isConnected = false;
+  el.disconnectedCallback();
+  assert.equal(pending[0].options.signal?.aborted, true, 'eviction aborts the real request signal');
+  pending[0].resolve(new Blob(['late']));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(el.src, '');
+  assert.equal(heldMedia(attachment), '', 'late bytes are not retained in the preview cache');
 });
