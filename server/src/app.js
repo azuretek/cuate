@@ -111,10 +111,12 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return { ...message, senderName: person?.name || null };
   };
   const sourceMessages = engine.messages.bind(engine);
-  engine = { ...engine, messages: async (...args) => {
+  // Decorate only messages on the shared engine; copying the engine snapshots its other methods and bypasses
+  // later instrumentation and adapters on the original instance.
+  engine.messages = async (...args) => {
     const page = await sourceMessages(...args);
     return { ...page, messages: await Promise.all(page.messages.map(nameMessage)) };
-  } };
+  };
   engine.on(async (name, data) => {
     if (data?.message) data = { ...data, message: await nameMessage(data.message) };
     if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
