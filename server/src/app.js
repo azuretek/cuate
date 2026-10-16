@@ -104,7 +104,19 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const typing = createTyping({ publish, log: log.child('typing'), outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
   // A phone with the app open shows its own notice, so only phones with no open connection get a push (issue 347).
   const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
-  engine.on((name, data) => {
+  // Every message surface (history, replies, notices and pushes) uses the same Apple name authority.
+  const nameMessage = async (message) => {
+    if (!contacts || !message || message.fromMe) return message;
+    const person = await contacts.forHandles([message.sender]).catch(() => null);
+    return { ...message, senderName: person?.name || null };
+  };
+  const sourceMessages = engine.messages.bind(engine);
+  engine = { ...engine, messages: async (...args) => {
+    const page = await sourceMessages(...args);
+    return { ...page, messages: await Promise.all(page.messages.map(nameMessage)) };
+  } };
+  engine.on(async (name, data) => {
+    if (data?.message) data = { ...data, message: await nameMessage(data.message) };
     if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
     // An edit made anywhere changes the held preview when it is the message the preview shows (issue 391), so a list
     // read after the event agrees with it.
