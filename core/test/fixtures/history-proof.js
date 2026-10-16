@@ -1,5 +1,5 @@
 // Synthetic renderer-only acceptance harness. Never imported by a shipped module.
-const { document, requestAnimationFrame, performance, MediaRecorder } = globalThis;
+const { document, requestAnimationFrame, performance } = globalThis;
 const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 // A wait that runs out says what it measured, so a red run on a platform we cannot sit at names its cause.
 async function until(check, label, measure) {
@@ -21,24 +21,6 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 const settle = async () => { await root().updateComplete; if (pane()) await pane().updateComplete; await frame(); await frame(); };
 
 globalThis.historyProof = {
-  async video() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
-    const context = canvas.getContext('2d');
-    const stream = canvas.captureStream(10);
-    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
-    const chunks = [];
-    let frames = 0;
-    recorder.ondataavailable = (event) => chunks.push(event.data);
-    const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
-    recorder.start();
-    const end = performance.now() + 350;
-    while (performance.now() < end) { context.fillStyle = 'rgb(40,120,180)'; context.fillRect(0, 0, 64, 64); frames += 1; await frame(); }
-    recorder.stop(); await stopped;
-    for (const track of stream.getTracks()) track.stop();
-    const bytes = Array.from(new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer()));
-    return { bytes, frames, chunks: chunks.length, sizes: chunks.map((chunk) => chunk.size) };
-  },
   async history() {
     await until(() => root()?.phase === 'ready', 'application ready');
     await root().open('1', { show: true });
