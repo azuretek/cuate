@@ -236,10 +236,20 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             }
         // Edit contact (issue 393): the phone's own contact card on the person the conversation is with.
         case "contacts.edit":
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--contacts-fixture") {
+                print("contacts-fixture bridge-entered authorization=\(CNContactStore.authorizationStatus(for: .contacts).rawValue)")
+            }
+            #endif
             if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
                 CNContactStore().requestAccess(for: .contacts) { [weak self] granted, _ in
                     DispatchQueue.main.async {
                         guard let self else { return }
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--contacts-fixture") {
+                            print("contacts-fixture permission-answer granted=\(granted) authorization=\(CNContactStore.authorizationStatus(for: .contacts).rawValue)")
+                        }
+                        #endif
                         self.settle(id: id, ok: true, value: granted && self.editContact(args))
                     }
                 }

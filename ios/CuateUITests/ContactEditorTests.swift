@@ -11,20 +11,33 @@ final class ContactEditorTests: XCTestCase {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let edit = app.navigationBars.buttons["Edit"].firstMatch
         // Permission is a SpringBoard surface, may arrive late, and must be answered before the bridge completes.
+        var continuedContacts = false
         let card = NSPredicate { _, _ in
             for owner in [springboard, app] {
                 let alert = owner.alerts.firstMatch
                 if alert.exists && alert.label.localizedCaseInsensitiveContains("contacts") {
-                    for label in ["Allow Full Access", "OK", "Allow"] where alert.buttons[label].exists {
+                    for label in ["Continue", "Allow Full Access", "OK", "Allow"] where alert.buttons[label].exists {
+                        if label == "Continue" { continuedContacts = true }
                         alert.buttons[label].tap()
                         break
                     }
+                }
+            }
+            // Newer iOS first asks Continue, then offers full or selected access on a separate system surface.
+            if continuedContacts {
+                for owner in [springboard, app] {
+                    let full = owner.buttons["Allow Full Access"].firstMatch
+                    if full.exists && full.isHittable { full.tap() }
                 }
             }
             return edit.exists
         }
         let arrived = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: card, object: nil)], timeout: 90)
         guard arrived == .completed else {
+            let failure = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            failure.name = "contacts-permission-failure"
+            failure.lifetime = .keepAlways
+            add(failure)
             XCTFail("Native contact card did not appear: " + app.debugDescription + springboard.debugDescription)
             return
         }
