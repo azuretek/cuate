@@ -42,6 +42,7 @@ class ShellParityTest {
             "notify.permission",
             "notify.take",
             "push.token",
+            "contacts.edit",
             "open.external",
             "file.save",
             "file.open",
