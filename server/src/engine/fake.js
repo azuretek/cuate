@@ -6,6 +6,7 @@ import path from 'node:path';
 import { gradientPng } from './png.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
+import { compareHistory } from '../../../core/app/rules/history.js';
 
 // The fixture PDF's pages: each a page of the given size in points with one square filled in the given colour (0 to 1
 // per channel). Synthetic: drawn here, no text and no fonts.
@@ -216,17 +217,25 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             const list = chats.map((c) => ({ ...c, last_message_at: lastAt(c.id) || null })).sort((a, b) => (b.last_message_at || '').localeCompare(a.last_message_at || ''));
             return reply(req.id, { chats: list.slice(0, p.limit || 20) });
           }
+          case 'messages.stats':
+            return reply(req.id, { total_messages: messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction).length });
           case 'messages.history': {
+            const cursor = (m) => m.history_cursor || String(BigInt(Date.parse(m.created_at) - Date.parse('2001-01-01T00:00:00Z')) * 1000000n) + ':' + m.id;
+            const compare = (a, b) => compareHistory({ historyCursor: a }, { historyCursor: b });
             let ms = messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction);
             if (p.end) ms = ms.filter((m) => m.created_at < p.end);
-            ms = ms.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id).slice(0, p.limit || 50);
+            if (p.before_cursor) ms = ms.filter((m) => compare(cursor(m), p.before_cursor) < 0);
+            if (p.after_cursor) ms = ms.filter((m) => compare(cursor(m), p.after_cursor) > 0);
+            ms.sort((a, b) => p.after_cursor ? compare(cursor(a), cursor(b)) : compare(cursor(b), cursor(a)));
+            const hasMore = ms.length > (p.limit || 50);
+            ms = ms.slice(0, p.limit || 50);
             // The live message lands in the first conversation a client opens, never in a group the engine reads for its
             // photo (issue 341), which is no conversation anyone opened.
             if (liveText && !liveSent && (p.limit || 50) > 5 && p.limit !== PHOTO_SCAN_ROWS) {
               liveSent = true;
               setTimeout(() => { liveMessage = world.incoming(p.chat_id, liveText); }, liveDelayMs).unref();
             }
-            return reply(req.id, { messages: ms.map((m) => withAttachments(m, p.attachments)) });
+            return reply(req.id, { messages: ms.map((m) => ({ ...withAttachments(m, p.attachments), history_cursor: cursor(m) })), has_more: hasMore });
           }
           case 'messages.after': {
             const since = Number.isFinite(p.since_rowid) ? p.since_rowid : 0;

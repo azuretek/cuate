@@ -60,3 +60,25 @@ test('reconnect drops the stream as a lost connection does, and it comes back re
   assert.equal(states.at(-1), 'open');
   client.close();
 });
+
+
+test('media page requests have a deadline and close cancellation clears it', async () => {
+  let expire;
+  let cleared = 0;
+  let requestedSignal;
+  const timers = { setTimeout(fn, ms) { assert.equal(ms, 15000); expire = fn; return 1; }, clearTimeout(id) { assert.equal(id, 1); cleared++; } };
+  const client = createApiClient({ baseUrl: 'http://fixture.invalid', token: 'synthetic', timers, fetchImpl: async (_url, options) => {
+    requestedSignal = options.signal;
+    return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+  } });
+  const timed = client.media('1');
+  assert.ok(requestedSignal);
+  expire();
+  await assert.rejects(timed, { code: 'unreachable' });
+  assert.equal(cleared, 1);
+  const controller = new AbortController();
+  const cancelled = client.media('1', { signal: controller.signal });
+  controller.abort();
+  await assert.rejects(cancelled, { code: 'unreachable' });
+  assert.equal(cleared, 2);
+});

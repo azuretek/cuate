@@ -169,3 +169,16 @@ test('a view at its end stays there through its own scroll and the browser clamp
   keep.record();
   assert.deepEqual(keep.anchor, { key: 'm10', offset: 0 });
 });
+
+
+test('window replacement releases evicted rows from resize observation (issue 394)', () => {
+  const watched = new Set();
+  const keep = new KeepScroll({ addController() {} }, {});
+  keep.resized = { observe: (node) => watched.add(node), unobserve: (node) => watched.delete(node), disconnect: () => watched.clear() };
+  keep.el = { children: [] };
+  for (let generation = 0; generation < 1000; generation++) {
+    keep.el.children = [{ generation }, { generation }];
+    keep.observeItems();
+    assert.equal(watched.size, 3, 'only the scroller and its current rows stay observed');
+  }
+});

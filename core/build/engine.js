@@ -53,6 +53,9 @@ var engine = (() => {
     FOLLOW_THEME: () => FOLLOW_THEME,
     GLYPH_FLOOR: () => GLYPH_FLOOR,
     GROUP_PHOTO_NAME: () => GROUP_PHOTO_NAME,
+    HISTORY_CACHED_CHATS: () => HISTORY_CACHED_CHATS,
+    HISTORY_MAX_MESSAGES: () => HISTORY_MAX_MESSAGES,
+    HISTORY_PAGE_SIZE: () => HISTORY_PAGE_SIZE,
     ICON_KINDS: () => ICON_KINDS,
     ICON_MASTERS: () => ICON_MASTERS,
     ICON_TOKENS: () => ICON_TOKENS,
@@ -169,6 +172,7 @@ var engine = (() => {
     colourDistance: () => colourDistance,
     commitOf: () => commitOf,
     commitState: () => commitState,
+    compareHistory: () => compareHistory,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
     contactSearchText: () => contactSearchText,
@@ -228,6 +232,7 @@ var engine = (() => {
     hasTone: () => hasTone,
     hasTones: () => hasTones,
     hideChats: () => hideChats,
+    historyCursor: () => historyCursor,
     holdsAfter: () => holdsAfter,
     hostOf: () => hostOf,
     hueDistance: () => hueDistance,
@@ -239,6 +244,7 @@ var engine = (() => {
     importSummary: () => importSummary,
     importTheme: () => importTheme,
     importTweakcn: () => importTweakcn,
+    initialWindow: () => initialWindow,
     initials: () => initials,
     insertEmoji: () => insertEmoji,
     installPolicy: () => installPolicy,
@@ -271,6 +277,7 @@ var engine = (() => {
     mediaItems: () => mediaItems,
     mediaKind: () => mediaKind,
     mediaNeighbours: () => mediaNeighbours,
+    mediaOccurrence: () => mediaOccurrence,
     mediaStep: () => mediaStep,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
@@ -364,6 +371,7 @@ var engine = (() => {
     settlesOpen: () => settlesOpen,
     settlesOpenAt: () => settlesOpenAt,
     sheetLeaveDeadline: () => sheetLeaveDeadline,
+    shiftWindow: () => shiftWindow,
     sizeLabel: () => sizeLabel,
     slideConfirms: () => slideConfirms,
     slideKey: () => slideKey,
@@ -439,12 +447,12 @@ var engine = (() => {
   } }) {
     const base = String(baseUrl).trim().replace(/\/+$/, "");
     const auth = { authorization: "Bearer " + token };
-    async function call(method, path, body) {
+    async function call(method, path, body, signal) {
       const headers = { ...auth };
       if (body !== void 0) headers["content-type"] = "application/json";
       let res;
       try {
-        res = await fetchImpl(base + path, { method, headers, body: body === void 0 ? void 0 : JSON.stringify(body) });
+        res = await fetchImpl(base + path, { method, headers, body: body === void 0 ? void 0 : JSON.stringify(body), ...signal ? { signal } : {} });
       } catch (cause) {
         throw Object.assign(new Error("The server did not answer."), { code: "unreachable", cause });
       }
@@ -510,8 +518,21 @@ var engine = (() => {
     }
     return {
       info: () => call("GET", "/api/v1/info"),
+      async media(chatId, o = {}) {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        if (o.signal?.aborted) abort();
+        else o.signal?.addEventListener("abort", abort, { once: true });
+        const timer2 = timers.setTimeout(abort, 15e3);
+        try {
+          return await call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/media` + query({ limit: o.limit, beforeCursor: o.beforeCursor, afterCursor: o.afterCursor }), void 0, controller.signal);
+        } finally {
+          timers.clearTimeout(timer2);
+          o.signal?.removeEventListener("abort", abort);
+        }
+      },
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
-      messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
+      messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before, beforeCursor: o.beforeCursor, afterCursor: o.afterCursor, includeTotal: o.includeTotal })),
       send: (chatId, { text, file, clientKey, replyTo }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...file ? { file } : {}, clientKey, ...replyTo ? { replyTo } : {} }),
       // `text` is the message being reacted to, carried only so the server can compose the platform's own text
       // fallback where the conversation is not on the message service (issue 184); it is not sent otherwise.
@@ -542,14 +563,14 @@ var engine = (() => {
         return res.arrayBuffer();
       },
       async attachment(id, o = {}) {
-        const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format, part: o.part }), { headers: auth });
+        const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format, part: o.part }), { headers: auth, signal: o.signal });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
         return res.blob();
       },
       // A shared video link's media, resolved and cached by the server (issue 243), as bytes for the viewer. The client
       // reaches only us, never the site the link names.
-      async linkMedia(url) {
-        const res = await fetchImpl(base + "/api/v1/links/media" + query({ url }), { headers: auth });
+      async linkMedia(url, o = {}) {
+        const res = await fetchImpl(base + "/api/v1/links/media" + query({ url }), { headers: auth, signal: o.signal });
         if (!res.ok) throw Object.assign(new Error("HTTP " + res.status), { status: res.status });
         return res.blob();
       },
@@ -2389,6 +2410,7 @@ var engine = (() => {
     const base = {
       id: m.guid ? String(m.guid) : "row:" + m.id,
       chatId: chatOf(m),
+      ...typeof m.history_cursor === "string" ? { historyCursor: m.history_cursor } : {},
       fromMe,
       sender: fromMe ? null : m.sender || null,
       senderName: fromMe ? null : m.sender_name || null,
@@ -3064,6 +3086,25 @@ var engine = (() => {
     return null;
   }
 
+  // core/app/rules/history.js
+  var MIN = -(2n ** 63n);
+  var MAX = 2n ** 63n - 1n;
+  function historyCursor(value) {
+    if (typeof value !== "string" || value.length > 41 || !/^-?[0-9]+:[0-9]+$/.test(value)) return null;
+    const [time, id] = value.split(":").map(BigInt);
+    return time >= MIN && time <= MAX && id > 0n && id <= MAX ? { time, id } : null;
+  }
+  function compareHistory(a, b) {
+    const left = historyCursor(a.historyCursor);
+    const right = historyCursor(b.historyCursor);
+    if (left && right) {
+      if (left.time !== right.time) return left.time < right.time ? -1 : 1;
+      if (left.id !== right.id) return left.id < right.id ? -1 : 1;
+      return 0;
+    }
+    return String(a.sentAt).localeCompare(String(b.sentAt));
+  }
+
   // core/app/rules/messages.js
   var GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
   var TAPBACKS2 = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
@@ -3190,7 +3231,7 @@ var engine = (() => {
   function mergeMessages(existing, incoming) {
     const map = new Map(existing.map((m) => [m.id, m]));
     for (const m of incoming) map.set(m.id, { ...map.get(m.id), ...m });
-    return [...map.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt) || String(a.id).localeCompare(String(b.id)));
+    return [...map.values()].sort((a, b) => compareHistory(a, b) || String(a.id).localeCompare(String(b.id)));
   }
   function groupMessages(messages, { gapMs = 36e5, runMs = 3e5 } = {}) {
     const items = [];
@@ -3235,6 +3276,45 @@ var engine = (() => {
       counts.set(g, (counts.get(g) || 0) + 1);
     }
     return [...counts].map(([glyph, count]) => ({ glyph, count }));
+  }
+
+  // core/app/rules/history-window.js
+  var HISTORY_PAGE_SIZE = 50;
+  var HISTORY_MAX_MESSAGES = HISTORY_PAGE_SIZE * 3;
+  var HISTORY_CACHED_CHATS = 3;
+  function initialWindow(messages, { totalCount = messages.length, hasMore = false, estimate = 1 } = {}) {
+    const held = messages.slice(-HISTORY_MAX_MESSAGES);
+    const beforeCount = Math.max(hasMore ? HISTORY_PAGE_SIZE : 0, totalCount - held.length);
+    return { messages: held, beforeCount, afterCount: 0, beforeHeight: beforeCount * estimate, afterHeight: 0, estimate, hasOlder: hasMore, hasNewer: false };
+  }
+  function shiftWindow(state, incoming, { direction, hasMore, heights = [] } = {}) {
+    const measured = new Map(heights);
+    const ids = new Set(state.messages.map((m) => m.id));
+    const added = incoming.filter((m) => !ids.has(m.id)).length;
+    const next = { ...state, messages: mergeMessages(state.messages, incoming) };
+    const side = direction === "older" ? "before" : "after";
+    const oldCount = state[side + "Count"];
+    next[side + "Count"] = Math.max(0, oldCount - added);
+    next[side + "Height"] = oldCount ? state[side + "Height"] * next[side + "Count"] / oldCount : 0;
+    if (hasMore !== void 0) {
+      next[direction === "older" ? "hasOlder" : "hasNewer"] = hasMore;
+      if (!hasMore) {
+        next[side + "Count"] = 0;
+        next[side + "Height"] = 0;
+      } else if (!next[side + "Count"]) {
+        next[side + "Count"] = HISTORY_PAGE_SIZE;
+        next[side + "Height"] = HISTORY_PAGE_SIZE * state.estimate;
+      }
+    }
+    const excess = Math.max(0, next.messages.length - HISTORY_MAX_MESSAGES);
+    if (excess) {
+      const removed = direction === "older" ? next.messages.splice(-excess) : next.messages.splice(0, excess);
+      const opposite = direction === "older" ? "after" : "before";
+      next[opposite + "Count"] += removed.length;
+      next[opposite + "Height"] += removed.reduce((sum, m) => sum + (measured.get(m.id) || state.estimate), 0);
+      next[direction === "older" ? "hasNewer" : "hasOlder"] = true;
+    }
+    return next;
   }
 
   // core/app/rules/links.js
@@ -3303,15 +3383,18 @@ var engine = (() => {
         const kind = mediaKind(a);
         if (!kind) continue;
         const live = isLivePhoto(a);
-        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ""), mime: String(a.mime || ""), ...live ? { live: true } : {} });
+        items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ""), mime: String(a.mime || ""), ...m.historyCursor ? { historyCursor: m.historyCursor } : {}, ...live ? { live: true } : {} });
       }
     }
     return items;
   }
-  function mediaIndex(items, id) {
+  function mediaOccurrence(item) {
+    return item.messageId && item.attachmentId ? { ...item, id: JSON.stringify([item.messageId, item.attachmentId]) } : item;
+  }
+  function mediaIndex(items, id, { messageId = null } = {}) {
     const list = items || [];
     const key = String(id);
-    for (let i = 0; i < list.length; i += 1) if (String(list[i].id) === key) return i;
+    for (let i = 0; i < list.length; i += 1) if ((String(list[i].id) === key || String(list[i].attachmentId) === key) && (!messageId || String(list[i].messageId) === String(messageId))) return i;
     return -1;
   }
   function mediaStep(items, id, dir) {

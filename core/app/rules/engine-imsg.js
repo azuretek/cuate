@@ -138,6 +138,7 @@ export function mapMessage(m, { attachmentId }) {
   const base = {
     id: m.guid ? String(m.guid) : 'row:' + m.id,
     chatId: chatOf(m),
+    ...(typeof m.history_cursor === 'string' ? { historyCursor: m.history_cursor } : {}),
     fromMe,
     sender: fromMe ? null : m.sender || null,
     senderName: fromMe ? null : m.sender_name || null,
