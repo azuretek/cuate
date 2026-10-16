@@ -221,4 +221,8 @@ if (!ok) {
 try {
   writeFileSync(path.join(out, 'checks.json'), JSON.stringify({ at: new Date().toISOString(), durationMs: Date.now() - smokeStartedAt, checks: verdict.results }, null, 1));
 } catch { /* the run's verdict stands without the record */ }
+// The shared-core history proof runs beside the shell checks, against the real API and synthetic data.
+// A failed page boundary, memory bound or scroll anchor fails the desktop smoke too.
+const proofElectron = createRequire(path.join(root, 'desktop', 'package.json'))('electron');
+execFileSync(proofElectron, [path.join(root, 'desktop/scripts/prove-history-window.mjs')], { timeout: 240000, stdio: 'inherit', env: { ...process.env, HISTORY_PROOF_OUT: path.join(out, 'history-window') } });
 console.log('smoke ok: ' + JSON.stringify(report) + '; ' + verdict.results.length + ' checks measured; captures in ' + out);

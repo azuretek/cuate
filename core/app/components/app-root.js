@@ -12,6 +12,7 @@ import {
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction, reactionUnsupported, applyEdit } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
+import { initialWindow, shiftWindow, HISTORY_PAGE_SIZE, HISTORY_MAX_MESSAGES, HISTORY_CACHED_CHATS } from '../rules/history-window.js';
 import { platformOf, foldReactions } from '../rules/platform.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 
@@ -83,6 +84,7 @@ class AppRoot extends KitElement {
     // The system's text size as this device's shell reports it (issue 369), null until it has answered or where it has none.
     systemText: { state: true },
     phase: { state: true }, chats: { state: true }, openChatId: { state: true }, messages: { state: true },
+    historyWindow: { state: true },
     conn: { state: true }, problem: { state: true }, hasMore: { state: true }, sending: { state: true },
     // The message a pressed notice leads to, handed to the conversation to bring into view (issue 331).
     revealing: { state: true },
@@ -602,11 +604,12 @@ class AppRoot extends KitElement {
     // pane on the last conversation while a page is fetched and never blanks it (issue 200). A chat never opened has
     // nothing to draw yet, so the list marks it and the pane keeps the conversation it has until the page arrives.
     const convos = this.convos || (this.convos = new Map());
-    const cached = refresh ? null : convos.get(String(chatId));
+    const cached = convos.get(String(chatId));
     if (cached) {
       this.openChatId = chatId;
       this.selecting = null;
       this.messages = foldFor(cached.messages, this.chats, chatId);
+      this.historyWindow = cached.historyWindow;
       this.hasMore = cached.hasMore;
       this.problem = '';
       if (show) this.listOpen = false;
@@ -625,15 +628,22 @@ class AppRoot extends KitElement {
     this.arrivals.add(watch);
     const seq = (this.openSeq = (this.openSeq || 0) + 1);
     try {
-      const { messages, hasMore } = await this.client.messages(chatId, { limit: 50 });
+      const { messages, hasMore, totalCount } = await this.client.messages(chatId, { limit: HISTORY_PAGE_SIZE, includeTotal: true });
       if (this.openSeq !== seq) return;
       if (!refresh) this.messageNote = null;
       this.openChatId = chatId;
       this.selecting = null;
       // A page merged over the conversation we held keeps any older messages already loaded, and keeps a message that
       // arrived live while the page was in flight (issue 66).
-      this.messages = foldFor(mergeMessages(cached ? [...cached.messages, ...arrived] : arrived, messages), this.chats, chatId);
-      this.hasMore = hasMore;
+      const pane = this.querySelector('app-conversation');
+      if (cached?.historyWindow?.afterCount) {
+        const fresh = new Map(messages.map((m) => [m.id, m]));
+        this.applyWindow({ ...cached.historyWindow, messages: cached.messages.map((m) => fresh.get(m.id) || m) });
+      } else if (cached?.historyWindow) {
+        this.applyWindow(shiftWindow(cached.historyWindow, foldFor(mergeMessages(arrived, messages), this.chats, chatId), { direction: 'newer', hasMore: false, heights: pane?.historyMeasurements().heights }));
+      } else {
+        this.applyWindow(initialWindow(foldFor(mergeMessages(arrived, messages), this.chats, chatId), { totalCount, hasMore, estimate: pane?.historyMeasurements().estimate || 1 }));
+      }
       this.problem = '';
       if (show) this.listOpen = false;
     } catch (e) {
@@ -684,20 +694,47 @@ class AppRoot extends KitElement {
   }
 
   // The Load earlier press shows itself working and drops a second press (core/kit/press.js), so no flag is kept here.
-  async loadOlder() {
-    if (!this.hasMore || !this.messages.length) return undefined;
+  applyWindow(state) {
+    this.historyWindow = state;
+    this.messages = state.messages;
+    this.hasMore = state.hasOlder;
+  }
+
+  measureHistory({ estimate }) {
+    const state = this.historyWindow;
+    if (state && state.estimate <= 1 && estimate > 1) this.historyWindow = { ...state, estimate, beforeHeight: state.beforeCount * estimate, afterHeight: state.afterCount * estimate };
+  }
+
+  loadOlder(detail) { return this.loadHistory('older', detail); }
+
+  async loadHistory(direction, detail = {}) {
+    if (this.pendingHistory || !this.messages.length) return false;
+    const state = this.historyWindow || initialWindow(this.messages, { hasMore: this.hasMore });
+    if (!(direction === 'older' ? state.hasOlder : state.hasNewer)) return false;
     const chatId = this.openChatId;
+    const seq = this.openSeq;
+    const edge = direction === 'older' ? this.messages[0] : this.messages.at(-1);
+    if (!edge.historyCursor) { this.problem = 'Update the message engine to browse the whole conversation.'; return false; }
+    this.pendingHistory = true;
     try {
-      const { messages, hasMore } = await this.client.messages(chatId, { limit: 50, before: this.messages[0].sentAt });
-      if (this.openChatId === chatId) {
-        this.messages = foldFor(mergeMessages(this.messages, messages), this.chats, chatId);
-        this.hasMore = hasMore;
-      }
+      const { messages, hasMore } = await this.client.messages(chatId, { limit: HISTORY_PAGE_SIZE, [direction === 'older' ? 'beforeCursor' : 'afterCursor']: edge.historyCursor });
+      if (this.openChatId !== chatId || this.openSeq !== seq) return false;
+      const next = shiftWindow({ ...state, messages: this.messages }, foldFor(messages, this.chats, chatId), { direction, hasMore, heights: detail?.heights });
+      this.applyWindow(next);
       return true;
-    } catch (e) {
-      this.problem = this.describe(e);
-      return false;
+    } catch (e) { this.problem = this.describe(e); return false; }
+    finally { this.pendingHistory = false; }
+  }
+
+  receiveHistoryMessage(message) {
+    const state = this.historyWindow;
+    const pane = this.querySelector('app-conversation');
+    if (state && !this.messages.some((m) => m.id === message.id) && (state.afterCount || (this.messages.length >= HISTORY_MAX_MESSAGES && !pane?.keep.anchor?.end))) {
+      this.historyWindow = { ...state, afterCount: state.afterCount + 1, afterHeight: state.afterHeight + state.estimate, hasNewer: true };
+      return;
     }
+    if (state) this.applyWindow(shiftWindow({ ...state, messages: this.messages }, [message], { direction: 'newer', hasMore: false, heights: pane?.historyMeasurements().heights }));
+    else this.messages = foldFor(mergeMessages(this.messages, [message]), this.chats, message.chatId);
   }
 
   async reload() {
@@ -724,7 +761,7 @@ class AppRoot extends KitElement {
       if (!m.fromMe && m.chatId === seen) readOnMac(this, m.chatId);
       if (r.known) this.chats = r.chats;
       else this.reload();
-      if (m.chatId === this.openChatId) this.messages = foldFor(mergeMessages(this.messages, [m]), this.chats, m.chatId);
+      if (m.chatId === this.openChatId) this.receiveHistoryMessage(m);
       if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
@@ -1665,7 +1702,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .host=${this.host} .reveal=${this.revealing} .messages=${this.messages} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .canEdit=${Boolean(this.info?.engine?.edit)} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @edit=${(e) => respond(e, this.edit(e.detail))} @groupinfo=${() => this.openGroupInfo()} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder())} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .host=${this.host} .reveal=${this.revealing} .messages=${this.messages} .historyWindow=${this.historyWindow} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .canEdit=${Boolean(this.info?.engine?.edit)} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @edit=${(e) => respond(e, this.edit(e.detail))} @groupinfo=${() => this.openGroupInfo()} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder(e.detail))} @newer=${(e) => respond(e, this.loadHistory('newer', e.detail))} @history-measured=${(e) => this.measureHistory(e.detail)} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<header class="conv-head conv-head--empty">${this.emptyControls()}</header><div class="empty">${EMPTY_PANE}</div>`;
   }
 
@@ -1722,7 +1759,13 @@ class AppRoot extends KitElement {
     this.syncIcon();
     // The conversation on screen is what a switch back to it draws (issue 200), kept after every render. Its pair of
     // fields is always written together, so the cache never holds one conversation's messages under another's id.
-    if (this.openChatId && this.client) (this.convos = this.convos || new Map()).set(String(this.openChatId), { messages: this.messages, hasMore: this.hasMore });
+    if (this.messages.length > HISTORY_MAX_MESSAGES && this.historyWindow) this.applyWindow(shiftWindow({ ...this.historyWindow, messages: [] }, this.messages, { direction: 'newer' }));
+    if (this.openChatId && this.client) {
+      const convos = this.convos = this.convos || new Map();
+      convos.delete(String(this.openChatId));
+      convos.set(String(this.openChatId), { messages: this.messages, hasMore: this.hasMore, historyWindow: this.historyWindow ? { ...this.historyWindow, messages: this.messages } : null });
+      while (convos.size > HISTORY_CACHED_CHATS) convos.delete(convos.keys().next().value);
+    }
     // Every open menu wears the shared caret, aimed at the control that opened it (issue 217).
     aimCarets(this);
     // The divider's seam follows the width the settings hold, and the separator reports the width a screen reader should
@@ -1887,7 +1930,7 @@ class AppRoot extends KitElement {
     }
     if (!d.src) { this.viewing = null; return; }
     const items = mediaItems(this.messages || []);
-    const at = d.attachmentId ? mediaIndex(items, d.attachmentId) : -1;
+    const at = d.attachmentId ? mediaIndex(items, d.attachmentId, { messageId: d.from?.closest?.('.bubble-row')?.dataset?.id }) : -1;
     if (at < 0) {
       this.viewing = { src: d.src, alt: d.alt || '', kind: d.kind || 'image', items: [], index: 0 };
       return;
@@ -1896,14 +1939,14 @@ class AppRoot extends KitElement {
     // Photo's preview is its still, not the motion the viewer plays, so that one is loaded rather than handed over.
     const handed = items[at].part ? {} : { src: d.src };
     items[at] = { ...items[at], ...handed, alt: d.alt || items[at].alt };
-    this.viewing = { src: handed.src || '', alt: d.alt || '', kind: items[at].kind || d.kind || 'image', items, index: at };
+    this.viewing = { src: handed.src || '', alt: d.alt || '', kind: items[at].kind || d.kind || 'image', items, index: at, history: { chatId: this.openChatId, beforeCursor: this.messages[0]?.historyCursor, afterCursor: this.messages.at(-1)?.historyCursor } };
   }
 
   // The viewer stepped to another item: the page keeps its own idea of the open item, so a re-render does not undo it.
   viewerNavigate(e) {
     if (!this.viewing) return;
     const index = e && e.detail && Number.isFinite(e.detail.index) ? e.detail.index : this.viewing.index;
-    this.viewing = { ...this.viewing, index };
+    this.viewing = { ...this.viewing, index, ...(e.detail.items ? { items: e.detail.items } : {}) };
   }
 
   render() {
@@ -1946,7 +1989,7 @@ class AppRoot extends KitElement {
       ${this.pendingDelete ? this.confirmModal() : nothing}
       ${this.composing ? html`<app-compose .chats=${this.chats} .client=${this.client} .mode=${this.composing.mode} .preset=${this.composing.preset} @created=${(e) => respond(e, this.composed(e.detail))} @close=${() => { this.composing = null; }}></app-compose>` : nothing}
       ${this.groupInfo && this.chats.find((c) => c.id === this.groupInfo.chatId) ? html`<app-group-info .chat=${this.chats.find((c) => c.id === this.groupInfo.chatId)} .client=${this.client} @changed=${(e) => this.groupChanged(e.detail)} @close=${() => { this.groupInfo = null; }}></app-group-info>` : nothing}
-      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .client=${this.client} .from=${this.viewerFrom} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
+      ${this.viewing ? html`<app-image-viewer .src=${(this.viewing.items && this.viewing.items.length) ? '' : (this.viewing.src || '')} .alt=${this.viewing.alt || ''} .kind=${this.viewing.kind || 'image'} .items=${this.viewing.items || []} .index=${this.viewing.index || 0} .history=${this.viewing.history || null} .client=${this.client} .from=${this.viewerFrom} @navigate=${(e) => this.viewerNavigate(e)} @close=${() => { this.viewing = null; }}></app-image-viewer>` : nothing}
     </div>`;
   }
 }

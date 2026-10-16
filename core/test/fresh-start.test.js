@@ -54,9 +54,9 @@ function page({ notice = null } = {}) {
       return null;
     },
     applyNoticeQuiet() {}, applyUpdateSetting() {}, applyTheme() {}, registerPush() {}, releaseHeldUpdate() {}, launchCheck() {}, noticeServerUpdate() {}, releaseHeldScreen() {},
-    onEvent() {}, onConnState() {}, closeView() {},
+    onEvent() {}, onConnState() {}, closeView() {}, querySelector() { return null; },
   };
-  for (const name of ['start', 'open', 'readSettings', 'describe', 'takeNotice', 'openMessage', 'takeLink', 'clearTyping', 'resetTyping', 'loadOlder', 'reconcile']) {
+  for (const name of ['start', 'open', 'readSettings', 'describe', 'takeNotice', 'openMessage', 'takeLink', 'clearTyping', 'resetTyping', 'loadOlder', 'loadHistory', 'applyWindow', 'measureHistory', 'reconcile']) {
     if (typeof proto[name] === 'function') host[name] = proto[name];
   }
   return host;
@@ -85,6 +85,8 @@ test('a notice press that launched the app still opens its conversation, and rea
   for (let i = 0; i < 50 && host.openChatId !== '2'; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
   await settle();
   assert.equal(host.openChatId, '2', 'the pressed conversation is open');
+  assert.equal(host.problem, '', 'opening the notice reported no swallowed error');
+  assert.equal(host.messages.length, 1, 'the requested history is actually installed');
   assert.equal(host.listOpen, false, 'a phone shows it rather than the list');
   assert.deepEqual(asked.filter((a) => a.endsWith('/read')), ['POST /api/v1/chats/2/read'], 'only the pressed conversation was read');
   assert.equal(host.chats.find((c) => c.id === '1').unread, 2, 'the newest conversation stays unread');
@@ -98,6 +100,8 @@ test('a start over a conversation already on screen keeps that one open, and ope
   await proto.start.call(host, 'http://fixture.invalid', 'fixture-token');
   await settle();
   assert.equal(host.openChatId, '2', 'the conversation on screen stays');
+  assert.equal(host.problem, '', 'refresh reported no swallowed error');
+  assert.equal(host.messages.length, 1, 'refresh installed the history');
   assert.deepEqual(asked.filter((a) => a.endsWith('/messages')), ['GET /api/v1/chats/2/messages'], 'only that one is refreshed');
   assert.deepEqual(asked.filter((a) => a.endsWith('/read')), ['POST /api/v1/chats/2/read'], 'the top conversation is not read');
   host.client.close();

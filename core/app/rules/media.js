@@ -35,17 +35,21 @@ export function mediaItems(messages) {
       if (!kind) continue;
       // A Live Photo opens as its still, and the viewer offers its motion (the attachment's live part) on a play control.
       const live = isLivePhoto(a);
-      items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ''), mime: String(a.mime || ''), ...(live ? { live: true } : {}) });
+      items.push({ id: String(a.id), messageId: String(m.id), attachmentId: String(a.id), kind, name: String(a.name || ''), mime: String(a.mime || ''), ...(m.historyCursor ? { historyCursor: m.historyCursor } : {}), ...(live ? { live: true } : {}) });
     }
   }
   return items;
 }
 
 // Where an item sits in the list by its id, or -1 when it is not there.
-export function mediaIndex(items, id) {
+export function mediaOccurrence(item) {
+  return item.messageId && item.attachmentId ? { ...item, id: JSON.stringify([item.messageId, item.attachmentId]) } : item;
+}
+
+export function mediaIndex(items, id, { messageId = null } = {}) {
   const list = items || [];
   const key = String(id);
-  for (let i = 0; i < list.length; i += 1) if (String(list[i].id) === key) return i;
+  for (let i = 0; i < list.length; i += 1) if ((String(list[i].id) === key || String(list[i].attachmentId) === key) && (!messageId || String(list[i].messageId) === String(messageId))) return i;
   return -1;
 }
 

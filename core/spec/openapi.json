@@ -332,6 +332,30 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "beforeCursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "afterCursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeTotal",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       },
@@ -1405,6 +1429,77 @@
           }
         ]
       }
+    },
+    "/api/v1/chats/{chatId}/media": {
+      "get": {
+        "operationId": "media",
+        "summary": "GET /api/v1/chats/:chatId/media",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chatId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "beforeCursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "afterCursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
     }
   },
   "webhooks": {
@@ -2007,6 +2102,12 @@
           },
           "hasMore": {
             "type": "boolean"
+          },
+          "nextCursor": {
+            "type": "string"
+          },
+          "totalCount": {
+            "type": "number"
           }
         },
         "required": [
@@ -2071,6 +2172,9 @@
           },
           "edited": {
             "type": "boolean"
+          },
+          "historyCursor": {
+            "type": "string"
           }
         },
         "required": [
@@ -2862,6 +2966,66 @@
         },
         "required": [
           "registered"
+        ],
+        "additionalProperties": false
+      },
+      "MediaItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "attachmentId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "historyCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "messageId",
+          "attachmentId",
+          "kind",
+          "name",
+          "mime"
+        ],
+        "additionalProperties": false
+      },
+      "MediaList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaItem"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "hasMore"
         ],
         "additionalProperties": false
       }

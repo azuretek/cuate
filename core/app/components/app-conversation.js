@@ -56,7 +56,7 @@ function marksOf(messages) {
 
 class AppConversation extends KitElement {
   static properties = {
-    chat: { attribute: false }, host: { attribute: false }, messages: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {}, phone: {},
+    chat: { attribute: false }, host: { attribute: false }, messages: { attribute: false }, historyWindow: { attribute: false }, hasMore: {}, sending: {}, uploadMaxBytes: {}, client: { attribute: false }, windowControls: { attribute: false }, maximized: {}, phone: {},
     // The message whose reaction is with the server, and a line said under one message (a refused reaction), both
     // owned by the page.
     reacting: {}, note: { attribute: false },
@@ -138,11 +138,44 @@ class AppConversation extends KitElement {
   // conversation rather than a page with a button at its head: within a screen of the top, the next page is asked for
   // once, and the place the person is on stays where it is while it lands above (the keep's anchor holds the message).
   // The button stays for a keyboard and for a page that is shorter than its view.
-  nearTop(e) {
+  async nearTop(e) {
     const el = e.currentTarget;
-    if (!this.hasMore || this.olderPending || !el || el.scrollTop > el.clientHeight) return;
+    if (this.olderPending || !el) return;
     this.olderPending = true;
-    Promise.resolve(this.fire('older')).catch(() => {}).finally(() => { this.olderPending = false; });
+    const deadline = Date.now() + 15000;
+    try {
+      while (el.isConnected && Date.now() < deadline) {
+        const state = this.historyWindow;
+        const direction = this.hasMore && el.scrollTop <= (state?.beforeHeight || 0) + el.clientHeight
+          ? 'older' : state?.hasNewer && el.scrollTop + el.clientHeight >= el.scrollHeight - state.afterHeight - el.clientHeight ? 'newer' : null;
+        if (!direction) break;
+        const before = this.messages[0]?.id + ':' + this.messages.at(-1)?.id;
+        const advanced = await this.fire(direction, this.historyMeasurements());
+        await this.updateComplete;
+        if (!advanced || before === this.messages[0]?.id + ':' + this.messages.at(-1)?.id) break;
+      }
+    } finally { this.olderPending = false; }
+  }
+
+  historyMeasurements() {
+    const rows = [...this.querySelectorAll('.messages > .bubble-row')];
+    const heights = rows.map((row, index) => {
+      const rect = row.getBoundingClientRect();
+      const next = rows[index + 1]?.getBoundingClientRect();
+      return [row.dataset.id, Math.max(1, next ? next.top - rect.top : rect.height)];
+    });
+    const estimate = heights.length ? heights.reduce((sum, row) => sum + row[1], 0) / heights.length : 1;
+    return { heights, estimate };
+  }
+
+  sizeHistory() {
+    const state = this.historyWindow;
+    for (const side of ['before', 'after']) {
+      const el = this.querySelector('.history-space-' + side);
+      if (el) el.style.setProperty('--history-height', String(state?.[side + 'Height'] || 0) + 'px');
+    }
+    if (state && state.estimate <= 1 && this.messages.length) this.fire('history-measured', this.historyMeasurements());
+    this.keep.restore();
   }
 
   // Another conversation starts where it was left, or at its latest message the first time it is opened (issue 200).
@@ -162,6 +195,7 @@ class AppConversation extends KitElement {
   }
 
   updated(changed) {
+    this.sizeHistory();
     if (changed.has('reveal') && this.reveal) this.revealMessage(this.reveal.id);
     if (changed.has('pop')) this.placePop();
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
@@ -515,8 +549,11 @@ class AppConversation extends KitElement {
     return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name-row"><div class="chat-name" title=${note && !note.apple ? note.label : nothing}>${title}</div>${note && note.apple ? html`<span class="icon service-mark" data-icon="smartphone" role="img" tabindex="0" aria-label=${note.label} title=${note.label}></span>` : nothing}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.chat && !this.chat.isGroup && hasContactEditor(this.host) && (this.chat.participants || []).length ? html`<button type="button" class="conv-info conv-edit-contact" aria-label="Edit contact" title="Edit contact" @click=${press(() => this.editContact())}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
       <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
-          ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older'))}>Load earlier messages</button>` : nothing}
+          <div class="history-space history-space-before" aria-hidden="true"></div>
+          ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older', this.historyMeasurements()))}>Load earlier messages</button>` : nothing}
           ${items.map((it) => (it.kind === 'separator' ? html`<div class="separator">${formatSeparator(it.at, { now, locale })}</div>` : [this.bubble(it, lastMine, 'list'), this.threadSummary(it.message)]))}
+          ${this.historyWindow?.hasNewer ? html`<button class="load-older" @click=${press(() => this.fire('newer', this.historyMeasurements()))}>Load newer messages</button>` : nothing}
+          <div class="history-space history-space-after" aria-hidden="true"></div>
           ${typingBubble(this.typing, now) ? this.typingRowHtml() : nothing}
         </div>
         ${thread ? this.threadView() : nothing}

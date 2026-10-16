@@ -94,7 +94,10 @@
       "scope": "read",
       "query": [
         "limit",
-        "before"
+        "before",
+        "beforeCursor",
+        "afterCursor",
+        "includeTotal"
       ],
       "returns": "MessageList"
     },
@@ -278,6 +281,18 @@
         "mode"
       ],
       "returns": "object"
+    },
+    {
+      "id": "media",
+      "method": "GET",
+      "path": "/api/v1/chats/:chatId/media",
+      "scope": "read",
+      "query": [
+        "limit",
+        "beforeCursor",
+        "afterCursor"
+      ],
+      "returns": "MediaList"
     }
   ],
   "websocket": {
@@ -411,7 +426,9 @@
     },
     "MessageList": {
       "messages": "Message[]",
-      "hasMore": "boolean"
+      "hasMore": "boolean",
+      "nextCursor": "string?",
+      "totalCount": "number?"
     },
     "Message": {
       "id": "string",
@@ -429,7 +446,8 @@
       "payloads": "number",
       "reactions": "Reaction[]",
       "event": "MessageEventKind?",
-      "edited": "boolean?"
+      "edited": "boolean?",
+      "historyCursor": "string?"
     },
     "Attachment": {
       "id": "string",
@@ -630,6 +648,21 @@
     },
     "PushState": {
       "registered": "boolean"
+    },
+    "MediaItem": {
+      "id": "string",
+      "messageId": "string",
+      "attachmentId": "string",
+      "kind": "string",
+      "name": "string",
+      "mime": "string",
+      "live": "boolean?",
+      "historyCursor": "string?"
+    },
+    "MediaList": {
+      "items": "MediaItem[]",
+      "hasMore": "boolean",
+      "nextCursor": "string?"
     }
   }
 }

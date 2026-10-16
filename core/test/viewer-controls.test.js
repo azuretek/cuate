@@ -57,7 +57,7 @@ function livePhoto(play) {
   const items = [{ id: 'att-l', attachmentId: 'att-l', kind: 'image', name: 'IMG_0001.HEIC', mime: 'image/png', live: true }];
   const host = Object.assign(Object.create(components['app-image-viewer'].prototype), {
     items, index: 0, kind: 'image', alt: 'IMG_0001.HEIC', src: 'blob:still', view: { scale: 1, x: 0, y: 0 }, moving: false,
-    motion: '', playing: false, motionFailed: false, urls: new Map(),
+    motion: '', playing: false, motionFailed: false, urls: new Map(), isConnected: true,
     client: { attachment: async (id, o) => { assert.equal(o.part, 'live'); return new Blob(['motion'], { type: 'video/mp4' }); } },
     querySelector: (sel) => (sel === 'video.viewer-motion' ? (host.playing ? video : null) : sel === '.viewer-image' ? (host.playing ? video : still) : null),
   });
@@ -105,4 +105,14 @@ test('the iOS shell lets media play without a gesture, as the Android shell does
   const uiTest = read('ios/' + naming.product + 'UITests/LivePhotoTests.swift');
   for (const part of ['--live-photo-fixture', '"Play the Live Photo"', 'control.tap()', 'hasPrefix("live:pass")']) assert.ok(uiTest.includes(part), 'the UI test presses LIVE and reads the verdict: ' + part);
   assert.doesNotMatch(read('core/app/main.js'), /live-photo-fixture/);
+});
+
+
+test('a closed viewer never installs or starts a late Live Photo motion', async () => {
+  const { host, video } = livePhoto(async () => {});
+  host.isConnected = false;
+  await host.playMotion();
+  assert.equal(video.plays, 0);
+  assert.equal(host.urls.size, 0);
+  assert.equal(host.playing, false);
 });

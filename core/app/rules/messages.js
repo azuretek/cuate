@@ -1,5 +1,6 @@
 // Pure: the conversation's rules.
 import { platformCapabilities } from './platform.js';
+import { compareHistory } from './history.js';
 
 const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 
@@ -198,7 +199,7 @@ export function replyQuote(messages, m, { max = 80 } = {}) {
 export function mergeMessages(existing, incoming) {
   const map = new Map(existing.map((m) => [m.id, m]));
   for (const m of incoming) map.set(m.id, { ...map.get(m.id), ...m });
-  return [...map.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt) || String(a.id).localeCompare(String(b.id)));
+  return [...map.values()].sort((a, b) => compareHistory(a, b) || String(a.id).localeCompare(String(b.id)));
 }
 
 // Separators after a gap, and runs of messages from one sender close together.

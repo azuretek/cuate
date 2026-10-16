@@ -8,22 +8,24 @@ globalThis.customElements = { define(name, cls) { defined[name] = cls; }, get() 
 globalThis.document = { hidden: false, createTreeWalker() { return {}; }, createComment() { return {}; }, importNode() { return {}; }, createElement() { return { content: {} }; } };
 await import('../app/components/app-root.js');
 const proto = defined['app-root'].prototype;
+const withWindow = (host) => Object.assign(host, { querySelector: () => null, applyWindow: proto.applyWindow, receiveHistoryMessage: proto.receiveHistoryMessage });
 
 test('a history refresh preserves a live message received before its stale answer', async () => {
   const old = { id: 'old', chatId: '1', text: 'Earlier fixture', sentAt: '2026-01-01T00:00:00Z', fromMe: false, attachments: [] };
   const live = { id: 'live', chatId: '1', text: 'Live fixture', sentAt: '2026-01-01T00:00:01Z', fromMe: false, attachments: [] };
   let answer;
-  const host = {
+  const host = withWindow({
     openChatId: '1', messages: [old], chats: [{ id: '1', unread: 0 }], pending: new Map(),
     client: { messages: () => new Promise((resolve) => { answer = resolve; }) },
     reconcile: proto.reconcile, describe: proto.describe,
     clearTyping: proto.clearTyping, resetTyping: proto.resetTyping,
-  };
+  });
   const work = proto.open.call(host, '1');
   proto.onEvent.call(host, { name: 'message.new', data: { message: live } });
   assert.ok(host.messages.some((m) => m.id === live.id), 'the real event handler received the message');
   answer({ messages: [old], hasMore: false });
   await work;
+  assert.equal(host.problem, '', 'history did not swallow an integration error');
   assert.deepEqual(host.messages.map((m) => m.id), ['old', 'live']);
 });
 
@@ -32,17 +34,18 @@ test('opening another conversation keeps a live message for it received while it
   const old = { id: 'old', chatId: '2', text: 'Earlier fixture', sentAt: '2026-01-01T00:00:00Z', fromMe: false, attachments: [] };
   const live = { id: 'live', chatId: '2', text: 'Live fixture', sentAt: '2026-01-01T00:00:01Z', fromMe: false, attachments: [] };
   let answer;
-  const host = {
+  const host = withWindow({
     openChatId: '1', messages: [shown], chats: [{ id: '1', unread: 0 }, { id: '2', unread: 0 }], pending: new Map(),
     client: { messages: () => new Promise((resolve) => { answer = resolve; }) },
     reconcile: proto.reconcile, describe: proto.describe, bridge: async () => {},
     clearTyping: proto.clearTyping, resetTyping: proto.resetTyping,
-  };
+  });
   const work = proto.open.call(host, '2');
   proto.onEvent.call(host, { name: 'message.new', data: { message: live } });
   assert.deepEqual(host.messages.map((m) => m.id), ['shown'], 'the pane keeps the open conversation until the page arrives');
   answer({ messages: [old], hasMore: false });
   await work;
+  assert.equal(host.problem, '', 'history did not swallow an integration error');
   assert.equal(host.openChatId, '2');
   assert.deepEqual(host.messages.map((m) => m.id), ['old', 'live']);
 });

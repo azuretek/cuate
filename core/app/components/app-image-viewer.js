@@ -7,9 +7,10 @@ import { closeButtonHtml } from './close-button.js';
 import { pressOutside } from '../../kit/rules/dismiss.js';
 import { ZOOM_STEP, zoomFit, zoomMax, zoomBy, panBy, toggleZoom, pinch, wheelFactor, isClick, isDoubleTap, zoomKey, drawnY } from '../rules/zoom.js';
 import { swipeStep } from '../rules/media.js';
+import { MediaPages } from '../media-pages.js';
 import { DOC_ZOOM_MIN, DOC_ZOOM_MAX, DOC_ZOOM_STEP, docZoom, pageFit, pageCanvas } from '../rules/documents.js';
 import { keepScroll } from '../../kit/scroll.js';
-import { openPdf, pageSize, drawPage } from '../../kit/pdf.js';
+import { openPdf, closePdf, pageSize, drawPage } from '../../kit/pdf.js';
 import { openAttachment, saveAttachment } from './app-attachment.js';
 
 // The image viewer: one picture or video, large, over the app. It draws on the settings sheet's own backdrop (the same
@@ -59,6 +60,7 @@ class AppImageViewer extends KitElement {
     motion: { state: true }, playing: { state: true }, motionFailed: { state: true },
     // The conversation's media, in order, and the one on screen. The page hands them in; the viewer steps between them.
     items: { attribute: false }, index: { attribute: false }, client: { attribute: false },
+    history: { attribute: false }, pageError: { state: true },
     // The preview the viewer was opened from: it grows out of it and, closed on the same item, shrinks back into it.
     from: { attribute: false },
     // A document (issue 374): where it stands ('loading', 'ready' or 'failed'), its text, its page count and its zoom.
@@ -85,6 +87,9 @@ class AppImageViewer extends KitElement {
     this.opener = null;
     // The object URLs this viewer made for the items it loaded, kept so stepping back is instant and revoked on close.
     this.urls = new Map();
+    this.loadingMedia = new Map();
+    this.mediaRequests = new Map();
+    this.pageError = '';
     this.onKey = (e) => this.key(e);
     // Safari's own pinch would zoom the whole page under the viewer; the pointer events already carry the pinch.
     this.onGesture = (e) => this.gestureZoom(e);
@@ -116,6 +121,9 @@ class AppImageViewer extends KitElement {
     document.removeEventListener('gesturechange', this.onGesture);
     this.resized?.disconnect();
     this.closeDocument();
+    this.mediaPages?.close();
+    for (const request of this.mediaRequests.values()) request.abort();
+    this.mediaRequests.clear();
     for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();
     // Focus goes back to the preview that opened the viewer, so a keyboard reader is where they were.
@@ -131,6 +139,12 @@ class AppImageViewer extends KitElement {
     }
     // The item the page asked for: a single picture or video it handed over (a staged preview), or one of the media
     // items in the conversation, resolved by id.
+    if (this.history?.beforeCursor && this.client?.media) {
+      this.mediaPages = new MediaPages({ client: this.client, ...this.history, items: this.items });
+      this.items = this.mediaPages.items;
+      this.emitNavigation();
+    }
+    this.openedId = this.items[this.index]?.id;
     if (this.items.length) this.show(this.index);
   }
 
@@ -168,7 +182,7 @@ class AppImageViewer extends KitElement {
   // shrink back into, or null.
   returnRect() {
     const el = this.from;
-    if (!el || !el.isConnected || this.index !== this.openedAt || typeof el.getBoundingClientRect !== 'function') return null;
+    if (!el || !el.isConnected || (this.openedId ? this.items[this.index]?.id !== this.openedId : this.index !== this.openedAt) || typeof el.getBoundingClientRect !== 'function') return null;
     const r = el.getBoundingClientRect();
     const vh = typeof innerHeight === 'number' ? innerHeight : 0;
     return r.width > 0 && r.height > 0 && r.bottom > 0 && (!vh || r.top < vh) ? r : null;
@@ -240,7 +254,8 @@ class AppImageViewer extends KitElement {
     const item = list[at];
     this.kind = item.kind || 'image';
     this.alt = item.alt || item.name || '';
-    this.src = item.src || this.urls.get(item.id) || '';
+    this.src = this.urls.get(item.id) || item.src || '';
+    this.pruneMedia();
     this.closeDocument();
     this.docState = this.isDocument(item) ? 'loading' : '';
     await this.updateComplete;
@@ -249,7 +264,8 @@ class AppImageViewer extends KitElement {
       if (this.client) this.loadDocument(item);
       return;
     }
-    if (!this.src && (item.attachmentId || item.linkUrl) && this.client) this.load(item);
+    if (!this.urls.has(item.id) && (item.attachmentId || item.linkUrl) && this.client) this.load(item);
+    this.warmNeighbours();
   }
 
   // Whether an item, or the one on screen, is a document rather than a picture or a video.
@@ -281,7 +297,7 @@ class AppImageViewer extends KitElement {
         this.src = url;
       } else {
         const doc = await openPdf(new Uint8Array(await blob.arrayBuffer()));
-        if (!current()) { doc.destroy(); return; }
+        if (!current()) { closePdf(doc); return; }
         this.pdf = doc;
         await this.layoutPages(doc);
       }
@@ -438,7 +454,7 @@ class AppImageViewer extends KitElement {
     if (this.pdf) {
       const doc = this.pdf;
       this.pdf = null;
-      doc.destroy();
+      closePdf(doc);
     }
   }
 
@@ -459,14 +475,29 @@ class AppImageViewer extends KitElement {
   }
 
   async load(item) {
+    if (this.loadingMedia.has(item.id)) return this.loadingMedia.get(item.id);
+    const pending = this.loadMedia(item);
+    this.loadingMedia.set(item.id, pending);
+    try { return await pending; } finally { this.loadingMedia.delete(item.id); }
+  }
+
+  async loadMedia(item) {
+    const controller = new AbortController();
+    this.mediaRequests.set(item.id, controller);
     try {
       // A link item is a shared video the server resolves and caches (issue 243), so the viewer asks the server for it
       // and never the site; every other item is one of our own attachments.
       const blob = item.linkUrl
-        ? await this.client.linkMedia(item.linkUrl)
-        : await this.client.attachment(item.attachmentId, item.part ? { part: item.part } : { format: needsJpeg(item) ? 'jpeg' : undefined });
+        ? await this.client.linkMedia(item.linkUrl, { signal: controller.signal })
+        : await this.client.attachment(item.attachmentId, { signal: controller.signal, ...(item.part ? { part: item.part } : { format: needsJpeg(item) ? 'jpeg' : undefined }) });
+      if (!this.isConnected || !this.neighbourItems().some((entry) => entry.id === item.id)) return;
       const url = URL.createObjectURL(blob);
       this.urls.set(item.id, url);
+      if (item.kind === 'image' && typeof Image === 'function') {
+        const image = new Image();
+        image.src = url;
+        await image.decode().catch(() => {});
+      }
       const current = this.items[this.index];
       if (current && current.id === item.id) {
         this.src = url;
@@ -475,8 +506,8 @@ class AppImageViewer extends KitElement {
       }
     } catch {
       const current = this.items[this.index];
-      if (current && current.id === item.id) this.failed = true;
-    }
+      if (!controller.signal.aborted && current && current.id === item.id) this.failed = true;
+    } finally { this.mediaRequests.delete(item.id); }
   }
 
   // A Live Photo's play control: the motion plays once over the still, muted and inline, and the still is back when it
@@ -494,6 +525,7 @@ class AppImageViewer extends KitElement {
     if (!this.urls.has(key)) {
       try {
         const blob = await this.client.attachment(item.attachmentId, { part: 'live' });
+        if (!this.isConnected || this.items[this.index] !== item) return;
         this.urls.set(key, URL.createObjectURL(blob));
       } catch {
         if (this.items[this.index] === item) this.motionFailed = true;
@@ -531,13 +563,69 @@ class AppImageViewer extends KitElement {
 
   // Move one item in the conversation's media, staying put at the ends. The page hears the move so its own idea of the
   // open item keeps up.
-  go(dir) {
-    const list = Array.isArray(this.items) ? this.items : [];
-    if (list.length < 2) return;
-    const to = dir === 'prev' ? this.index - 1 : this.index + 1;
-    if (to < 0 || to >= list.length) return;
-    this.show(to);
-    this.dispatchEvent(new CustomEvent('navigate', { bubbles: true, composed: true, detail: { index: to } }));
+  async go(dir) {
+    const sequence = this.navigationSequence = (this.navigationSequence || 0) + 1;
+    const id = this.items[this.index]?.id;
+    let to = dir === 'prev' ? this.index - 1 : this.index + 1;
+    if ((to < 0 || to >= this.items.length) && this.mediaPages?.more[dir]) {
+      try {
+        await this.mediaPages.extend(dir, id);
+        if (this.navigationSequence !== sequence) return false;
+        this.syncMedia(id); this.pageError = '';
+      }
+      catch (error) { this.pageError = error.message; return false; }
+      to = dir === 'prev' ? this.index - 1 : this.index + 1;
+    }
+    if (!this.isConnected || to < 0 || to >= this.items.length) return;
+    await this.show(to);
+    this.emitNavigation();
+  }
+
+  emitNavigation() {
+    this.dispatchEvent(new CustomEvent('navigate', { bubbles: true, composed: true, detail: { index: this.index, items: this.items } }));
+  }
+
+  syncMedia(id) {
+    if (!this.isConnected || !this.mediaPages || this.mediaPages.closed) return;
+    this.items = this.mediaPages.items;
+    this.index = Math.max(0, this.items.findIndex((item) => item.id === id));
+    this.emitNavigation();
+  }
+
+  neighbourItems() { return this.items.slice(Math.max(0, this.index - 2), this.index + 3); }
+
+  pruneMedia() {
+    const keep = new Set(this.neighbourItems().map((item) => item.id));
+    for (const [key, request] of this.mediaRequests) if (!keep.has(key)) request.abort();
+    keep.add(this.items[this.index]?.id + ':live');
+    for (const [key, url] of this.urls) if (!keep.has(key)) { URL.revokeObjectURL(url); this.urls.delete(key); }
+  }
+
+  async warmNeighbours() {
+    if (this.warming || this.isDocument()) return;
+    this.warming = true;
+    const startedId = this.items[this.index]?.id;
+    try {
+      const id = this.items[this.index]?.id;
+      if (this.mediaPages) {
+        for (const dir of ['prev', 'next']) {
+          while ((dir === 'prev' ? this.index : this.items.length - this.index - 1) < 2 && this.mediaPages.more[dir]) {
+            const count = this.items.length;
+            await this.mediaPages.extend(dir, this.items[this.index]?.id || id);
+            this.syncMedia(this.items[this.index]?.id);
+            if (this.items.length === count) break;
+          }
+        }
+      }
+      if (!this.isConnected) return;
+      const neighbours = this.neighbourItems();
+      this.pruneMedia();
+      await Promise.all(neighbours.filter((item) => (item.attachmentId || item.linkUrl) && !this.urls.has(item.id)).map((item) => this.load(item)));
+    } catch (error) { this.pageError = error.message; }
+    finally {
+      this.warming = false;
+      if (this.isConnected && this.items[this.index]?.id !== startedId) this.warmNeighbours();
+    }
   }
 
   key(e) {
@@ -559,7 +647,7 @@ class AppImageViewer extends KitElement {
       return;
     }
     // At fit, the left and right arrows step through the conversation's media; once zoomed they pan, as before.
-    const steps = this.items.length > 1 && this.view.scale <= 1.001 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
+    const steps = (this.items.length > 1 || this.mediaPages) && this.view.scale <= 1.001 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
     if (steps && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -790,7 +878,7 @@ class AppImageViewer extends KitElement {
       </div>`;
     }
     const label = this.alt || (this.kind === 'video' ? 'Video' : 'Image');
-    const hasNav = list.length > 1;
+    const hasNav = list.length > 1 || Boolean(this.mediaPages);
     const live = Boolean(list[at] && list[at].live) && this.kind === 'image';
     const media = this.kind === 'video'
       ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
@@ -802,17 +890,17 @@ class AppImageViewer extends KitElement {
     // bar centred at the foot holding the Live Photo's play control, where the item sits in the conversation's media
     // and the zoom. The play control is the bar's widest, labelled, so it is not missed.
     const play = live ? html`<button type="button" class="viewer-control viewer-play" aria-label=${playLabel} title=${playLabel} aria-pressed=${this.playing ? 'true' : 'false'} ?disabled=${this.motionFailed} @click=${press(() => this.playMotion())}><span class="icon" data-icon="play" aria-hidden="true"></span><span class="viewer-play-label">Live</span></button>` : nothing;
-    const count = hasNav ? html`<span class="viewer-count">${at + 1} of ${list.length}</span>` : nothing;
+    const count = hasNav ? html`<span class="viewer-count">${this.mediaPages ? 'Conversation media' : (at + 1) + ' of ' + list.length}</span>` : nothing;
     return html`<div class="sheet-scrim viewer" data-dismiss="viewer" role="dialog" aria-modal="true" aria-label=${label}
         data-scale=${String(this.view.scale)} data-zoomed=${this.view.scale > 1.001 ? 'true' : 'false'} data-gesture=${this.moving ? 'on' : 'off'}
         data-index=${at} data-count=${list.length} data-kind=${this.kind}
         @pointerdown=${this.onDown} @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${this.onCancel}
         @contextmenu=${this.onContext} @wheel=${this.onWheel}>
       ${media}
-      ${hasNav ? html`<button type="button" class="viewer-nav viewer-prev" aria-label="Previous item" title="Previous item" ?disabled=${at <= 0} @click=${press(() => this.go('prev'))}><span class="icon" data-icon="chevron-left" aria-hidden="true"></span></button>` : nothing}
-      ${hasNav ? html`<button type="button" class="viewer-nav viewer-next" aria-label="Next item" title="Next item" ?disabled=${at >= list.length - 1} @click=${press(() => this.go('next'))}><span class="icon" data-icon="chevron-right" aria-hidden="true"></span></button>` : nothing}
+      ${hasNav ? html`<button type="button" class="viewer-nav viewer-prev" aria-label="Previous item" title="Previous item" ?disabled=${at <= 0 && !this.mediaPages?.more.prev} @click=${press(() => this.go('prev'))}><span class="icon" data-icon="chevron-left" aria-hidden="true"></span></button>` : nothing}
+      ${hasNav ? html`<button type="button" class="viewer-nav viewer-next" aria-label="Next item" title="Next item" ?disabled=${at >= list.length - 1 && !this.mediaPages?.more.next} @click=${press(() => this.go('next'))}><span class="icon" data-icon="chevron-right" aria-hidden="true"></span></button>` : nothing}
       ${closeButtonHtml({ owner: 'viewer', label: 'Close', size: 'lg', onClose: () => this.close() })}
-      <div class="viewer-bar" role="toolbar" aria-label="Media controls">${play}${count}<span class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</span></div>
+      <div class="viewer-bar" role="toolbar" aria-label="Media controls">${play}${count}${this.pageError ? html`<span class="viewer-count" role="status">${this.pageError}</span>` : nothing}<span class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</span></div>
     </div>`;
   }
 }

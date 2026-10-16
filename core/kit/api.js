@@ -5,12 +5,12 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
   const base = String(baseUrl).trim().replace(/\/+$/, '');
   const auth = { authorization: 'Bearer ' + token };
 
-  async function call(method, path, body) {
+  async function call(method, path, body, signal) {
     const headers = { ...auth };
     if (body !== undefined) headers['content-type'] = 'application/json';
     let res;
     try {
-      res = await fetchImpl(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+      res = await fetchImpl(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), ...(signal ? { signal } : {}) });
     } catch (cause) {
       throw Object.assign(new Error('The server did not answer.'), { code: 'unreachable', cause });
     }
@@ -68,8 +68,16 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
 
   return {
     info: () => call('GET', '/api/v1/info'),
+    async media(chatId, o = {}) {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (o.signal?.aborted) abort(); else o.signal?.addEventListener('abort', abort, { once: true });
+      const timer = timers.setTimeout(abort, 15000);
+      try { return await call('GET', `/api/v1/chats/${encodeURIComponent(chatId)}/media` + query({ limit: o.limit, beforeCursor: o.beforeCursor, afterCursor: o.afterCursor }), undefined, controller.signal); }
+      finally { timers.clearTimeout(timer); o.signal?.removeEventListener('abort', abort); }
+    },
     chats: (o = {}) => call('GET', '/api/v1/chats' + query({ limit: o.limit })),
-    messages: (chatId, o = {}) => call('GET', `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before })),
+    messages: (chatId, o = {}) => call('GET', `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before, beforeCursor: o.beforeCursor, afterCursor: o.afterCursor, includeTotal: o.includeTotal })),
     send: (chatId, { text, file, clientKey, replyTo }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...(file ? { file } : {}), clientKey, ...(replyTo ? { replyTo } : {}) }),
     // `text` is the message being reacted to, carried only so the server can compose the platform's own text
     // fallback where the conversation is not on the message service (issue 184); it is not sent otherwise.
@@ -100,14 +108,14 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
       return res.arrayBuffer();
     },
     async attachment(id, o = {}) {
-      const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format, part: o.part }), { headers: auth });
+      const res = await fetchImpl(base + `/api/v1/attachments/${encodeURIComponent(id)}` + query({ format: o.format, part: o.part }), { headers: auth, signal: o.signal });
       if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
       return res.blob();
     },
     // A shared video link's media, resolved and cached by the server (issue 243), as bytes for the viewer. The client
     // reaches only us, never the site the link names.
-    async linkMedia(url) {
-      const res = await fetchImpl(base + '/api/v1/links/media' + query({ url }), { headers: auth });
+    async linkMedia(url, o = {}) {
+      const res = await fetchImpl(base + '/api/v1/links/media' + query({ url }), { headers: auth, signal: o.signal });
       if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
       return res.blob();
     },

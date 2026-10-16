@@ -33,6 +33,8 @@ export * from './rules/drawer.js';
 export * from './rules/divider.js';
 export * from './rules/engine-imsg.js';
 export * from './rules/messages.js';
+export * from './rules/history.js';
+export * from './rules/history-window.js';
 export * from './rules/links.js';
 export * from './rules/media.js';
 export * from './rules/documents.js';
