@@ -64,12 +64,44 @@ globalThis.historyProof = {
       steps.push({ first: root().messages[0].id, last: root().messages.at(-1).id, drift, rows: root().messages.length });
     }
     assert(root().messages[0].id === 'SYNTHETIC-1', 'reached oldest message without timestamp gaps');
-    const attachment = pane().querySelector('app-attachment img');
-    await until(() => attachment?.naturalWidth > 0, 'synthetic photo decoded');
-    attachment.scrollIntoView({ block: 'center' });
-    await settle();
-    const rect = attachment.getBoundingClientRect();
-    return { steps, maxRows, maxObserved, click: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
+    const click = await this.photoTarget();
+    return { steps, maxRows, maxObserved, click };
+  },
+  // The photo the real pointer presses, placed the way the app places a message it brings into view
+  // (revealMessage): through the scroll keeper's anchor, never a bare scrollIntoView, because the keeper
+  // restores the person's recorded place after every render and would move a bare scroll back before its
+  // scroll event is heard. The press point is read only once the photo has held still for several frames
+  // and the point hit-tests to the photo itself, so the click never lands on stale coordinates.
+  async photoTarget() {
+    const scroll = pane().querySelector('.messages');
+    const photo = () => [...pane().querySelectorAll('app-attachment img')].find((img) => img.closest('.bubble-row')?.dataset.id);
+    await until(() => photo()?.naturalWidth > 0, 'synthetic photo decoded');
+    const row = photo().closest('.bubble-row');
+    const key = row.dataset.id;
+    const place = () => {
+      pane().keep.anchor = { key, offset: Math.round(scroll.clientHeight / 3) };
+      pane().keep.restore();
+    };
+    const target = () => [...pane().querySelectorAll('.messages > .bubble-row')].find((r) => r.dataset.id === key)?.querySelector('app-attachment img');
+    const centre = () => { const r = target()?.getBoundingClientRect(); return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null; };
+    const view = () => scroll.getBoundingClientRect();
+    const hits = (p) => { const hit = p && document.elementFromPoint(p.x, p.y); return Boolean(hit && target() && (hit === target() || target().closest('app-attachment').contains(hit))); };
+    place();
+    let last = null;
+    let still = 0;
+    const deadline = performance.now() + 20000;
+    while (still < 8) {
+      assert(performance.now() < deadline, 'photo never held still under the pointer');
+      await settle();
+      if (!target()) { place(); still = 0; last = null; continue; }
+      const p = centre();
+      const v = view();
+      const inside = p && p.y > v.top + 1 && p.y < v.bottom - 1;
+      if (!inside) place();
+      still = inside && last && last.x === p.x && last.y === p.y && hits(p) ? still + 1 : 0;
+      last = p;
+    }
+    return { ...last, key };
   },
   async media() {
     await until(() => viewer()?.items.length, 'viewer opened by real pointer');

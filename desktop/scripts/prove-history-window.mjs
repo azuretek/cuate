@@ -52,8 +52,9 @@ app.whenReady().then(async () => {
   for (const row of rows) for (const attachment of row.attachments) if (attachment.mime_type === 'video/webm') copyFileSync(video, attachment.original_path);
   const history = await win.webContents.executeJavaScript('globalThis.historyProof.history()');
   writeFileSync(path.join(output, 'scrollback.png'), (await win.capturePage()).toPNG());
-  win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...history.click });
-  win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...history.click });
+  const press = { x: history.click.x, y: history.click.y };
+  win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...press });
+  win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...press });
   const media = [await win.webContents.executeJavaScript('globalThis.historyProof.media()')];
   const seen = new Set([media[0].id]);
   while (media.length < 60) {
