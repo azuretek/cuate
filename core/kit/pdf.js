@@ -20,7 +20,7 @@ export function pdfjs() {
   return loading;
 }
 
-// Opens a PDF's bytes and answers the document, which the caller destroys when it is done with it.
+// Opens a PDF's bytes and answers the document, which the caller frees with closePdf when it is done with it.
 export async function openPdf(bytes) {
   const lib = await pdfjs();
   const task = lib.getDocument({
@@ -34,6 +34,18 @@ export async function openPdf(bytes) {
     verbosity: lib.VerbosityLevel ? lib.VerbosityLevel.ERRORS : 0,
   });
   return task.promise;
+}
+
+// Frees a document and the worker behind it. In pdf.js 6 a document has no destroy() of its own: its loading task owns
+// the worker and destroys both (issue 408). Never throws, so leaving a PDF always finishes what it was doing.
+export function closePdf(doc) {
+  const task = doc && doc.loadingTask;
+  if (!task || typeof task.destroy !== 'function') return Promise.resolve();
+  try {
+    return Promise.resolve(task.destroy()).catch(() => {});
+  } catch {
+    return Promise.resolve();
+  }
 }
 
 // A page's own size in PDF points, at its own rotation.

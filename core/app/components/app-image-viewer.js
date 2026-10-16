@@ -10,7 +10,7 @@ import { swipeStep } from '../rules/media.js';
 import { MediaPages } from '../media-pages.js';
 import { DOC_ZOOM_MIN, DOC_ZOOM_MAX, DOC_ZOOM_STEP, docZoom, pageFit, pageCanvas } from '../rules/documents.js';
 import { keepScroll } from '../../kit/scroll.js';
-import { openPdf, pageSize, drawPage } from '../../kit/pdf.js';
+import { openPdf, closePdf, pageSize, drawPage } from '../../kit/pdf.js';
 import { openAttachment, saveAttachment } from './app-attachment.js';
 
 // The image viewer: one picture or video, large, over the app. It draws on the settings sheet's own backdrop (the same
@@ -297,7 +297,7 @@ class AppImageViewer extends KitElement {
         this.src = url;
       } else {
         const doc = await openPdf(new Uint8Array(await blob.arrayBuffer()));
-        if (!current()) { doc.destroy(); return; }
+        if (!current()) { closePdf(doc); return; }
         this.pdf = doc;
         await this.layoutPages(doc);
       }
@@ -454,7 +454,7 @@ class AppImageViewer extends KitElement {
     if (this.pdf) {
       const doc = this.pdf;
       this.pdf = null;
-      doc.destroy();
+      closePdf(doc);
     }
   }
 
