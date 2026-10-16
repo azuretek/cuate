@@ -82,6 +82,14 @@ struct ShellWebView: UIViewRepresentable {
             let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
             controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The contacts fixture (issue 393), the same seam: Debug only. The synthetic person is written first, so the card
+        // the page asks for has someone in it.
+        if ProcessInfo.processInfo.arguments.contains("--contacts-fixture"),
+           let url = Bundle.main.url(forResource: "contacts-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            ContactsFixture.seedIfAsked()
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         #endif
         configuration.userContentController = controller
 
