@@ -478,8 +478,8 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
 
     /// Edit contact (issue 393): the phone's own contact card on the person this conversation is with. The address is
     /// matched the way core matches it, a phone by its number and an email by its text, and a person the phone does
-    /// not know answers false, so the control never opens the wrong card. The first press asks iOS for contacts and
-    /// answers false, because nothing opened; the next one opens the card.
+    /// not know answers false, so the control never opens the wrong card. The first press waits for the system's
+    /// permission answer before continuing the same editor request.
     private func editContact(_ args: [String: Any]) -> Bool {
         guard let handle = args["handle"] as? String, !handle.isEmpty else { return false }
         let store = CNContactStore()

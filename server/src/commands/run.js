@@ -101,7 +101,11 @@ export default {
     const dbPath = config.engine.kind === 'imsg' ? messagesDatabasePath(config) : null;
     // The system Contacts store names and pictures a one-to-one chat (issue 393); a Mac that has not allowed
     // Contacts simply reads as no contacts, so nothing here can stop the server.
-    const contacts = createContacts({ log: logger.child('contacts'), dataDir });
+    const contactOptions = config.engine.kind === 'fake' ? {
+      run: async () => JSON.stringify({ authorized: true, status: 3, contacts: (await import('../engine/fixtures.js')).CONTACTS }),
+      watchDir: null,
+    } : {};
+    const contacts = createContacts({ log: logger.child('contacts'), dataDir, ...contactOptions });
     const srv = await startServer({ config, store: s, engine, log: logger.child('http'), dataDir, attachmentsRoot, contacts, dbPath, mac, restarts, diagnostics, updateOutcome, updatePending: () => Boolean(L && readState(L).pending) });
     publish = srv.publish;
     let updater = null;
