@@ -86,11 +86,21 @@
   await until(() => !el.querySelector('.viewer').getAnimations().some((a) => a.playState === 'running'), 'the viewer to arrive');
   const box = (node) => { const r = node.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; };
   const stillBox = box(img());
+  const { observeLiveMotion } = await import(new URL('/live-photo-observation.js', document.baseURI));
+  const observation = observeLiveMotion(stillBox);
+  // Capture before the target's ended handler removes the video. A delayed animation frame must not erase evidence
+  // that the short clip actually progressed. Keep animation-frame geometry sampling as well.
+  for (const type of ['loadeddata', 'playing', 'timeupdate', 'ended', 'error']) {
+    el.addEventListener(type, (event) => {
+      if (event.target.matches?.('video.viewer-motion')) observation.sample(event.target, box);
+    }, true);
+  }
   const state = () => {
     const v = video();
     const c = control();
     return JSON.stringify({
       video: v ? { ready: v.readyState, t: Math.round(v.currentTime * 100) / 100, paused: v.paused, error: v.error ? v.error.code : null, box: box(v) } : null,
+      observedMotion: observation.last,
       still: img() ? box(img()) : null,
       control: c ? c.getAttribute('aria-label') : null,
     });
@@ -134,25 +144,23 @@
 
   // The motion takes the still's box from the moment it is drawn, and its time advances. Every frame until it plays is
   // measured, so a moment drawn at another size, the empty box, is caught rather than missed between two looks.
-  let started = 0;
-  let wrongBox = null;
+
   const deadline = performance.now() + 15000;
   while (performance.now() < deadline) {
     const v = video();
     if (v) {
-      const b = box(v);
-      if (!wrongBox && (Math.abs(b.w - stillBox.w) > 1 || Math.abs(b.h - stillBox.h) > 1)) wrongBox = b;
-      if (!started && v.currentTime > 0.3 && !v.paused) started = v.currentTime;
-      else if (started && v.currentTime > started + 0.2) break;
+      observation.sample(v, box);
     } else if (control() && control().getAttribute('aria-label') === 'The motion could not be loaded') {
       say('live:fail the viewer reported the motion could not be loaded ' + state() + ' ' + await why());
       return;
     }
+    if (observation.passed) break;
     await new Promise(requestAnimationFrame);
   }
-  if (!started || !video() || video().currentTime <= started) { say('live:fail the motion never played ' + state()); return; }
+  if (!observation.passed) { say('live:fail the motion never played ' + state()); return; }
+  const wrongBox = observation.wrongBox;
   if (wrongBox) { say('live:fail the motion was drawn at ' + wrongBox.w + 'x' + wrongBox.h + ', not the still\'s ' + stillBox.w + 'x' + stillBox.h + ' ' + state()); return; }
-  const played = Math.round(video().currentTime * 100) / 100;
+  const played = Math.round(observation.played * 100) / 100;
   // The still is back when the motion ends.
   try {
     await until(() => !video() && img(), 'the still to come back', 10000);
