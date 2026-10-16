@@ -174,9 +174,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
         if (!found) return { handle, name: handle, photo: null };
         return { handle, name: found.name || handle, photo: await storedPicture(found.record) };
       }));
-      let photo = chat.photo || null;
-      if (!chat.isGroup && members.length) photo = photo || members[0].photo;
-      const name = !chat.isGroup && members[0] && members[0].name !== members[0].handle ? members[0].name : chat.name;
+      const photo = chat.isGroup ? (chat.photo || null) : (members[0]?.photo || null);
+      const name = chat.isGroup ? chat.name : (members[0]?.name || handles[0] || chat.identifier || chat.id);
       out.push({ ...chat, name, photo, members });
     }
     return out;

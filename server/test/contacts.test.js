@@ -11,8 +11,8 @@ const STORE = {
   authorized: true,
   status: 3,
   contacts: [
-    { given: 'Ada', family: 'Lovelace', phones: ['+1 (555) 010-1234'], emails: ['ada@example.com'], photo: Buffer.from([255, 216, 255, 1]).toString('base64') },
-    { given: 'Grace', middle: 'B', family: 'Hopper', nickname: 'Amazing Grace', organization: 'Navy', phones: [], emails: ['grace@example.com'] },
+    { displayName: 'Ada Lovelace', given: 'Ada', family: 'Lovelace', phones: ['+1 (555) 010-1234'], emails: ['ada@example.com'], photo: Buffer.from([255, 216, 255, 1]).toString('base64') },
+    { displayName: 'Grace B Hopper', given: 'Grace', middle: 'B', family: 'Hopper', nickname: 'Amazing Grace', organization: 'Navy', phones: [], emails: ['grace@example.com'] },
   ],
 };
 
@@ -21,7 +21,7 @@ const fake = (value) => async () => (typeof value === 'string' ? value : JSON.st
 test('the store names a chat by the first of its handles it knows (issue 393)', async () => {
   const c = createContacts({ run: fake(STORE) });
   assert.equal((await c.forHandles(['5550101234'])).name, 'Ada Lovelace');
-  assert.equal((await c.forHandles(['GRACE@example.com'])).name, 'Amazing Grace');
+  assert.equal((await c.forHandles(['GRACE@example.com'])).name, 'Grace B Hopper');
   assert.equal(await c.forHandles(['nobody@example.com']), null);
 });
 

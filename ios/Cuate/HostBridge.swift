@@ -236,7 +236,16 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             }
         // Edit contact (issue 393): the phone's own contact card on the person the conversation is with.
         case "contacts.edit":
-            settle(id: id, ok: true, value: editContact(args))
+            if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
+                CNContactStore().requestAccess(for: .contacts) { [weak self] granted, _ in
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        self.settle(id: id, ok: true, value: granted && self.editContact(args))
+                    }
+                }
+            } else {
+                settle(id: id, ok: true, value: editContact(args))
+            }
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
         case "file.save":
@@ -479,10 +488,10 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             ? CNContact.predicateForContacts(matchingEmailAddress: handle)
             : CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: handle))
         let status = CNContactStore.authorizationStatus(for: .contacts)
-        guard status == .authorized else {
-            if status == .notDetermined { store.requestAccess(for: .contacts) { _, _ in } }
-            return false
-        }
+        guard status == .authorized else { return false }
+        #if DEBUG
+        ContactsFixture.seedIfAsked()
+        #endif
         guard let matches = try? store.unifiedContacts(matching: predicate, keysToFetch: keys), matches.count == 1, let contact = matches.first else { return false }
         DispatchQueue.main.async { [weak self] in
             guard let self, let root = self.webView?.window?.rootViewController else { return }

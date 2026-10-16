@@ -10,9 +10,9 @@ test('native reader visits containers and deduplicates unified contacts instead 
     containersMatchingPredicateError:()=>array([{identifier:'one'},{identifier:'two'}]),
     unifiedContactsMatchingPredicateKeysToFetchError:(pred)=>{ visited.push(pred); return array([row]); },
   };
-  const $ = {CNContactStore:{alloc:{init:store}, authorizationStatusForEntityType:()=>3}, CNContact:{predicateForContactsInContainerWithIdentifier:id=>id}};
+  const $ = {CNContactFormatter:{descriptorForRequiredKeysForStyle:()=> 'formatter-keys', stringFromContactStyle:()=> 'Example Ada'}, CNContactStore:{alloc:{init:store}, authorizationStatusForEntityType:()=>3}, CNContact:{predicateForContactsInContainerWithIdentifier:id=>id}};
   const answer = JSON.parse(vm.runInNewContext(CONTACTS_JXA, {$,ObjC:{import:()=>{},unwrap:x=>x},Ref:()=>({})}));
   assert.deepEqual(visited,['one','two']);
   assert.equal(answer.contacts.length,1);
-  assert.equal(answer.contacts[0].given,'Ada');
+  assert.equal(answer.contacts[0].displayName,'Example Ada');
 });

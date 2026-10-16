@@ -19,6 +19,14 @@ final class ContactEditorTests: XCTestCase {
         XCUIDevice.shared.startInPortrait()
         app.launch()
         defer { app.terminate() }
+        // A first-use permission sheet is part of this flow, not a pre-granted simulator assumption.
+        let permission = app.alerts.firstMatch
+        if permission.waitForExistence(timeout: 10) {
+            for label in ["Allow Full Access", "OK", "Allow"] where permission.buttons[label].exists {
+                permission.buttons[label].tap()
+                break
+            }
+        }
         let answer = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'contacts:answer '")).firstMatch
         XCTAssertTrue(answer.waitForExistence(timeout: 60), app.debugDescription)
         XCTAssertEqual(answer.label, "contacts:answer true drawn=true", "the bridge opened the card for a drawn control")

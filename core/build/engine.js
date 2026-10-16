@@ -2754,12 +2754,7 @@ var engine = (() => {
     return Boolean(host && host.contactsEditor === true);
   }
   function contactName(record) {
-    if (!record) return "";
-    const nickname = String(record.nickname || "").trim();
-    if (nickname) return nickname;
-    const person = [record.given, record.middle, record.family].map((p) => String(p || "").trim()).filter(Boolean).join(" ");
-    if (person) return person;
-    return String(record.organization || "").trim();
+    return String(record?.displayName || "").trim();
   }
 
   // core/app/rules/emoji-data.js

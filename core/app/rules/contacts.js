@@ -92,17 +92,8 @@ export function hasContactEditor(host) {
   return Boolean(host && host.contactsEditor === true);
 }
 
-// The name a record draws, chosen the way Contacts draws one: a nickname, else given and family, else the
-// organisation. A record no part names reads as no name, so the engine's own name is left in place rather than
-// replaced with an empty one.
+// Apple Contacts formats the name on the server. Never substitute a nickname or impose a local name order.
+// A missing formatted name is left empty so the caller can display the address.
 export function contactName(record) {
-  if (!record) return '';
-  const nickname = String(record.nickname || '').trim();
-  if (nickname) return nickname;
-  const person = [record.given, record.middle, record.family]
-    .map((p) => String(p || '').trim())
-    .filter(Boolean)
-    .join(' ');
-  if (person) return person;
-  return String(record.organization || '').trim();
+  return String(record?.displayName || '').trim();
 }

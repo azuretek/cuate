@@ -47,12 +47,10 @@ test('a key two records claim is an ambiguity, and a chat with no matching addre
   assert.equal(contactFor(['5550101234'], null), null);
 });
 
-test('a record draws its nickname first, then given and family, then its organisation (issue 393)', () => {
-  assert.equal(contactName({ given: 'Ada', family: 'Lovelace' }), 'Ada Lovelace');
-  assert.equal(contactName({ given: 'Ada', middle: 'B', family: 'Lovelace' }), 'Ada B Lovelace');
-  assert.equal(contactName({ nickname: 'Enchantress', given: 'Ada', family: 'Lovelace' }), 'Enchantress');
-  assert.equal(contactName({ organization: 'Analytical Engines' }), 'Analytical Engines');
-  assert.equal(contactName({}), '');
+test('a record uses only the Apple-formatted display name (issue 393)', () => {
+  assert.equal(contactName({displayName:'Lovelace Ada', given:'Ada', family:'Lovelace', nickname:'Enchantress'}), 'Lovelace Ada');
+  assert.equal(contactName({displayName:'Ada Lovelace'}), 'Ada Lovelace');
+  assert.equal(contactName({nickname:'Enchantress', given:'Ada', family:'Lovelace'}), '');
   assert.equal(contactName(null), '');
 });
 
