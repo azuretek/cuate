@@ -1,6 +1,7 @@
 // The engine adapter: one interface over imsg rpc (or the fake), mapped to our model by core's rules. It supervises
 // the engine, restarting it with a backoff and resuming the live stream after the last row it saw.
 import os from 'node:os';
+import { compareHistory } from '../../../core/app/rules/history.js';
 import path from 'node:path';
 import { openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { createRpc } from './rpc.js';
@@ -319,14 +320,18 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return list;
   }
 
-  async function messages(chatId, { limit = 50, before = null } = {}) {
+  async function messages(chatId, { limit = 50, before = null, beforeCursor = null, afterCursor = null, includeTotal = false } = {}) {
     const params = { chat_id: Number(chatId), limit: limit + 2, attachments: true };
     if (before) params.end = before;
+    if (beforeCursor) params.before_cursor = beforeCursor;
+    if (afterCursor) params.after_cursor = afterCursor;
     const r = await request('messages.history', params, timeoutMs, ['attachments']);
     let list = (r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction).map((m) => toModel(m));
     if (before) list = list.filter((m) => m.sentAt < before);
-    list.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
-    const page = list.slice(0, limit).reverse();
+    list.sort((a, b) => afterCursor ? compareHistory(a, b) : compareHistory(b, a));
+    const selected = list.slice(0, limit);
+    const nextCursor = selected.at(-1)?.historyCursor || null;
+    const page = afterCursor ? selected : selected.reverse();
     // One bounded, read-only snapshot for the latest outgoing message on this page. Never turn
     // inbound is_read into a remote receipt, or poll the entire history on every page load.
     const outgoing = [...page].reverse().find((m) => m.fromMe && !m.id.startsWith('row:'));
@@ -343,7 +348,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       }
     }
     markEdited(page);
-    return { messages: page, hasMore: list.length > limit };
+    const stats = includeTotal ? await request('messages.stats', { chat_id: Number(chatId), include_media: false }, timeoutMs) : null;
+    const total = Number.isSafeInteger(stats?.total_messages) ? { totalCount: stats.total_messages } : {};
+    return { messages: page, ...total, hasMore: list.length > limit || Boolean(r?.has_more), ...(nextCursor ? { nextCursor } : {}) };
   }
 
   // --- Edits (issue 391) ---

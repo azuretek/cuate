@@ -109,13 +109,22 @@ class AppAttachment extends KitElement {
     this.watch.observe(this);
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    if (this.hasUpdated && !this.src && !this.failed) this.fetchWhenSeen();
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.loadRequest?.abort();
+    this.loadRequest = null;
     if (this.watch) this.watch.disconnect();
   }
 
   updated(changed) {
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
+      this.loadRequest?.abort();
+      this.loadRequest = null;
       this.failed = false;
       this.src = heldMedia(this.attachment);
       if (!this.src) this.fetchWhenSeen();
@@ -128,14 +137,18 @@ class AppAttachment extends KitElement {
   async load() {
     const a = this.attachment;
     if (!isMediaAttachment(a) || !this.client) return;
+    const request = new AbortController();
+    this.loadRequest?.abort();
+    this.loadRequest = request;
     try {
-      const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined });
+      const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined, signal: request.signal });
+      if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
       const url = heldMedia(a) || URL.createObjectURL(blob);
       holdMedia(a, url);
       if (this.attachment?.id === a.id) this.src = url;
     } catch {
-      if (this.attachment?.id === a.id) this.failed = true;
-    }
+      if (!request.signal.aborted && this.attachment?.id === a.id) this.failed = true;
+    } finally { if (this.loadRequest === request) this.loadRequest = null; }
   }
 
   // Pressing a preview opens it in the viewer, which the page draws over everything (app-image-viewer). The detail names
