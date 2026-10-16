@@ -23,15 +23,17 @@ app.whenReady().then(async () => {
   server = await boot();
   const photo = server.world.messages.flatMap((m) => m.attachments || []).find((a) => a.mime_type === 'image/png');
   assert.ok(photo);
-  const video = path.join(server.root, 'synthetic.webm');
+  // Every video item is the committed phone-format clip (H.264, as a phone sends), never one recorded in the page at
+  // run time: a window that paints few frames records a clip with no frames at all, which no player can open (issue 406).
+  const video = fileURLToPath(new URL('../../core/test/live-photo-fixture.mp4', import.meta.url));
   const rows = Array.from({ length: 1000 }, (_, index) => {
     const id = index + 1;
     const media = id % 10 === 0;
     const moving = id % 20 === 0;
-    const file = path.join(server.root, 'synthetic-' + id + (moving ? '.webm' : '.png'));
+    const file = path.join(server.root, 'synthetic-' + id + (moving ? '.mp4' : '.png'));
     if (media && !moving) copyFileSync(photo.original_path, file);
     return { id, guid: 'SYNTHETIC-' + id, chat_id: 1, created_at: '2026-01-01T00:00:00.000Z', is_from_me: false, sender: 'avery@example.com', text: 'Synthetic history message ' + id,
-      attachments: media ? [{ ...photo, original_path: file, filename: file, transfer_name: 'synthetic-' + id, mime_type: moving ? 'video/webm' : 'image/png', total_bytes: photo.total_bytes }] : [] };
+      attachments: media ? [{ ...photo, original_path: file, filename: file, transfer_name: 'synthetic-' + id, mime_type: moving ? 'video/mp4' : 'image/png', total_bytes: photo.total_bytes }] : [] };
   });
   server.world.messages.splice(0, server.world.messages.length, ...rows);
   const storage = { 'server.url': server.base, 'server.token': server.tokens.device };
@@ -47,9 +49,7 @@ app.whenReady().then(async () => {
   });
   win = new BrowserWindow({ show: true, width: 1000, height: 800, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
   await win.loadURL('app://bundle/core/app/index.html');
-  const bytes = await win.webContents.executeJavaScript('globalThis.historyProof.video()');
-  writeFileSync(video, Buffer.from(bytes));
-  for (const row of rows) for (const attachment of row.attachments) if (attachment.mime_type === 'video/webm') copyFileSync(video, attachment.original_path);
+  for (const row of rows) for (const attachment of row.attachments) if (attachment.mime_type === 'video/mp4') copyFileSync(video, attachment.original_path);
   const history = await win.webContents.executeJavaScript('globalThis.historyProof.history()');
   writeFileSync(path.join(output, 'scrollback.png'), (await win.capturePage()).toPNG());
   const press = { x: history.click.x, y: history.click.y };
