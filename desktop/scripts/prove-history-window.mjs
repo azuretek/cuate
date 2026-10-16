@@ -47,8 +47,9 @@ app.whenReady().then(async () => {
   });
   win = new BrowserWindow({ show: true, width: 1000, height: 800, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
   await win.loadURL('app://bundle/core/app/index.html');
-  const bytes = await win.webContents.executeJavaScript('globalThis.historyProof.video()');
-  writeFileSync(video, Buffer.from(bytes));
+  const recorded = await win.webContents.executeJavaScript('globalThis.historyProof.video()');
+  console.log('HISTORY PROOF VIDEO ' + JSON.stringify({ frames: recorded.frames, chunks: recorded.chunks, sizes: recorded.sizes, bytes: recorded.bytes.length }));
+  writeFileSync(video, Buffer.from(recorded.bytes));
   for (const row of rows) for (const attachment of row.attachments) if (attachment.mime_type === 'video/webm') copyFileSync(video, attachment.original_path);
   const history = await win.webContents.executeJavaScript('globalThis.historyProof.history()');
   writeFileSync(path.join(output, 'scrollback.png'), (await win.capturePage()).toPNG());

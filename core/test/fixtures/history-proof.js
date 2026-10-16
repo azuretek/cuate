@@ -1,13 +1,19 @@
 // Synthetic renderer-only acceptance harness. Never imported by a shipped module.
 const { document, requestAnimationFrame, performance, MediaRecorder } = globalThis;
 const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
-async function until(check, label) {
+// A wait that runs out says what it measured, so a red run on a platform we cannot sit at names its cause.
+async function until(check, label, measure) {
   const deadline = performance.now() + 20000;
   while (!check()) {
-    if (performance.now() > deadline) throw new Error('Timed out: ' + label);
+    if (performance.now() > deadline) throw new Error('Timed out: ' + label + (measure ? ' ' + JSON.stringify(measure()) : ''));
     await frame();
   }
 }
+const mediaState = (el) => el ? {
+  tag: el.tagName, connected: el.isConnected, readyState: el.readyState, networkState: el.networkState,
+  error: el.error ? el.error.code + ' ' + el.error.message : null, paused: el.paused, currentTime: el.currentTime,
+  videoWidth: el.videoWidth, naturalWidth: el.naturalWidth, complete: el.complete, scheme: String(el.currentSrc || el.src || '').split(':')[0],
+} : null;
 const root = () => document.querySelector('app-root');
 const pane = () => root().querySelector('app-conversation');
 const viewer = () => root().querySelector('app-image-viewer');
@@ -22,14 +28,16 @@ globalThis.historyProof = {
     const stream = canvas.captureStream(10);
     const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
     const chunks = [];
+    let frames = 0;
     recorder.ondataavailable = (event) => chunks.push(event.data);
     const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
     recorder.start();
     const end = performance.now() + 350;
-    while (performance.now() < end) { context.fillStyle = 'rgb(40,120,180)'; context.fillRect(0, 0, 64, 64); await frame(); }
+    while (performance.now() < end) { context.fillStyle = 'rgb(40,120,180)'; context.fillRect(0, 0, 64, 64); frames += 1; await frame(); }
     recorder.stop(); await stopped;
     for (const track of stream.getTracks()) track.stop();
-    return Array.from(new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer()));
+    const bytes = Array.from(new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer()));
+    return { bytes, frames, chunks: chunks.length, sizes: chunks.map((chunk) => chunk.size) };
   },
   async history() {
     await until(() => root()?.phase === 'ready', 'application ready');
@@ -108,7 +116,12 @@ globalThis.historyProof = {
     await until(() => !viewer().warming && !viewer().loadingMedia.size, 'neighbour prefetch');
     const current = viewer().items[viewer().index];
     const media = viewer().querySelector('.viewer-image');
-    await until(() => media.tagName === 'VIDEO' ? media.readyState >= 2 : media.naturalWidth > 0, 'media drawn');
+    const live = () => viewer()?.querySelector('.viewer-image');
+    await until(() => media.tagName === 'VIDEO' ? media.readyState >= 2 : media.naturalWidth > 0, 'media drawn', () => ({
+      index: viewer().index, count: viewer().items.length, item: { id: current.id, kind: current.kind, messageId: current.messageId },
+      rendered: viewer().querySelector('.viewer')?.dataset.kind ?? null, sameElement: media === live(), held: mediaState(media), live: mediaState(live()),
+      cached: viewer().urls.has(current.id),
+    }));
     const neighbours = viewer().neighbourItems();
     assert(neighbours.every((item) => viewer().urls.has(item.id)), 'two neighbours each side prefetched');
     assert(viewer().urls.size <= 6, 'blob cache is current and neighbours only');
