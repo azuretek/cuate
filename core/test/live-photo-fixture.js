@@ -12,11 +12,38 @@
 //   live:pass <detail>      the motion played (its time advanced) in the still's box, and the still came back
 //   live:fail <why> <state> anything else, with what the motion element reported
 (async () => {
+  const markerAt = Date.now();
+  const marker = document.createElement('output');
+  marker.dataset.liveFixture = 'true';
+  Object.assign(marker.style, { position: 'fixed', top: '0', left: '0', zIndex: '9999', fontSize: '1px' });
+  marker.setAttribute('aria-label', 'live:boot at=' + markerAt);
+  marker.textContent = 'live:boot at=' + markerAt;
+  document.body.append(marker);
+  const { observeLiveMotion, createLiveTrace, traceCall, recordMediaEvent, livePhase, recordMounts } = await import(new URL('/live-photo-observation.js', document.baseURI));
+  const trace = createLiveTrace();
+  trace.entries.push({ event: 'marker-published', at: markerAt });
+  const traceOutput = document.createElement('output');
+  Object.assign(traceOutput.style, { position: 'fixed', top: '0', left: '0', fontSize: '1px' });
+  document.body.append(traceOutput);
+  let flushed = -1;
+  const flushTrace = () => {
+    if (flushed === trace.entries.length) return;
+    flushed = trace.entries.length;
+    const snapshot = 'live-trace:' + JSON.stringify(trace.entries);
+    traceOutput.setAttribute('aria-label', snapshot); traceOutput.textContent = snapshot;
+  };
+  const say = (text) => {
+    trace.note(text.split(' ')[0]);
+    marker.setAttribute('aria-label', text); marker.textContent = text;
+    flushTrace();
+  };
+  flushTrace();
   await customElements.whenDefined('app-root');
   const root = document.querySelector('app-root');
   const until = async (test, what, ms = 10000) => {
     const deadline = performance.now() + ms;
     while (!test()) {
+      flushTrace();
       if (performance.now() > deadline) throw new Error('timed out waiting for ' + what);
       await new Promise(requestAnimationFrame);
     }
@@ -26,9 +53,6 @@
   // the cause (issue 386).
   const refusals = [];
   document.addEventListener('securitypolicyviolation', (e) => refusals.push(e.violatedDirective + ' ' + e.blockedURI));
-  const marker = document.createElement('output');
-  Object.assign(marker.style, { position: 'fixed', top: '0', left: '0', zIndex: '9999', fontSize: '1px' });
-  const say = (text) => { marker.setAttribute('aria-label', text); marker.textContent = text; };
   await until(() => root.phase !== 'boot', 'the app to boot');
   if (root.phase !== 'onboarding') throw new Error('live photo fixture requires empty test storage');
   const scheme = window.fixtureScheme === 'dark' ? 'dark' : 'light';
@@ -59,11 +83,15 @@
   // kept, because a failure the page cannot explain reads as a viewer bug whatever it was (issue 386).
   let fetchFailure = null;
   const motion = async () => {
+    trace.note('fetch-start');
     try {
       const r = await fetch(new URL('/live-photo-fixture.mp4', document.baseURI));
       if (!r.ok) throw new Error('the motion fixture answered ' + r.status);
-      return new Blob([await r.arrayBuffer()], { type: 'video/mp4' });
+      const bytes = await r.arrayBuffer();
+      trace.note('fetch-complete');
+      return new Blob([bytes], { type: 'video/mp4' });
     } catch (error) {
+      trace.note('fetch-failed');
       fetchFailure = String((error && error.message) || error);
       throw error;
     }
@@ -78,7 +106,8 @@
   el.index = 0;
   el.client = client;
   document.body.append(el);
-  document.body.append(marker);
+  traceCall(el, 'playMotion', trace, 'press-admitted');
+  traceCall(HTMLMediaElement.prototype, 'play', trace, 'play-called', (node) => node.matches('video.viewer-motion'));
   const img = () => el.querySelector('img.viewer-image');
   const video = () => el.querySelector('video.viewer-motion');
   const control = () => el.querySelector('.viewer-play');
@@ -86,13 +115,11 @@
   await until(() => !el.querySelector('.viewer').getAnimations().some((a) => a.playState === 'running'), 'the viewer to arrive');
   const box = (node) => { const r = node.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; };
   const stillBox = box(img());
-  const { observeLiveMotion } = await import(new URL('/live-photo-observation.js', document.baseURI));
   const observation = observeLiveMotion(stillBox);
-  // Capture before the target's ended handler removes the video. A delayed animation frame must not erase evidence
-  // that the short clip actually progressed. Keep animation-frame geometry sampling as well.
+  // Event callbacks record only names and timestamps. Media state and geometry are read by the sampling loop.
   for (const type of ['loadeddata', 'playing', 'timeupdate', 'ended', 'error']) {
     el.addEventListener(type, (event) => {
-      if (event.target.matches?.('video.viewer-motion')) observation.sample(event.target, box);
+      if (event.target.matches?.('video.viewer-motion')) recordMediaEvent(trace, event);
     }, true);
   }
   const state = () => {
@@ -100,11 +127,14 @@
     const c = control();
     return JSON.stringify({
       video: v ? { ready: v.readyState, t: Math.round(v.currentTime * 100) / 100, paused: v.paused, error: v.error ? v.error.code : null, box: box(v) } : null,
-      observedMotion: observation.last,
+      observedMotion: observation.last, phase: livePhase(trace), timeline: trace.entries,
       still: img() ? box(img()) : null,
       control: c ? c.getAttribute('aria-label') : null,
     });
   };
+  const mounts = new MutationObserver((records) => recordMounts(trace, records));
+  mounts.observe(el, { childList: true, subtree: true });
+
   // Why a motion could not play, asked of the shell rather than inferred: the fixture fetches the motion and plays it on
   // an element of its own, so a fetch the shell refused and a shell that will not load a blob read apart, and the reason
   // is the media's own (issue 386).
@@ -126,10 +156,9 @@
     return 'the page played the same motion on its own element: readyState ' + probe.readyState + ' error ' + (probe.error ? probe.error.code : 'none') + '; ' + policy();
   };
 
-  // The press is the UI test's. The control's own click handler runs on the same click, so this only notes it arrived.
-  let pressed = false;
+  // A captured click is not proof the kit admitted it. The app handler wrapper above records that separately.
   el.addEventListener('click', (e) => {
-    if (!pressed && e.target.closest && e.target.closest('.viewer-play')) { pressed = true; say('live:pressed'); }
+    if (e.target.closest?.('.viewer-play')) trace.note('click-captured');
   }, true);
   // Where the LIVE control is on the page, for a test that cannot find it in the accessibility tree to press it there.
   const at = document.createElement('output');
@@ -140,7 +169,8 @@
   at.textContent = where;
   document.body.append(at);
   say('live:ready');
-  await until(() => pressed, 'the LIVE control to be pressed', 120000);
+  await until(() => trace.has('press-admitted'), 'the app to admit the LIVE press', 120000);
+  say('live:pressed');
 
   // The motion takes the still's box from the moment it is drawn, and its time advances. Every frame until it plays is
   // measured, so a moment drawn at another size, the empty box, is caught rather than missed between two looks.
@@ -154,9 +184,11 @@
       say('live:fail the viewer reported the motion could not be loaded ' + state() + ' ' + await why());
       return;
     }
+    flushTrace();
     if (observation.passed) break;
     await new Promise(requestAnimationFrame);
   }
+  observation.sample(video(), box);
   if (!observation.passed) { say('live:fail the motion never played ' + state()); return; }
   const wrongBox = observation.wrongBox;
   if (wrongBox) { say('live:fail the motion was drawn at ' + wrongBox.w + 'x' + wrongBox.h + ', not the still\'s ' + stillBox.w + 'x' + stillBox.h + ' ' + state()); return; }
@@ -171,7 +203,7 @@
   say('live:pass played to ' + played + 's in the still\'s ' + stillBox.w + 'x' + stillBox.h + ' box, and the still came back');
 })().catch((error) => {
   const text = 'live:fail fixture ' + error.message;
-  const marker = document.createElement('output');
+  const marker = document.querySelector('[data-live-fixture]') || document.createElement('output');
   marker.setAttribute('aria-label', text);
   marker.textContent = text;
   document.body.append(marker);

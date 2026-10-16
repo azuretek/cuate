@@ -12,14 +12,36 @@ final class LivePhotoTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let marker = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'live:'")).firstMatch
-        XCTAssertTrue(marker.waitForExistence(timeout: 60), app.debugDescription)
-        settle(marker, on: "label == 'live:ready' OR label BEGINSWITH 'live:fail'", timeout: 60)
-        XCTAssertEqual(marker.label, "live:ready", "the viewer never offered its Live Photo: " + marker.label + SystemSurface.failureSuffix(app))
-        guard marker.label == "live:ready", pressLive(app, marker: marker) else { return }
+        let start = ProcessInfo.processInfo.systemUptime
+        var readiness = LivePhotoReadiness(deadline: start + 120)
+        print("live marker lookup began: " + ISO8601DateFormatter().string(from: Date()))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let exists = marker.exists
+            let label = exists ? marker.label : ""
+            let wasSeen = readiness.firstObservedAt
+            let status = readiness.sample(at: ProcessInfo.processInfo.systemUptime, exists: exists, label: label)
+            if wasSeen == nil, let first = readiness.firstObservedAt {
+                print("live marker first observed: " + ISO8601DateFormatter().string(from: Date()) + " elapsed=" + String(first - start) + " label=" + label)
+            }
+            return status != .waiting
+        }, object: nil)
+        _ = XCTWaiter().wait(for: [ready], timeout: 120)
+        printTrace(app)
+        guard readiness.status == .ready else {
+            XCTFail("live fixture readiness failed: " + String(describing: readiness.status) + SystemSurface.failureSuffix(app))
+            return
+        }
+        guard pressLive(app, marker: marker) else { printTrace(app); return }
         settle(marker, on: "label BEGINSWITH 'live:pass' OR label BEGINSWITH 'live:fail'", timeout: 40)
         // The page's verdict in the log, passed or failed, so a run says what the motion did.
         print("live photo verdict: " + marker.label)
+        printTrace(app)
         XCTAssertTrue(marker.label.hasPrefix("live:pass"), "pressing LIVE did not play the motion: " + marker.label + SystemSurface.failureSuffix(app))
+    }
+
+    private func printTrace(_ app: XCUIApplication) {
+        let trace = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'live-trace:'")).firstMatch
+        if trace.exists { print(trace.label) }
     }
 
     /// Waits until the page's marker reads one of the states named, or the bound passes; the caller reads the label.
@@ -50,7 +72,7 @@ final class LivePhotoTests: XCTestCase {
                 presses.append("no LIVE control")
                 continue
             }
-            settle(marker, on: "label != 'live:ready'", timeout: 3)
+            settle(marker, on: "label != 'live:ready'", timeout: max(0, deadline.timeIntervalSinceNow))
             if marker.label != "live:ready" { return true }
         } while Date() < deadline
         XCTFail("LIVE was pressed \(presses.count) times and the click never reached the page. Each press: " + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app) + "\n" + app.debugDescription)

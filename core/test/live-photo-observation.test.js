@@ -13,18 +13,14 @@ test('a completed motion is not lost when the next animation frame arrives after
   const still = { w: 402, h: 536 };
   let verdict = '';
   const observation = observeLiveMotion(still);
-  const run = new AsyncFunction('video', 'img', 'control', 'box', 'stillBox', 'until', 'say', 'why', 'state', 'requestAnimationFrame', 'performance', 'observation', body);
+  const run = new AsyncFunction('video', 'img', 'control', 'box', 'stillBox', 'until', 'say', 'why', 'state', 'requestAnimationFrame', 'performance', 'observation', 'trace', 'flushTrace', body);
   await run(() => current, () => still, () => ({ getAttribute: () => 'Play the Live Photo' }), () => still, still,
     async (check) => { assert.ok(check()); }, (s) => { verdict = s; }, async () => 'no refusal', () => JSON.stringify({ video: current }),
     (callback) => {
       // The media clock and its events advance while animation-frame observation is delayed.
-      observation.sample(current, () => still);
-      current.currentTime = 0.8;
-      observation.sample(current, () => still);
       current.currentTime = 2; current.ended = true; current.paused = true;
-      observation.sample(current, () => still);
       current = null; now = 16000; queueMicrotask(callback);
-    }, { now: () => now }, observation);
+    }, { now: () => now }, observation, { has: () => true, note() {} }, () => {});
   assert.match(verdict, /^live:pass/, 'playback completed before the delayed observer resumed: ' + verdict);
 });
 

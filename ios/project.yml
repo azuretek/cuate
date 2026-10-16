@@ -173,6 +173,7 @@ targets:
     platform: iOS
     sources:
       - path: CuateTests
+      - path: TestSupport
     dependencies:
       - target: Cuate
     settings:
@@ -185,6 +186,7 @@ targets:
     platform: iOS
     sources:
       - path: CuateUITests
+      - path: TestSupport
     dependencies:
       - target: Cuate
     settings:
