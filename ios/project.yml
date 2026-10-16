@@ -90,6 +90,7 @@ targets:
             cp "$SRCROOT/../core/test/about-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/about-fixture.js"
             cp "$SRCROOT/../core/test/settings-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/settings-fixture.js"
             cp "$SRCROOT/../core/test/live-photo-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/live-photo-fixture.js"
+            cp "$SRCROOT/../core/test/live-photo-observation.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/live-photo-observation.js"
             cp "$SRCROOT/../core/test/live-photo-fixture.mp4" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/live-photo-fixture.mp4"
             cp "$SRCROOT/../core/test/release-feed-fixture.atom" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/release-feed-fixture.atom"
           fi
