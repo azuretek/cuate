@@ -64,11 +64,11 @@ final class SystemBarsTests: XCTestCase {
             guard openSettings(app) else { return }
             let field = app.webViews.descendants(matching: .any)["bars-field"].firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 20), "The marker's click reached the page (it reports keys:settings:), but the Settings field never appeared: " + app.debugDescription)
-            field.tap()
+            guard focusField(app, field: field, kind: kind) else { return }
         } else {
             let composer = app.webViews.textViews.firstMatch
             XCTAssertTrue(composer.waitForExistence(timeout: 20), app.debugDescription)
-            composer.tap()
+            guard focusField(app, field: composer, kind: kind) else { return }
         }
         let deadline = Date().addingTimeInterval(20)
         var last = ["no proof"]
@@ -102,6 +102,33 @@ final class SystemBarsTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         XCTAssertTrue(last.isEmpty, "With the keyboard up on \(kind) (\(scheme)): " + last.joined(separator: "; ") + SystemSurface.failureSuffix(app))
+    }
+
+    /// Admit focus before starting the keyboard-layout deadline. A dropped native tap is not a keyboard-layout
+    /// failure; the page's actual focus signal decides whether another tap is permitted (issue 411).
+    private func focusField(_ app: XCUIApplication, field: XCUIElement, kind: String) -> Bool {
+        let start = Date()
+        let deadline = start.addingTimeInterval(30)
+        let focused = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "keys:" + kind + ":1:")).firstMatch
+        var attempts = 0
+        while true {
+            switch FieldFocusReadiness.action(now: Date().timeIntervalSince1970, deadline: deadline.timeIntervalSince1970,
+                                             exists: field.exists, focused: focused.exists) {
+            case .ready:
+                print("keyboard focus admitted kind=\(kind) attempts=\(attempts) elapsed=\(Date().timeIntervalSince(start))")
+                return true
+            case .tap:
+                attempts += 1
+                print("keyboard focus attempt=\(attempts) kind=\(kind) elapsed=\(Date().timeIntervalSince(start)) hittable=\(field.isHittable) frame=\(field.frame)")
+                field.tap()
+                _ = focused.waitForExistence(timeout: 3)
+            case .waitForElement:
+                _ = field.waitForExistence(timeout: 2)
+            case .timedOut:
+                XCTFail("The \(kind) field never confirmed focus after \(attempts) taps; " + keysMarker(app).label + SystemSurface.failureSuffix(app))
+                return false
+            }
+        }
     }
 
     /// Presses the keys marker until the page reports `keys:settings:`, which its click handler sets before anything else
@@ -144,12 +171,14 @@ final class SystemBarsTests: XCTestCase {
         app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "bars:" + scheme + ":ready:")).firstMatch
     }
 
-    /// Captures until two in a row match and the contract holds, so a frame still drawing the previous scheme or
-    /// waiting for the status bar is never judged; past the deadline the last capture is kept and its problems fail.
+    /// Captures until the full contract holds twice consecutively. Unrelated pixels, such as a ticking clock,
+    /// need not be identical. A bad or unreadable frame resets the evidence; the bounded failure keeps its capture.
     private func hold(_ app: XCUIApplication, scheme: String, name: String) {
         SystemSurface.requireOurs(app)
-        let deadline = Date().addingTimeInterval(20)
-        var previous: [UInt8]?
+        let start = Date()
+        let deadline = start.addingTimeInterval(20)
+        var readiness = SystemBarsReadiness()
+        var samples = 0
         var last = ["no capture"]
         var image: UIImage?
         var held = false
@@ -159,13 +188,15 @@ final class SystemBarsTests: XCTestCase {
             guard let label = marker(app, scheme: scheme).exists ? marker(app, scheme: scheme).label : nil,
                   let proof = Proof(label), let pixels = Pixels(shot) else {
                 last = ["the page's measurements or the capture could not be read"]
+                _ = readiness.observe(scheme: scheme, problems: last)
                 continue
             }
             let points = Double(pixels.height) / Double(app.windows.firstMatch.frame.height)
             last = problems(pixels, proof: proof, scale: points, scheme: scheme)
-            let settled = previous.map { $0 == pixels.bytes } ?? false
-            previous = pixels.bytes
-            if settled && last.isEmpty { held = true; break }
+            samples += 1
+            held = readiness.observe(scheme: scheme, problems: last)
+            print("bars sample name=\(name) count=\(samples) elapsed=\(Date().timeIntervalSince(start)) valid=\(last.isEmpty) consecutive=\(readiness.consecutiveValid) problems=\(last)")
+            if held { break }
         } while Date() < deadline
         if let image {
             let attachment = XCTAttachment(image: image)
@@ -173,7 +204,7 @@ final class SystemBarsTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        XCTAssertTrue(held, "The \(scheme) system bars do not wear the surface (\(name)): " + last.joined(separator: "; ") + SystemSurface.failureSuffix(app))
+        XCTAssertTrue(held, "The \(scheme) system bars do not wear the surface (\(name)): " + last.joined(separator: "; ") + "; valid consecutive samples=\(readiness.consecutiveValid), required=2" + SystemSurface.failureSuffix(app))
     }
 
     /// Every way the capture breaks the contract, empty when it holds.
@@ -198,6 +229,8 @@ final class SystemBarsTests: XCTestCase {
         let aboveBottom = pixels.dominant(h - bottomRows - 2 * band, h - bottomRows - band)
         if !near(bottom, aboveBottom, 3) { out.append("the home indicator strip is \(hex(bottom)), the surface above it \(hex(aboveBottom))") }
         if proof.paintedBottom.count == 3, !near(bottom, proof.paintedBottom, 8) { out.append("the home indicator strip is \(hex(bottom)), the page painted \(hex(proof.paintedBottom))") }
+
+        print("bars colours scheme=\(scheme) top=\(hex(top)) adjacent=\(hex(belowTop)) painted=\(proof.painted) bottom=\(hex(bottom)) adjacentBottom=\(hex(aboveBottom)) paintedBottom=\(proof.paintedBottom) safeTop=\(proof.envTop) safeBottom=\(proof.envBottom)")
 
         // The status bar's text: the pixels in the strip that stand well off its surface lie on the scheme's side.
         let base = luma(top)
