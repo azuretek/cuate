@@ -6,11 +6,12 @@
 import os from 'node:os';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
-import { mkdir, access, realpath, stat, rename, open, rm } from 'node:fs/promises';
+import { mkdir, access, realpath, stat, rename, open, rm, readFile, writeFile } from 'node:fs/promises';
 import { sniff, UNKNOWN_MIME } from './file-type.js';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { motionPath } from './engine/live-photo.js';
+import { readPlist } from './engine/bplist.js';
 
 // A Live Photo's motion is HEVC in a QuickTime file, which only Apple's own players decode; Chromium on Windows, Linux
 // and Android cannot, and iOS refused it from the viewer. On a Mac it is converted once with the system's own avconvert
@@ -37,7 +38,10 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
   // picture is kept there, issue 341), or there is nothing to serve.
   // The Contacts cache joins the Messages folders: a contact's picture is served by the same route, from the data
   // folder's own contacts folder (issue 393), and from nowhere else.
-  const roots = () => [attachmentsRoot, attachmentsRoot ? path.join(path.dirname(attachmentsRoot), 'StickerCache') : null, dataDir ? path.join(dataDir, 'contacts') : null].filter(Boolean);
+  // A conversation's background (issue 417) is the picture Messages rendered for it in its transcript background cache,
+  // beside the attachments folder too, and is served from there and from nowhere else.
+  const backgroundRoot = attachmentsRoot ? path.join(path.dirname(attachmentsRoot), 'TranscriptBackgroundCache') : null;
+  const roots = () => [attachmentsRoot, attachmentsRoot ? path.join(path.dirname(attachmentsRoot), 'StickerCache') : null, backgroundRoot, dataDir ? path.join(dataDir, 'contacts') : null].filter(Boolean);
   async function inside(recorded) {
     const expanded = recorded.startsWith('~/') ? path.join(os.homedir(), recorded.slice(2)) : recorded;
     const real = await realpath(expanded).catch(() => null);
@@ -73,6 +77,28 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
     }
     await new Promise((resolve, reject) => execFile('sips', ['-s', 'format', 'jpeg', src, '--out', out], { timeout: 30000 }, (err) => (err ? reject(err) : resolve())));
     return out;
+  }
+
+  // The rendered background is a property list holding the picture beside what it was drawn for; the picture is read
+  // out once into the data folder's cache and served as the type its bytes are. A file that holds no picture is nothing
+  // to serve.
+  async function isBackground(real) {
+    const root = backgroundRoot ? await realpath(backgroundRoot).catch(() => null) : null;
+    return Boolean(root) && real.startsWith(root + path.sep) && real.endsWith('-watchBackground');
+  }
+  async function backgroundPicture(real, id) {
+    const dir = path.join(dataDir, 'cache');
+    const out = path.join(dir, id + '.background');
+    try { await access(out); } catch {
+      const plist = readPlist(await readFile(real));
+      const bytes = plist && Buffer.isBuffer(plist.backgroundImageData) ? plist.backgroundImageData : null;
+      if (!bytes || !bytes.length) return null;
+      await mkdir(dir, { recursive: true });
+      await writeFile(out + '.part', bytes);
+      await rename(out + '.part', out);
+    }
+    const mime = (await sniffed(out).catch(() => null)) || UNKNOWN_MIME;
+    return /^image\//.test(mime) ? { file: out, mime, size: (await stat(out)).size } : null;
   }
 
   // The motion as an MP4 in the data folder's cache, made once and reused. It is written beside its final name and
@@ -139,6 +165,7 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
       }
       const real = await inside(rec.path);
       if (!real) return null;
+      if (await isBackground(real)) return backgroundPicture(real, rec.id).catch(() => null);
       let file = real;
       let mime = rec.mime;
       if (!mime || mime === UNKNOWN_MIME) {

@@ -106,6 +106,13 @@ struct ShellWebView: UIViewRepresentable {
             ContactsFixture.seedIfAsked()
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The conversation background fixture (issue 417), the same seam: Debug only, and its script is copied into test
+        // builds only.
+        if ProcessInfo.processInfo.arguments.contains("--background-fixture"),
+           let url = Bundle.main.url(forResource: "background-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         #endif
         configuration.userContentController = controller
 
