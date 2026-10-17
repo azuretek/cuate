@@ -31,6 +31,8 @@ export async function runDoctor({
   mac = null,
   contacts = null,
   engineNeedsScreen = Boolean(config.engine && config.engine.needsScreen),
+  contactsSettleMs = 5000,
+  contactsPollMs = 250,
 }) {
   const lines = [];
   let failed = false;
@@ -59,6 +61,17 @@ export async function runDoctor({
     else if (verdict === 'blocked') bad('the Messages database could not be opened: give the program that starts the server Full Disk Access, and if its entry is already on, switch it off and on again because a macOS or Homebrew update leaves the grant stale, then run doctor again');
     else bad('engine ' + config.engine.kind + version + ' cannot read the Messages database' + (st && st.database && st.database.error ? ': ' + st.database.error : '') + ': give Full Disk Access to the program that starts the server, then run doctor again');
     if (st && st.contacts) engineContacts = st.contacts;
+    // ★ A freshly started imsg answers its first status before its Contacts catalog has loaded: the catalog starts
+    // unavailable and the status read starts the load behind the answer rather than waiting for it, so the first
+    // status always says unavailable (measured on the Mac: false at about 0.1 s, true at about 0.6 s). Doctor starts its
+    // own engine and asked once, so it reported Contacts unavailable with the permission granted (issue 393). It asks
+    // again until the engine says available, the engine exits, or the bound runs out, and only then reports.
+    const settleBy = Date.now() + contactsSettleMs;
+    while (engineContacts && engineContacts.available === false && !exited && Date.now() < settleBy) {
+      await new Promise((resolve) => setTimeout(resolve, contactsPollMs));
+      const again = await rpc.request('status', {}, 10000).catch(() => null);
+      if (again && again.contacts) engineContacts = again.contacts;
+    }
   } catch (e) {
     bad('engine ' + config.engine.kind + ' did not answer (' + (exited ? 'it exited' : e.message) + '): check engine.bin in config.json (' + config.engine.bin + ')');
   } finally {
