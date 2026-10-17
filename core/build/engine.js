@@ -175,6 +175,9 @@ var engine = (() => {
     compareHistory: () => compareHistory,
     compareVersions: () => compareVersions,
     connectionSentence: () => connectionSentence,
+    contactFor: () => contactFor,
+    contactIndex: () => contactIndex,
+    contactName: () => contactName,
     contactSearchText: () => contactSearchText,
     contrast: () => contrast,
     contrastRatio: () => contrastRatio,
@@ -188,6 +191,7 @@ var engine = (() => {
     daysAgo: () => daysAgo,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
+    digitsOf: () => digitsOf,
     dismissNotice: () => dismissNotice,
     dividerBounds: () => dividerBounds,
     dividerKey: () => dividerKey,
@@ -229,6 +233,8 @@ var engine = (() => {
     graphemes: () => graphemes,
     groupAddresses: () => groupAddresses,
     groupMessages: () => groupMessages,
+    handleKey: () => handleKey,
+    hasContactEditor: () => hasContactEditor,
     hasTone: () => hasTone,
     hasTones: () => hasTones,
     hideChats: () => hideChats,
@@ -288,6 +294,7 @@ var engine = (() => {
     messageSummary: () => messageSummary,
     messageTarget: () => messageTarget,
     myReaction: () => myReaction,
+    nationalKey: () => nationalKey,
     newTraceparent: () => newTraceparent,
     newestRelease: () => newestRelease,
     normalizeSort: () => normalizeSort,
@@ -318,6 +325,7 @@ var engine = (() => {
     parseRecipients: () => parseRecipients,
     parseTraceparent: () => parseTraceparent,
     payloadMedia: () => payloadMedia,
+    phoneKey: () => phoneKey,
     phoneUpdate: () => phoneUpdate,
     pick: () => pick,
     pickerSide: () => pickerSide,
@@ -2350,6 +2358,9 @@ var engine = (() => {
       isGroup: Boolean(c.is_group),
       service: c.service ? String(c.service) : "iMessage",
       participants: Array.isArray(c.participants) ? c.participants.map(String) : [],
+      // The people the chat is with, resolved from the system Contacts store by the server (issue 393); the engine
+      // itself knows only the handles, so a chat leaves the mapping with its addresses and no names.
+      members: [],
       unread: Number.isFinite(c.unread_count) ? c.unread_count : 0,
       lastMessageAt: c.last_message_at ? iso(c.last_message_at) : null,
       lastMessage: null
@@ -2694,6 +2705,78 @@ var engine = (() => {
     const want = [...link.addresses].sort().join("\n");
     const hit = orderChats(chats).find((c) => Array.isArray(c.participants) && c.isGroup === link.addresses.length > 1 && [...c.participants].sort().join("\n") === want);
     return hit ? { open: hit.id } : { compose: link.addresses };
+  }
+
+  // core/app/rules/contacts.js
+  function digitsOf(raw) {
+    return String(raw || "").replace(/\D+/g, "");
+  }
+  function phoneKey(raw) {
+    const s = String(raw || "").trim();
+    let digits = digitsOf(s);
+    if (!digits) return "";
+    let international = false;
+    if (/^\+/.test(s)) international = true;
+    else if (/^00/.test(s)) {
+      digits = digits.replace(/^0+/, "");
+      international = true;
+    }
+    if (digits.length > 10) international = true;
+    return international ? "+" + digits : digits;
+  }
+  function nationalKey(raw) {
+    const digits = digitsOf(raw);
+    return digits.length >= 10 ? digits.slice(-10) : "";
+  }
+  function handleKey(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return "";
+    if (s.includes("@")) return s.toLowerCase();
+    if (/\d/.test(s)) return phoneKey(s);
+    return s.toLowerCase();
+  }
+  function contactIndex(records) {
+    const add = (map, key, record) => {
+      if (!key) return;
+      const list = map.get(key);
+      if (!list) map.set(key, [record]);
+      else if (!list.includes(record)) list.push(record);
+    };
+    const exact = /* @__PURE__ */ new Map();
+    const national = /* @__PURE__ */ new Map();
+    for (const record of Array.isArray(records) ? records : []) {
+      if (!record) continue;
+      for (const phone of Array.isArray(record.phones) ? record.phones : []) {
+        add(exact, phoneKey(phone), record);
+        add(national, nationalKey(phone), record);
+      }
+      for (const email of Array.isArray(record.emails) ? record.emails : []) add(exact, String(email || "").trim().toLowerCase(), record);
+    }
+    return { exact, national };
+  }
+  var only = (list) => list && list.length === 1 ? list[0] : null;
+  function contactFor(handles, index) {
+    const list = Array.isArray(handles) ? handles : [];
+    const exact = index && index.exact;
+    const national = index && index.national;
+    if (!exact || !national) return null;
+    for (const handle of list) {
+      const found = only(exact.get(handleKey(handle)));
+      if (found) return found;
+    }
+    for (const handle of list) {
+      if (String(handle).includes("@") || phoneKey(handle).startsWith("+") || exact.has(handleKey(handle))) continue;
+      const key = nationalKey(handle);
+      const found = key ? only(national.get(key)) : null;
+      if (found) return found;
+    }
+    return null;
+  }
+  function hasContactEditor(host) {
+    return Boolean(host && host.contactsEditor === true);
+  }
+  function contactName(record) {
+    return String(record?.displayName || "").trim();
   }
 
   // core/app/rules/emoji-data.js

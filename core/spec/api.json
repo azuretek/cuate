@@ -374,7 +374,16 @@
       "database": "DatabaseState",
       "sending": "boolean",
       "counters": "object",
-      "lastError": "DiagnosticError?"
+      "lastError": "DiagnosticError?",
+      "contacts": "ContactsState?"
+    },
+    "ContactsState": {
+      "state": "string",
+      "status": "number?",
+      "count": "number",
+      "reason": "string?",
+      "ms": "number?",
+      "at": "string?"
     },
     "DatabaseState": {
       "ready": "boolean"
@@ -396,6 +405,12 @@
       "unread": "number",
       "lastMessageAt": "string?",
       "lastMessage": "Preview?",
+      "photo": "Attachment?",
+      "members": "Contact[]"
+    },
+    "Contact": {
+      "handle": "string",
+      "name": "string",
       "photo": "Attachment?"
     },
     "Preview": {

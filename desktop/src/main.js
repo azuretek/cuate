@@ -6,6 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHandlers, createSecureStore, createFileOpener, mimeFor } from './bridge-handlers.js';
+import { openContact } from './contacts.js';
 import { readTextScale, watchTextScale } from './text-scale.js';
 import { windowOptions } from './window-chrome.js';
 import { clientReport } from '../../core/kit/rules/build.js';
@@ -243,7 +244,8 @@ const handlers = createHandlers({
   // knows, and the commit and build date the packaging step stamped into the app. Nothing here reads the server.
   info: () => {
     const stamp = buildStamp();
-    return clientReport({
+    // contactsEditor: the desktop reaches the Mac's Contacts only where it runs on the Mac (issue 393).
+    return { ...clientReport({
       product: naming.product,
       version,
       channel: versionSpec.channel,
@@ -254,8 +256,10 @@ const handlers = createHandlers({
       arch: process.arch,
       packaged: app.isPackaged,
       appImage: Boolean(process.env.APPIMAGE),
-    });
+    }), contactsEditor: process.platform === 'darwin' };
   },
+  // Edit contact (issue 393): the system's own editor on the person the conversation is with.
+  contactsEdit: (handle) => openContact(handle),
   openExternal: (url) => {
     if (!/^https?:\/\//i.test(url)) return false;
     shell.openExternal(url);
@@ -424,6 +428,35 @@ async function runSmoke(w) {
   // for the first one, bounded, rather than reading the page once: a slow runner otherwise counts the placeholders' moment.
   try { await waitFor("document.querySelectorAll('img.attachment-image').length > 0", 15000); } catch { /* measured below */ }
   report.images = await js("document.querySelectorAll('img.attachment-image').length");
+  // A chat's people and Edit contact (issue 393). A group's details lists every member with an avatar and a name; the
+  // Edit contact control is drawn on a one-to-one chat exactly when the shell reports a contact editor (the Mac's
+  // Contacts), and never on a group. The control is read, never pressed, so no system editor opens on a runner.
+  const openRow = async (name) => {
+    await js("(() => { const r = [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name')?.textContent.trim() === " + JSON.stringify(name) + "); r.click(); return true; })()");
+    await waitFor("document.querySelector('.conv-head .chat-name')?.textContent.trim() === " + JSON.stringify(name));
+    await pause(300);
+  };
+  const editorDrawn = () => js("Boolean(document.querySelector('.conv-head .conv-edit-contact'))");
+  const firstChat = await js("document.querySelector('app-root').openChatId");
+  await openRow('Weekend plans');
+  const groupEditor = await editorDrawn();
+  await js("document.querySelector('.conv-head .conv-info').click()");
+  await waitFor("document.querySelectorAll('app-group-info .group-info-person').length > 0");
+  await pause(400);
+  const people = await js("[...document.querySelectorAll('app-group-info .group-info-person')].map((p) => ({ address: p.dataset.address, avatar: Boolean(p.querySelector('app-avatar .avatar')), name: (p.querySelector('.group-info-person-name')?.textContent || '').trim() }))");
+  const served = await js("(document.querySelector('app-root').chats.find((c) => c.name === 'Weekend plans') || {}).members || []");
+  await js("document.querySelector('app-group-info .confirm-actions .button.primary').click()");
+  await waitFor("!document.querySelector('app-group-info .group-info-person')");
+  await openRow('Avery Quinn');
+  const directEditor = await editorDrawn();
+  await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(String(" + JSON.stringify(firstChat) + ")) + '\"]').click(); return true; })()");
+  await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(String(firstChat)) + " && document.querySelectorAll('.bubble-row').length > 0");
+  await pause(300);
+  const expectEditor = report.info && report.info.contactsEditor === true;
+  report.contacts = people.length === 3 && people.every((p) => p.avatar && p.name.length > 0 && p.address)
+    && served.length === 3 && served.every((m) => m && typeof m.handle === 'string' && typeof m.name === 'string')
+    && groupEditor === false && directEditor === expectEditor;
+  if (!report.contacts) console.error('contacts: ' + JSON.stringify({ people, served, groupEditor, directEditor, expectEditor }));
   // Every popover wears the shared caret (issue 217). The guard reads each open panel back from the page: it must carry
   // the popover marks and its --caret-x must be a real offset inside the panel, aimed at the control that opened it.
   const carets = [];
