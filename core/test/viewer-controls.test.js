@@ -116,3 +116,31 @@ test('a closed viewer never installs or starts a late Live Photo motion', async 
   assert.equal(host.urls.size, 0);
   assert.equal(host.playing, false);
 });
+
+
+// A video's own player controls and the viewer's controls are proven clear of each other in each phone shell's own web
+// view (issue 416): the fixture opens the real viewer on a synthetic clip, and a native test on each phone finds every
+// player control and every one of ours in the accessibility tree and asserts each is hittable and none overlaps another.
+test('each phone proves a video\'s player controls and the viewer\'s own are all clear, on synthetic clips', () => {
+  const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  const shell = read('ios/' + naming.product + '/ShellView.swift');
+  assert.match(shell, /#if DEBUG[\s\S]*--video-controls-fixture[\s\S]*#endif/, 'the video controls fixture is a Debug seam');
+  const copies = read('ios/project.yml');
+  for (const file of ['video-controls-fixture.js', 'video-controls-portrait.mp4', 'video-controls-landscape.mp4']) {
+    assert.match(copies, new RegExp('CONFIGURATION.*Debug[\\s\\S]*core/test/' + file.replace('.', '\\.')), file + ' is copied into test builds only');
+  }
+  const uiTest = read('ios/' + naming.product + 'UITests/VideoControlsTests.swift');
+  const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/VideoControlsTest.kt');
+  for (const [name, source] of [['the iOS UI test', uiTest], ['the Android instrumented test', androidTest]]) {
+    for (const part of ['portrait', 'landscape', 'play or pause', 'scrubber', 'mute', 'full screen', 'close', 'next', 'bar', 'overlaps']) assert.ok(source.includes(part), name + ' checks ' + part);
+  }
+  assert.ok(uiTest.includes('isHittable') && uiTest.includes('.keepAlways'), 'the iOS test asserts each control is hittable and keeps its screenshot');
+  assert.ok(androidTest.includes('elementFromPoint') && androidTest.includes('additionalTestOutputDir'), 'the Android test presses each control\'s middle through the page\'s hit test and keeps its screenshot');
+  // The player offers mute only for a clip with sound, so each synthetic clip carries a (silent) sound track.
+  for (const shape of ['portrait', 'landscape']) {
+    const clip = readFileSync(new URL('./video-controls-' + shape + '.mp4', import.meta.url));
+    assert.ok(clip.includes(Buffer.from('mp4a')) && clip.includes(Buffer.from('avc1')), 'the ' + shape + ' clip has a picture and a sound track');
+  }
+  assert.doesNotMatch(read('core/app/main.js'), /video-controls-fixture/);
+});
