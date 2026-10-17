@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { putNotice, dismissNotice, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, noticeStateOf, withNoticeState, noticeQuiet, forgetNoticeState, NOTICE_READ_KEY } from '../app/rules/app-notices.js';
+import { putNotice, dismissNotice, forgetRead, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, noticeStateOf, withNoticeState, noticeQuiet, forgetNoticeState, noticeReadKey, sentNoticeRead, dropNoticeRead, noticeReadEcho, NOTICE_ECHO_LIMIT, NOTICE_READ_KEY } from '../app/rules/app-notices.js';
 
 const download = (percent) => appUpdateNotice({ state: 'downloading', version: '1.2.3', percent });
 test('duplicate events are silent and progress replaces one operation', () => {
@@ -134,6 +134,56 @@ test('a re-ask forgets a read revision so the same answer shows again', () => {
   assert.deepEqual(read, { other: 'x' });
   assert.equal(quietNotices([ready], read)[0].read, undefined);
   assert.deepEqual(forgetNoticeState({ 'app-update': ready.revision }, 'app-update'), {});
+});
+
+// Issue 422: the server tells every client about a settings write, the writer too. About's Check for updates pressed
+// straight after its notice was closed forgets that mark and draws the answer, and only then hears the echo of the
+// close. The packaged smoke's second press (its again wait) saw no notice for ten seconds on the release runs that
+// failed. This walks the page's own sequence: the close, the re-ask, the answer, then the two echoes in the order the
+// server sends them.
+test('the echo of a close that a re-ask already forgot never hides the new answer (issue 422)', () => {
+  const answer = appUpdateNotice({ state: 'unsupported', detail: 'no updater is running in this session' });
+  // The answer is drawn, then closed: the read map is written (the first write).
+  let notices = dismissNotice(putNotice([], answer), 'app-update');
+  let read = withNoticeState({}, 'app-update', answer.revision);
+  const closeWrite = read;
+  let sent = sentNoticeRead([], read);
+  // Asked again at once: the closed card and its mark are forgotten (the second write), and the same answer is drawn.
+  notices = forgetRead(notices, 'app-update');
+  read = forgetNoticeState(read, 'app-update');
+  sent = sentNoticeRead(sent, read);
+  notices = quietNotices(putNotice(notices, answer), read);
+  assert.equal(notices[0].read, false, 'the answer to the re-ask is drawn');
+  // What the page did before: every echo was news, so the close's echo marked the new answer read.
+  assert.equal(quietNotices(notices, noticeState(closeWrite))[0].read, true, 'taken as news, the stale echo hides the answer');
+  // The close's echo arrives: a later write of this page's own is still in flight, so it is not news.
+  let echo = noticeReadEcho(sent, closeWrite);
+  assert.equal(echo.stale, true);
+  sent = echo.sent;
+  if (!echo.stale) read = noticeState(closeWrite);
+  notices = quietNotices(notices, read);
+  assert.equal(notices[0].read, false, 'the answer stays up through the stale echo');
+  // The re-ask's own echo arrives: nothing of this page's own is left in flight, so it is applied, and agrees.
+  echo = noticeReadEcho(sent, {});
+  assert.deepEqual(echo, { sent: [], stale: false });
+  read = noticeState({});
+  assert.equal(quietNotices(notices, read)[0].read, false);
+});
+
+test('another device\u2019s read map is applied as it comes, and the echo of the newest own write is applied', () => {
+  const sent = sentNoticeRead([], { 'app-update': 'unsupported::' });
+  assert.deepEqual(noticeReadEcho(sent, { 'app-update': 'ready:1.2.3:' }), { sent, stale: false }, 'a map this page never wrote is news');
+  assert.deepEqual(noticeReadEcho(sent, { 'app-update': 'unsupported::' }), { sent: [], stale: false }, 'the newest own write echoes back as itself');
+  assert.deepEqual(noticeReadEcho([], { a: '1' }), { sent: [], stale: false }, 'with nothing in flight every map is news');
+  assert.equal(noticeReadKey({ b: '2', a: '1' }), noticeReadKey(JSON.stringify({ a: '1', b: '2' })), 'key order and encoding do not matter');
+  assert.deepEqual(dropNoticeRead(sentNoticeRead(sent, {}), noticeReadKey({})), sent, 'a refused write is no longer awaited');
+  let many = [];
+  for (let i = 0; i < NOTICE_ECHO_LIMIT + 3; i += 1) many = sentNoticeRead(many, { 'app-update': 'r' + i });
+  assert.equal(many.length, NOTICE_ECHO_LIMIT, 'a write the server took without a change raises no echo, so the list is bounded');
+  const root = readFileSync(new URL('../app/components/app-root.js', import.meta.url), 'utf8');
+  assert.match(root, /const echo = noticeReadEcho\(this\.noticeReadSent, values\[NOTICE_READ_KEY\]\);/, 'settings.changed decides the read map against the page\u2019s own writes');
+  assert.match(root, /if \(!echo\.stale\) this\.noticeRead = noticeState\(values\[NOTICE_READ_KEY\]\);/);
+  assert.equal((root.match(/settingsWrite\(\{ \[NOTICE_READ_KEY\]/g) || []).length, 1, 'the read map is written in one place, which remembers it');
 });
 
 test('the read store keeps every id and tolerates a malformed value', () => {

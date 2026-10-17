@@ -23,38 +23,81 @@ test('signed packaging discovers its imported identity and removes the temporary
   assert.equal(environment.CSC_IDENTITY_AUTO_DISCOVERY, 'false');
 });
 
-// Apple's stapling service dropping the connection (Error 68) after notarization succeeded is packaged again; any other
-// failure is thrown at once.
-test('a notarized app whose ticket was not stapled is packaged again, a bounded number of times', () => {
-  const environment = { CSC_LINK: 'c', CSC_KEY_PASSWORD: 'p', APPLE_API_KEY_P8: 'k', APPLE_API_KEY_ID: 'i', APPLE_API_ISSUER: 's' };
+// Apple's ticket service dropping the connection (Error 68) after notarization succeeded: the app is signed and carries
+// no stapled ticket, the ticket is stapled here until that works, and the packaging runs again. Gatekeeper's
+// assessment asks the same service, so it is not what decides (the release run that dropped the connection read the
+// notarized app as unnotarized and gave up at once).
+const signingInputs = { CSC_LINK: 'c', CSC_KEY_PASSWORD: 'p', APPLE_API_KEY_P8: 'k', APPLE_API_KEY_ID: 'i', APPLE_API_ISSUER: 's' };
+const named = (command, args) => command + (command === 'xcrun' ? ' ' + args[1] : '');
+
+test('a notarized app whose ticket was not stapled is stapled until that works, then packaged again', () => {
   const calls = [];
-  let packs = 0;
   const pauses = [];
-  packageMac('x64', { environment, pause: (ms) => pauses.push(ms), execute(command, args) {
-    calls.push(command + (args[0] === 'stapler' ? ' validate' : ''));
+  let packs = 0;
+  let staples = 0;
+  packageMac('x64', { environment: signingInputs, pause: (ms) => pauses.push(ms), ticketed: () => false, execute(command, args) {
+    calls.push(named(command, args));
     if (command === 'pnpm' && (packs += 1) === 1) throw new Error('Failed to staple your application with code: 68');
-    if (command === 'xcrun' && packs === 1) throw new Error('does not have a ticket stapled');
+    if (command === 'spctl' && packs === 1) throw new Error('rejected source=Unnotarized Developer ID');
+    if (command === 'xcrun' && args[1] === 'staple' && (staples += 1) === 1) throw new Error('The staple and validate action failed! Error 68.');
   } });
   assert.equal(packs, 2);
+  assert.equal(staples, 2, 'the staple is asked again after the dropped connection');
   assert.deepEqual(pauses, [30000]);
-  assert.deepEqual(calls, ['pnpm', 'spctl', 'xcrun validate', 'pnpm', 'codesign', 'spctl', 'xcrun validate']);
+  assert.deepEqual(calls, ['pnpm', 'codesign', 'xcrun staple', 'xcrun staple', 'pnpm', 'codesign', 'spctl', 'xcrun validate']);
 });
 
-test('a packaging failure that is not an unstapled notarized app is thrown at once, and a stapling one gives up after the bound', async () => {
-  const { STAPLE_ATTEMPTS } = await import('../scripts/package-mac.mjs');
-  const environment = { CSC_LINK: 'c', CSC_KEY_PASSWORD: 'p', APPLE_API_KEY_P8: 'k', APPLE_API_KEY_ID: 'i', APPLE_API_ISSUER: 's' };
+test('a packaging failure that is not an unstapled signed app is thrown at once, and one Apple never tickets gives up after the bound', async () => {
+  const { STAPLE_ATTEMPTS, PACKAGE_ATTEMPTS } = await import('../scripts/package-mac.mjs');
   let packs = 0;
-  assert.throws(() => packageMac('arm64', { environment, pause: () => {}, execute(command) {
+  assert.throws(() => packageMac('arm64', { environment: signingInputs, pause: () => {}, ticketed: () => false, execute(command) {
     if (command === 'pnpm') { packs += 1; throw new Error('signing failed'); }
-    if (command === 'spctl') throw new Error('rejected');
+    if (command === 'codesign') throw new Error('not signed');
   } }), /signing failed/);
-  assert.equal(packs, 1, 'not signed and accepted, so not a stapling failure');
+  assert.equal(packs, 1, 'not signed, so not a stapling failure');
   packs = 0;
-  assert.throws(() => packageMac('arm64', { environment, pause: () => {}, execute(command, args) {
+  assert.throws(() => packageMac('arm64', { environment: signingInputs, pause: () => {}, ticketed: () => true, execute(command) {
+    if (command === 'pnpm') { packs += 1; throw new Error('disk image failed'); }
+  } }), /disk image failed/);
+  assert.equal(packs, 1, 'already stapled, so the failure came after stapling');
+  // Notarization rejected: no ticket exists, so stapling fails every time and the packaging is not run again.
+  packs = 0;
+  let staples = 0;
+  assert.throws(() => packageMac('arm64', { environment: signingInputs, pause: () => {}, ticketed: () => false, execute(command, args) {
+    if (command === 'pnpm') { packs += 1; throw new Error('notarization failed'); }
+    if (command === 'xcrun' && args[1] === 'staple') { staples += 1; throw new Error('Record not found'); }
+  } }), /notarization failed/);
+  assert.equal(packs, 1);
+  assert.equal(staples, STAPLE_ATTEMPTS);
+  // Stapling works each time but the packaging keeps failing: it gives up after the bound with the packaging's error.
+  packs = 0;
+  assert.throws(() => packageMac('arm64', { environment: signingInputs, pause: () => {}, ticketed: () => false, execute(command) {
     if (command === 'pnpm') { packs += 1; throw new Error('Failed to staple'); }
-    if (command === 'xcrun' && args[0] === 'stapler') throw new Error('no ticket');
   } }), /Failed to staple/);
-  assert.equal(packs, STAPLE_ATTEMPTS);
+  assert.equal(packs, PACKAGE_ATTEMPTS);
+});
+
+test('the checks after packaging that ask Apple are asked again, bounded; the signature check is not', async () => {
+  const { CHECK_ATTEMPTS } = await import('../scripts/package-mac.mjs');
+  const calls = [];
+  const pauses = [];
+  let validates = 0;
+  packageMac('x64', { environment: signingInputs, pause: (ms) => pauses.push(ms), execute(command, args) {
+    calls.push(named(command, args));
+    if (command === 'xcrun' && args[1] === 'validate' && (validates += 1) < CHECK_ATTEMPTS) throw new Error('The validate action failed! Error 68.');
+  } });
+  assert.deepEqual(calls, ['pnpm', 'codesign', 'spctl', ...Array(CHECK_ATTEMPTS).fill('xcrun validate')]);
+  assert.deepEqual(pauses, [30000, 60000]);
+  let assessments = 0;
+  assert.throws(() => packageMac('x64', { environment: signingInputs, pause: () => {}, execute(command) {
+    if (command === 'spctl') { assessments += 1; throw new Error('rejected'); }
+  } }), /rejected/);
+  assert.equal(assessments, CHECK_ATTEMPTS);
+  let signatures = 0;
+  assert.throws(() => packageMac('x64', { environment: signingInputs, pause: () => {}, execute(command) {
+    if (command === 'codesign') { signatures += 1; throw new Error('invalid signature'); }
+  } }), /invalid signature/);
+  assert.equal(signatures, 1);
 });
 
 test('builder authenticates key partition access with the generated keychain password, not the certificate password', async (t) => {

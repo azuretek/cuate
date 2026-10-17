@@ -23,7 +23,7 @@ const foldFor = (list, chats, chatId) => foldReactions(list, platformOf((chats |
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, messageTarget, noticeTarget, serverUpdateNotice } from '../rules/notifications.js';
-import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, NOTICE_READ_KEY } from '../rules/app-notices.js';
+import { putNotice, dismissNotice, forgetRead, forgetNoticeState, appUpdateNotice, noticeHoldMs, quietNotices, noticeState, withNoticeState, noticeReadKey, sentNoticeRead, dropNoticeRead, noticeReadEcho, NOTICE_READ_KEY } from '../rules/app-notices.js';
 import { checkAnswer, capability, phoneUpdate, transferDetail } from '../rules/updates.js';
 import { durationMs } from '../../kit/rules/press.js';
 import { withRuntime } from '../../kit/rules/build.js';
@@ -174,6 +174,9 @@ class AppRoot extends KitElement {
     // The notice state that outlives a render (issue 191): the revisions marked read through the server, which hide a
     // card on every device until its operation changes phase. Closing a notice is the page's own dismissal instead.
     this.noticeRead = {};
+    // This page's own writes of that map still awaiting the server's echo (rules/app-notices.js noticeReadEcho), so
+    // the echo of an older write never undoes a newer one.
+    this.noticeReadSent = [];
     this.pending = new Map();
     this.client = null;
     this.drag = null;
@@ -579,6 +582,7 @@ class AppRoot extends KitElement {
     this.settingsRead = false;
     this.appNotices = [];
     this.noticeRead = {};
+    this.noticeReadSent = [];
     this.typingChat = null;
     this.resetTyping();
     this.view = 'messages';
@@ -795,7 +799,13 @@ class AppRoot extends KitElement {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
       // Marking a notice read on another device arrives here with the rest of the settings, so this page clears it too.
-      this.noticeRead = noticeState(this.settings[NOTICE_READ_KEY]);
+      // Only an event that carries the read map changes it, and the echo of this page's own older write is not news.
+      const values = data.values || {};
+      if (Object.hasOwn(values, NOTICE_READ_KEY)) {
+        const echo = noticeReadEcho(this.noticeReadSent, values[NOTICE_READ_KEY]);
+        this.noticeReadSent = echo.sent;
+        if (!echo.stale) this.noticeRead = noticeState(values[NOTICE_READ_KEY]);
+      }
       this.applyNoticeQuiet();
       this.applyUpdateSetting();
       this.applyTheme();
@@ -855,7 +865,16 @@ class AppRoot extends KitElement {
     this.appNotices = dismissNotice(this.appNotices, id);
     this.noticeRead = withNoticeState(this.noticeRead, id, value);
     this.applyNoticeQuiet();
-    if (this.client) this.client.settingsWrite({ [NOTICE_READ_KEY]: this.noticeRead }).catch(() => {});
+    this.writeNoticeRead();
+  }
+
+  // The read map goes to the server, remembered until its echo comes back. The write is optimistic: a refused or
+  // offline write still holds this page for the run, and is no longer awaited.
+  writeNoticeRead() {
+    if (!this.client) return;
+    const key = noticeReadKey(this.noticeRead);
+    this.noticeReadSent = sentNoticeRead(this.noticeReadSent, this.noticeRead);
+    this.client.settingsWrite({ [NOTICE_READ_KEY]: this.noticeRead }).catch(() => { this.noticeReadSent = dropNoticeRead(this.noticeReadSent, key); });
   }
 
   // The latest state that arrived before the settings did, decided now that they have.
@@ -1101,7 +1120,7 @@ class AppRoot extends KitElement {
     // marked it read before (issue 191); without this the persistent state hides the answer a person just asked for.
     if (Object.hasOwn(this.noticeRead, 'app-update')) {
       this.noticeRead = forgetNoticeState(this.noticeRead, 'app-update');
-      if (this.client) this.client.settingsWrite({ [NOTICE_READ_KEY]: this.noticeRead }).catch(() => {});
+      this.writeNoticeRead();
     }
     if (this.updateVia()) return this.phoneCheck({ asked: true });
     let answer;
