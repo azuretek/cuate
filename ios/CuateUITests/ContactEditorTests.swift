@@ -24,9 +24,11 @@ final class ContactEditorTests: XCTestCase {
                 }
             }
             // Newer iOS first asks Continue, then offers full or selected access on a separate system surface.
+            // iOS 27 labels the full choice "Share All N Contacts"; earlier releases said "Allow Full Access".
             if continuedContacts {
+                let fullAccess = NSPredicate(format: "label BEGINSWITH 'Share All' OR label == 'Allow Full Access'")
                 for owner in [springboard, app] {
-                    let full = owner.buttons["Allow Full Access"].firstMatch
+                    let full = owner.buttons.matching(fullAccess).firstMatch
                     if full.exists && full.isHittable { full.tap() }
                 }
             }
