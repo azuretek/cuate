@@ -38,6 +38,7 @@ export * from './rules/history-window.js';
 export * from './rules/links.js';
 export * from './rules/media.js';
 export * from './rules/documents.js';
+export * from './rules/audio.js';
 export * from './rules/link-media.js';
 export * from './rules/platform.js';
 export * from './rules/places.js';
