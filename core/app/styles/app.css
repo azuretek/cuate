@@ -870,8 +870,10 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .voice-play .icon { --icon-size: calc(var(--size-message-action) / 2); }
 .voice-note[data-playing="false"] .voice-play .icon { margin-left: calc(var(--size-border) * 2); }
 .voice-play:focus-visible, .voice-wave:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
-.voice-wave { flex: 0 1 var(--size-voice-wave); min-width: 0; height: var(--size-voice-wave-h); display: flex; align-items: center; justify-content: space-between; gap: var(--size-border); border-radius: var(--radius-sm); cursor: pointer; touch-action: none; }
-.voice-bar { flex: none; width: var(--size-voice-bar); height: calc(var(--size-voice-wave-h) / 4); border-radius: var(--radius-pill); background: currentColor; opacity: 0.35; transition: opacity var(--motion-fast) var(--motion-ease); }
+/* On a narrow screen the waveform gives up width before the time does: its bars narrow down to a hairline each, and
+   nothing of it ever draws over the time beside it. */
+.voice-wave { flex: 0 1 var(--size-voice-wave); min-width: 0; height: var(--size-voice-wave-h); display: flex; align-items: center; justify-content: space-between; gap: var(--size-border); overflow: hidden; border-radius: var(--radius-sm); cursor: pointer; touch-action: none; }
+.voice-bar { flex: 0 1 var(--size-voice-bar); min-width: var(--size-border); height: calc(var(--size-voice-wave-h) / 4); border-radius: var(--radius-pill); background: currentColor; opacity: 0.35; transition: opacity var(--motion-fast) var(--motion-ease); }
 .voice-bar[data-done="true"] { opacity: 1; }
 .voice-bar[data-level="1"] { height: calc(var(--size-voice-wave-h) / 8); }
 .voice-bar[data-level="2"] { height: calc(var(--size-voice-wave-h) * 2 / 8); }

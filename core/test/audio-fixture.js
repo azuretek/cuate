@@ -80,6 +80,11 @@
     const note = el.querySelector('.voice-note');
     const b = note.getBoundingClientRect();
     const levels = new Set([...el.querySelectorAll('.voice-bar')].map((bar) => bar.dataset.level));
+    // Whether the waveform keeps to its own room: its last bar inside it, and it clear of the time beside it.
+    const wave = el.querySelector('.voice-wave').getBoundingClientRect();
+    const time = el.querySelector('.voice-time').getBoundingClientRect();
+    const bars = [...el.querySelectorAll('.voice-bar')].map((bar) => bar.getBoundingClientRect());
+    const clear = bars.every((r) => r.right <= wave.right + 0.5) && wave.right <= time.left + 0.5;
     return {
       label: el.querySelector('.voice-play').getAttribute('aria-label'),
       playing: note.dataset.playing === 'true',
@@ -88,6 +93,7 @@
       length: el.querySelector('.voice-length').textContent,
       filled: el.querySelectorAll('.voice-bar[data-done="true"]').length,
       levels: levels.size,
+      clear,
       currentTime: Math.round(a.currentTime * 100) / 100,
       duration: Math.round(a.duration * 100) / 100,
       paused: a.paused,

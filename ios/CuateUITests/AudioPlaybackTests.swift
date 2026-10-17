@@ -26,6 +26,7 @@ final class AudioPlaybackTests: XCTestCase {
         XCTAssertEqual(before?.first?["unplayed"] as? Bool, true, "the recording someone else sent is marked not played: " + marker.label)
         XCTAssertEqual(before?.first?["length"] as? String, "0:04", "it says how long it runs: " + marker.label)
         XCTAssertEqual(before?.second?["unplayed"] as? Bool, false, "ours is never marked: " + marker.label)
+        for player in before?.players ?? [] { XCTAssertEqual(player["clear"] as? Bool, true, "the waveform keeps clear of the time: " + marker.label) }
         keep(app, "audio ready")
 
         let play = page.buttons["Play memo.m4a"]

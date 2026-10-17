@@ -69,6 +69,7 @@ class AudioPlaybackTest {
             assertEquals("the recording someone else sent is marked not played: $ready", true, before.getJSONObject(0).getBoolean("unplayed"))
             assertEquals("it says how long it runs: $ready", "0:04", before.getJSONObject(0).getString("length"))
             assertEquals("ours is never marked: $ready", false, before.getJSONObject(1).getBoolean("unplayed"))
+            for (i in 0 until before.length()) assertEquals("the waveform keeps clear of the time: $ready", true, before.getJSONObject(i).getBoolean("clear"))
             keepScreenshot("audio-ready.png")
 
             press("Play memo.m4a")

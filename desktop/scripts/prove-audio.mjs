@@ -63,6 +63,7 @@ app.whenReady().then(async () => {
   assert.equal(theirs.unplayed, true, 'the recording someone else sent is marked not played');
   assert.equal(theirs.length, '0:04', 'it says how long it runs');
   assert.equal(mine.unplayed, false, 'ours is never marked');
+  for (const p of ready.scene.players) assert.equal(p.clear, true, 'the waveform keeps clear of the time: ' + p.label);
   await shot('audio-ready.png');
   await press('Play ' + theirs.label.replace(/^Play /, ''));
   const playing = await until('au:playing', 30000);
