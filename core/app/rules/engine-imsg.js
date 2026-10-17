@@ -50,6 +50,9 @@ export function mapChat(c) {
     isGroup: Boolean(c.is_group),
     service: c.service ? String(c.service) : 'iMessage',
     participants: Array.isArray(c.participants) ? c.participants.map(String) : [],
+    // The people the chat is with, resolved from the system Contacts store by the server (issue 393); the engine
+    // itself knows only the handles, so a chat leaves the mapping with its addresses and no names.
+    members: [],
     unread: Number.isFinite(c.unread_count) ? c.unread_count : 0,
     lastMessageAt: c.last_message_at ? iso(c.last_message_at) : null,
     lastMessage: null,

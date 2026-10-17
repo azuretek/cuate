@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.ContactsContract
 import android.net.Uri
 import android.os.Build
 import android.webkit.JavascriptInterface
@@ -205,7 +206,9 @@ class HostBridge(
                     .put("platform", "android")
                     .put("arch", if (Build.SUPPORTED_ABIS.isNotEmpty()) Build.SUPPORTED_ABIS[0] else JSONObject.NULL)
                     .put("packaged", !BuildConfig.DEBUG)
-                    .put("installSource", installSource()),
+                    .put("installSource", installSource())
+                    // The system contacts app is the phone's own editor, so Edit contact is offered (issue 393).
+                    .put("contactsEditor", true),
             )
             "app.icon" -> success(appIcon(args.optString("icon")))
             "link.take" -> { val l = pendingLink; pendingLink = null; success(l ?: JSONObject.NULL) }
@@ -214,6 +217,8 @@ class HostBridge(
             // Push with the app closed (issue 347): the push token and key the page sends its server, or null.
             "push.token" -> pushToken(id)
             "notify.take" -> success(takeNotice())
+            // Edit contact (issue 393): the system contacts app on the person the conversation is with.
+            "contacts.edit" -> success(editContact(args))
             "open.external" -> success(openExternal(args))
             "file.save" -> success(saveFile(args))
             // Open in (issue 374): the system's Open with chooser, through the app's file provider.
@@ -426,6 +431,22 @@ class HostBridge(
             val chooser = Intent.createChooser(view, file.name)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             context.startActivity(chooser)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /// Edit contact (issue 393): the system contacts app, on the address the conversation is with. Android shows or
+    /// creates the person from the address itself (a phone number or an email), and a device with no contacts app
+    /// answers false rather than pretending something opened.
+    private fun editContact(args: JSONObject): Boolean {
+        val handle = args.optString("handle").trim()
+        if (handle.isEmpty()) return false
+        val uri = if (handle.contains("@")) Uri.parse("mailto:" + Uri.encode(handle)) else Uri.parse("tel:" + Uri.encode(handle))
+        val intent = Intent(ContactsContract.Intents.SHOW_OR_CREATE_CONTACT, uri)
+        return try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             true
         } catch (e: Exception) {
             false

@@ -4,6 +4,11 @@ export const SYNTHETIC_HANDLE = /^(?:\+1555555\d{4}|[a-z]+@example\.com)$/;
 
 const NAMES = { '+15555550100': 'Avery Quinn', 'jordan@example.com': 'Jordan Lee', 'priya@example.com': 'Priya Shah', '+15555550177': 'Sam Rivera' };
 
+// Fake mode has its own synthetic Contacts snapshot and never reads the host's personal address book.
+export const CONTACTS = Object.entries(NAMES).map(([handle, displayName]) => ({
+  displayName, phones: handle.includes('@') ? [] : [handle], emails: handle.includes('@') ? [handle] : [],
+}));
+
 const CHATS = [
   { id: 1, name: 'Avery Quinn', display_name: '', contact_name: 'Avery Quinn', identifier: '+15555550100', guid: 'iMessage;-;+15555550100', service: 'iMessage', is_group: false, participants: ['+15555550100'], unread_count: 1 },
   { id: 2, name: 'Weekend plans', display_name: 'Weekend plans', contact_name: '', identifier: 'chat500000001', guid: 'iMessage;+;chat500000001', service: 'iMessage', is_group: true, participants: ['jordan@example.com', '+15555550177', 'priya@example.com'], unread_count: 0 },

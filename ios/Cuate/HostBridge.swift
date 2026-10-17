@@ -1,3 +1,5 @@
+import Contacts
+import ContactsUI
 import Foundation
 import QuickLook
 import UIKit
@@ -232,6 +234,28 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             Push.shared.registration(store: store) { [weak self] value in
                 DispatchQueue.main.async { self?.settle(id: id, ok: true, value: value ?? NSNull()) }
             }
+        // Edit contact (issue 393): the phone's own contact card on the person the conversation is with.
+        case "contacts.edit":
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--contacts-fixture") {
+                print("contacts-fixture bridge-entered authorization=\(CNContactStore.authorizationStatus(for: .contacts).rawValue)")
+            }
+            #endif
+            if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
+                CNContactStore().requestAccess(for: .contacts) { [weak self] granted, _ in
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--contacts-fixture") {
+                            print("contacts-fixture permission-answer granted=\(granted) authorization=\(CNContactStore.authorizationStatus(for: .contacts).rawValue)")
+                        }
+                        #endif
+                        self.settle(id: id, ok: true, value: granted && self.editContact(args))
+                    }
+                }
+            } else {
+                settle(id: id, ok: true, value: editContact(args))
+            }
         case "open.external":
             settle(id: id, ok: true, value: openExternal(args))
         case "file.save":
@@ -350,6 +374,8 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
             "arch": BuildIdentity.arch.isEmpty ? NSNull() : BuildIdentity.arch,
             "packaged": BuildIdentity.packaged,
             "installSource": BuildIdentity.installSource,
+            // The phone has the system contact card, so Edit contact is offered (issue 393).
+            "contactsEditor": true,
         ]
     }
 
@@ -460,6 +486,36 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         return true
     }
 
+    /// Edit contact (issue 393): the phone's own contact card on the person this conversation is with. The address is
+    /// matched the way core matches it, a phone by its number and an email by its text, and a person the phone does
+    /// not know answers false, so the control never opens the wrong card. The first press waits for the system's
+    /// permission answer before continuing the same editor request.
+    private func editContact(_ args: [String: Any]) -> Bool {
+        guard let handle = args["handle"] as? String, !handle.isEmpty else { return false }
+        let store = CNContactStore()
+        let keys: [CNKeyDescriptor] = [CNContactViewController.descriptorForRequiredKeys()]
+        let predicate: NSPredicate = handle.contains("@")
+            ? CNContact.predicateForContacts(matchingEmailAddress: handle)
+            : CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: handle))
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        guard status == .authorized else { return false }
+        #if DEBUG
+        ContactsFixture.seedIfAsked()
+        #endif
+        guard let matches = try? store.unifiedContacts(matching: predicate, keysToFetch: keys), matches.count == 1, let contact = matches.first else { return false }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let root = self.webView?.window?.rootViewController else { return }
+            let card = CNContactViewController(for: contact)
+            card.allowsActions = true
+            card.allowsEditing = true
+            card.delegate = self
+            let wrap = UINavigationController(rootViewController: card)
+            var host = root
+            while let shown = host.presentedViewController { host = shown }
+            host.present(wrap, animated: true)
+        }
+        return true
+    }
     private func openExternal(_ args: [String: Any]) -> Bool {
         guard let text = args["url"] as? String, let url = URL(string: text),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
@@ -491,5 +547,14 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
               let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
         webView?.evaluateJavaScript("window.\(Self.resolveHook) && window.\(Self.resolveHook)(\(json));")
+    }
+}
+
+/// The contact card's own dismissal (issue 393): the card is presented inside a navigation controller, and once the
+/// person is done with it the shell takes it, and its wrapper, down.
+extension HostBridge: CNContactViewControllerDelegate {
+    func contactViewController(_ viewController: CNContactViewController, didCompleteWith contact: CNContact?) {
+        let shown = viewController.navigationController ?? viewController
+        shown.dismiss(animated: true)
     }
 }

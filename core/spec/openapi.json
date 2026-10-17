@@ -1888,6 +1888,9 @@
           },
           "lastError": {
             "$ref": "#/components/schemas/DiagnosticError"
+          },
+          "contacts": {
+            "$ref": "#/components/schemas/ContactsState"
           }
         },
         "required": [
@@ -1901,6 +1904,34 @@
           "database",
           "sending",
           "counters"
+        ],
+        "additionalProperties": false
+      },
+      "ContactsState": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "count": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "ms": {
+            "type": "number"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "count"
         ],
         "additionalProperties": false
       },
@@ -1983,6 +2014,12 @@
           },
           "photo": {
             "$ref": "#/components/schemas/Attachment"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Contact"
+            }
           }
         },
         "required": [
@@ -1991,7 +2028,27 @@
           "isGroup",
           "service",
           "participants",
-          "unread"
+          "unread",
+          "members"
+        ],
+        "additionalProperties": false
+      },
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "photo": {
+            "$ref": "#/components/schemas/Attachment"
+          }
+        },
+        "required": [
+          "handle",
+          "name"
         ],
         "additionalProperties": false
       },

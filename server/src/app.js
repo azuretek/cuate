@@ -62,7 +62,7 @@ function readJson(req, max) {
 // The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (Abi, 2026-10-14).
 const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
@@ -104,7 +104,21 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const typing = createTyping({ publish, log: log.child('typing'), outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
   // A phone with the app open shows its own notice, so only phones with no open connection get a push (issue 347).
   const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
-  engine.on((name, data) => {
+  // Every message surface (history, replies, notices and pushes) uses the same Apple name authority.
+  const nameMessage = async (message) => {
+    if (!contacts || !message || message.fromMe) return message;
+    const person = await contacts.forHandles([message.sender]).catch(() => null);
+    return { ...message, senderName: person?.name || null };
+  };
+  const sourceMessages = engine.messages.bind(engine);
+  // Decorate only messages on the shared engine; copying the engine snapshots its other methods and bypasses
+  // later instrumentation and adapters on the original instance.
+  engine.messages = async (...args) => {
+    const page = await sourceMessages(...args);
+    return { ...page, messages: await Promise.all(page.messages.map(nameMessage)) };
+  };
+  engine.on(async (name, data) => {
+    if (data?.message) data = { ...data, message: await nameMessage(data.message) };
     if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
     // An edit made anywhere changes the held preview when it is the message the preview shows (issue 391), so a list
     // read after the event agrees with it.
@@ -153,17 +167,48 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // nowhere else (issue 323): each fresh list is compared with the one it replaces, and a count that fell is told to
   // every client as chat.read, the same event a read in this app sends. A count that rose is a new message, which the
   // message stream already carries.
+  // The system Contacts store names and pictures a chat's people (issue 393): every conversation carries its members
+  // with the name and picture the store has for each, a one-to-one chat also takes its own name and picture from its
+  // one member, and a chat the store does not know keeps the handle and no picture, exactly as the engine reported it.
+  const storedPicture = async (record) => {
+    const pic = await contacts.photo(record).catch(() => null);
+    if (!pic) return null;
+    store.putAttachment(pic.id, pic.file, pic.mime, pic.name);
+    return { id: pic.id, name: pic.name, mime: pic.mime, bytes: pic.bytes };
+  };
+  const applyContacts = async (chats) => {
+    const out = [];
+    for (const chat of chats) {
+      const handles = Array.isArray(chat.participants) ? chat.participants : [];
+      // With no Contacts store (a server that is not on the Mac, or one whose store was not allowed) a chat still
+      // carries its people, each as its own address with no name and no picture.
+      if (!contacts) { out.push({ ...chat, members: handles.map((handle) => ({ handle, name: handle, photo: null })) }); continue; }
+      const members = await Promise.all(handles.map(async (handle) => {
+        const found = await contacts.forHandles([handle]).catch(() => null);
+        if (!found) return { handle, name: handle, photo: null };
+        return { handle, name: found.name || handle, photo: await storedPicture(found.record) };
+      }));
+      const photo = chat.isGroup ? (chat.photo || null) : (members[0]?.photo || null);
+      const name = chat.isGroup ? chat.name : (members[0]?.name || handles[0] || chat.identifier || chat.id);
+      out.push({ ...chat, name, photo, members });
+    }
+    return out;
+  };
   const readChats = (limit) => {
     if (!listing) {
       listing = engine.chats({ limit, photos: true })
+        .then(applyContacts)
         .then((chats) => {
-          const before = held ? new Map(held.chats.map((c) => [String(c.id), Number(c.unread) || 0])) : null;
+          const before = held ? new Map(held.chats.map((c) => [String(c.id), c])) : null;
           held = { chats, limit, at: Date.now() };
           if (before) {
             for (const c of chats) {
               const was = before.get(String(c.id));
-              const now = Number(c.unread) || 0;
-              if (was !== undefined && now < was) publish('chat.read', { chatId: String(c.id), unread: now });
+              if (was === undefined) continue;
+              const unread = Number(c.unread) || 0;
+              if (unread < (Number(was.unread) || 0)) publish('chat.read', { chatId: String(c.id), unread });
+              // A contact renamed or repictured reaches every client as the chat changing (issue 393).
+              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id) || JSON.stringify(was.members) !== JSON.stringify(c.members)) publish('chat.changed', c);
             }
           }
         })
@@ -288,6 +333,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     // The installed server's last update outcome, which info reports so a client that reconnects after a rollback
     // still hears about it. Null for a checkout.
     updateOutcome,
+    // The system Contacts store on the Mac (issue 393), for a one-to-one chat's name and picture and for status.
+    contacts,
   };
   const handlers = await loadRoutes(apiSpec.routes);
   for (const r of apiSpec.routes) if (!handlers.has(r.id)) throw new Error('no handler for route ' + r.id);
@@ -499,6 +546,10 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   const readSync = setInterval(() => { refresh(); scanEdits(); }, READ_SYNC_MS);
   readSync.unref();
 
+  // A contact renamed or repictured on the Mac is the same event as a chat changing (issue 393): the list is read
+  // again and every client is told, so the new name or picture is drawn at once rather than at the next poll.
+  const stopContactsWatch = contacts && contacts.watchStore ? contacts.watchStore(() => refresh()) : () => {};
+
   const beat = setInterval(() => {
     for (const c of clients) {
       if (!c.alive) { c.ws.terminate(); continue; }
@@ -543,6 +594,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
       typing.stopAll();
       clearInterval(beat);
       clearInterval(readSync);
+      stopContactsWatch();
       closeWatch();
       for (const c of clients) {
         try { c.ws.close(1012, 'restarting'); } catch { /* gone */ }
