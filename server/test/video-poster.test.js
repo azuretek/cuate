@@ -6,7 +6,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
 import { boot } from './helpers.js';
 import { createAttachments } from '../src/attachments.js';
 
@@ -34,7 +34,8 @@ test('on a Mac a video has a poster, made once from the video and reused (issue 
   assert.equal((await mac.resolve(rec, null, 'poster')).file, a.file);
   assert.equal(made, 1, 'made once, however many ask at the same moment');
   assert.ok(!existsSync(a.file + '.part'), 'no half-written file is left behind');
-  assert.equal((await mac.resolve(rec, null, null)).file, rec.path, 'the video itself is still the attachment');
+  // Served by its real path, which on a hosted runner is not the temporary folder's own spelling of it.
+  assert.equal((await mac.resolve(rec, null, null)).file, realpathSync(rec.path), 'the video itself is still the attachment');
 });
 
 test('a picture, a server off the Mac and a still that cannot be made have no poster (issue 415)', async (t) => {
