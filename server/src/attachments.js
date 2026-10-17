@@ -1,11 +1,12 @@
 // Attachments: an opaque id maps back to a file inside the Messages attachments folder and nowhere else. A HEIC or
 // HEIF photo is converted to JPEG with the Mac's own sips when a client asks, and the conversion is cached in the
 // data folder so it happens once. A Live Photo's motion is served from beside its still when a client asks for the
-// live part, and from inside the attachments folder only, as the still is.
+// live part, and from inside the attachments folder only, as the still is. A video's poster, the still a client draws
+// in its tile, is made once on the Mac and served as the poster part (issue 415).
 import os from 'node:os';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
-import { mkdir, access, realpath, stat, rename, open } from 'node:fs/promises';
+import { mkdir, access, realpath, stat, rename, open, rm } from 'node:fs/promises';
 import { sniff, UNKNOWN_MIME } from './file-type.js';
 import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -17,7 +18,21 @@ import { motionPath } from './engine/live-photo.js';
 // conversion is injectable so it is tested without a Mac.
 const avconvert = (src, out) => new Promise((resolve, reject) => execFile('avconvert', ['--source', src, '--preset', 'Preset1280x720', '--output', out, '--replace'], { timeout: 60000 }, (err) => (err ? reject(err) : resolve())));
 
-export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform, convertMotion = avconvert }) {
+// A video's poster (issue 415): Quick Look's thumbnail of the video, which is a frame from it, as a PNG at most 640
+// pixels on its longer side. qlmanage writes it into the folder it is given under the video's own name, so it is made
+// in a folder of its own and moved into place. Injectable, so it is tested without a Mac.
+const qlPoster = async (src, out) => {
+  const dir = out + '.ql';
+  await mkdir(dir, { recursive: true });
+  try {
+    await new Promise((resolve, reject) => execFile('qlmanage', ['-t', '-s', '640', '-o', dir, src], { timeout: 30000 }, (err) => (err ? reject(err) : resolve())));
+    await rename(path.join(dir, path.basename(src) + '.png'), out);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform, convertMotion = avconvert, makePoster = qlPoster }) {
   // The recorded path is real, and inside the attachments folder or Messages' sticker cache beside it (a sticker's
   // picture is kept there, issue 341), or there is nothing to serve.
   // The Contacts cache joins the Messages folders: a contact's picture is served by the same route, from the data
@@ -80,8 +95,36 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
     return converting.get(out);
   }
 
+  // The poster as a PNG in the data folder's cache, made once and reused, written beside its final name and renamed into
+  // place as the motion is. A still that cannot be made is no poster: the caller answers 404 and the client draws the
+  // video's own first frame.
+  const posters = new Map();
+  async function toPoster(src, id) {
+    const dir = path.join(dataDir, 'cache');
+    const out = path.join(dir, id + '.poster.png');
+    try { await access(out); return out; } catch { /* not made yet */ }
+    if (!posters.has(out)) {
+      posters.set(out, (async () => {
+        await mkdir(dir, { recursive: true });
+        const part = out + '.part';
+        await makePoster(src, part);
+        await rename(part, out);
+        return out;
+      })().finally(() => posters.delete(out)));
+    }
+    return posters.get(out);
+  }
+
   return {
     async resolve(rec, format, part = null) {
+      if (part === 'poster') {
+        if (platform !== 'darwin' || !/^video\//i.test(rec.mime || '')) return null;
+        const real = await inside(rec.path);
+        if (!real) return null;
+        const still = await toPoster(real, rec.id).catch(() => null);
+        if (!still) return null;
+        return { file: still, mime: 'image/png', size: (await stat(still)).size };
+      }
       if (part === 'live') {
         const expanded = rec.path.startsWith('~/') ? path.join(os.homedir(), rec.path.slice(2)) : rec.path;
         const motion = motionPath(expanded, (p) => existsSync(p));
