@@ -5,9 +5,10 @@ export default {
     if (!/^[A-Za-z0-9_-]{10,64}$/.test(id)) throw badRequest('bad_attachment', 'Unknown attachment id.');
     const rec = store.getAttachment(id);
     if (!rec) return fail(res, 404, 'attachment_unknown', 'The server does not know that attachment. Reload the conversation.');
-    // part=live is a Live Photo's motion, served from beside its still; no other part exists.
+    // part=live is a Live Photo's motion, served from beside its still; part=poster is a video's still, made on the Mac
+    // (issue 415). No other part exists.
     const part = url.searchParams.get('part');
-    if (part !== null && part !== 'live') throw badRequest('bad_part', 'part must be live.');
+    if (part !== null && part !== 'live' && part !== 'poster') throw badRequest('bad_part', 'part must be live or poster.');
     const resolved = await attachments.resolve(rec, url.searchParams.get('format'), part);
     if (!resolved) return fail(res, 404, 'attachment_missing', 'That attachment is not on the Mac.');
     const { file, mime, size } = resolved;

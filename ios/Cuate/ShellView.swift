@@ -82,6 +82,14 @@ struct ShellWebView: UIViewRepresentable {
             let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
             controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The video tile fixture (issue 415), the same seam: Debug only, and its script is copied into test builds only; its
+        // video is the Live Photo fixture's synthetic clip.
+        if ProcessInfo.processInfo.arguments.contains("--video-tile-fixture"),
+           let url = Bundle.main.url(forResource: "video-tile-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
+            controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The video controls fixture (issue 416), the same seam: Debug only, and its script and its synthetic clips are
         // copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--video-controls-fixture"),
