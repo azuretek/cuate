@@ -131,14 +131,17 @@ test('the list preview names the change, and a live clear takes the backdrop awa
 // --- The pieces the feature is built from ---
 
 
+// A scratch folder, and what holds a file in it. Hooks run in the order they were added, so the folder is removed by
+// one hook that first closes everything holding a file there: on Windows a folder with an open handle cannot be removed.
 const scratch = (t, name) => {
   const dir = mkdtempSync(path.join(os.tmpdir(), name + '-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
+  const holders = [];
+  t.after(() => { for (const h of holders) h.close(); rmSync(dir, { recursive: true, force: true }); });
+  return { dir, hold: (h) => { holders.push(h); return h; } };
 };
 
 test('the store reader names the rows Messages records as a background set or cleared, and asks the engine for the rest (issue 417)', async (t) => {
-  const dir = scratch(t, 'bg-store');
+  const { dir, hold } = scratch(t, 'bg-store');
   const file = path.join(dir, 'chat.db');
   const db = new DatabaseSync(file);
   db.exec('CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, text TEXT, item_type INTEGER, group_action_type INTEGER, date INTEGER); CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);');
@@ -148,8 +151,7 @@ test('the store reader names the rows Messages records as a background set or cl
   for (const [id, guid, text, item, action, date, chat] of rows) { put.run(id, guid, text, item, action, date); join.run(chat, id); }
   db.close();
   const calls = [];
-  const reader = createBackgroundReader({ dbPath: file, bin: 'imsg-under-test', engineDb: '/synthetic/chat.db', run: async (bin, args) => { calls.push([bin, ...args]); return JSON.stringify({ ok: true, chat_id: 5, background_set: false }) + '\n'; } });
-  t.after(() => reader.close());
+  const reader = hold(createBackgroundReader({ dbPath: file, bin: 'imsg-under-test', engineDb: '/synthetic/chat.db', run: async (bin, args) => { calls.push([bin, ...args]); return JSON.stringify({ ok: true, chat_id: 5, background_set: false }) + '\n'; } }));
   assert.deepEqual([...reader.among(['S-1', 'C-2', 'P-3', 'T-5', 'S-4']).entries()].sort(), [['C-2', 'clear'], ['S-1', 'set'], ['S-4', 'set']], 'a group photo row and a message are neither');
   const latest = reader.latest();
   assert.deepEqual(latest.get('5'), { chatId: '5', guid: 'C-2', action: 'clear' }, 'the newest change is the chat\'s');
@@ -161,12 +163,12 @@ test('the store reader names the rows Messages records as a background set or cl
 });
 
 test('a store from before backgrounds existed has none (issue 417)', (t) => {
-  const file = path.join(scratch(t, 'bg-old'), 'chat.db');
+  const { dir, hold } = scratch(t, 'bg-old');
+  const file = path.join(dir, 'chat.db');
   const db = new DatabaseSync(file);
   db.exec('CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT); CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);');
   db.close();
-  const reader = createBackgroundReader({ dbPath: file, bin: 'imsg' });
-  t.after(() => reader.close());
+  const reader = hold(createBackgroundReader({ dbPath: file, bin: 'imsg' }));
   assert.equal(reader.among(['X']).size, 0);
   assert.equal(reader.latest().size, 0);
 });
@@ -183,7 +185,7 @@ test('a background is drawn only when the engine names a picture there is to dra
 });
 
 test('the backdrop picture is read out of the property list Messages keeps it in, and served from that cache alone (issue 417)', async (t) => {
-  const base = scratch(t, 'bg-serve');
+  const { dir: base } = scratch(t, 'bg-serve');
   const root = path.join(base, 'Messages', 'Attachments');
   const cache = path.join(base, 'Messages', 'TranscriptBackgroundCache');
   mkdirSync(root, { recursive: true });
