@@ -158,7 +158,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return Math.min(hi, Math.max(lo, Number(v)));
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
-  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind }, senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}) });
+  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind, ...(m.event.action ? { action: m.event.action } : {}) }, senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}) });
   // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
@@ -208,7 +208,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
               const unread = Number(c.unread) || 0;
               if (unread < (Number(was.unread) || 0)) publish('chat.read', { chatId: String(c.id), unread });
               // A contact renamed or repictured reaches every client as the chat changing (issue 393).
-              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id) || JSON.stringify(was.members) !== JSON.stringify(c.members)) publish('chat.changed', c);
+              // So does a conversation's background changing (issue 417).
+              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id) || (was.background && was.background.id) !== (c.background && c.background.id) || JSON.stringify(was.members) !== JSON.stringify(c.members)) publish('chat.changed', c);
             }
           }
         })
@@ -233,6 +234,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     }
     // A group photo that changed live is the group's picture from now on (issue 341).
     if (m.event && m.event.kind === 'groupPhoto') held.chats[at] = { ...held.chats[at], photo: m.event.photo };
+    // A background that changed live is read from the engine and told to every client as the chat changing (issue 417).
+    if (m.event && m.event.kind === 'background') refreshBackground(id, m.event.action);
     const chat = held.chats[at];
     if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
     // An arriving message from someone else raises the held count by the same rule every client raises its own
@@ -242,6 +245,25 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     const unread = !m.fromMe ? (Number(chat.unread) || 0) + 1 : chat.unread;
     held.chats.splice(at, 1);
     held.chats.unshift({ ...chat, unread, lastMessageAt: m.sentAt });
+  };
+  // The chat's backdrop as the engine reports it now, held with the list and told to every client when it differs.
+  // A background just set may reach the stream a moment before Messages has rendered its picture, so a set that reads
+  // as no picture is asked again, a few times and then left to the next list read.
+  const BACKGROUND_RETRY_MS = [1000, 3000, 8000];
+  const refreshBackground = async (id, action = 'set', attempt = 0) => {
+    if (typeof engine.background !== 'function') return;
+    const background = await engine.background(id).catch(() => null);
+    if (!background && action === 'set' && attempt < BACKGROUND_RETRY_MS.length) {
+      const t = setTimeout(() => { refreshBackground(id, action, attempt + 1).catch(() => {}); }, BACKGROUND_RETRY_MS[attempt]);
+      if (t.unref) t.unref();
+      return;
+    }
+    const at = held ? held.chats.findIndex((c) => String(c.id) === id) : -1;
+    if (at < 0) return;
+    const chat = held.chats[at];
+    if ((chat.background && chat.background.id) === (background && background.id) && 'background' in chat) return;
+    held.chats[at] = { ...chat, background };
+    publish('chat.changed', held.chats[at]);
   };
   const noteEdit = (m) => {
     const id = String(m.chatId);

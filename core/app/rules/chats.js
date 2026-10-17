@@ -177,10 +177,12 @@ export function chatPreview(chat) {
   return (m.fromMe ? 'You: ' : '') + messageSummary({ ...m, text: stripInlineObjects(m.text) });
 }
 
-// The words for an event in a conversation (issue 341): who did it, then what changed.
+// The words for an event in a conversation (issue 341): who did it, then what changed. A background is the
+// conversation's own (issue 417), set or cleared.
 export function eventText(m) {
   const who = m.fromMe ? 'You' : String(m.senderName || m.sender || 'Someone');
   if (m.event && m.event.kind === 'groupPhoto') return who + ' changed the group photo';
+  if (m.event && m.event.kind === 'background') return who + (m.event.action === 'clear' ? ' removed the background' : ' changed the background');
   return '';
 }
 
@@ -201,7 +203,11 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
   const out = chats.slice();
   const photo = message.event && message.event.kind === 'groupPhoto' ? { photo: message.event.photo } : {};
-  out[i] = { ...c, ...photo, unread, lastMessageAt: message.sentAt, lastMessage: message.event ? { ...lastMessage, event: { kind: message.event.kind }, senderName: message.senderName || null } : lastMessage };
+  // A background cleared takes the backdrop away at once; a new one arrives from the server as the chat changing,
+  // carrying the picture, since only the server can read it (issue 417).
+  const backdrop = message.event && message.event.kind === 'background' && message.event.action === 'clear' ? { background: null } : {};
+  const event = message.event ? { kind: message.event.kind, ...(message.event.action ? { action: message.event.action } : {}) } : null;
+  out[i] = { ...c, ...photo, ...backdrop, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
   return { chats: orderChats(out), known: true };
 }
 
