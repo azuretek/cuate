@@ -7,6 +7,7 @@ import { logSpec } from '../src/paths.js';
 import { createMac, macConfig, parseAutomaticLogin, parseFileVault, parsePowerFailure, parseScreenLock, parseSleep } from '../src/mac.js';
 import { createRestarts, createWatchdog } from '../src/watchdog.js';
 import { databaseVerdict, runDoctor } from '../src/doctor.js';
+import { createContacts } from '../src/contacts.js';
 
 const logger = () => {
   const lines = [];
@@ -104,12 +105,42 @@ test('doctor names an unreadable database it cannot classify, and the error the 
   assert.ok(find(r.lines, 'fail  engine imsg 1.2.3 cannot read the Messages database: give Full Disk Access to the program that starts the server, then run doctor again'), r.lines.join('\n'));
 });
 
+// A store behind the injected reader, answering the way the Mac's program does. Synthetic people only.
+const storeAnswering = (answer) => createContacts({ run: async () => JSON.stringify(answer), watchDir: null });
+const PERSON = { given: 'Ada', middle: '', family: 'Example', nickname: '', organization: '', displayName: 'Ada Example', phones: ['+15550100'], emails: [] };
+
 test('doctor reports the Contacts grant the engine status names', async () => {
-  const off = await doctor({ makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: false } }) });
-  assert.equal(off.failed, false);
+  const off = await doctor({
+    makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: false } }),
+    contacts: storeAnswering({ authorized: false, status: 2 }),
+  });
   assert.ok(find(off.lines, 'warn  the Contacts permission is not granted, so contact names are left out: grant it in System Settings, Privacy & Security, Contacts, then run doctor again'), off.lines.join('\n'));
   const on = await doctor({ makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: true } }) });
   assert.ok(find(on.lines, 'ok    the Contacts permission is granted, so contact names are resolved'), on.lines.join('\n'));
+  const unknown = await doctor({ makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: false } }) });
+  assert.ok(!unknown.lines.some((l) => l.includes('not granted')), unknown.lines.join('\n'));
+  assert.ok(find(unknown.lines, 'warn  the engine reports Contacts unavailable, so contact names are left out; the macOS Contacts state could not be read here'), unknown.lines.join('\n'));
+});
+
+test('doctor never calls an authorized Contacts store not granted, and names an authorized read of nobody', async () => {
+  const empty = await doctor({
+    makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: false } }),
+    contacts: storeAnswering({ authorized: true, status: 3, contacts: [] }),
+  });
+  assert.ok(!empty.lines.some((l) => l.includes('not granted')), empty.lines.join('\n'));
+  assert.ok(find(empty.lines, 'warn  the Contacts store is authorized (macOS state 3) but the read returned 0 people'), empty.lines.join('\n'));
+  assert.ok(find(empty.lines, 'warn  the engine reports Contacts unavailable, but macOS reports the Contacts permission granted (state 3)'), empty.lines.join('\n'));
+  const full = await doctor({ contacts: storeAnswering({ authorized: true, status: 3, contacts: [PERSON] }) });
+  assert.ok(find(full.lines, 'ok    the Contacts store is readable, 1 people'), full.lines.join('\n'));
+  assert.ok(!full.lines.some((l) => l.includes('not granted') || l.includes('returned 0 people')), full.lines.join('\n'));
+  for (const status of [0, 1, 2]) {
+    const refused = await doctor({
+      makeTransport: () => statusTransport({ version: '1.2.3', database: { ready: true }, contacts: { available: false } }),
+      contacts: storeAnswering({ authorized: false, status }),
+    });
+    assert.ok(find(refused.lines, 'warn  the Contacts permission is not granted'), status + '\n' + refused.lines.join('\n'));
+    assert.ok(!refused.lines.some((l) => l.includes('returned 0 people')), refused.lines.join('\n'));
+  }
 });
 
 test('doctor names the Automation grant that sending needs', async () => {

@@ -46,6 +46,7 @@ export async function runDoctor({
   else warn('no device token yet: run token create --scope device --name <device>');
   const transport = makeTransport();
   const rpc = createRpc({ transport });
+  let engineContacts = null;
   let exited = false;
   transport.onExit(() => { exited = true; });
   try {
@@ -57,26 +58,38 @@ export async function runDoctor({
     else if (verdict === 'missing') bad('the Messages database is not there, so Messages is not signed in (or chat.db has never been created): open Messages, finish signing in, then run doctor again');
     else if (verdict === 'blocked') bad('the Messages database could not be opened: give the program that starts the server Full Disk Access, and if its entry is already on, switch it off and on again because a macOS or Homebrew update leaves the grant stale, then run doctor again');
     else bad('engine ' + config.engine.kind + version + ' cannot read the Messages database' + (st && st.database && st.database.error ? ': ' + st.database.error : '') + ': give Full Disk Access to the program that starts the server, then run doctor again');
-    if (st && st.contacts) {
-      if (st.contacts.available === false) warn('the Contacts permission is not granted, so contact names are left out: grant it in System Settings, Privacy & Security, Contacts, then run doctor again');
-      else ok('the Contacts permission is granted, so contact names are resolved');
-    }
+    if (st && st.contacts) engineContacts = st.contacts;
   } catch (e) {
     bad('engine ' + config.engine.kind + ' did not answer (' + (exited ? 'it exited' : e.message) + '): check engine.bin in config.json (' + config.engine.bin + ')');
   } finally {
     await transport.close();
   }
   // The server's own Contacts read (issue 393): its state is named, so an empty store and a store that was not
-  // allowed are told apart. The engine's Contacts grant is a second, separate answer above.
+  // allowed are told apart. It is read before the engine's Contacts answer is reported, because macOS's own
+  // authorization state is what decides whether the permission is missing.
+  //
+  // ★ "Not granted" is said only when macOS reports a state other than 3. An authorized store that reads nobody is
+  // its own answer: the permission is there and the read is what came back empty (measured on a Mac whose store held
+  // people while a container-first read answered none).
+  let contactsStatus = null;
   if (contacts || platform === 'darwin') {
     const store = contacts || createContacts({ log: quiet });
     const st = await store.load().then(() => store.status()).catch(() => ({ state: 'error', status: null, count: 0, reason: 'error' }));
+    contactsStatus = Number.isFinite(st.status) ? st.status : null;
     if (st.state === 'ok') ok('the Contacts store is readable, ' + st.count + ' people');
-    else if (st.state === 'empty') ok('the Contacts store is readable and holds nobody');
+    else if (st.state === 'empty') warn('the Contacts store is authorized (macOS state 3) but the read returned 0 people: the permission is granted, so if the Contacts app holds people the read is at fault, not the grant');
     else if (st.state === 'not_determined') warn('the Contacts store has never been allowed for the program that starts the server (macOS state not determined): this headless check does not request permission; inspect the running server diagnostics before requesting any permission change');
     else if (st.state === 'denied') bad('the Contacts store was denied for the program that starts the server: switch Contacts on for it in System Settings, Privacy & Security, Contacts, then run doctor again');
     else if (st.state === 'restricted') bad('the Contacts store is restricted by the system and cannot be read here');
     else bad('the Contacts store could not be read' + (st.reason ? ' (' + st.reason + ')' : '') + ': inspect the running server diagnostics; a read error alone does not establish a permission denial');
+  }
+  // The engine's own Contacts answer. Its "unavailable" is reported as a missing permission only when macOS's state is
+  // known and is not 3; with the state authorized, or not readable here, it is reported as what the engine said.
+  if (engineContacts) {
+    if (engineContacts.available !== false) ok('the Contacts permission is granted, so contact names are resolved');
+    else if (contactsStatus === 3) warn('the engine reports Contacts unavailable, but macOS reports the Contacts permission granted (state 3): the permission is not the cause, so inspect the engine rather than System Settings');
+    else if (contactsStatus !== null) warn('the Contacts permission is not granted, so contact names are left out: grant it in System Settings, Privacy & Security, Contacts, then run doctor again');
+    else warn('the engine reports Contacts unavailable, so contact names are left out; the macOS Contacts state could not be read here, so this alone does not establish a missing permission');
   }
   if (config.sending.enabled) {
     ok('sending is on, at most ' + config.sending.perMinute + ' a minute');
