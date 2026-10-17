@@ -27,6 +27,8 @@ var engine = (() => {
     APP_ICON_KEY: () => APP_ICON_KEY,
     ATTACH_ACCEPT: () => ATTACH_ACCEPT,
     AUDIO_PREVIEW_MAX_BYTES: () => AUDIO_PREVIEW_MAX_BYTES,
+    BACKGROUND_ACTIONS: () => BACKGROUND_ACTIONS,
+    BACKGROUND_NAME: () => BACKGROUND_NAME,
     BADGE_APART: () => BADGE_APART,
     BADGE_TEXT_FLOOR: () => BADGE_TEXT_FLOOR,
     BUILD_SPEC: () => BUILD_SPEC,
@@ -256,6 +258,7 @@ var engine = (() => {
     installPolicy: () => installPolicy,
     installSource: () => installSource,
     isAddress: () => isAddress,
+    isBackgroundRow: () => isBackgroundRow,
     isClick: () => isClick,
     isDoubleTap: () => isDoubleTap,
     isEdgeStart: () => isEdgeStart,
@@ -275,10 +278,12 @@ var engine = (() => {
     linkTarget: () => linkTarget,
     listSections: () => listSections,
     localAttachment: () => localAttachment,
+    mapBackground: () => mapBackground,
     mapChat: () => mapChat,
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
     matchesTerm: () => matchesTerm,
+    mayBeBackgroundRow: () => mayBeBackgroundRow,
     mediaIndex: () => mediaIndex,
     mediaItems: () => mediaItems,
     mediaKind: () => mediaKind,
@@ -2416,6 +2421,25 @@ var engine = (() => {
     const list = Array.isArray(m && m.attachments) ? m.attachments : [];
     return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || "") === GROUP_PHOTO_NAME;
   }
+  var BACKGROUND_ACTIONS = Object.freeze({ 4: "set", 6: "clear" });
+  var BACKGROUND_ACTION_NAMES = new Set(Object.values(BACKGROUND_ACTIONS));
+  function isBackgroundRow(m) {
+    return Boolean(m) && BACKGROUND_ACTION_NAMES.has(m.background_action);
+  }
+  function mayBeBackgroundRow(m) {
+    return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
+  }
+  var BACKGROUND_NAME = "Background";
+  function mapBackground(status, { attachmentId }) {
+    const s = status && typeof status === "object" ? status : null;
+    if (!s || s.ok === false || !s.background_set) return null;
+    if (s.latest_event && s.latest_event.action === "clear") return null;
+    if (Number(s.communication_safety_state) > 0) return null;
+    const file = typeof s.watch_background_path === "string" ? s.watch_background_path : "";
+    if (!file || s.watch_background_exists === false) return null;
+    const id = attachmentId({ original_path: file, mime_type: "", transfer_name: BACKGROUND_NAME });
+    return { id, name: BACKGROUND_NAME, mime: "image/*", bytes: Number.isFinite(s.file_size) ? s.file_size : 0, sticker: false, missing: false };
+  }
   function mapMessage(m, { attachmentId }) {
     const fromMe = Boolean(m.is_from_me);
     const base = {
@@ -2437,6 +2461,9 @@ var engine = (() => {
       const v = attachmentView(m.attachments[0], attachmentId);
       const photo = v.missing ? null : { ...modelAttachment(v, "Group photo"), mime: /^image\//i.test(v.mime) ? v.mime : "image/*" };
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "groupPhoto", photo } };
+    }
+    if (isBackgroundRow(m)) {
+      return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
     }
     return {
       ...base,
@@ -2580,6 +2607,7 @@ var engine = (() => {
   function eventText(m) {
     const who = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
     if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
+    if (m.event && m.event.kind === "background") return who + (m.event.action === "clear" ? " removed the background" : " changed the background");
     return "";
   }
   function initials(name) {
@@ -2597,7 +2625,9 @@ var engine = (() => {
     const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
     const out = chats.slice();
     const photo = message.event && message.event.kind === "groupPhoto" ? { photo: message.event.photo } : {};
-    out[i] = { ...c, ...photo, unread, lastMessageAt: message.sentAt, lastMessage: message.event ? { ...lastMessage, event: { kind: message.event.kind }, senderName: message.senderName || null } : lastMessage };
+    const backdrop = message.event && message.event.kind === "background" && message.event.action === "clear" ? { background: null } : {};
+    const event = message.event ? { kind: message.event.kind, ...message.event.action ? { action: message.event.action } : {} } : null;
+    out[i] = { ...c, ...photo, ...backdrop, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
   function applyEditToChats(chats, message) {

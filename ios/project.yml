@@ -94,6 +94,7 @@ targets:
             cp "$SRCROOT/../core/test/live-photo-fixture.mp4" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/live-photo-fixture.mp4"
             cp "$SRCROOT/../core/test/release-feed-fixture.atom" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/release-feed-fixture.atom"
             cp "$SRCROOT/../core/test/contacts-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/contacts-fixture.js"
+            cp "$SRCROOT/../core/test/background-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/background-fixture.js"
           fi
         basedOnDependencyAnalysis: false
     settings:

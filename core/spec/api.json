@@ -406,6 +406,7 @@
       "lastMessageAt": "string?",
       "lastMessage": "Preview?",
       "photo": "Attachment?",
+      "background": "Attachment?",
       "members": "Contact[]"
     },
     "Contact": {
@@ -639,7 +640,8 @@
     },
     "MessageEventKind": {
       "kind": "string",
-      "photo": "Attachment?"
+      "photo": "Attachment?",
+      "action": "string?"
     },
     "PushRegistration": {
       "token": "string",
