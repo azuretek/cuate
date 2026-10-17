@@ -23,14 +23,28 @@ export function heldMedia(a) {
   held.set(key, url);
   return url;
 }
-export function holdMedia(a, url) {
-  held.set(heldKey(a), url);
+export function holdMedia(a, url, key = heldKey(a)) {
+  held.set(key, url);
   while (held.size > HELD_MEDIA_MAX) {
     const [key, old] = held.entries().next().value;
     held.delete(key);
     URL.revokeObjectURL(old);
   }
 }
+// A video's poster (issue 415), the still the server makes from it, held beside the video by the same rule.
+const posterKey = (a) => String(a.id) + ':poster';
+export function heldPoster(a) {
+  if (!a || mediaKind(a) !== 'video') return '';
+  const url = held.get(posterKey(a));
+  if (!url) return '';
+  held.delete(posterKey(a));
+  held.set(posterKey(a), url);
+  return url;
+}
+const holdPoster = (a, url) => holdMedia(a, url, posterKey(a));
+// Where the server has no poster, the video is drawn a tenth of a second in: a media fragment makes the web view seek
+// and paint that frame, where a video that read only its metadata paints nothing at all on iPhone (issue 415).
+export const FIRST_FRAME = '#t=0.1';
 const mediaLabel = (kind) => (kind === 'video' ? 'video' : 'image');
 
 // A file in a conversation is kept with Save and handed to the device's own apps with Open in (issues 219 and 374):
@@ -69,11 +83,12 @@ export const saveAttachment = (a, options) => handFile('file.save', a, options);
 export const openAttachment = (a, options) => handFile('file.open', a, options);
 
 class AppAttachment extends KitElement {
-  static properties = { attachment: { attribute: false }, client: { attribute: false }, src: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
+  static properties = { attachment: { attribute: false }, client: { attribute: false }, src: { state: true }, poster: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
 
   constructor() {
     super();
     this.src = '';
+    this.poster = '';
     this.failed = false;
     // A link whose video the server resolves (issue 243): the still previews it, and a press plays the video rather
     // than the still. Empty for an ordinary attachment.
@@ -86,6 +101,7 @@ class AppAttachment extends KitElement {
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
       this.failed = false;
       this.src = heldMedia(this.attachment);
+      this.poster = heldPoster(this.attachment);
     }
   }
 
@@ -119,15 +135,21 @@ class AppAttachment extends KitElement {
     this.loadRequest?.abort();
     this.loadRequest = null;
     if (this.watch) this.watch.disconnect();
+    this.posterRequest?.abort();
+    this.posterRequest = null;
   }
 
   updated(changed) {
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
       this.loadRequest?.abort();
       this.loadRequest = null;
+      this.posterRequest?.abort();
+      this.posterRequest = null;
       this.failed = false;
       this.src = heldMedia(this.attachment);
+      this.poster = heldPoster(this.attachment);
       if (!this.src) this.fetchWhenSeen();
+      else if (!this.poster) this.loadPoster();
     }
   }
 
@@ -140,6 +162,7 @@ class AppAttachment extends KitElement {
     const request = new AbortController();
     this.loadRequest?.abort();
     this.loadRequest = request;
+    if (!this.poster) this.loadPoster();
     try {
       const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined, signal: request.signal });
       if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
@@ -149,6 +172,26 @@ class AppAttachment extends KitElement {
     } catch {
       if (!request.signal.aborted && this.attachment?.id === a.id) this.failed = true;
     } finally { if (this.loadRequest === request) this.loadRequest = null; }
+  }
+
+  // A video's poster is asked for beside the video itself (issue 415). A server with none (one not on a Mac, or a still
+  // it could not make) answers 404, and the tile then draws the video's own first frame, so a missing poster is never
+  // a failed video. It lands under the same id match as the video.
+  async loadPoster() {
+    const a = this.attachment;
+    if (!a || mediaKind(a) !== 'video' || a.sticker || !this.client) return;
+    const request = new AbortController();
+    this.posterRequest?.abort();
+    this.posterRequest = request;
+    try {
+      const blob = await this.client.attachment(a.id, { part: 'poster', signal: request.signal });
+      if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
+      const url = heldPoster(a) || URL.createObjectURL(blob);
+      holdPoster(a, url);
+      this.poster = url;
+    } catch {
+      // No poster: the first frame is drawn from the video.
+    } finally { if (this.posterRequest === request) this.posterRequest = null; }
   }
 
   // Pressing a preview opens it in the viewer, which the page draws over everything (app-image-viewer). The detail names
@@ -186,12 +229,12 @@ class AppAttachment extends KitElement {
     if (isMediaAttachment(a) && !this.failed) {
       const kind = mediaKind(a);
       // A sticker is drawn as it is, on the bubble's background; a picture is a preview at its own aspect ratio, sized
-      // to fit, dressed with a shadow, a rounded edge and a hairline border; a video is drawn the same way, its first
-      // frame in place of the picture. Pressing either opens the media viewer (issues 126 and 181).
+      // to fit, dressed with a shadow, a rounded edge and a hairline border; a video is drawn the same way, its poster
+      // or else its first frame in place of the picture (issue 415). Pressing either opens the media viewer (issues 126 and 181).
       if (this.src && a.sticker) return html`<img class="attachment-image sticker" src=${this.src} alt=${a.name}>`;
       if (!this.src) return html`<div class="attachment-image placeholder" role="img" aria-label=${'Loading ' + mediaLabel(kind)}></div>`;
       const media = kind === 'video'
-        ? html`<video class="attachment-image" src=${this.src} muted playsinline preload="metadata" aria-label=${a.name}></video>`
+        ? html`<video class="attachment-image" src=${this.src + FIRST_FRAME} poster=${this.poster || nothing} muted playsinline preload="metadata" aria-label=${a.name}></video>`
         : html`<img class="attachment-image" src=${this.src} alt=${a.name}>`;
       // Anything that moves, a video or a Live Photo, is drawn as its picture with a small play mark in its corner, so it
       // reads as something that plays before it is pressed; pressing it plays it in the viewer.
