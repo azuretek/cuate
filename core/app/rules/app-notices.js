@@ -93,6 +93,45 @@ export function quietNotices(notices, read = {}) {
   return changed ? out : notices;
 }
 
+// The read map as one comparable value: the same marks in any key order read the same, so an echo is matched to the
+// write it answers.
+export function noticeReadKey(state) {
+  const read = noticeState(state);
+  return JSON.stringify(Object.keys(read).sort().map((id) => [id, read[id]]));
+}
+
+// How many of this page's own writes of the read map are remembered while their echo is awaited. A write the server
+// takes without a change raises no echo, so the list is bounded rather than trusted to drain.
+export const NOTICE_ECHO_LIMIT = 8;
+
+// This page wrote the read map (a close, or a re-ask forgetting one): remember it until the server's echo arrives.
+export function sentNoticeRead(sent, state) {
+  return [...(sent || []), noticeReadKey(state)].slice(-NOTICE_ECHO_LIMIT);
+}
+
+// A write the server refused raises no echo, so it is no longer awaited.
+export function dropNoticeRead(sent, key) {
+  const out = [...(sent || [])];
+  const at = out.indexOf(key);
+  if (at >= 0) out.splice(at, 1);
+  return out;
+}
+
+// The read map a settings.changed event carries, decided against this page's own writes still awaiting their echo
+// (issue 422).
+// The server tells EVERY client, the writer too, so a page that closed a notice and at once asked again (About's
+// Check for updates pressed straight after its notice was closed) hears the echo of the close AFTER it forgot that
+// mark and drew the new answer. Taken as news, that stale echo marks the new answer read and the question goes
+// unanswered. So an echo of one of this page's own writes is applied only when no later write of its own is still in
+// flight; a map this page did not write is another device's, and is applied as it comes.
+export function noticeReadEcho(sent, incoming) {
+  const key = noticeReadKey(incoming);
+  const at = (sent || []).indexOf(key);
+  if (at < 0) return { sent: sent || [], stale: false };
+  const later = sent.slice(at + 1);
+  return { sent: later, stale: later.length > 0 };
+}
+
 // A notice asked for again (About's Check for updates, issue 171) forgets its stored revision on the server too, so
 // the same answer shows again even though the reader read it before. Without this the persistent state hides the
 // answer a person just asked for, which is the whole point of the re-ask.

@@ -69,6 +69,7 @@ var engine = (() => {
     MAX_THEMES: () => MAX_THEMES,
     MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
+    NOTICE_ECHO_LIMIT: () => NOTICE_ECHO_LIMIT,
     NOTICE_READ_KEY: () => NOTICE_READ_KEY,
     NOTICE_TYPES: () => NOTICE_TYPES,
     NOTICE_UPDATE_STATES: () => NOTICE_UPDATE_STATES,
@@ -202,6 +203,7 @@ var engine = (() => {
     dragOutcome: () => dragOutcome,
     dragThreshold: () => dragThreshold,
     drawnY: () => drawnY,
+    dropNoticeRead: () => dropNoticeRead,
     durationMs: () => durationMs,
     editRefusal: () => editRefusal,
     emojiFallbackParts: () => emojiFallbackParts,
@@ -301,6 +303,8 @@ var engine = (() => {
     noticeEnabled: () => noticeEnabled,
     noticeHoldMs: () => noticeHoldMs,
     noticeQuiet: () => noticeQuiet,
+    noticeReadEcho: () => noticeReadEcho,
+    noticeReadKey: () => noticeReadKey,
     noticeState: () => noticeState,
     noticeStateOf: () => noticeStateOf,
     noticeTarget: () => noticeTarget,
@@ -366,6 +370,7 @@ var engine = (() => {
     scrollFor: () => scrollFor,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
+    sentNoticeRead: () => sentNoticeRead,
     serverUpdateNotice: () => serverUpdateNotice,
     serviceNote: () => serviceNote,
     setAllChecked: () => setAllChecked,
@@ -2236,6 +2241,27 @@ var engine = (() => {
       return { ...n, read: true };
     });
     return changed ? out : notices;
+  }
+  function noticeReadKey(state) {
+    const read = noticeState(state);
+    return JSON.stringify(Object.keys(read).sort().map((id) => [id, read[id]]));
+  }
+  var NOTICE_ECHO_LIMIT = 8;
+  function sentNoticeRead(sent, state) {
+    return [...sent || [], noticeReadKey(state)].slice(-NOTICE_ECHO_LIMIT);
+  }
+  function dropNoticeRead(sent, key) {
+    const out = [...sent || []];
+    const at = out.indexOf(key);
+    if (at >= 0) out.splice(at, 1);
+    return out;
+  }
+  function noticeReadEcho(sent, incoming) {
+    const key = noticeReadKey(incoming);
+    const at = (sent || []).indexOf(key);
+    if (at < 0) return { sent: sent || [], stale: false };
+    const later = sent.slice(at + 1);
+    return { sent: later, stale: later.length > 0 };
   }
   function forgetNoticeState(state, id) {
     const out = noticeState(state);
