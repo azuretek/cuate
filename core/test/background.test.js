@@ -18,6 +18,11 @@ test('the conversation draws its background behind the messages, never in the ti
   const css = read('core/app/styles/app.css');
   assert.match(css, /\.conv-backdrop \{ position: absolute; inset: 0; overflow: hidden; pointer-events: none; \}/, 'it fills the conversation and takes no press');
   assert.match(css, /\.conv-backdrop-picture \{[^}]*object-fit: cover;/);
+  // The quiet words that sit straight on the picture take a background the tokens define, so they read over any picture.
+  const words = /\.conv-body\[data-backdrop\] :is\(([^)]*)\) \{ background: var\((--[a-z-]+)\);/.exec(css);
+  assert.ok(words, 'the words on the backdrop take a background');
+  for (const part of ['.conv-event > span', '.separator', '.sender', '.delivery']) assert.ok(words[1].includes(part), 'and so does ' + part);
+  assert.ok(read('core/app/styles/tokens.css').includes(words[2] + ':'), words[2] + ' is a token the page defines');
 });
 
 test('the background proof is a Debug seam, copied into test builds only (issue 417)', () => {
