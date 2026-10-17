@@ -11,7 +11,8 @@ import { logSpec } from '../src/paths.js';
 import { createRichTextReader, richRuns } from '../src/engine/rich-text.js';
 import { readAttributedString, readTypedStream } from '../src/engine/typedstream.js';
 import { TEXT_RUNS } from '../src/engine/fixtures.js';
-import { stylesFromRuns, styledParts, letters, TEXT_EFFECT_IDS } from '../../core/app/rules/text-styles.js';
+import { stylesFromRuns, letters, TEXT_EFFECT_IDS } from '../../core/app/rules/text-styles.js';
+import { styledParts } from '../../core/app/rules/links.js';
 import { boot } from './helpers.js';
 
 // Issue 433: a sender's text effect (Big, Small, Shake, Nod, Explode, Ripple, Bloom, Jitter) is an attribute on a
