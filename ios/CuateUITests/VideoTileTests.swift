@@ -26,22 +26,37 @@ final class VideoTileTests: XCTestCase {
 
         // A frame can take a moment to decode after the tile is drawn, so each tile is read until it shows a picture or
         // the bound passes; the verdict is the last reading of each.
+        // Each tile is cut out of one capture of the whole screen, by the box the page says the tile is in now, offset by
+        // the web view's place on screen. An element's own screenshot of web content is not trusted here: two tiles in
+        // different places once came back as the same image.
         let page = app.webViews.firstMatch
         var readings: [String: TileReading] = [:]
+        var crops: [String: UIImage] = [:]
+        var screen: UIImage?
         let pictured = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let shot = XCUIScreen.main.screenshot().image
+            screen = shot
+            let boxes = TileBoxes.read(marker.label)
             for name in self.tiles {
-                let tile = page.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch
-                guard tile.exists, !tile.frame.isEmpty else { readings[name] = nil; continue }
-                readings[name] = TileReading(tile.screenshot().image, frame: tile.frame)
+                guard let box = boxes[name], box.width > 0, box.height > 0 else { readings[name] = nil; continue }
+                let frame = box.offsetBy(dx: page.frame.minX, dy: page.frame.minY)
+                guard let crop = TileBoxes.crop(shot, frame) else { readings[name] = nil; continue }
+                crops[name] = crop
+                readings[name] = TileReading(crop, frame: frame)
             }
             return self.tiles.allSatisfy { readings[$0]?.pictured == true }
         }, object: nil)
         _ = XCTWaiter().wait(for: [pictured], timeout: 30)
 
+        if let screen {
+            let capture = XCTAttachment(image: screen)
+            capture.name = "video-tile screen"
+            capture.lifetime = .keepAlways
+            add(capture)
+        }
         for name in tiles {
-            let tile = page.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch
-            if tile.exists, !tile.frame.isEmpty {
-                let capture = XCTAttachment(image: tile.screenshot().image)
+            if let crop = crops[name] {
+                let capture = XCTAttachment(image: crop)
                 capture.name = "video-tile " + name
                 capture.lifetime = .keepAlways
                 add(capture)
@@ -50,6 +65,31 @@ final class VideoTileTests: XCTestCase {
             print("video tile " + name + ": " + (reading?.summary ?? "not on screen"))
             XCTAssertTrue(reading?.pictured == true, "the tile " + name + " is blank: " + (reading?.summary ?? "not on screen") + SystemSurface.failureSuffix(app))
         }
+    }
+}
+
+/// Where the page says each tile is, in points of the web view, read from the fixture's live report.
+enum TileBoxes {
+    static func read(_ label: String) -> [String: CGRect] {
+        guard label.hasPrefix("video:ready "),
+              let data = String(label.dropFirst("video:ready ".count)).data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tiles = json["tiles"] as? [[String: Any]] else { return [:] }
+        var out: [String: CGRect] = [:]
+        for tile in tiles {
+            guard let name = tile["label"] as? String, let box = tile["box"] as? [Double], box.count == 4 else { continue }
+            out[name] = CGRect(x: box[0], y: box[1], width: box[2], height: box[3])
+        }
+        return out
+    }
+
+    /// The part of a screen capture inside a frame given in points.
+    static func crop(_ image: UIImage, _ frame: CGRect) -> UIImage? {
+        guard let cg = image.cgImage else { return nil }
+        let scale = CGFloat(cg.width) / image.size.width
+        let rect = CGRect(x: frame.minX * scale, y: frame.minY * scale, width: frame.width * scale, height: frame.height * scale).integral
+        guard let part = cg.cropping(to: rect) else { return nil }
+        return UIImage(cgImage: part, scale: scale, orientation: .up)
     }
 }
 

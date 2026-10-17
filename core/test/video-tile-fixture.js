@@ -73,12 +73,16 @@
   await until(() => tiles.every((t) => t.querySelector('video')), 'both tiles to draw their video');
   // A poster the server sends lands beside the video; give it the same bound before saying what each tile holds.
   await until(() => tiles[0].querySelector('video').hasAttribute('poster'), 'the poster to land', 5000).catch(() => {});
-  const report = tiles.map((t) => {
+  // The report is kept current, since a tile takes its video's own shape once the video has read its size, and the UI
+  // test crops each tile out of the screen by the box the page says it is in now.
+  const report = () => tiles.map((t) => {
     const v = t.querySelector('video');
     const b = t.querySelector('.attachment-preview').getBoundingClientRect();
     return { label: t.querySelector('.attachment-preview').getAttribute('aria-label'), box: [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)], poster: v.hasAttribute('poster'), fragment: /#t=/.test(v.getAttribute('src') || ''), readyState: v.readyState };
   });
-  say('video:ready ' + JSON.stringify({ viewport: [innerWidth, innerHeight], tiles: report }));
+  const publish = () => say('video:ready ' + JSON.stringify({ viewport: [innerWidth, innerHeight], tiles: report() }));
+  publish();
+  setInterval(publish, 250);
 })().catch((error) => {
   const text = 'video:fail fixture ' + error.message;
   const marker = document.querySelector('[data-video-fixture]') || document.createElement('output');
