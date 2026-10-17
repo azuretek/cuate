@@ -19,11 +19,16 @@ test('the viewer X is placed from the viewer and the platform chrome, never the 
   assert.ok(viewer, 'the viewer places its close control');
   assert.match(viewer, /position:\s*absolute/, 'it floats over the viewer surface');
   assert.doesNotMatch(viewer, /--size-header/, 'the viewer X is measured from the contact header');
-  assert.match(viewer, /top:\s*calc\([^;]*--size-window-control-inset[^;]*--size-window-control-h[^;]*\);/, 'its top clears the window controls from the true window edge');
+  // Its top is held once on the viewer (issue 416), so the room a video leaves the X is measured from the same place.
+  assert.match(viewer, /top:\s*var\(--viewer-close-top\);/, 'its top is the viewer\'s one measure of where the X sits');
+  const top = rules(src).find((r) => r.sel === '.viewer' && /--viewer-close-top:/.test(r.body));
+  assert.ok(top, 'the viewer holds where its X sits');
+  assert.match(top.body, /--viewer-close-top:\s*calc\([^;]*--size-window-control-inset[^;]*--size-window-control-h[^;]*\);/, 'its top clears the window controls from the true window edge');
+  assert.doesNotMatch(top.body, /--size-header/, 'the viewer X is measured from the contact header');
   assert.match(viewer, /right:\s*calc\([^;]*--inset-right[^;]*\);/, 'its right sits a margin in from the true window edge');
-  const darwin = rule(src, '.app-window[data-platform="darwin"] .viewer > .close-button');
+  const darwin = rule(src, '.app-window[data-platform="darwin"] .viewer');
   assert.ok(darwin, 'macOS places the viewer X itself');
-  assert.match(darwin, /top:\s*calc\([^;]*--size-window-strip[^;]*\);/, 'the macOS rule clears the traffic-light strip');
+  assert.match(darwin, /--viewer-close-top:\s*calc\([^;]*--size-window-strip[^;]*\);/, 'the macOS rule clears the traffic-light strip');
   assert.doesNotMatch(darwin, /--size-header/, 'the macOS rule is not measured from the contact header');
 });
 

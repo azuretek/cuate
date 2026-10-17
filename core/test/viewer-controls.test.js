@@ -23,7 +23,7 @@ test('the controls are one family: the close control\'s height, one frosted pill
   assert.match(rule('.viewer-nav, .viewer-control'), /height: var\(--viewer-control\)/);
   assert.match(rule('.viewer > .close-button, .viewer-nav, .viewer-bar'), /background: var\(--viewer-glass\)/, 'one surface for every control');
   assert.match(rule('.viewer-bar'), /left: 50%; translate: -50% 0;/, 'the bar is centred');
-  assert.match(viewer, /<div class="viewer-bar" role="toolbar" aria-label="Media controls">\$\{play\}\$\{count\}/, 'the play control and the position live in the bar');
+  assert.match(viewer, /<div class="viewer-bar" role="toolbar" aria-label="Media controls">(\$\{inBar \? prev : nothing\})?\$\{play\}\$\{count\}/, 'the play control and the position live in the bar');
   assert.match(viewer, /class="viewer-control viewer-play"[^>]*>.*<span class="viewer-play-label">Live<\/span>/, 'the play control is labelled');
   assert.match(rule('.viewer-play'), /background: var\(--color-accent\)/, 'and drawn in the accent so it is not missed');
   for (const sel of ['.viewer-nav, .viewer-control', '.viewer-bar', '.viewer-play', '.viewer-count, .viewer-zoom']) {
@@ -143,4 +143,30 @@ test('each phone proves a video\'s player controls and the viewer\'s own are all
     assert.ok(clip.includes(Buffer.from('mp4a')) && clip.includes(Buffer.from('avc1')), 'the ' + shape + ' clip has a picture and a sound track');
   }
   assert.doesNotMatch(read('core/app/main.js'), /video-controls-fixture/);
+});
+
+// A video is laid out in the room the viewer's controls leave (issue 416): its step controls join the bar, and the
+// stage keeps a band clear above it for the close control and one below it for the bar, so the player's own controls,
+// drawn inside the video's box, never sit under ours. A picture keeps its step controls either side.
+test('a video is laid out clear of every viewer control, and its step controls join the bar', () => {
+  const host = (kind) => {
+    const items = [1, 2, 3].map((n) => ({ id: 'v' + n, attachmentId: 'v' + n, kind, name: 'clip-' + n, mime: kind === 'video' ? 'video/mp4' : 'image/png' }));
+    return Object.assign(Object.create(components['app-image-viewer'].prototype), {
+      items, index: 1, kind, alt: 'clip-2', src: 'blob:clip', view: { scale: 1, x: 0, y: 0 }, moving: false, motion: '', playing: false, motionFailed: false, pageError: '',
+    });
+  };
+  const drawn = words(components['app-image-viewer'].prototype.render.call(host('video')));
+  const bar = drawn.slice(drawn.indexOf('<div class="viewer-bar"'));
+  assert.ok(bar.includes('viewer-prev') && bar.includes('viewer-next'), 'a video\'s step controls are in the bar');
+  assert.ok(bar.indexOf('viewer-prev') < bar.indexOf('viewer-count') && bar.indexOf('viewer-count') < bar.indexOf('viewer-next'), 'previous leads the bar and next ends it');
+  assert.doesNotMatch(drawn, /class="viewer-nav/, 'nothing of ours floats over the sides of a video');
+  const picture = words(components['app-image-viewer'].prototype.render.call(host('image')));
+  assert.match(picture, /class="viewer-nav viewer-prev"/, 'a picture keeps its step controls either side');
+  assert.doesNotMatch(picture.slice(picture.indexOf('<div class="viewer-bar"')), /viewer-prev/);
+  const video = rule('.sheet-scrim.viewer[data-kind="video"]');
+  assert.match(video, /padding-top: calc\(var\(--viewer-close-top\) \+ var\(--viewer-control\) \+ var\(--space-2\)\);/, 'the band above clears the close control');
+  assert.match(video, /padding-bottom: calc\(var\(--viewer-bar-bottom\) \+ var\(--viewer-bar-h\) \+ var\(--space-2\)\);/, 'the band below clears the bar');
+  assert.match(rule('.viewer > .close-button'), /top: var\(--viewer-close-top\);/, 'the close control sits where the band measures it');
+  assert.match(rule('.viewer-bar'), /bottom: var\(--viewer-bar-bottom\);/, 'the bar sits where the band measures it');
+  assert.match(rule('.viewer-bar'), /min-height: var\(--viewer-bar-h\);/, 'and is the height the band leaves it');
 });
