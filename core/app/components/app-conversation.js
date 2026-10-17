@@ -9,6 +9,7 @@ import { newArrivals } from '../../kit/rules/motion.js';
 import { chatTitle, eventText } from '../rules/chats.js';
 import { hasContactEditor, handleKey } from '../rules/contacts.js';
 import './app-avatar.js';
+import './app-backdrop.js';
 import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel, editRefusal } from '../rules/messages.js';
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
@@ -547,7 +548,8 @@ class AppConversation extends KitElement {
     // back arrow (issue 168); the same control Settings draws. An open thread leaves the contact header as it is, way
     // back included: its close control is in the thread card (issue 213).
     return html`<header class="conv-head"><button class="conv-back" aria-label="Back to chats" @click=${press(() => this.fire('back'))}><span class="icon" data-icon="messages-square" aria-hidden="true"></span></button><app-avatar .title=${title} .photo=${this.chat?.photo || null} .client=${this.client}></app-avatar><div class="conv-title"><div class="chat-name-row"><div class="chat-name" title=${note && !note.apple ? note.label : nothing}>${title}</div>${note && note.apple ? html`<span class="icon service-mark" data-icon="smartphone" role="img" tabindex="0" aria-label=${note.label} title=${note.label}></span>` : nothing}</div>${typing ? html`<div class="muted small typing" role="status">${typing}</div>` : detail ? html`<div class="muted small">${detail}</div>` : nothing}</div>${this.chat && this.chat.isGroup ? html`<button type="button" class="conv-info" aria-label="Group details" title="Group details" @click=${press(() => this.fire('groupinfo'))}><span class="icon" data-icon="info" aria-hidden="true"></span></button>` : nothing}${this.chat && !this.chat.isGroup && hasContactEditor(this.host) && (this.chat.participants || []).length ? html`<button type="button" class="conv-info conv-edit-contact" aria-label="Edit contact" title="Edit contact" @click=${press(() => this.editContact())}><span class="icon" data-icon="pencil" aria-hidden="true"></span></button>` : nothing}${this.windowControls && this.windowControls.drawn ? windowControlsHtml({ order: this.windowControls.order, maximized: this.maximized, onAction: (name) => this.fire('window-action', name) }) : nothing}</header>
-      <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing}>
+      <div class="conv-body" data-thread=${thread ? this.replyingTo.id : nothing} data-reacting=${this.reactFor || nothing} data-backdrop=${this.chat?.background ? this.chat.background.id : nothing}>
+        ${this.chat?.background ? html`<app-backdrop class="conv-backdrop" aria-hidden="true" .picture=${this.chat.background} .client=${this.client}></app-backdrop>` : nothing}
         <div class=${'messages' + (thread ? ' behind' : '')} role="log" aria-live="polite" ?inert=${thread} aria-hidden=${thread ? 'true' : nothing} @scroll=${this.nearTop}>
           <div class="history-space history-space-before" aria-hidden="true"></div>
           ${this.hasMore ? html`<button class="load-older" @click=${press(() => this.fire('older', this.historyMeasurements()))}>Load earlier messages</button>` : nothing}
