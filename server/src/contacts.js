@@ -16,34 +16,31 @@ import { contactIndex, contactFor, contactName } from '../../core/app/rules/cont
 
 // The program the Mac runs: one JSON object on stdout. Contacts are read only when macOS has ALREADY allowed them
 // (authorizationStatus 3), so a refusal is reported to the server rather than prompting on the Mac's screen.
+//
+// ★ The store is enumerated with one CNContactFetchRequest (unifyResults on), never by listing containers first: on a
+// Mac whose people live in an account the server's identity cannot list containers for, containersMatchingPredicate
+// answers no containers and a per-container read answers nobody, while an authorized enumeration reads every person
+// (issue 393). The keys are bridged with $([...]): a plain JavaScript array can reach the Contacts framework as a
+// dictionary, which it refuses with an unrecognized selector.
 export const CONTACTS_JXA = [
   "ObjC.import('Contacts');",
   'const store = $.CNContactStore.alloc.init;',
   'const status = Number($.CNContactStore.authorizationStatusForEntityType($.CNEntityTypeContacts));',
   'if (status !== 3) { JSON.stringify({ authorized: false, status: status }); }',
   'else {',
-  '  const keys = [$.CNContactIdentifierKey, $.CNContactGivenNameKey, $.CNContactMiddleNameKey, $.CNContactFamilyNameKey,',
+  '  const keys = $([$.CNContactIdentifierKey, $.CNContactGivenNameKey, $.CNContactMiddleNameKey, $.CNContactFamilyNameKey,',
   '    $.CNContactNicknameKey, $.CNContactOrganizationNameKey, $.CNContactPhoneNumbersKey,',
-  '    $.CNContactEmailAddressesKey, $.CNContactThumbnailImageDataKey, $.CNContactFormatter.descriptorForRequiredKeysForStyle($.CNContactFormatterStyleFullName)];',
-  '  const err = Ref();',
-  '  const containers = store.containersMatchingPredicateError(null, err);',
-  '  if (!containers) throw new Error("Contacts containers could not be read");',
-  '  const all = [];',
-  '  const seen = new Set();',
-  '  for (let n = 0; n < Number(containers.count); n += 1) {',
-  '    const pred = $.CNContact.predicateForContactsInContainerWithIdentifier(containers.objectAtIndex(n).identifier);',
-  '    const rows = store.unifiedContactsMatchingPredicateKeysToFetchError(pred, keys, err);',
-  '    if (!rows) throw new Error("Contacts could not be read");',
-  '    for (let j = 0; j < Number(rows.count); j += 1) {',
-  '      const row = rows.objectAtIndex(j);',
-  '      const id = String(ObjC.unwrap(row.identifier));',
-  '      if (!seen.has(id)) { seen.add(id); all.push(row); }',
-  '    }',
-  '  }',
+  '    $.CNContactEmailAddressesKey, $.CNContactThumbnailImageDataKey, $.CNContactFormatter.descriptorForRequiredKeysForStyle($.CNContactFormatterStyleFullName)]);',
+  '  const request = $.CNContactFetchRequest.alloc.initWithKeysToFetch(keys);',
+  '  request.unifyResults = true;',
+  '  const str = (v) => { try { return v && v.js !== undefined ? String(v.js) : String(v || ""); } catch (e) { return ""; } };',
   '  const out = [];',
-  '  for (let i = 0; i < all.length; i += 1) {',
-  '    const c = all[i];',
-  '    const str = (v) => { try { return v && v.js !== undefined ? String(v.js) : String(v || ""); } catch (e) { return ""; } };',
+  '  const seen = new Set();',
+  '  const err = Ref();',
+  '  const read = store.enumerateContactsWithFetchRequestErrorUsingBlock(request, err, (c) => {',
+  '    const id = str(c.identifier);',
+  '    if (id && seen.has(id)) return;',
+  '    if (id) seen.add(id);',
   '    const rec = { given: str(c.givenName), middle: str(c.middleName), family: str(c.familyName),',
   '      nickname: str(c.nickname), organization: str(c.organizationName), displayName: str($.CNContactFormatter.stringFromContactStyle(c, $.CNContactFormatterStyleFullName)), phones: [], emails: [] };',
   '    const phones = c.phoneNumbers;',
@@ -56,7 +53,8 @@ export const CONTACTS_JXA = [
   '    }',
   '    try { if (c.thumbnailImageData) rec.photo = String(c.thumbnailImageData.base64EncodedStringWithOptions(0)); } catch (e) { /* a record with no picture */ }',
   '    out.push(rec);',
-  '  }',
+  '  });',
+  '  if (!read) throw new Error("Contacts could not be read");',
   '  JSON.stringify({ authorized: true, status: status, contacts: out });',
   '}',
 ].join('\n');

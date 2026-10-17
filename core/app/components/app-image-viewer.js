@@ -891,16 +891,21 @@ class AppImageViewer extends KitElement {
     // and the zoom. The play control is the bar's widest, labelled, so it is not missed.
     const play = live ? html`<button type="button" class="viewer-control viewer-play" aria-label=${playLabel} title=${playLabel} aria-pressed=${this.playing ? 'true' : 'false'} ?disabled=${this.motionFailed} @click=${press(() => this.playMotion())}><span class="icon" data-icon="play" aria-hidden="true"></span><span class="viewer-play-label">Live</span></button>` : nothing;
     const count = hasNav ? html`<span class="viewer-count">${this.mediaPages ? 'Conversation media' : (at + 1) + ' of ' + list.length}</span>` : nothing;
+    // A video brings the player's own controls inside its box, so its step controls join the bar at the foot, either
+    // side of where it sits, rather than floating over the video's sides (issue 416); a picture keeps them either side.
+    const inBar = this.kind === 'video';
+    const prev = hasNav ? html`<button type="button" class="viewer-${inBar ? 'control' : 'nav'} viewer-prev" aria-label="Previous item" title="Previous item" ?disabled=${at <= 0 && !this.mediaPages?.more.prev} @click=${press(() => this.go('prev'))}><span class="icon" data-icon="chevron-left" aria-hidden="true"></span></button>` : nothing;
+    const next = hasNav ? html`<button type="button" class="viewer-${inBar ? 'control' : 'nav'} viewer-next" aria-label="Next item" title="Next item" ?disabled=${at >= list.length - 1 && !this.mediaPages?.more.next} @click=${press(() => this.go('next'))}><span class="icon" data-icon="chevron-right" aria-hidden="true"></span></button>` : nothing;
     return html`<div class="sheet-scrim viewer" data-dismiss="viewer" role="dialog" aria-modal="true" aria-label=${label}
         data-scale=${String(this.view.scale)} data-zoomed=${this.view.scale > 1.001 ? 'true' : 'false'} data-gesture=${this.moving ? 'on' : 'off'}
         data-index=${at} data-count=${list.length} data-kind=${this.kind}
         @pointerdown=${this.onDown} @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${this.onCancel}
         @contextmenu=${this.onContext} @wheel=${this.onWheel}>
       ${media}
-      ${hasNav ? html`<button type="button" class="viewer-nav viewer-prev" aria-label="Previous item" title="Previous item" ?disabled=${at <= 0 && !this.mediaPages?.more.prev} @click=${press(() => this.go('prev'))}><span class="icon" data-icon="chevron-left" aria-hidden="true"></span></button>` : nothing}
-      ${hasNav ? html`<button type="button" class="viewer-nav viewer-next" aria-label="Next item" title="Next item" ?disabled=${at >= list.length - 1 && !this.mediaPages?.more.next} @click=${press(() => this.go('next'))}><span class="icon" data-icon="chevron-right" aria-hidden="true"></span></button>` : nothing}
+      ${inBar ? nothing : prev}
+      ${inBar ? nothing : next}
       ${closeButtonHtml({ owner: 'viewer', label: 'Close', size: 'lg', onClose: () => this.close() })}
-      <div class="viewer-bar" role="toolbar" aria-label="Media controls">${play}${count}${this.pageError ? html`<span class="viewer-count" role="status">${this.pageError}</span>` : nothing}<span class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</span></div>
+      <div class="viewer-bar" role="toolbar" aria-label="Media controls">${inBar ? prev : nothing}${play}${count}${this.pageError ? html`<span class="viewer-count" role="status">${this.pageError}</span>` : nothing}<span class="viewer-zoom" aria-live="polite">${Math.round(this.view.scale * 100)}%</span>${inBar ? next : nothing}</div>
     </div>`;
   }
 }
