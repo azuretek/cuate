@@ -1062,3 +1062,20 @@ test('the system text size is a bridge command every shell answers and an event 
   assert.match(src(android + 'MainActivity.kt'), /textScaleChanged\(newConfig\.fontScale\)/);
   assert.match(src('core/app/components/app-root.js'), /bridge\.on\('display\.textScale'/, 'the page listens rather than polls');
 });
+
+test('a group nobody named reads as its people by their contact names, an unknown address as itself (issue 393)', () => {
+  const members = [
+    { handle: '+15550100', name: 'Ada Example', photo: null },
+    { handle: 'grace@example.com', name: 'Grace Example', photo: null },
+    { handle: '+15550199', name: '+15550199', photo: null },
+  ];
+  const group = { id: 'g', name: '', isGroup: true, participants: members.map((m) => m.handle), members };
+  assert.equal(chatTitle(group), 'Ada Example, Grace Example and 1 other');
+  assert.equal(chatTitle({ ...group, participants: group.participants.slice(1), members: members.slice(1) }), 'Grace Example and +15550199');
+  // A group someone named keeps that name, and a chat with no members from the server reads its addresses as before.
+  assert.equal(chatTitle({ ...group, name: 'Weekend plans' }), 'Weekend plans');
+  assert.equal(chatTitle({ id: 'g', name: '', isGroup: true, participants: ['+15550100', '+15550101'] }), '+15550100 and +15550101');
+  // A Contact search finds the group by a person's contact name as well as by an address.
+  assert.ok(contactSearchText(group).includes('grace example'));
+  assert.ok(contactSearchText(group).includes('+15550100'));
+});
