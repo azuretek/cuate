@@ -73,6 +73,10 @@ function readOnMac(page, chatId) {
 // How many earlier pages a pressed notice may load looking for its message (issue 331): fifty messages a page, so a
 // notice for anything newer than a thousand messages back lands on it, and an older one opens its conversation.
 const REVEAL_PAGES = 20;
+// How long a pressed notice waits on the live stream for a message the server did not have yet (issue 414). Past it
+// the conversation says the message is still loading, and it is still brought into view if it lands while that
+// conversation stays open.
+const NOTICE_ARRIVAL_MS = 15000;
 const newKey = () => crypto.randomUUID().replaceAll('-', '');
 const normalizeUrl = (u) => {
   const s = String(u || '').trim().replace(/\/+$/, '');
@@ -251,11 +255,7 @@ class AppRoot extends KitElement {
     // Coming back to the window reads the conversation on screen, which may have taken messages while it was hidden
     // (issue 323).
     if (typeof document !== 'undefined') {
-      this.onVisible = () => {
-        if (pageHidden() || !this.openChatId) return;
-        this.chats = this.chats.map((c) => (c.id === this.openChatId && c.unread ? { ...c, unread: 0 } : c));
-        readOnMac(this, this.openChatId);
-      };
+      this.onVisible = () => this.onShown();
       document.addEventListener('visibilitychange', this.onVisible);
     }
     // The shell names its platform and product before the page boots, so the bar is drawn with the first paint and
@@ -598,7 +598,9 @@ class AppRoot extends KitElement {
   // keeps drawing the one it has until the new page arrives, and then the header, the messages and the phone's pane
   // change together. A message delivered live while the page is in flight is kept: the page was read before it
   // arrived, so it is merged into the page rather than replaced by it (issue 66).
-  async open(chatId, { show = false } = {}) {
+  async open(chatId, { show = false, newest = false } = {}) {
+    // A pressed notice waits for its message only while its own conversation is open (issue 414).
+    if (this.noticeWait && this.noticeWait.chatId !== chatId) this.stopNoticeWait();
     // Leaving a conversation stops its typing, and the indicator belongs to the conversation on screen, so a change
     // clears it rather than carrying one conversation's typing into another (issue 230).
     if (this.typingChat && this.typingChat !== chatId) this.clearTyping();
@@ -640,10 +642,12 @@ class AppRoot extends KitElement {
       // A page merged over the conversation we held keeps any older messages already loaded, and keeps a message that
       // arrived live while the page was in flight (issue 66).
       const pane = this.querySelector('app-conversation');
-      if (cached?.historyWindow?.afterCount) {
+      // A window held scrolled back keeps its place, unless the newest messages are what was asked for: a pressed notice
+      // looks for its message among them (issue 414).
+      if (cached?.historyWindow?.afterCount && !newest) {
         const fresh = new Map(messages.map((m) => [m.id, m]));
         this.applyWindow({ ...cached.historyWindow, messages: cached.messages.map((m) => fresh.get(m.id) || m) });
-      } else if (cached?.historyWindow) {
+      } else if (cached?.historyWindow && !cached.historyWindow.afterCount) {
         this.applyWindow(shiftWindow(cached.historyWindow, foldFor(mergeMessages(arrived, messages), this.chats, chatId), { direction: 'newer', hasMore: false, heights: pane?.historyMeasurements().heights }));
       } else {
         this.applyWindow(initialWindow(foldFor(mergeMessages(arrived, messages), this.chats, chatId), { totalCount, hasMore, estimate: pane?.historyMeasurements().estimate || 1 }));
@@ -674,9 +678,12 @@ class AppRoot extends KitElement {
     return this.openMessage(target);
   }
 
-  // Opens a conversation at one message (issue 331): any sheet or viewer over it goes, the conversation opens, earlier
-  // pages load until the message is among them, and the conversation is told to bring it into view and mark it. A
-  // message that cannot be found still leaves its conversation open, which is the nearest true answer.
+  // Opens a conversation at one message (issue 331): any sheet or viewer over it goes, the conversation opens at its
+  // newest messages, earlier pages load until the message is among them, and the conversation is told to bring it into
+  // view and mark it. A notice can be pressed before the server has its message (issue 414), so the live stream is
+  // watched from before the first page is asked for: a message that lands there within NOTICE_ARRIVAL_MS is revealed,
+  // and past that the conversation says it is still loading and reveals it if it lands while that conversation is open.
+  // A message that cannot be found still leaves its conversation open, which is the nearest true answer.
   async openMessage({ chatId, messageId }) {
     if (!this.chats.some((c) => c.id === chatId)) await this.reload();
     if (!this.chats.some((c) => c.id === chatId)) return false;
@@ -687,14 +694,74 @@ class AppRoot extends KitElement {
     if (this.sheetShowing) this.closeView();
     else this.view = 'messages';
     this.revealing = null;
-    await this.open(chatId, { show: true });
-    if (this.openChatId !== chatId || !messageId) return false;
-    for (let page = 0; page < REVEAL_PAGES && !this.messages.some((m) => m.id === messageId) && this.hasMore; page += 1) {
+    this.stopNoticeWait();
+    const wait = messageId ? this.watchNotice(chatId, messageId) : null;
+    await this.open(chatId, { show: true, newest: true });
+    if (this.openChatId !== chatId || !messageId) { if (wait) this.stopNoticeWait(wait); return false; }
+    const here = () => this.messages.some((m) => m.id === messageId);
+    for (let page = 0; page < REVEAL_PAGES && !here() && !wait.arrived && this.hasMore; page += 1) {
       if (!(await this.loadOlder()) || this.openChatId !== chatId) break;
     }
-    if (!this.messages.some((m) => m.id === messageId)) return false;
+    if (this.noticeWait !== wait || this.openChatId !== chatId) return false;
+    if (!here() && !wait.arrived) {
+      let timer;
+      const bound = new Promise((resolve) => { timer = setTimeout(() => resolve(false), this.noticeWaitMs ?? NOTICE_ARRIVAL_MS); });
+      const came = await Promise.race([wait.landed, bound]);
+      clearTimeout(timer);
+      if (this.noticeWait !== wait || this.openChatId !== chatId) return false;
+      if (!came) {
+        // Still on its way: the conversation says so, and the watch stays until it lands or the conversation changes.
+        this.revealing = { id: messageId, seq: (this.revealing?.seq || 0) + 1, pending: true };
+        wait.landed.then(() => { if (this.noticeWait === wait && this.openChatId === chatId) this.revealNotice(wait); });
+        return false;
+      }
+    }
+    return this.revealNotice(wait);
+  }
+
+  // The pressed notice's message, brought into view once it is here (issue 414). One that came over the live stream
+  // while the window on screen was not the newest is read in with the newest messages first.
+  async revealNotice(wait) {
+    const { chatId, messageId } = wait;
+    this.stopNoticeWait(wait);
+    const here = () => this.messages.some((m) => m.id === messageId);
+    if (!here() && wait.arrived) await this.open(chatId, { newest: true });
+    if (this.openChatId !== chatId || !here()) return false;
     this.revealing = { id: messageId, seq: (this.revealing?.seq || 0) + 1 };
     return true;
+  }
+
+  // Watches for a pressed notice's message (issue 414): on the live stream, and in any window put on screen, so a
+  // page read on coming back to the foreground finds it as well. Only the latest press is watched.
+  watchNotice(chatId, messageId) {
+    let land;
+    const wait = { chatId, messageId, arrived: false, landed: new Promise((resolve) => { land = resolve; }) };
+    wait.seen = (m) => {
+      if (!m || m.chatId !== chatId || m.id !== messageId) return;
+      wait.arrived = true;
+      land(true);
+    };
+    if (!this.arrivals) this.arrivals = new Set();
+    this.arrivals.add(wait.seen);
+    this.noticeWait = wait;
+    return wait;
+  }
+
+  stopNoticeWait(wait = this.noticeWait) {
+    if (!wait) return;
+    this.arrivals?.delete(wait.seen);
+    if (this.noticeWait !== wait) return;
+    this.noticeWait = null;
+    if (this.revealing?.pending) this.revealing = null;
+  }
+
+  // Coming back to the window (issue 323) reads the conversation on screen as read, here and on the Mac, and reads its
+  // newest messages (issue 414): a phone's live stream sleeps with the app, so what landed while it was away, a pressed
+  // notice's message included, is read rather than waited for.
+  // Opening it again does all three, in place, keeping a window held scrolled back where it is.
+  async onShown() {
+    if (pageHidden() || !this.openChatId) return;
+    await this.open(this.openChatId);
   }
 
   // The Load earlier press shows itself working and drops a second press (core/kit/press.js), so no flag is kept here.
@@ -702,6 +769,8 @@ class AppRoot extends KitElement {
     this.historyWindow = state;
     this.messages = state.messages;
     this.hasMore = state.hasOlder;
+    const wait = this.noticeWait;
+    if (wait && !wait.arrived && wait.chatId === this.openChatId) for (const m of state.messages) wait.seen(m);
   }
 
   measureHistory({ estimate }) {

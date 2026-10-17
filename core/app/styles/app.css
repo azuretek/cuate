@@ -219,6 +219,8 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .conv-body[data-reacting] > .messages, .conv-body[data-reacting] > .thread-view { padding-bottom: calc(var(--size-picker-h) + var(--space-4)); scroll-padding-bottom: calc(var(--size-picker-h) + var(--space-4)); }
 .bubble-row.targeted .bubble, .bubble-row.targeted .attachment-image { box-shadow: 0 0 0 calc(var(--size-border) * 2) var(--color-accent); }
 .message-note { font-size: var(--font-size-xs); color: var(--color-danger); margin: var(--space-1) var(--space-2) 0; }
+/* A pressed notice's message still on its way (issue 414): a quiet line where it will land. */
+.reveal-pending { font-size: var(--font-size-xs); color: var(--color-fg-muted); text-align: center; margin: var(--space-2); }
 /* A thread is drawn from the stored pointer alone (issue 208). A message with replies is marked once, by one quiet line
    under it reading the reply count, which opens the thread; a reply opens its thread when pressed and carries no line
    of its own. Nothing is drawn between two messages, so no pairing is implied that the stored pointer does not
