@@ -48,7 +48,7 @@
   ];
   const conv = document.createElement('app-conversation');
   Object.assign(conv, { chat, host, client, messages, sending: true, phone: true });
-  Object.assign(conv.style, { position: 'fixed', inset: '0', zIndex: '9998', display: 'flex', flexDirection: 'column', background: 'var(--color-surface, #fff)' });
+  Object.assign(conv.style, { position: 'fixed', inset: '0', zIndex: '9998', display: 'flex', flexDirection: 'column', background: 'var(--color-bg)' });
   document.body.append(conv);
   await until(() => conv.querySelector('.conv-body'), 'the conversation');
   await until(() => { const img = conv.querySelector('app-backdrop img'); return img && img.complete && img.naturalWidth > 0; }, 'the backdrop picture');
@@ -66,6 +66,9 @@
   if (line !== LINE) problems.push('the line reads ' + JSON.stringify(line));
   if (rows.length !== 3) problems.push(rows.length + ' rows drawn, not 3');
   if (rows.some((r) => !r.classList.contains('event') && !r.textContent.trim())) problems.push('an empty notice is drawn');
+  const words = eventRow && eventRow.querySelector('.conv-event > span');
+  const behind = words ? getComputedStyle(words).backgroundColor : '';
+  if (!behind || behind === 'transparent' || /rgba\(0, 0, 0, 0\)/.test(behind)) problems.push('the line has nothing behind its words over the backdrop');
   const b = body.getBoundingClientRect();
   const p = img.getBoundingClientRect();
   if (p.width < b.width - 1 || p.height < b.height - 1) problems.push('the backdrop does not fill the conversation');
@@ -81,7 +84,7 @@
   if (!(there === list || (there && there.classList.contains('history-space')))) problems.push('the point chosen is covered by ' + (there ? there.className || there.tagName : 'nothing'));
   if (Math.max(above, below) < 24) problems.push('no bare backdrop beside the messages');
   say('where', 'where:backdrop ' + x + ' ' + y + ' ' + window.innerWidth + ' ' + window.innerHeight);
-  const detail = 'line="' + line + '" rows=' + rows.length + ' fetched=' + fetched + ' picture=' + img.naturalWidth + 'x' + img.naturalHeight + ' colour=' + COLOUR.join(',');
+  const detail = 'line="' + line + '" rows=' + rows.length + ' fetched=' + fetched + ' picture=' + img.naturalWidth + 'x' + img.naturalHeight + ' colour=' + COLOUR.join(',') + ' behind-line=' + behind;
   say('verdict', problems.length ? 'background:fail ' + problems.join('; ') : 'background:pass ' + detail);
   window.backgroundProof = { ok: !problems.length, problems, line, rows: rows.length };
 })().catch((error) => {
