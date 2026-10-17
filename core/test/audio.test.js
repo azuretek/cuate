@@ -205,3 +205,12 @@ test('the audio fixture is a Debug seam the iOS and Android tests play (issue 43
   for (const part of ['audio-fixture.js', 'audio-fixture.m4a', 'au:playing']) assert.ok(android.includes(part), 'the Android test plays the recording: ' + part);
   assert.doesNotMatch(read('core/app/main.js'), /audio-fixture/);
 });
+
+// The desktop shells play it too: the smoke runs a proof in the shell's own Chromium on every desktop leg, pressing play
+// with real mouse input and reading the same fixture's report.
+test('the desktop smoke plays a recording in its message with real input (issue 432)', () => {
+  const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+  assert.match(read('desktop/scripts/smoke.mjs'), /execFileSync\(proofElectron, \[path\.join\(root, 'desktop\/scripts\/prove-audio\.mjs'\)\]/, 'the smoke runs the audio proof');
+  const proof = read('desktop/scripts/prove-audio.mjs');
+  for (const part of ['core/test/audio-fixture.js', "sendInputEvent({ type: 'mouseDown'", "until('au:playing'", "until('au:paused'", 'requires the Chromium sandbox']) assert.ok(proof.includes(part), 'the proof presses play and reads it play: ' + part);
+});
