@@ -32,7 +32,7 @@ final class VideoTileTests: XCTestCase {
             for name in self.tiles {
                 let tile = page.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch
                 guard tile.exists, !tile.frame.isEmpty else { readings[name] = nil; continue }
-                readings[name] = TileReading(tile.screenshot().image)
+                readings[name] = TileReading(tile.screenshot().image, frame: tile.frame)
             }
             return self.tiles.allSatisfy { readings[$0]?.pictured == true }
         }, object: nil)
@@ -55,17 +55,20 @@ final class VideoTileTests: XCTestCase {
 
 /// What a tile's pixels show, read from the top half of its picture inset from every edge, which keeps the rounded
 /// edge, the border and the play mark at its foot out of the reading. A blank tile is one flat colour there; a picture
-/// (the poster's bands, the test pattern's frame) spreads its brightness widely.
+/// (the poster's bands, the test pattern's frame) spreads its brightness widely. The tile's frame on screen is part of
+/// the reading, so two tiles that show the same picture are still seen to be two tiles.
 struct TileReading {
+    let frame: CGRect
     let width: Int
     let height: Int
     let spread: Double
     let distinct: Int
 
     var pictured: Bool { width >= 40 && height >= 40 && spread >= 12 && distinct >= 8 }
-    var summary: String { "\(width)x\(height) px, brightness spread \(String(format: "%.1f", spread)), \(distinct) distinct colours" }
+    var summary: String { "at \(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height)) pt, \(width)x\(height) px, brightness spread \(String(format: "%.1f", spread)), \(distinct) distinct colours" }
 
-    init(_ image: UIImage) {
+    init(_ image: UIImage, frame: CGRect) {
+        self.frame = frame
         guard let cg = image.cgImage else { width = 0; height = 0; spread = 0; distinct = 0; return }
         let w = cg.width, h = cg.height
         width = w
