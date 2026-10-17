@@ -197,7 +197,8 @@ class AppConversation extends KitElement {
 
   updated(changed) {
     this.sizeHistory();
-    if (changed.has('reveal') && this.reveal) this.revealMessage(this.reveal.id);
+    // A pressed notice's message still on its way (issue 414) moves nothing; it is revealed once it lands.
+    if (changed.has('reveal') && this.reveal && !this.reveal.pending) this.revealMessage(this.reveal.id);
     if (changed.has('pop')) this.placePop();
     // The message menu wears the shared caret, aimed at the message it opened on (issue 217).
     aimCarets(this);
@@ -557,6 +558,7 @@ class AppConversation extends KitElement {
           ${this.historyWindow?.hasNewer ? html`<button class="load-older" @click=${press(() => this.fire('newer', this.historyMeasurements()))}>Load newer messages</button>` : nothing}
           <div class="history-space history-space-after" aria-hidden="true"></div>
           ${typingBubble(this.typing, now) ? this.typingRowHtml() : nothing}
+          ${this.reveal?.pending ? html`<div class="reveal-pending" role="status">The message you opened is still loading.</div>` : nothing}
         </div>
         ${thread ? this.threadView() : nothing}
       </div>
