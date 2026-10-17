@@ -881,8 +881,7 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    every size: the traffic-light strip macOS keeps over the surface, and the window controls Windows and Linux draw
    in that corner, so it can never sit on them or be read as part of either. It carries no drag region, and the
    backdrop under it is no-drag too (issue 213), so the whole circle answers wherever it lands. */
-.viewer > .close-button { position: absolute; top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); right: calc(var(--inset-right) + var(--space-4)); z-index: 1; }
-.app-window[data-platform="darwin"] .viewer > .close-button { top: calc(var(--inset-top) + var(--size-window-strip) + var(--space-3)); }
+.viewer > .close-button { position: absolute; top: var(--viewer-close-top); right: calc(var(--inset-right) + var(--space-4)); z-index: 1; }
 /* The viewer's controls are one family (issue 325), so they read as designed rather than as defaults: every one is
    the close control's height, the same pill, the same frosted raised surface over the picture, the same edge and
    shadow, and they answer the pointer the same way, on the shared motion tokens. The step controls sit centred on
@@ -890,6 +889,11 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    conversation's media and the zoom, so nothing floats on its own in a corner. The play control is the bar's widest
    and is labelled, in the accent, so it is not missed. */
 .viewer { --viewer-control: var(--size-close-lg); --viewer-glass: color-mix(in srgb, var(--color-bg-raised) 84%, transparent); }
+/* Where the close control and the bar sit, held once so the controls and the room a video leaves them (issue 416)
+   are measured from the same place. The close control's top clears the window controls Windows and Linux draw in that
+   corner, and on macOS the traffic-light strip (issue 245); the bar is one control high inside its own padding. */
+.viewer { --viewer-close-top: calc(var(--inset-top) + var(--size-window-control-inset) + var(--size-window-control-h) + var(--space-2)); --viewer-bar-bottom: calc(var(--inset-bottom) + var(--space-4)); --viewer-bar-h: calc(var(--viewer-control) + var(--space-1) * 2 + var(--size-border) * 2); }
+.app-window[data-platform="darwin"] .viewer { --viewer-close-top: calc(var(--inset-top) + var(--size-window-strip) + var(--space-3)); }
 .viewer > .close-button, .viewer-nav, .viewer-bar { border: var(--size-border) solid var(--color-image-edge); background: var(--viewer-glass); -webkit-backdrop-filter: blur(calc(var(--size-scrim-blur) * 3)) saturate(1.4); backdrop-filter: blur(calc(var(--size-scrim-blur) * 3)) saturate(1.4); box-shadow: var(--shadow-md); animation: surface-scrim-in var(--motion-screen) var(--motion-ease) both; }
 .viewer-nav, .viewer-control { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: var(--viewer-control); min-width: var(--viewer-control); margin: 0; padding: 0; border-radius: var(--radius-pill); color: var(--color-fg); font: inherit; cursor: pointer; transition: background var(--motion-normal) var(--motion-ease), color var(--motion-normal) var(--motion-ease), scale var(--motion-normal) var(--motion-ease), opacity var(--motion-normal) var(--motion-ease); }
 .viewer-nav .icon, .viewer-control .icon { display: block; width: calc(var(--viewer-control) * 0.45); height: calc(var(--viewer-control) * 0.45); pointer-events: none; }
@@ -900,7 +904,7 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-nav { position: absolute; top: 50%; translate: 0 -50%; z-index: 1; }
 .viewer-prev { left: calc(var(--inset-left) + var(--space-4)); }
 .viewer-next { right: calc(var(--inset-right) + var(--space-4)); }
-.viewer-bar { position: absolute; left: 50%; translate: -50% 0; bottom: calc(var(--inset-bottom) + var(--space-4)); z-index: 1; box-sizing: border-box; display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); white-space: nowrap; }
+.viewer-bar { position: absolute; left: 50%; translate: -50% 0; bottom: var(--viewer-bar-bottom); z-index: 1; box-sizing: border-box; min-height: var(--viewer-bar-h); display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); white-space: nowrap; }
 .viewer-play { padding: 0 var(--space-4) 0 var(--space-3); border: 0; background: var(--color-accent); color: var(--color-accent-fg); font-size: var(--font-size-sm); font-weight: 600; text-transform: uppercase; }
 .viewer-play:hover { background: color-mix(in srgb, var(--color-accent) 88%, var(--color-fg)); }
 .viewer-play[aria-pressed="true"] { background: var(--color-bg-sunken); color: var(--color-fg); }
@@ -910,6 +914,13 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* A video is drawn like a picture, with the viewer's own rounded edge and shadow; its first frame stands in for the
    picture until it plays. */
 .viewer video.viewer-image { background: var(--color-bg-sunken); }
+/* A video brings the player's own controls, drawn inside its box: play and pause, the scrubber, mute and full screen,
+   which the iOS player puts in the box's top corners and along its foot, and the Android player along its foot. So a
+   video is laid out in the room the viewer's controls leave (issue 416): a band above it clears the close control,
+   a band below it clears the bar, and its step controls join the bar rather than floating over its sides. Nothing of
+   ours is ever over the player's controls, and nothing of the player's is ever under ours. */
+.sheet-scrim.viewer[data-kind="video"] { padding-top: calc(var(--viewer-close-top) + var(--viewer-control) + var(--space-2)); padding-bottom: calc(var(--viewer-bar-bottom) + var(--viewer-bar-h) + var(--space-2)); }
+.viewer-bar .viewer-prev, .viewer-bar .viewer-next { border: 0; background: transparent; }
 /* A Live Photo's motion (issue 386) takes the still's own box while it loads and plays, the still as its poster, so the
    stage keeps the picture's size and never shows the empty box a video draws before it has a frame. */
 .viewer video.viewer-motion { width: calc(var(--motion-w) * 1px); height: calc(var(--motion-h) * 1px); }

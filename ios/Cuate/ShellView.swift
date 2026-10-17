@@ -82,6 +82,14 @@ struct ShellWebView: UIViewRepresentable {
             let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
             controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The video controls fixture (issue 416), the same seam: Debug only, and its script and its synthetic clips are
+        // copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--video-controls-fixture"),
+           let url = Bundle.main.url(forResource: "video-controls-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let shape = ProcessInfo.processInfo.arguments.contains("--fixture-video-landscape") ? "landscape" : "portrait"
+            controller.addUserScript(WKUserScript(source: "window.fixtureVideo = '\(shape)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The contacts fixture (issue 393), the same seam: Debug only. The synthetic person is written first, so the card
         // the page asks for has someone in it.
         if ProcessInfo.processInfo.arguments.contains("--contacts-fixture"),
