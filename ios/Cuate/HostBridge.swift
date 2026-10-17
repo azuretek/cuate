@@ -437,7 +437,15 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         // before it has drawn anything.
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        var trigger: UNNotificationTrigger?
+        #if DEBUG
+        // The late notice fixture (issue 414) has its notice shown a moment later, once the test has sent the app to the
+        // home screen, where the system draws it as a banner to press. Debug only.
+        if ProcessInfo.processInfo.arguments.contains("--late-notice-fixture") {
+            trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)
+        }
+        #endif
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
         center.add(request)
         return true
     }

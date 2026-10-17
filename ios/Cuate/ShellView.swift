@@ -90,6 +90,13 @@ struct ShellWebView: UIViewRepresentable {
             ContactsFixture.seedIfAsked()
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The late notice fixture (issue 414), the same seam: Debug only. It signs the real page in to a stand-in server
+        // and raises a notice for a message that server does not have yet.
+        if ProcessInfo.processInfo.arguments.contains("--late-notice-fixture"),
+           let url = Bundle.main.url(forResource: "late-notice-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         #endif
         configuration.userContentController = controller
 
