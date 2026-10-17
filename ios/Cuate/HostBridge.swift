@@ -434,11 +434,24 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         if let target = NoticeRouter.target(args) { content.userInfo = target }
         // Authorization is asked for on the first notification rather than at
         // launch, so a fresh install is not greeted by a permission dialog
-        // before it has drawn anything.
+        // before it has drawn anything. It is asked with the options
+        // notify.permission asks with, and the notice is added once it is
+        // answered: on an iOS 27 simulator a second question with other options
+        // left the add that raced it refused, and the notice was never shown.
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        center.add(request)
+        var trigger: UNNotificationTrigger?
+        #if DEBUG
+        // The late notice fixture (issue 414) has its notice shown ten seconds later, by the system, so the test has the
+        // app on the home screen when it is drawn as a banner to press: a notice shown with the app in front is never
+        // drawn. The system holds the request, so nothing depends on the app running once it has left. Debug only.
+        if ProcessInfo.processInfo.arguments.contains("--late-notice-fixture") {
+            trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
+        }
+        #endif
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            if granted { center.add(request) }
+        }
         return true
     }
 
