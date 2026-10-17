@@ -34,8 +34,9 @@ test('on a Mac a video has a poster, made once from the video and reused (issue 
   assert.equal((await mac.resolve(rec, null, 'poster')).file, a.file);
   assert.equal(made, 1, 'made once, however many ask at the same moment');
   assert.ok(!existsSync(a.file + '.part'), 'no half-written file is left behind');
-  // Served by its real path, which on a hosted runner is not the temporary folder's own spelling of it.
-  assert.equal((await mac.resolve(rec, null, null)).file, realpathSync(rec.path), 'the video itself is still the attachment');
+  // Served by its real path, which on a hosted runner is not the temporary folder's own spelling of it: macOS names it
+  // through a link and Windows through a short name, and only the native real path resolves both, as the server does.
+  assert.equal((await mac.resolve(rec, null, null)).file, realpathSync.native(rec.path), 'the video itself is still the attachment');
 });
 
 test('a picture, a server off the Mac and a still that cannot be made have no poster (issue 415)', async (t) => {
