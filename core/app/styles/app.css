@@ -202,7 +202,7 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 @keyframes text-jitter { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(var(--space-1), calc(var(--space-1) * -1)); } 40% { transform: translate(calc(var(--space-1) * -1), var(--space-1)); } 60% { transform: translate(var(--space-1), var(--space-1)); } 80% { transform: translate(calc(var(--space-1) * -1), calc(var(--space-1) * -1)); } }
 @keyframes text-explode { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(calc(var(--space-4) * -1), calc(var(--space-4) * -1)) rotate(-30deg); opacity: 0.4; } 60% { transform: translate(calc(var(--space-2) * -1), calc(var(--space-2) * -1)) rotate(-10deg); opacity: 0.8; } }
 @keyframes text-explode-other { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(var(--space-4), var(--space-4)) rotate(30deg); opacity: 0.4; } 60% { transform: translate(var(--space-2), var(--space-2)) rotate(10deg); opacity: 0.8; } }
-@media (prefers-reduced-motion: reduce) { .text-effect, .text-effect .fx-letter { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .text-effect[data-effect], .text-effect[data-effect] .fx-letter { animation: none; } }
 /* Reactions float at the bubble's top outer corner, the top right of a received message and the top left of a sent
    one, with no background, so adding one never moves a message (issue 182). */
 .reactions { position: absolute; top: 0; right: 0; z-index: 1; display: flex; gap: var(--space-1); transform: translate(50%, -50%); font-size: var(--font-size-sm); line-height: 1; white-space: nowrap; pointer-events: none; }

@@ -18,7 +18,9 @@ test('each of the eight effects has its own animation, on the duration token, an
   }
   assert.match(css, /animation: var\(--motion-text-effect\) var\(--motion-ease\) both;/, 'the duration is the token');
   assert.ok(read('core/app/styles/tokens.css').includes('--motion-text-effect:'), 'which the page defines');
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.text-effect, \.text-effect \.fx-letter \{ animation: none; \} \}/, 'reduced motion draws the words still');
+  // As specific as the rules that name each effect, and after them, so reduced motion wins over every one.
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.text-effect\[data-effect\], \.text-effect\[data-effect\] \.fx-letter \{ animation: none; \} \}/, 'reduced motion draws the words still');
+  assert.ok(css.lastIndexOf('animation: none; } }') > css.lastIndexOf('animation-name: text-'), 'and it comes after every rule that names an effect');
 });
 
 test('the bubble draws its words through the styled pieces, so a link inside an effect still opens (issue 433)', () => {
