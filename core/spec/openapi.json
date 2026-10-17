@@ -2015,6 +2015,9 @@
           "photo": {
             "$ref": "#/components/schemas/Attachment"
           },
+          "background": {
+            "$ref": "#/components/schemas/Attachment"
+          },
           "members": {
             "type": "array",
             "items": {
@@ -2930,6 +2933,9 @@
           },
           "photo": {
             "$ref": "#/components/schemas/Attachment"
+          },
+          "action": {
+            "type": "string"
           }
         },
         "required": [

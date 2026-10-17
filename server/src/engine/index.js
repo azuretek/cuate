@@ -8,7 +8,7 @@ import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
 import { annotateLivePhotos } from './live-photo.js';
-import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS, mayBeBackgroundRow, mapBackground } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 // Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
@@ -46,7 +46,10 @@ const omit = (o, keys) => {
 
 // edits: where the adapter learns which messages were edited (edits.js reads the Messages store; the fake keeps its own),
 // or null where there is no such source, in which case nothing is ever marked edited and no edit event is told.
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null }) {
+// backgrounds: where the adapter learns which rows are a conversation's background changing and what each chat's
+// background is now (backgrounds.js: the Messages store and `imsg chat-background status`; the fake keeps its own), or
+// null where there is no such source, in which case no row is a background change and no chat has one (issue 417).
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -61,6 +64,59 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return msg;
   };
   const toModel = (raw) => notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId }));
+  // The rows that may be a background changing (no words, nothing attached) are asked of the store in one read, and
+  // each it names is marked with its action before it is mapped, so the mapping stays the one pure rule (issue 417). A
+  // store that cannot be read leaves them as they were, and says so.
+  const markBackgrounds = (rows) => {
+    const maybe = backgrounds ? rows.filter(mayBeBackgroundRow) : [];
+    if (!maybe.length) return rows;
+    try {
+      const found = backgrounds.among(maybe.map((m) => String(m.guid)));
+      return rows.map((m) => (found.has(String(m.guid)) ? { ...m, background_action: found.get(String(m.guid)) } : m));
+    } catch (e) {
+      log.emit('background.failed', { error: failure(e) });
+      return rows;
+    }
+  };
+  // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
+  // again only when its background has changed since.
+  const backdrops = new Map();
+  // A failure is named by its code, never its message, which can carry the path of the store or the engine.
+  const failure = (e) => String((e && (e.code || e.name)) || 'error');
+  async function background(chatId) {
+    if (!backgrounds) return null;
+    const id = String(chatId);
+    try {
+      const status = await backgrounds.status(id);
+      const made = mapBackground(status, { attachmentId });
+      // A background set whose picture Messages has not rendered yet is asked again next time rather than held as none.
+      const settled = made || !status || !status.background_set || (status.latest_event && status.latest_event.action === 'clear');
+      if (settled) backdrops.set(id, { guid: status && status.latest_event ? String(status.latest_event.guid || '') : '', background: made });
+      return made;
+    } catch (e) {
+      log.emit('background.failed', { error: failure(e) });
+      return backdrops.get(id)?.background || null;
+    }
+  }
+  async function chatBackdrops(list) {
+    let latest = new Map();
+    try {
+      latest = backgrounds.latest();
+    } catch (e) {
+      log.emit('background.failed', { error: failure(e) });
+    }
+    // The chats whose background changed since they were last asked are asked together, and the list waits a moment
+    // for them, as it does for group photos; one still being read keeps what it had, and a later list carries it.
+    const asking = [];
+    for (const c of list) {
+      const event = latest.get(c.id);
+      const held = backdrops.get(c.id);
+      if (!event || event.action !== 'set') { c.background = null; continue; }
+      c.background = held ? held.background : null;
+      if (!held || held.guid !== String(event.guid)) asking.push(background(c.id).then((made) => { c.background = made; }));
+    }
+    if (asking.length) await Promise.race([Promise.all(asking), new Promise((resolve) => setTimeout(resolve, PHOTO_SCAN_WAIT_MS).unref?.())]);
+  }
   const photoScanned = new Set();
   const PHOTO_SCAN_WAIT_MS = 3000;
   async function scanPhoto(chatId) {
@@ -191,7 +247,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return;
     }
     if (method === 'message' && params.message) {
-      const raw = params.message;
+      const [raw] = markBackgrounds([params.message]);
       if (Number.isFinite(raw.id) && raw.id > lastRowid) lastRowid = raw.id;
       if (raw.is_reaction) {
         const r = mapReaction(raw);
@@ -317,6 +373,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       await Promise.race([scans, new Promise((resolve) => setTimeout(resolve, PHOTO_SCAN_WAIT_MS).unref?.())]);
     }
     if (photos) for (const c of list) if (c.isGroup) c.photo = groupPhotos.get(c.id)?.photo || null;
+    // A listing for the screen carries each chat's backdrop too (issue 417); one for an export or a search does not.
+    if (photos && backgrounds) await chatBackdrops(list);
     return list;
   }
 
@@ -326,7 +384,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     if (beforeCursor) params.before_cursor = beforeCursor;
     if (afterCursor) params.after_cursor = afterCursor;
     const r = await request('messages.history', params, timeoutMs, ['attachments']);
-    let list = (r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction).map((m) => toModel(m));
+    let list = markBackgrounds((r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction)).map((m) => toModel(m));
     if (before) list = list.filter((m) => m.sentAt < before);
     list.sort((a, b) => afterCursor ? compareHistory(a, b) : compareHistory(b, a));
     const selected = list.slice(0, limit);
@@ -438,7 +496,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     const r = await request('messages.after', params, timeoutMs, ['attachments', 'include_reactions']);
     const rows = r && Array.isArray(r.messages) ? r.messages : [];
     return {
-      messages: rows.filter((m) => includeReactions || !m.is_reaction).map((m) => toModel(m)),
+      messages: markBackgrounds(rows.filter((m) => includeReactions || !m.is_reaction)).map((m) => toModel(m)),
       nextRowid: r && Number.isFinite(r.next_rowid) ? r.next_rowid : params.since_rowid,
       hasMore: Boolean(r && r.has_more),
     };
@@ -580,6 +638,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     react,
     edit,
     scanEdits,
+    background,
     canEdit: () => canEdit,
     supportsEmojiTapback,
     typing,

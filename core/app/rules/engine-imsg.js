@@ -136,6 +136,38 @@ export function isGroupPhotoRow(m) {
   return !stripInlineObjects(m && m.text).trim() && list.length === 1 && String(list[0].transfer_name || '') === GROUP_PHOTO_NAME;
 }
 
+// A conversation's background changing arrives as a row of its own too (issue 417): no text and no attachment, which
+// the engine's read cannot tell from an empty message. Messages records it as item type 3 with group action 4 for a
+// background set and 6 for one cleared, and the adapter reads that from the store and marks the raw row with
+// background_action before it is mapped (server/src/engine/backgrounds.js). It is an event in the conversation and
+// the conversation's backdrop, never a picture in the timeline.
+export const BACKGROUND_ACTIONS = Object.freeze({ 4: 'set', 6: 'clear' });
+const BACKGROUND_ACTION_NAMES = new Set(Object.values(BACKGROUND_ACTIONS));
+export function isBackgroundRow(m) {
+  return Boolean(m) && BACKGROUND_ACTION_NAMES.has(m.background_action);
+}
+// Whether a raw row could be a background change: one with no words and nothing attached, so only those are asked of
+// the store.
+export function mayBeBackgroundRow(m) {
+  return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
+}
+
+// The backdrop a chat draws, from what `imsg chat-background status` reports for it (issue 417): the picture Messages
+// rendered for the chat in its transcript background cache, or null when there is none to draw. A background cleared
+// draws nothing, and so does one Messages holds back for communication safety. The picture sits inside a property
+// list there, so the model says only that it is a picture and the server reads it out.
+export const BACKGROUND_NAME = 'Background';
+export function mapBackground(status, { attachmentId }) {
+  const s = status && typeof status === 'object' ? status : null;
+  if (!s || s.ok === false || !s.background_set) return null;
+  if (s.latest_event && s.latest_event.action === 'clear') return null;
+  if (Number(s.communication_safety_state) > 0) return null;
+  const file = typeof s.watch_background_path === 'string' ? s.watch_background_path : '';
+  if (!file || s.watch_background_exists === false) return null;
+  const id = attachmentId({ original_path: file, mime_type: '', transfer_name: BACKGROUND_NAME });
+  return { id, name: BACKGROUND_NAME, mime: 'image/*', bytes: Number.isFinite(s.file_size) ? s.file_size : 0, sticker: false, missing: false };
+}
+
 export function mapMessage(m, { attachmentId }) {
   const fromMe = Boolean(m.is_from_me);
   const base = {
@@ -157,6 +189,9 @@ export function mapMessage(m, { attachmentId }) {
     const v = attachmentView(m.attachments[0], attachmentId);
     const photo = v.missing ? null : { ...modelAttachment(v, 'Group photo'), mime: /^image\//i.test(v.mime) ? v.mime : 'image/*' };
     return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'groupPhoto', photo } };
+  }
+  if (isBackgroundRow(m)) {
+    return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'background', action: m.background_action } };
   }
   return {
     ...base,

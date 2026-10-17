@@ -4,6 +4,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
+import { writePlist } from './bplist.js';
 import { buildFixtures, imsgReaction } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { compareHistory } from '../../../core/app/rules/history.js';
@@ -58,7 +59,18 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = syntheticPdf(SYNTHETIC_PDF_PAGES);
   writeFileSync(docPath, pdf);
-  const { chats, messages } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
+  const { chats, messages, backgrounds: backgroundEvents } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
+  // A conversation background (issue 417), as Messages keeps it: the picture it rendered for the chat, in a property
+  // list in the transcript background cache beside the attachments folder, named for the row that set it.
+  const backgroundCache = path.join(path.dirname(attachmentsRoot), 'TranscriptBackgroundCache');
+  mkdirSync(backgroundCache, { recursive: true });
+  const backdropPath = (guid) => path.join(backgroundCache, guid + '-watchBackground');
+  const writeBackdrop = (guid) => {
+    const picture = gradientPng(360, 640);
+    writeFileSync(backdropPath(guid), writePlist({ isHighKey: false, luminance: 0.5, backgroundImageData: picture, extensionIdentifier: 'fake.background' }));
+    return picture.length;
+  };
+  for (const e of backgroundEvents) if (e.action === 'set') e.bytes = writeBackdrop(e.guid);
   let rowid = messages.length;
   let attempts = 0;
   let liveSent = false;
@@ -129,10 +141,48 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // The fake's stand-in for backgrounds.js, with the same shape: which rows the store records as a background change,
+  // each chat's newest one, and what `imsg chat-background status` answers for a chat.
+  const backgrounds = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(backgroundEvents.filter((e) => want.has(e.guid)).map((e) => [e.guid, e.action]));
+    },
+    latest() {
+      const found = new Map();
+      for (const e of backgroundEvents) found.set(e.chatId, e);
+      return found;
+    },
+    async status(chatId) {
+      world.requests.push('chat-background.status');
+      const chat = chats.find((c) => String(c.id) === String(chatId));
+      if (!chat) throw Object.assign(new Error('chat not found'), { code: 'status_failed' });
+      const e = backgroundEvents.filter((x) => x.chatId === String(chatId)).at(-1) || null;
+      const row = e ? messages.find((m) => m.guid === e.guid) : null;
+      const latest = row ? { row_id: row.id, guid: row.guid, action: e.action, date: row.created_at } : undefined;
+      if (!e || e.action !== 'set') return { ok: true, chat_id: chat.id, chat_guid: chat.guid, background_set: false, latest_event: latest };
+      return { ok: true, chat_id: chat.id, chat_guid: chat.guid, background_set: true, background_channel_guid: e.guid, file_size: e.bytes, communication_safety_state: 0, watch_background_path: backdropPath(e.guid), watch_background_exists: true, latest_event: latest };
+    },
+    close() {},
+  };
+
   const world = {
     sends,
     tapbacks,
     edits,
+    backgrounds,
+    // A participant sets (or clears) the conversation's background on their phone: Messages writes the row, the
+    // rendered picture and the chat's record, and the row streams like any other (issue 417).
+    changeBackground(chatId, sender, { clear = false } = {}) {
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat) return null;
+      const m = add({ chat_id: chatId, is_from_me: false, sender: sender || chat.participants[0], text: '', is_read: true });
+      const e = { guid: m.guid, chatId: String(chatId), action: clear ? 'clear' : 'set' };
+      if (!clear) e.bytes = writeBackdrop(m.guid);
+      backgroundEvents.push(e);
+      broadcast(m);
+      return m;
+    },
     // A message edited by its sender on another device: the row's text changes and it is stamped as edited.
     editElsewhere(guid, text) {
       const m = messages.find((x) => x.guid === guid && !x.is_reaction);
