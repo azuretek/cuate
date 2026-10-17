@@ -51,11 +51,13 @@ app.whenReady().then(async () => {
     const file = fixtures.has(url.pathname) ? path.join(root, 'core/test', url.pathname.slice(1)) : path.resolve(root, decodeURIComponent(url.pathname).replace(/^\/+/, ''));
     if (!file.startsWith(root + path.sep) || !existsSync(file)) return new Response('not found', { status: 404 });
     let content = readFileSync(file);
-    if (url.pathname === '/core/app/index.html') content = content.toString().replace('<script type="module" src="main.js"></script>', '<script src="/proof-bridge.js"></script><script type="module" src="main.js"></script><script src="/core/test/audio-fixture.js"></script>');
+    if (url.pathname === '/core/app/index.html') content = content.toString().replace('<script type="module" src="main.js"></script>', '<script src="/proof-bridge.js"></script><script type="module" src="main.js"></script>');
     return new Response(content, { headers: { 'content-type': mime[path.extname(file)] || 'application/octet-stream' } });
   });
   win = new BrowserWindow({ show: true, width: 800, height: 900, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
   await win.loadURL('app://bundle/core/app/index.html');
+  // Injected once the document has loaded, as the phone shells inject it at the document's end.
+  await win.webContents.executeJavaScript(readFileSync(path.join(root, 'core/test/audio-fixture.js'), 'utf8'));
   const ready = await until('au:ready', 60000);
   const [theirs, mine] = ready.scene.players;
   assert.equal(theirs.unplayed, true, 'the recording someone else sent is marked not played');
