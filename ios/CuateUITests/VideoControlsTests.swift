@@ -78,9 +78,17 @@ final class VideoControlsTests: XCTestCase {
         } else {
             problems.append("the bar is not in the accessibility tree")
         }
-        // Ours against every player control, the bar included; ours against each other. The bar holds controls of its
-        // own, so it is not set against what it holds.
-        let playerNames = player.map(\.name)
+        // The player's whole area is its control area too: a press anywhere on the video shows or hides the player's
+        // controls, and the player draws them anywhere inside its box. The page reports the box, in its own coordinates.
+        if let area = videoArea(marker.label, in: page) {
+            frames["video"] = area
+            print("video controls (" + shape + ") video at " + String(describing: area))
+        } else {
+            problems.append("the page did not report the video's box: " + marker.label)
+        }
+        // Ours against every player control and the video itself, the bar included; ours against each other. The bar
+        // holds controls of its own, so it is not set against what it holds.
+        let playerNames = player.map(\.name) + ["video"]
         let ourNames = ours.map(\.name) + ["bar"]
         for mine in ourNames {
             for theirs in playerNames {
@@ -101,6 +109,20 @@ final class VideoControlsTests: XCTestCase {
             print(app.debugDescription)
         }
         XCTAssertTrue(problems.isEmpty, "the " + shape + " video's controls are not all clear: " + problems.joined(separator: "; ") + SystemSurface.failureSuffix(app))
+    }
+
+    /// The video's box on screen, from the page's report (`"video":{"x":..,"y":..,"w":..,"h":..}` beside the viewport, in
+    /// the page's own coordinates), scaled onto the web view's frame.
+    private func videoArea(_ label: String, in page: XCUIElement) -> CGRect? {
+        guard let data = String(label.dropFirst("vc:ready ".count)).data(using: .utf8),
+              let report = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let video = report["video"] as? [String: Double], let viewport = report["viewport"] as? [String: Double],
+              let x = video["x"], let y = video["y"], let w = video["w"], let h = video["h"],
+              let vw = viewport["w"], let vh = viewport["h"], vw > 0, vh > 0 else { return nil }
+        let frame = page.frame
+        let sx = Double(frame.width) / vw
+        let sy = Double(frame.height) / vh
+        return CGRect(x: Double(frame.minX) + x * sx, y: Double(frame.minY) + y * sy, width: w * sx, height: h * sy)
     }
 
     /// The player's own controls, by the names WebKit gives them: play or pause, the scrubber, mute and full screen.

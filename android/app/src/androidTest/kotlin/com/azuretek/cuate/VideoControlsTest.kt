@@ -92,11 +92,15 @@ class VideoControlsTest {
                     if (hit != expected) problems.add("a press on the middle of $name ${control.bounds.toShortString()} reaches $hit, not $expected")
                 }
             }
-            // Ours against every player control, the bar included; ours against each other. The bar holds controls of its
-            // own, so it is not set against what it holds.
-            for (mine in OURS) for (theirs in PLAYER) {
+            // The player's whole area is its control area too: a press anywhere on the video shows or hides the player's
+            // controls, and the player draws them anywhere inside its box. The page reports the box, in its own pixels.
+            val area = videoArea(scenario, scene)
+            println("video controls ($shape) video at ${area.toShortString()}")
+            // Ours against every player control and the video itself, the bar included; ours against each other. The bar
+            // holds controls of its own, so it is not set against what it holds.
+            for (mine in OURS) for (theirs in PLAYER + "video") {
                 val a = found[mine]?.bounds
-                val b = found[theirs]?.bounds
+                val b = if (theirs == "video") area else found[theirs]?.bounds
                 if (a != null && b != null && Rect.intersects(a, b)) problems.add("$mine ${a.toShortString()} overlaps the player's $theirs ${b.toShortString()}")
             }
             val separate = OURS - "bar"
@@ -183,6 +187,23 @@ class VideoControlsTest {
             if (label.isNotEmpty() || node.isClickable) lines.add(node.className.toString() + " '" + label + "' " + bounds.toShortString())
         }
         return lines.joinToString("\n")
+    }
+
+    /** The video's box on the screen, from the page's report in its own pixels, scaled onto the web view. */
+    private fun videoArea(scenario: ActivityScenario<MainActivity>, scene: JSONObject): Rect {
+        val origin = IntArray(2)
+        var width = 0
+        scenario.onActivity { activity ->
+            val view = webView(activity.findViewById(android.R.id.content))!!
+            view.getLocationOnScreen(origin)
+            width = view.width
+        }
+        val video = scene.getJSONObject("video")
+        val scale = width.toDouble() / scene.getJSONObject("viewport").getDouble("w")
+        fun px(css: Double, from: Int) = (from + css * scale).toInt()
+        val x = video.getDouble("x")
+        val y = video.getDouble("y")
+        return Rect(px(x, origin[0]), px(y, origin[1]), px(x + video.getDouble("w"), origin[0]), px(y + video.getDouble("h"), origin[1]))
     }
 
     /** What the page's own hit test reaches at the middle of a box on the screen: the player's video, one of ours, or another element. */
