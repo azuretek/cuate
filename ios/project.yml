@@ -99,6 +99,7 @@ targets:
             cp "$SRCROOT/../core/test/video-controls-portrait.mp4" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/video-controls-portrait.mp4"
             cp "$SRCROOT/../core/test/video-controls-landscape.mp4" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/video-controls-landscape.mp4"
             cp "$SRCROOT/../core/test/background-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/background-fixture.js"
+            cp "$SRCROOT/../core/test/late-notice-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/late-notice-fixture.js"
           fi
         basedOnDependencyAnalysis: false
     settings:
