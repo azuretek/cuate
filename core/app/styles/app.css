@@ -203,6 +203,10 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 @keyframes text-explode { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(calc(var(--space-4) * -1), calc(var(--space-4) * -1)) rotate(-30deg); opacity: 0.4; } 60% { transform: translate(calc(var(--space-2) * -1), calc(var(--space-2) * -1)) rotate(-10deg); opacity: 0.8; } }
 @keyframes text-explode-other { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(var(--space-4), var(--space-4)) rotate(30deg); opacity: 0.4; } 60% { transform: translate(var(--space-2), var(--space-2)) rotate(10deg); opacity: 0.8; } }
 @media (prefers-reduced-motion: reduce) { .text-effect[data-effect], .text-effect[data-effect] .fx-letter { animation: none; } }
+/* A name the sender mentioned (issue 453): bold, set apart from the words around it, and in the accent colour on a
+   received bubble. */
+.mention { font-weight: var(--font-weight-bold); }
+.bubble.them .mention { color: var(--color-accent); }
 /* Bold, italic, underline and strikethrough a sender laid on a stretch (issue 447), each its own class so any number
    share a stretch; both lines draw where both are laid. */
 .fmt-bold { font-weight: var(--font-weight-bold); }
@@ -904,6 +908,36 @@ app-slide-confirm { display: block; }
 .attachment-preview:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .attachment-preview .attachment-image { border-radius: 0; }
 app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
+/* A recording plays where it was sent (issue 432): a bubble of the message's own colour holding the play control,
+   the waveform, the time it is at and the time it runs, and, on one someone else sent, a dot until it is played. The
+   waveform's bars stand at the heights their levels name and are filled up to where playback is. Every value is a
+   token. */
+.voice-note { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: var(--radius-pill); background: var(--color-bubble-them); color: var(--color-bubble-them-fg); }
+.bubble-row.mine .voice-note { background: var(--color-bubble-me); color: var(--color-bubble-me-fg); }
+.voice-play { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-sm); cursor: pointer; }
+.voice-play .icon { --icon-size: calc(var(--size-message-action) / 2); }
+.voice-note[data-playing="false"] .voice-play .icon { margin-left: calc(var(--size-border) * 2); }
+.voice-play:focus-visible, .voice-wave:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
+/* On a narrow screen the waveform gives up width before the time does: its bars narrow down to a hairline each, and
+   nothing of it ever draws over the time beside it. */
+.voice-wave { flex: 0 1 var(--size-voice-wave); min-width: 0; height: var(--size-voice-wave-h); display: flex; align-items: center; justify-content: space-between; gap: var(--size-border); overflow: hidden; border-radius: var(--radius-sm); cursor: pointer; touch-action: none; }
+.voice-bar { flex: 0 1 var(--size-voice-bar); min-width: var(--size-border); height: calc(var(--size-voice-wave-h) / 4); border-radius: var(--radius-pill); background: currentColor; opacity: 0.35; transition: opacity var(--motion-fast) var(--motion-ease); }
+.voice-bar[data-done="true"] { opacity: 1; }
+.voice-bar[data-level="1"] { height: calc(var(--size-voice-wave-h) / 8); }
+.voice-bar[data-level="2"] { height: calc(var(--size-voice-wave-h) * 2 / 8); }
+.voice-bar[data-level="3"] { height: calc(var(--size-voice-wave-h) * 3 / 8); }
+.voice-bar[data-level="4"] { height: calc(var(--size-voice-wave-h) * 4 / 8); }
+.voice-bar[data-level="5"] { height: calc(var(--size-voice-wave-h) * 5 / 8); }
+.voice-bar[data-level="6"] { height: calc(var(--size-voice-wave-h) * 6 / 8); }
+.voice-bar[data-level="7"] { height: calc(var(--size-voice-wave-h) * 7 / 8); }
+.voice-bar[data-level="8"] { height: var(--size-voice-wave-h); }
+.voice-time { flex: none; display: inline-flex; gap: var(--space-1); font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; }
+.voice-of { opacity: 0.6; }
+.voice-unplayed { flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-pill); background: var(--color-accent); }
+.voice-audio { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .voice-bar { transition: none; }
+}
 /* The staged picture sits above the field: the preview, its name and size, and the way to take it back off. */
 .staged-image { display: inline-flex; align-items: flex-end; gap: var(--space-3); min-width: 0; }
 .staged-preview { flex: none; border-radius: var(--radius-md); }
@@ -975,7 +1009,7 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
    once a zoom makes them wider than the view; a finger scrolls them and two pinch them, so the stage's own refusal of
    every touch gesture is lifted for a document. Text is a raised card in the mono face, selectable, wrapping long
    lines rather than scrolling them away. Audio, and a file the viewer cannot read, is a small card with its name. */
-.viewer[data-kind="pdf"], .viewer[data-kind="text"], .viewer[data-kind="audio"] { touch-action: pan-x pan-y; }
+.viewer[data-kind="pdf"], .viewer[data-kind="text"] { touch-action: pan-x pan-y; }
 .viewer-doc { flex: 1 1 auto; align-self: stretch; box-sizing: border-box; width: 100%; min-height: 0; max-height: 100%; overflow: auto; padding: calc(var(--viewer-control) + var(--space-6)) var(--space-4); touch-action: pan-x pan-y; outline: none; overscroll-behavior: contain; animation: surface-scrim-in var(--motion-normal) var(--motion-ease) both; }
 .viewer-pages { display: flex; flex-direction: column; align-items: safe center; gap: var(--space-4); }
 .viewer-page { flex: none; width: var(--page-w); height: var(--page-h); border-radius: var(--radius-sm); background: var(--color-bg-raised); box-shadow: var(--shadow-lg); overflow: hidden; }
@@ -985,7 +1019,6 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 .viewer-note > .icon { width: var(--viewer-control); height: var(--viewer-control); color: var(--color-fg-muted); }
 .viewer-note-name { margin: 0; font-weight: var(--font-weight-medium); overflow-wrap: anywhere; }
 .viewer-note-detail { margin: 0; color: var(--color-fg-muted); font-size: var(--font-size-sm); }
-.viewer-audio { max-width: 100%; }
 .viewer-action { padding: 0 var(--space-4) 0 var(--space-3); border: 0; background: transparent; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
 @media (prefers-reduced-motion: reduce) { .viewer-doc, .viewer-note { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .viewer-image { transition: none; animation: none; } }

@@ -2,8 +2,11 @@
 //
 // A test build publishes from a commit only once every pipeline that builds a
 // platform on that commit has concluded green. Each publishing pipeline calls
-// .github/workflows/platforms-gate.yml, which runs this file. The decision is
-// here rather than in the workflow's shell so it can be tested: a gate that
+// .github/workflows/platforms-gate.yml, which runs this file and waits; a pull
+// request's platforms status (.github/workflows/platforms-status.yml) runs the
+// same file in its no-wait mode, once per pipeline completion, and posts the
+// verdict on the commit instead of holding a runner. The decision is here
+// rather than in either workflow's shell so it can be tested: a gate that
 // passes a commit it cannot see is the fault this exists to stop, and a shell
 // block can only be tested by the situation that produces it.
 //
@@ -157,10 +160,24 @@ function jobsOf(repo, runId, env) {
 // The live check. Everything it decides is judge()'s or isSupersession()'s; this
 // half only fetches and reports, which is what lets the rules be tested without
 // GitHub.
+//
+// Two ways of waiting, one set of rules:
+//
+//   wait: true   (the default, the publishing gate) holds its runner and polls
+//                until every listed pipeline has concluded or the window runs
+//                out, because the job that called it publishes next and cannot
+//                proceed without the answer.
+//   wait: false  (the pull request's platforms status) looks once. A pipeline
+//                that is still running, or has not registered a run, makes the
+//                result undecided (ok: null) and the caller posts nothing: it
+//                runs again when the next pipeline finishes, so the LAST
+//                pipeline to finish is the one that decides, and no runner sits
+//                idle in between. A superseded run is undecided too, since the
+//                branch moved on and the newer commit gets its own verdict.
 export function check(options, io = {}) {
   const {
     repo, sha, refName, pipelines, exempt = '', purpose = 'publish',
-    windowMinutes = 120, graceSeconds = 180, pollSeconds = 15,
+    windowMinutes = 120, graceSeconds = 180, pollSeconds = 15, wait: waits = true,
   } = options;
   const out = io.out || ((line) => process.stdout.write(line + '\n'));
   const summary = io.summary || (() => {});
@@ -181,6 +198,8 @@ export function check(options, io = {}) {
   out('required: the whole job list of ' + pipelines.join(', ') + (exempt ? ', except /' + exempt + '/' : ''));
 
   const refusals = [];
+  const undecided = [];
+  const superseded = [];
   for (const pipeline of pipelines) {
     const deadline = now() + windowMinutes * 60000;
     const graceEnd = now() + graceSeconds * 1000;
@@ -189,8 +208,17 @@ export function check(options, io = {}) {
     while (!run) {
       run = findRun(runsFor(sha), pipeline, refName);
       if (run) break;
-      if (now() >= graceEnd) break;
+      if (!waits || now() >= graceEnd) break;
       wait(pollSeconds * 1000);
+    }
+
+    // Looking once: a pipeline whose run has not registered is not a verdict
+    // yet. Every listed pipeline triggers on every pull request, so its run
+    // arrives, and the event its completion raises asks again.
+    if (!run && !waits) {
+      undecided.push({ pipeline, waitFor: 'has not registered a run for ' + sha });
+      out(pipeline + ' has not registered a run for this commit; no decision from this look');
+      continue;
     }
 
     // No escape. A commit that reaches this gate ships something, both pipelines
@@ -227,10 +255,19 @@ export function check(options, io = {}) {
             summary('### Superseded, not failed\n\n`' + pipeline + '` was cancelled for `' + sha + '` because '
               + newer + ' newer run(s) of it exist on `' + branch + '`.');
             out(pipeline + ' was superseded, so this commit is not the one being judged.');
+            superseded.push({ pipeline, run, newer });
             break;
           }
         }
         refusals.push({ pipeline, reason: verdict.reason, red, run });
+        break;
+      }
+
+      // Looking once: an unfinished run is not a verdict. The event raised when
+      // it completes asks again, with this pipeline's answer in hand.
+      if (!waits) {
+        undecided.push({ pipeline, waitFor: verdict.waitFor || 'its legs have not finished', run });
+        out(pipeline + "'s run: " + (verdict.waitFor || 'still going') + '; no decision from this look, the pipeline that finishes last decides');
         break;
       }
 
@@ -243,9 +280,20 @@ export function check(options, io = {}) {
     }
   }
 
+  // Undecided, and superseded when looking once, both mean "not this look":
+  // no pass, no refusal, nothing posted. The publishing gate never gets here
+  // with an undecided pipeline, since it waits or refuses, and it reads a
+  // superseded run as standing down exactly as before.
+  if (undecided.length || (!waits && superseded.length)) {
+    const why = undecided.map((entry) => entry.pipeline + ' ' + entry.waitFor)
+      .concat(superseded.map((entry) => entry.pipeline + ' was superseded'));
+    out('no decision from this look (' + why.join('; ') + '); the pipeline that finishes last decides, and nothing is posted now');
+    return { ok: null, refusals, undecided, superseded };
+  }
+
   if (!refusals.length) {
     out('the gate is satisfied: every listed platform is green, so the ' + purpose + ' may proceed');
-    return { ok: true, refusals: [] };
+    return { ok: true, refusals: [], undecided, superseded };
   }
 
   for (const refusal of refusals) {
@@ -255,7 +303,53 @@ export function check(options, io = {}) {
   }
   summary('### No ' + purpose + ' from this commit\n\n'
     + refusals.map((r) => '- `' + r.pipeline + '`: ' + r.reason).join('\n'));
-  return { ok: false, refusals };
+  return { ok: false, refusals, undecided, superseded };
+}
+
+// A commit status is limited to this many characters of description; GitHub refuses a longer one, and a refusal that
+// cannot be posted is a pull request blocked with no reason on it.
+export const STATUS_DESCRIPTION_MAX = 140;
+
+// The commit status a check() result becomes, or null when there is nothing to
+// post (an undecided look). Pure, so the shape a pull request shows is a unit
+// test: a pass names every platform, a refusal names the platform, the job and
+// its conclusion, and points at the run, exactly as the gate job's own name and
+// annotation do.
+export function statusFor(result, { pipelines = [], purpose = 'merge' } = {}) {
+  if (!result || result.ok === null || result.ok === undefined) return null;
+  if (result.ok) {
+    return {
+      state: 'success',
+      description: clip('every platform is green on this commit: ' + pipelines.join(', ')),
+      target_url: '',
+    };
+  }
+  const first = result.refusals[0] || {};
+  const red = (first.red || []).map((job) => job.name + ': ' + (job.conclusion || 'no conclusion')).join(', ');
+  const others = result.refusals.slice(1).map((refusal) => refusal.pipeline);
+  const description = clip(
+    (first.pipeline || 'a platform') + ' did not pass' + (red ? ' (' + red + ')' : ': ' + String(first.reason || '').replace(/\s+/g, ' ').trim())
+    + (others.length ? '; nor did ' + others.join(', ') : '') + ', so there is no ' + purpose,
+  );
+  return { state: 'failure', description, target_url: first.run && first.run.html_url || '' };
+}
+
+function clip(text) {
+  const flat = String(text).replace(/\s+/g, ' ').trim();
+  return flat.length <= STATUS_DESCRIPTION_MAX ? flat : flat.slice(0, STATUS_DESCRIPTION_MAX - 3) + '...';
+}
+
+// Post the status on the commit and read back what GitHub recorded: a posting
+// that silently recorded another state would leave the pull request wrong.
+export function postStatus({ repo, sha, context, status }, env = process.env, post = ghJson) {
+  const args = ['api', '-X', 'POST', 'repos/' + repo + '/statuses/' + sha,
+    '-f', 'state=' + status.state, '-f', 'context=' + context, '-f', 'description=' + status.description];
+  if (status.target_url) args.push('-f', 'target_url=' + status.target_url);
+  const recorded = post('gh', args, env);
+  if (!recorded || recorded.state !== status.state || recorded.context !== context) {
+    throw new Error('GitHub recorded a different status than was posted: ' + JSON.stringify(recorded));
+  }
+  return recorded;
 }
 
 function optionsFromEnv(env) {
@@ -267,9 +361,17 @@ function optionsFromEnv(env) {
     exempt: env.EXEMPT || '',
     purpose: env.PURPOSE || 'publish',
     windowMinutes: Number(env.WINDOW_MINUTES || 120),
+    // MODE=no-wait looks once and leaves the decision to the pipeline that
+    // finishes last (platforms-status.yml); anything else waits (platforms-gate.yml).
+    wait: env.MODE !== 'no-wait',
   };
 }
 
+// The command. With STATUS_CONTEXT set, the verdict goes onto the commit as a
+// status under that name and the command exits 0 once GitHub has recorded it,
+// pass or fail: the status is the check, and this process only carried it.
+// Without it, the process IS the check, so a refusal exits 1 as it always has.
+// An undecided look posts nothing and exits 0 either way.
 export function run(env = process.env) {
   const options = optionsFromEnv(env);
   const result = check(options, {
@@ -278,7 +380,15 @@ export function run(env = process.env) {
     },
     annotation: (text) => process.stdout.write(text + '\n'),
   });
-  if (!result.ok) process.exitCode = 1;
+  if (env.STATUS_CONTEXT) {
+    const status = statusFor(result, options);
+    if (status) {
+      const recorded = postStatus({ repo: options.repo, sha: options.sha, context: env.STATUS_CONTEXT, status }, env);
+      process.stdout.write('posted status ' + env.STATUS_CONTEXT + '=' + recorded.state + ' on ' + options.sha + ': ' + status.description + '\n');
+    }
+    return result;
+  }
+  if (result.ok !== true) process.exitCode = 1;
   return result;
 }
 

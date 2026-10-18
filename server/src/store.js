@@ -46,6 +46,7 @@ create table if not exists sends (client_key text primary key, chat_id text not 
 create table if not exists attachments (id text primary key, path text not null, mime text not null, name text not null, seen_at text not null);
 create table if not exists settings (key text primary key, value text not null, updated_at text not null);
 create table if not exists push_devices (token_id text primary key, platform text not null, push_token text not null, ticket text not null, seal_key text not null, created_at text not null);
+create table if not exists played (id text primary key, at text not null);
 `;
 const hash = (t) => createHash('sha256').update(t).digest('hex');
 
@@ -97,6 +98,13 @@ export function openStore(file, { now = () => new Date().toISOString() } = {}) {
     },
     getAttachment(id) {
       return q('select id, path, mime, name from attachments where id = ?').get(id) || null;
+    },
+    // The recordings a client of ours has played (issue 440), by attachment id, so every other client reads them played.
+    markPlayed(id) {
+      q('insert into played (id, at) values (?, ?) on conflict(id) do nothing').run(String(id), now());
+    },
+    isPlayed(id) {
+      return Boolean(q('select 1 from played where id = ?').get(String(id)));
     },
     getAllSettings() {
       const out = {};

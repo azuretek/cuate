@@ -13,6 +13,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const output = process.env.HISTORY_PROOF_OUT || path.join(root, 'desktop/out/history-window');
 mkdirSync(output, { recursive: true });
 const profile = mkdtempSync(path.join(os.tmpdir(), 'history-proof-'));
+// Windows holds a profile's files open for a moment after its window is destroyed, so removing it can answer EPERM;
+// the scratch profile is then left in the temp folder rather than the cleanup turning a pass into a failure.
+function removeProfile() {
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+  } catch (error) {
+    console.warn('left the scratch profile at ' + profile + ' (' + (error && error.code) + ')');
+  }
+}
 app.setPath('userData', profile);
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -71,12 +80,12 @@ app.whenReady().then(async () => {
   const result = { history, media, passed: true };
   writeFileSync(path.join(output, 'report.json'), JSON.stringify(result, null, 2));
   console.log('HISTORY PROOF ' + JSON.stringify(result));
-  win.destroy(); await server.close(); rmSync(profile, { recursive: true, force: true });
+  win.destroy(); await server.close(); removeProfile();
   clearTimeout(bound); app.exit(0);
 }).catch(async (error) => {
   console.error('HISTORY PROOF FAILED: ' + error.stack);
   if (win && !win.isDestroyed()) { writeFileSync(path.join(output, 'failure.png'), (await win.capturePage()).toPNG()); win.destroy(); }
-  if (server) await server.close();
-  rmSync(profile, { recursive: true, force: true });
+  if (server) await server.close().catch(() => {});
+  removeProfile();
   clearTimeout(bound); app.exit(1);
 });

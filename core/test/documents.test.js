@@ -1,5 +1,5 @@
-// Issue 374: a document in a conversation is previewed in the media viewer when the app can show it (a PDF, text, or
-// audio a web view plays), and handed to the device's own apps with Open in otherwise; Save stays for every file. The
+// Issue 374: a document in a conversation is previewed in the media viewer when the app can show it (a PDF or text), and
+// handed to the device's own apps with Open in otherwise; Save stays for every file. The
 // type rule, the PDF's zoom and page sizes, the bridge command each button sends and the viewer's document surface are
 // held here without a browser.
 import { test } from 'node:test';
@@ -37,9 +37,9 @@ test('a document the app can show opens in the viewer, and any other goes straig
     [file('table.csv', 'application/octet-stream'), 'text'],
     [file('main.swift', ''), 'text'],
     [file('data.json', 'application/json'), 'text'],
-    [file('song.mp3', 'audio/mpeg'), 'audio'],
-    [file('memo.m4a', 'audio/x-m4a'), 'audio'],
-    [file('memo.m4a', 'application/octet-stream'), 'audio'],
+    // A recording plays in its own message (issue 432, core/test/audio.test.js), never in the viewer.
+    [file('song.mp3', 'audio/mpeg'), null],
+    [file('memo.m4a', 'audio/x-m4a'), null],
     [file('Audio Message.caf', 'audio/x-caf'), null],
     [file('page.html', 'text/html'), null],
     [file('letter.rtf', 'text/rtf'), null],
@@ -112,8 +112,6 @@ test('the viewer shows a document with Open in and Save, and a PDF with its page
   assert.ok(!pdf.includes('viewer-prev') && !pdf.includes('<img'), 'a document is not one of the media to step through');
   const text = words(viewer.render.call(host('text', { docText: 'a,b\n1,2' })));
   assert.ok(text.includes('<pre class="viewer-text">a,b\n1,2</pre>') && !text.includes('Zoom in'), 'text is shown as text, with no zoom of its own');
-  const audio = words(viewer.render.call(host('audio', { src: 'blob:a' })));
-  assert.ok(audio.includes('<audio class="viewer-audio"') && audio.includes('controls'), 'audio gets a player');
   const failed = words(viewer.render.call(host('pdf', { docState: 'failed' })));
   assert.ok(failed.includes('could not be shown here') && failed.includes('Open in'), 'a file the viewer cannot read says so, and Open in still offers it');
 });

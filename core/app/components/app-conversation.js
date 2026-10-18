@@ -45,8 +45,19 @@ const formattedText = (p, inner) => {
   const formats = TEXT_FORMATS.filter((f) => p[f]);
   return formats.length ? html`<span class="${'fmt ' + formats.map((f) => 'fmt-' + f).join(' ')}">${inner}</span>` : inner;
 };
-const linkedText = (text, open, styles = []) => styledParts(text, styles).map((p) => {
-  const inner = formattedText(p, p.effect ? effectText(p) : drawnText(p.text));
+// The name a conversation knows a person by: their contact name among the chat's members, or the address itself.
+const memberName = (chat, handle) => ((chat && chat.members) || []).find((member) => handleKey(member.handle) === handleKey(handle))?.name || String(handle || '');
+// A name the sender mentioned (issue 453): set apart, and named by the person it stands for, as the caller knows them,
+// on hover and to a screen reader. It is marked as an image of that name, as an emoji drawn by its name is (issue 392),
+// so a screen reader reads who it is while the words themselves, copied or previewed, stay the words as sent.
+const mentionLabel = (words, name) => words + ', mention of ' + name;
+const mentionText = (p, inner, nameOf) => {
+  if (!p.mention) return inner;
+  const name = nameOf(p.mention);
+  return html`<span class="mention" role="img" aria-label="${mentionLabel(p.text, name)}" title="${name}">${inner}</span>`;
+};
+const linkedText = (text, open, styles = [], nameOf = (handle) => handle) => styledParts(text, styles).map((p) => {
+  const inner = formattedText(p, mentionText(p, p.effect ? effectText(p) : drawnText(p.text), nameOf));
   return p.href
     ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${inner}</a>`
     : inner;
@@ -529,10 +540,10 @@ class AppConversation extends KitElement {
     return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${(this.chat.members || []).find((member) => handleKey(member.handle) === handleKey(m.sender))?.name || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
-        ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
+        ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client} .mine=${mine}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
         ${showEdits ? versions.map((v) => html`<div class="bubble edit-version ${kind}">${v.text}</div>`) : nothing}
-        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href), m.styles)}</div>` : nothing}
+        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href), m.styles, (handle) => memberName(this.chat, handle))}</div>` : nothing}
         ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}

@@ -77,6 +77,8 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
       finally { timers.clearTimeout(timer); o.signal?.removeEventListener('abort', abort); }
     },
     chats: (o = {}) => call('GET', '/api/v1/chats' + query({ limit: o.limit })),
+    // What changed since a cursor the server wrote (issue 441): new messages, edits, unsends, reactions and read receipts.
+    changes: (o = {}) => call('GET', '/api/v1/changes' + query({ since: o.since, limit: o.limit, chats: o.chats })),
     messages: (chatId, o = {}) => call('GET', `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before, beforeCursor: o.beforeCursor, afterCursor: o.afterCursor, includeTotal: o.includeTotal })),
     send: (chatId, { text, file, clientKey, replyTo }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...(file ? { file } : {}), clientKey, ...(replyTo ? { replyTo } : {}) }),
     // `text` is the message being reacted to, carried only so the server can compose the platform's own text
@@ -86,6 +88,8 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     edit: (chatId, messageId, text) => call('PUT', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/text`, { text }),
     upload: ({ name, mime, data }) => call('POST', '/api/v1/attachments', { name, mime, data }),
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+    // A recording someone else sent was played here (issue 440): the server keeps it and tells every client.
+    played: (id) => call('POST', '/api/v1/attachments/' + encodeURIComponent(id) + '/played'),
     // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
     // a group conversation, and a group's name and people change through the Mac. Each answers the chat as it now is.
     createChat: ({ addresses, name, text }) => call('POST', '/api/v1/chats', { addresses, ...(name ? { name } : {}), ...(text ? { text } : {}) }),

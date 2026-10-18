@@ -1,0 +1,15 @@
+{
+  "description": "Synthetic attributed message bodies with mentions (issue 453), archived on a Mac by Foundation's own NSArchiver from words and addresses written here, the shape Messages keeps in the attributedBody column. Each is a synthetic text with the message part attribute over all of it and a confirmed mention over the name, its value the synthetic address the name stands for; no row of any real store is in this file.",
+  "bodies": {
+    "mention": {
+      "text": "Sam are you coming?",
+      "attributes": "mention of +15555550123 over 0+3",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKxNTYW0gYXJlIHlvdSBjb21pbmc/hoQCaUkBA5KEhIQMTlNEaWN0aW9uYXJ5AJWEAWkCkoSYmBxfX2tJTU1lbnRpb25Db25maXJtZWRNZW50aW9uhpKEmJgMKzE1NTU1NTUwMTIzhpKEmJgdX19rSU1NZXNzYWdlUGFydEF0dHJpYnV0ZU5hbWWGkoSEhAhOU051bWJlcgCEhAdOU1ZhbHVlAJWEASqEhAFxnwCGhpkCEJKEmpsBkp2SnoaG"
+    },
+    "twoMentions": {
+      "text": "Riley and Sam, dinner at 7",
+      "attributes": "mention of riley@example.com over 0+5, mention of +15555550123 over 10+3, bold over 15+6",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKxpSaWxleSBhbmQgU2FtLCBkaW5uZXIgYXQgN4aEAmlJAQWShISEDE5TRGljdGlvbmFyeQCVhAFpApKEmJgcX19rSU1NZW50aW9uQ29uZmlybWVkTWVudGlvboaShJiYEXJpbGV5QGV4YW1wbGUuY29thpKEmJgdX19rSU1NZXNzYWdlUGFydEF0dHJpYnV0ZU5hbWWGkoSEhAhOU051bWJlcgCEhAdOU1ZhbHVlAJWEASqEhAFxnwCGhpkCBZKEmpsBkp2SnoaZAwOShJqbApKbkoSYmAwrMTU1NTU1NTAxMjOGkp2SnoaZAgKZBAaShJqbApKEmJgaX19rSU1UZXh0Qm9sZEF0dHJpYnV0ZU5hbWWGkoSfnqGfAYaSnZKehpkCBYY="
+    }
+  }
+}

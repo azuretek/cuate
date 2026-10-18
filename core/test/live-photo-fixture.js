@@ -116,10 +116,13 @@
   const box = (node) => { const r = node.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; };
   const stillBox = box(img());
   const observation = observeLiveMotion(stillBox);
-  // Event callbacks record only names and timestamps. Media state and geometry are read by the sampling loop.
+  // Event callbacks record names and timestamps, and timeupdate hands the motion's own clock to the observation, since
+  // animation frames can starve for the whole motion on a busy simulator (issue 462). Geometry is read by the loop alone.
   for (const type of ['loadeddata', 'playing', 'timeupdate', 'ended', 'error']) {
     el.addEventListener(type, (event) => {
-      if (event.target.matches?.('video.viewer-motion')) recordMediaEvent(trace, event);
+      if (!event.target.matches?.('video.viewer-motion')) return;
+      recordMediaEvent(trace, event);
+      if (type === 'timeupdate' || type === 'ended') observation.progress(event.target);
     }, true);
   }
   const state = () => {
