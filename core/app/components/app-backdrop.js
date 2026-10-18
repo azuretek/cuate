@@ -1,6 +1,6 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
-import { heldMedia, holdMedia } from './app-attachment.js';
+import { heldMedia, holdMedia, fetchPicture, canFetchPicture } from './app-attachment.js';
 
 // A conversation's backdrop (issue 417): the background a participant set for it, drawn behind the messages and never
 // as a picture in the timeline. The picture is fetched once and held with the conversation's other pictures, so a
@@ -26,10 +26,10 @@ class AppBackdrop extends KitElement {
 
   async load() {
     const p = this.picture;
-    if (!p || !this.client || this.loading === p.id) return;
+    if (!p || !canFetchPicture(this.client) || this.loading === p.id) return;
     this.loading = p.id;
     try {
-      const blob = await this.client.attachment(p.id);
+      const blob = await fetchPicture(this.client, p);
       const url = heldMedia(p) || URL.createObjectURL(blob);
       holdMedia(p, url);
       if (this.picture?.id === p.id) this.src = url;

@@ -439,18 +439,29 @@ class AppRoot extends KitElement {
   // and adds it with the FontFace API, so the family the theme names draws as itself rather than as a fallback. A file
   // that cannot be read is tried again the next time the theme is applied.
   async loadThemeFonts(theme) {
-    if (!this.client || typeof FontFace === 'undefined' || typeof document === 'undefined' || !document.fonts) return;
+    if ((!this.client && !this.cache) || typeof FontFace === 'undefined' || typeof document === 'undefined' || !document.fonts) return;
     this.fontsLoaded ??= new Set();
     for (const f of themeFonts(theme)) {
       if (this.fontsLoaded.has(f.id)) continue;
       this.fontsLoaded.add(f.id);
       try {
-        const face = new FontFace(f.family, await this.client.themeFont(f.id), { weight: f.weight, style: f.style });
+        const face = new FontFace(f.family, await this.themeFontBytes(f.id), { weight: f.weight, style: f.style });
         document.fonts.add(await face.load());
       } catch {
         this.fontsLoaded.delete(f.id);
       }
     }
+  }
+  // A theme's font file from the device's store when it holds it (issue 441), so a launch draws the theme's type before the
+  // server answers; else read from the server and offered to the store.
+  async themeFontBytes(id) {
+    const cache = this.cache;
+    const kept = cache ? await cache.media({ id }, { kind: 'font' }).catch(() => null) : null;
+    if (kept) return kept.arrayBuffer();
+    if (!this.client) throw Object.assign(new Error('No server yet.'), { code: 'no_client' });
+    const bytes = await this.client.themeFont(id);
+    if (cache) cache.keepMedia({ id }, new Blob([bytes]), { kind: 'font' }).catch(() => {});
+    return bytes;
   }
   bridge(name, args) {
     return window.bridge.call(name, args);
@@ -544,6 +555,12 @@ class AppRoot extends KitElement {
       this.cache = null;
     }
     useMediaStore(this.cache);
+    // The settings it holds draw the theme, scheme and text size at once too, so the held list is never drawn in the
+    // defaults first; the server's answer replaces them a moment later.
+    if (this.cache && this.cache.settings && !this.settingsRead) {
+      this.settings = { ...this.cache.settings };
+      this.applyTheme();
+    }
     if (this.cache && this.cache.chats.length && !this.chats.length) {
       this.chats = orderChats(this.cache.chats);
       this.phase = 'ready';
@@ -906,6 +923,7 @@ class AppRoot extends KitElement {
     if (!this.cache || !this.client || this.phase !== 'ready') return;
     if (this.openChatId) this.cache.keep(this.openChatId, { messages: this.messages });
     if (this.chats !== this.keptChats) { this.keptChats = this.chats; this.cache.saveChats(this.chats); }
+    if (this.settingsRead && this.settings !== this.keptSettings) { this.keptSettings = this.settings; this.cache.saveSettings(this.settings); }
   }
 
   // A conversation the device's store holds, laid out as a window at its newest messages (issue 441), or null.
