@@ -39,8 +39,11 @@ globalThis.historyProof = {
       scroll.scrollTop += target.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
       pane().keep.record();
       const anchor = { ...pane().keep.anchor };
+      // What the page held when the proof asked, so a refused page names why rather than only that it was refused.
+      const asked = { first: root().messages[0]?.id, rows: root().messages.length, seq: root().openSeq, pending: Boolean(root().pendingHistory), olderPending: Boolean(pane().olderPending), hasOlder: root().historyWindow?.hasOlder, chat: root().openChatId };
       const moved = await root().loadOlder(pane().historyMeasurements());
-      assert(moved, 'older page returned');
+      const after = () => ({ first: root().messages[0]?.id, rows: root().messages.length, seq: root().openSeq, pending: Boolean(root().pendingHistory), olderPending: Boolean(pane().olderPending), hasOlder: root().historyWindow?.hasOlder, chat: root().openChatId, problem: root().problem || '' });
+      assert(moved, 'older page returned ' + JSON.stringify({ asked, after: after() }));
       await settle();
       const held = [...pane().querySelectorAll('.messages > .bubble-row')].find((row) => row.dataset.id === anchor.key);
       assert(held, 'anchor retained while adjacent page loads');
