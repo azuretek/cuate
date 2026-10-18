@@ -148,10 +148,20 @@ const BACKGROUND_ACTION_NAMES = new Set(Object.values(BACKGROUND_ACTIONS));
 export function isBackgroundRow(m) {
   return Boolean(m) && BACKGROUND_ACTION_NAMES.has(m.background_action);
 }
-// Whether a raw row could be an event only the store names (a background change, a person joining or leaving a group):
-// one with no words and nothing attached, so only those are asked of the store.
+// Whether a raw row could be an event only the store names (a background change, a rename, a person joining or leaving
+// a group): one with no words and nothing attached, so only those are asked of the store.
 export function mayBeStoreEventRow(m) {
   return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
+}
+
+// A group being named, or its name being removed, arrives as a row of its own too (issue 439): no text and no
+// attachment, which the engine's read cannot tell from an empty message. Messages records it as item type 2 with the new
+// name in group_title (empty when the name was removed), and the adapter reads that from the store and marks the raw
+// row with both before it is mapped (server/src/engine/renames.js). It is an event in the conversation and the group's
+// new title, never a message.
+export const RENAME_ITEM_TYPE = 2;
+export function isRenameRow(m) {
+  return Boolean(m) && m.item_type === RENAME_ITEM_TYPE && typeof m.group_title === 'string';
 }
 
 // A person added to a group, removed from it, or leaving it arrives as a row of its own too (issue 456): no text and no
@@ -209,6 +219,9 @@ export function mapMessage(m, { attachmentId }) {
   }
   if (isBackgroundRow(m)) {
     return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'background', action: m.background_action } };
+  }
+  if (isRenameRow(m)) {
+    return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'rename', name: m.group_title.trim() } };
   }
   if (isMemberRow(m)) {
     // The person a change was about: the one added or removed. Someone leaving is the row's own sender, named as

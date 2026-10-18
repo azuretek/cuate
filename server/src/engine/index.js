@@ -8,7 +8,7 @@ import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
 import { annotateLivePhotos } from './live-photo.js';
-import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS, mayBeStoreEventRow, mapBackground } from '../../../core/app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS, mayBeStoreEventRow, mapBackground, RENAME_ITEM_TYPE } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 // Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
@@ -69,6 +69,9 @@ const omit = (o, keys) => {
 // richText: where the adapter learns the attributes a message's words carry, its text effects (rich-text.js reads the
 // Messages store; the fake keeps its own), or null where there is no such source, in which case every message is drawn
 // as plain words (issue 433).
+// renames: where the adapter learns which rows are a group being named or its name removed, and the name each gave
+// (renames.js: the Messages store; the fake keeps its own), or null where there is no such source, in which case no row
+// is a rename (issue 439).
 // sendEffects: where the adapter learns the bubble or screen effect a message was sent with (send-effects.js reads the
 // Messages store; the fake keeps its own), or null where there is no such source, in which case no message carries one
 // (issue 442).
@@ -77,7 +80,7 @@ const omit = (o, keys) => {
 // voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
 // store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
 // client of ours has played, kept by the server ({ has(attachmentId) }), or null.
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, members = null, sendEffects = null }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -119,8 +122,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   };
   // The rows that may be an event only the store names (no words, nothing attached) are asked of the store in one read
   // per kind, and each it names is marked before it is mapped, so the mapping stays the one pure rule: a background
-  // change with its action (issue 417), a person added, removed or leaving with the action and whom it was about (issue
-  // 456). A store that cannot be read leaves them as they were, and says so.
+  // change with its action (issue 417), a rename with its item type and the name it gave (issue 439), and a person
+  // added, removed or leaving with the action and whom it was about (issue 456). A store that cannot be read leaves
+  // them as they were, and says so.
   const markFrom = (source, maybe, mark, failed) => {
     if (!source || !maybe.length) return new Map();
     try {
@@ -132,10 +136,11 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
   };
   const markStoreEvents = (rows) => {
-    const maybe = backgrounds || members ? rows.filter(mayBeStoreEventRow) : [];
+    const maybe = backgrounds || renames || members ? rows.filter(mayBeStoreEventRow) : [];
     if (!maybe.length) return rows;
     const marks = [
       markFrom(backgrounds, maybe, (action) => ({ background_action: action }), 'background.failed'),
+      markFrom(renames, maybe, (title) => ({ item_type: RENAME_ITEM_TYPE, group_title: String(title || '') }), 'rename.failed'),
       markFrom(members, maybe, (found) => ({ member_action: found.action, member_handle: found.handle || null }), 'member.failed'),
     ];
     return rows.map((m) => {

@@ -96,6 +96,7 @@ var engine = (() => {
     PLAYED_KEY: () => PLAYED_KEY,
     PLAYED_MAX: () => PLAYED_MAX,
     PRESS_STATES: () => PRESS_STATES,
+    RENAME_ITEM_TYPE: () => RENAME_ITEM_TYPE,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
     SCREEN_EFFECTS: () => SCREEN_EFFECTS,
@@ -308,6 +309,7 @@ var engine = (() => {
     isMemberRow: () => isMemberRow,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
+    isRenameRow: () => isRenameRow,
     isUnplayed: () => isUnplayed,
     lengthClock: () => lengthClock,
     letters: () => letters,
@@ -2654,6 +2656,10 @@ var engine = (() => {
   function mayBeStoreEventRow(m) {
     return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
   }
+  var RENAME_ITEM_TYPE = 2;
+  function isRenameRow(m) {
+    return Boolean(m) && m.item_type === RENAME_ITEM_TYPE && typeof m.group_title === "string";
+  }
   var MEMBER_ACTIONS = Object.freeze({ "1:0": "add", "1:1": "remove", "3:0": "leave" });
   var MEMBER_ACTION_NAMES = new Set(Object.values(MEMBER_ACTIONS));
   function memberAction(itemType, groupAction) {
@@ -2697,6 +2703,9 @@ var engine = (() => {
     }
     if (isBackgroundRow(m)) {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
+    }
+    if (isRenameRow(m)) {
+      return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "rename", name: m.group_title.trim() } };
     }
     if (isMemberRow(m)) {
       const handle = m.member_action !== "leave" && m.member_handle ? String(m.member_handle) : "";
@@ -2859,6 +2868,7 @@ var engine = (() => {
     const who = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
     if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
     if (m.event && m.event.kind === "background") return who + (m.event.action === "clear" ? " removed the background" : " changed the background");
+    if (m.event && m.event.kind === "rename") return m.event.name ? who + " named the conversation \u201C" + m.event.name + "\u201D" : who + " removed the name from the conversation";
     if (m.event && m.event.kind === "member") {
       if (m.event.action === "leave") return who + " left the conversation";
       const person = m.event.person ? String(m.event.person.name || m.event.person.handle || "") : "";
@@ -2870,7 +2880,7 @@ var engine = (() => {
   }
   function eventPreview(e) {
     const person = e.person && e.person.handle ? { person: { handle: String(e.person.handle), name: e.person.name ? String(e.person.name) : null } } : {};
-    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...person };
+    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...person, ...typeof e.name === "string" ? { name: e.name } : {} };
   }
   function peopleAfter(c, message) {
     const e = message.event;
@@ -2902,8 +2912,9 @@ var engine = (() => {
     const out = chats.slice();
     const photo = message.event && message.event.kind === "groupPhoto" ? { photo: message.event.photo } : {};
     const backdrop = message.event && message.event.kind === "background" && message.event.action === "clear" ? { background: null } : {};
+    const renamed = message.event && message.event.kind === "rename" ? { name: String(message.event.name || "") } : {};
     const event = message.event ? eventPreview(message.event) : null;
-    out[i] = { ...c, ...photo, ...backdrop, ...peopleAfter(c, message), unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || message.sender || null } : lastMessage };
+    out[i] = { ...c, ...photo, ...backdrop, ...renamed, ...peopleAfter(c, message), unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || message.sender || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
   function applyEditToChats(chats, message) {
