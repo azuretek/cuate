@@ -15,6 +15,17 @@ mkdirSync(output, { recursive: true });
 const profile = mkdtempSync(path.join(os.tmpdir(), 'history-proof-'));
 // Windows holds a profile's files open for a moment after its window is destroyed, so removing it can answer EPERM;
 // the scratch profile is then left in the temp folder rather than the cleanup turning a pass into a failure.
+// The scratch server directory is removed once the proof has its result. On Windows the app can still hold a file in
+// it for a moment after its window is gone, which is a scratch directory left behind, not a failed proof, so that one
+// case is reported as the profile's is; any other error from closing the server still fails the run.
+async function closeServer() {
+  try {
+    await server.close();
+  } catch (error) {
+    if (!['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(error && error.code)) throw error;
+    console.warn('left the scratch server directory (' + error.code + ')');
+  }
+}
 function removeProfile() {
   try {
     rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
@@ -80,7 +91,7 @@ app.whenReady().then(async () => {
   const result = { history, media, passed: true };
   writeFileSync(path.join(output, 'report.json'), JSON.stringify(result, null, 2));
   console.log('HISTORY PROOF ' + JSON.stringify(result));
-  win.destroy(); await server.close(); removeProfile();
+  win.destroy(); await closeServer(); removeProfile();
   clearTimeout(bound); app.exit(0);
 }).catch(async (error) => {
   console.error('HISTORY PROOF FAILED: ' + error.stack);
