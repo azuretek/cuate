@@ -1,7 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
-import { clock, progressOf, flatWave, wavePeaks, barsDone, seekAt, seekByKey, isUnplayed, decodePlayed, encodePlayed, copyFormat, PLAYED_KEY, WAVE_BARS, WAVE_DECODE_MAX_BYTES } from '../rules/audio.js';
+import { clock, lengthClock, progressOf, flatWave, wavePeaks, barsDone, seekAt, seekByKey, isUnplayed, decodePlayed, encodePlayed, copyFormat, PLAYED_KEY, WAVE_BARS, WAVE_DECODE_MAX_BYTES } from '../rules/audio.js';
 
 // A recording in a conversation, played where it was sent (issue 432): a play and pause control, the waveform,
 // which fills as it plays and moves to where it is pressed, how far in it is and how long it runs, and a mark on one
@@ -283,7 +283,7 @@ class AppAudio extends KitElement {
     const filled = barsDone(progressOf(this.position, this.length), this.wave.length);
     const unplayed = isUnplayed(a, { mine: this.mine, played: this.heard });
     const elapsed = clock(this.position);
-    const total = clock(this.length);
+    const total = lengthClock(this.length);
     return html`<div class="voice-note" data-playing=${this.playing ? 'true' : 'false'} data-unplayed=${unplayed ? 'true' : 'false'}>
       <button type="button" class="voice-play" aria-label=${(this.playing ? 'Pause ' : 'Play ') + name} @click=${press(() => this.toggle())}><span class="icon" data-icon=${this.playing ? 'pause' : 'play'} aria-hidden="true"></span></button>
       <div class="voice-wave" role="slider" tabindex="0" aria-label=${'Position in ' + name} aria-valuemin="0" aria-valuemax=${String(Math.round(this.length))} aria-valuenow=${String(Math.round(this.position))} aria-valuetext=${elapsed + ' of ' + total} @pointerdown=${(e) => this.seekPress(e)} @keydown=${(e) => this.seekKey(e)}>${this.wave.map((level, i) => html`<span class="voice-bar" data-level=${String(level)} data-done=${i < filled ? 'true' : 'false'}></span>`)}</div>

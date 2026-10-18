@@ -65,6 +65,14 @@ export function clock(seconds) {
   return h ? h + ':' + String(m).padStart(2, '0') + ':' + ss : m + ':' + ss;
 }
 
+// How long a recording runs, to the nearest second. Web views disagree on a file's last fraction of a second (WebKit
+// reads the four second fixture as 3.95, Chromium as 4.0), and cutting it off made one recording say 0:03 on a phone and
+// 0:04 on a desktop; the elapsed clock still counts whole seconds as they pass.
+export function lengthClock(seconds) {
+  const s = Number(seconds);
+  return clock(Number.isFinite(s) && s > 0 ? Math.round(s) : 0);
+}
+
 // How far through it is, from 0 to 1. A duration not known yet is the start.
 export function progressOf(current, duration) {
   const d = Number(duration);

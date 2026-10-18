@@ -289,6 +289,7 @@ var engine = (() => {
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
     isUnplayed: () => isUnplayed,
+    lengthClock: () => lengthClock,
     letters: () => letters,
     linkHref: () => linkHref,
     linkMediaKey: () => linkMediaKey,
@@ -3847,6 +3848,10 @@ var engine = (() => {
     const m = Math.floor(s % 3600 / 60);
     const ss = String(s % 60).padStart(2, "0");
     return h ? h + ":" + String(m).padStart(2, "0") + ":" + ss : m + ":" + ss;
+  }
+  function lengthClock(seconds) {
+    const s = Number(seconds);
+    return clock(Number.isFinite(s) && s > 0 ? Math.round(s) : 0);
   }
   function progressOf(current, duration) {
     const d = Number(duration);

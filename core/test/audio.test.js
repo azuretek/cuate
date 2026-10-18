@@ -166,6 +166,9 @@ test('the waveform fills as it plays, moves to where it is pressed or keyed, and
 test('the player rules: times, the waveform, seeking and what was played (issue 432)', async () => {
   const r = await import('../app/rules/audio.js');
   assert.deepEqual([r.clock(0), r.clock(7.9), r.clock(65), r.clock(3725), r.clock(NaN), r.clock(Infinity)], ['0:00', '0:07', '1:05', '1:02:05', '0:00', '0:00']);
+  // How long it runs is read to the nearest second: WebKit reports the four second fixture as 3.95 seconds, which read
+  // 0:03 on iOS while Chromium's 4.0 read 0:04, so one recording said two lengths (issue 432).
+  assert.deepEqual([r.lengthClock(3.95), r.lengthClock(4.0), r.lengthClock(3.02), r.lengthClock(59.6), r.lengthClock(NaN)], ['0:04', '0:04', '0:03', '1:00', '0:00']);
   assert.deepEqual([r.progressOf(2, 8), r.progressOf(9, 8), r.progressOf(1, 0), r.progressOf(1, Infinity)], [0.25, 1, 0, 0]);
   const loud = new Float32Array(2800).map((_, i) => (i < 1400 ? 0.1 : 0.9) * (i % 2 ? 1 : -1));
   const wave = r.wavePeaks([loud], 28);

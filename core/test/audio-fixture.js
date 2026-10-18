@@ -94,6 +94,27 @@
   });
   document.body.append(stage);
   const audio = (el) => el.querySelector('audio');
+  // What each recording's media element said, newest last, so a run that does not play reports why: every media event
+  // with the time and readiness at that moment, its error, and a play() the web view refused.
+  const heardEvents = new Map();
+  const note = (el, what) => {
+    const a = audio(el);
+    const list = heardEvents.get(el) || [];
+    list.push(what + '@' + (a ? Math.round(a.currentTime * 100) / 100 + '/r' + a.readyState + '/n' + a.networkState : '-'));
+    heardEvents.set(el, list.slice(-14));
+  };
+  for (const el of players) {
+    for (const type of ['play', 'playing', 'pause', 'waiting', 'stalled', 'suspend', 'error', 'ended', 'canplay', 'loadedmetadata', 'abort', 'emptied']) {
+      el.addEventListener(type, (e) => { if (e.target && e.target.tagName === 'AUDIO') note(el, type + (type === 'error' && e.target.error ? ':' + e.target.error.code : '')); }, true);
+    }
+  }
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function fixturePlay(...args) {
+    const owner = players.find((el) => audio(el) === this);
+    const done = play.apply(this, args);
+    if (owner && done && typeof done.catch === 'function') done.catch((e) => note(owner, 'refused:' + (e && e.name)));
+    return done;
+  };
   // Ready once every player SHOWS how long it runs, not only once its audio element knows: the element learns its
   // duration a task before the player hears of it, and a report read in between showed 0:00 on a slower runner.
   const drawnLength = (el) => el.querySelector('.voice-length')?.textContent || '0:00';
@@ -121,6 +142,7 @@
       filled: el.querySelectorAll('.voice-bar[data-done="true"]').length,
       levels: levels.size,
       clear,
+      events: (heardEvents.get(el) || []).join(' '),
       currentTime: Math.round(a.currentTime * 100) / 100,
       duration: Math.round(a.duration * 100) / 100,
       paused: a.paused,
