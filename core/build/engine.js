@@ -2555,7 +2555,11 @@ var engine = (() => {
     return order === "name" ? list.sort(compare) : list.sort((a, b) => compare(b, a));
   }
   function contactSearchText(chat) {
-    return [chatTitle(chat), (chat.participants || []).join(" ")].join(" ").toLowerCase();
+    return [chatTitle(chat), chatPeople(chat).join(" "), (chat.participants || []).join(" ")].join(" ").toLowerCase();
+  }
+  function chatPeople(chat) {
+    const members = Array.isArray(chat.members) && chat.members.length ? chat.members.map((m) => m && (m.name || m.handle) || "") : chat.participants || [];
+    return members.map((p) => String(p).trim()).filter(Boolean);
   }
   function messageSearchText(chat, texts = {}) {
     const loaded = texts && texts[chat.id] || [];
@@ -2634,7 +2638,7 @@ var engine = (() => {
   function chatTitle(chat) {
     const name = String(chat.name || "").trim();
     if (name && !isMachineName(name, chat)) return name;
-    const people = (chat.participants || []).map((p) => String(p).trim()).filter(Boolean);
+    const people = chatPeople(chat);
     if (people.length === 1) return people[0];
     if (people.length === 2) return people[0] + " and " + people[1];
     if (people.length === 3) return people[0] + ", " + people[1] + " and 1 other";
