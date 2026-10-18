@@ -52,7 +52,10 @@ const omit = (o, keys) => {
 // richText: where the adapter learns the attributes a message's words carry, its text effects (rich-text.js reads the
 // Messages store; the fake keeps its own), or null where there is no such source, in which case every message is drawn
 // as plain words (issue 433).
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null }) {
+// voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
+// store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
+// client of ours has played, kept by the server ({ has(attachmentId) }), or null.
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, voices = null, heard = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -66,7 +69,32 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
     return msg;
   };
-  const toModel = (raw) => notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId }));
+  const toModel = (raw) => markHeard(notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId })));
+  // A recording a client of ours played is played on every client (issue 440): the server keeps it, and every read and
+  // live message carries it.
+  function markHeard(msg) {
+    if (!heard || !msg || !Array.isArray(msg.attachments)) return msg;
+    try {
+      for (const a of msg.attachments) if (!a.played && heard.has(a.id)) a.played = true;
+    } catch (e) {
+      log.emit('voice.failed', { error: failure(e) });
+    }
+    return msg;
+  }
+  // The rows with something attached are asked of the store in one read, and each voice message it names is marked with
+  // whether it was played before it is mapped (issue 440). A store that cannot be read leaves them unmarked, and says so
+  // by the failure's code.
+  const markVoices = (rows) => {
+    const maybe = voices ? rows.filter((m) => m && m.guid && !m.is_reaction && Array.isArray(m.attachments) && m.attachments.length) : [];
+    if (!maybe.length) return rows;
+    try {
+      const found = voices.among(maybe.map((m) => String(m.guid)));
+      return rows.map((m) => (found.has(String(m && m.guid)) ? { ...m, is_audio_message: true, is_played: Boolean(found.get(String(m.guid)).played) } : m));
+    } catch (e) {
+      log.emit('voice.failed', { error: failure(e) });
+      return rows;
+    }
+  };
   // The rows that may be a background changing (no words, nothing attached) are asked of the store in one read, and
   // each it names is marked with its action before it is mapped, so the mapping stays the one pure rule (issue 417). A
   // store that cannot be read leaves them as they were, and says so.
@@ -101,7 +129,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
   };
   // Every raw row passes the same marks before it is mapped, whichever read it came from.
-  const prepare = (rows) => markRichText(markBackgrounds(rows));
+  const prepare = (rows) => markVoices(markRichText(markBackgrounds(rows)));
   // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
   // again only when its background has changed since.
   const backdrops = new Map();
@@ -656,6 +684,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   function stop() {
     stopping = true;
     try { edits?.close?.(); } catch { /* already closed */ }
+    try { voices?.close?.(); } catch { /* already closed */ }
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     const c = current;
     current = null;

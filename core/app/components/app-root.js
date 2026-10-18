@@ -49,6 +49,7 @@ import './app-conversation.js';
 import './app-settings.js';
 import './app-about.js';
 import './app-image-viewer.js';
+import { notePlayed } from './app-audio.js';
 import './app-slide-confirm.js';
 
 const API_VERSION = 1;
@@ -851,6 +852,9 @@ class AppRoot extends KitElement {
     } else if (name === 'chat.changed') {
       // A conversation started, a group renamed or its people changed, on any device (issue 326).
       this.chats = upsertChat(this.chats, data);
+    } else if (name === 'attachment.played') {
+      // A recording played on another of the person's devices (issue 440) takes its mark off here at once.
+      notePlayed(String(data.attachmentId)).catch(() => {});
     } else if (name === 'chat.read') {
       // A chat read on any device clears here too, so the count is the server's and not this page's own idea.
       const id = String(data.chatId);
