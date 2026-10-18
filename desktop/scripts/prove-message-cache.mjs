@@ -25,6 +25,12 @@ const RUNS = [['off', 'cold'], ['off', 'warm'], ['on', 'cold'], ['on', 'warm']];
 app.whenReady().then(async () => {
   let run = RUNS[0];
   protocol.handle('app', (request) => {
+    try { return serve(request); } catch (error) {
+      process.stderr.write('message cache proof: could not serve ' + request.url + ': ' + error.message + '\n');
+      return new Response('error', { status: 500 });
+    }
+  });
+  const serve = (request) => {
     const url = new URL(request.url);
     if (url.host !== 'bundle') return new Response('not found', { status: 404 });
     // The shell's bridge, holding no token, so the page boots to sign-in and the fixture signs it in.
@@ -34,11 +40,13 @@ app.whenReady().then(async () => {
     let content = readFileSync(file);
     if (url.pathname === '/core/app/index.html') content = content.toString().replace('<script type="module" src="main.js"></script>', '<script src="/proof-bridge.js"></script><script type="module" src="main.js"></script><script defer src="/core/test/message-cache-fixture.js"></script>');
     return new Response(content, { headers: { 'content-type': mime[path.extname(file)] || 'application/octet-stream' } });
-  });
+  };
   const results = [];
   for (const next of RUNS) {
     run = next;
     const win = new BrowserWindow({ show: true, width: 420, height: 860, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
+    win.webContents.on('did-fail-load', (_e, code, description, url, main) => process.stderr.write('message cache proof: load failed ' + JSON.stringify({ run, code, description, url, main }) + '\n'));
+    win.webContents.on('render-process-gone', (_e, details) => process.stderr.write('message cache proof: renderer gone ' + JSON.stringify({ run, details }) + '\n'));
     await win.loadURL('app://bundle/core/app/index.html');
     let state = '';
     const deadline = Date.now() + 90000;

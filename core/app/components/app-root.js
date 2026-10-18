@@ -588,12 +588,20 @@ class AppRoot extends KitElement {
     return run;
   }
 
+  // A conversation held in memory and not on screen still draws at once when it is opened again, and is then drawn
+  // again from the store, which holds what changed in it since (issue 441).
+  markStale(chatId) {
+    const id = String(chatId);
+    if (id === String(this.openChatId)) return;
+    const held = this.convos?.get(id);
+    if (held && !held.stale) this.convos.set(id, { ...held, stale: true });
+  }
+
   // Changes made while the page was away, drawn on the conversation on screen and on those held in memory.
   showChanges(list) {
     for (const [id, held] of this.convos || []) {
-      if (id === String(this.openChatId)) continue;
       const { messages, arrived } = applyChangesToShown(held.messages, list, id);
-      if (arrived.length || messages !== held.messages) this.convos.delete(id);
+      if (arrived.length || messages !== held.messages) this.markStale(id);
     }
     if (!this.openChatId) return;
     const { messages, arrived } = applyChangesToShown(this.messages, list, this.openChatId);
@@ -734,6 +742,15 @@ class AppRoot extends KitElement {
       if (this.openSeq !== seq || !this.client) return;
       readOnMac(this, chatId);
       if (cached && this.upToDate && this.cache?.heldNow(chatId)?.current) {
+        // A conversation held in memory that the live stream or a catch-up has since changed is drawn again from the
+        // store, which took those changes.
+        const fresh = cached.stale ? await this.storedWindow(chatId) : null;
+        if (this.openSeq !== seq) return;
+        if (fresh) {
+          this.messages = fresh.messages;
+          this.historyWindow = fresh.historyWindow;
+          this.hasMore = fresh.hasMore;
+        }
         this.openChatId = chatId;
         this.selecting = null;
         this.problem = '';
@@ -973,7 +990,7 @@ class AppRoot extends KitElement {
       const one = name === 'reaction' ? { reactions: [data] } : { messages: [data.message] };
       this.cache.live(one).catch(() => {});
       const id = String(name === 'reaction' ? data.chatId : data.message.chatId);
-      if (id !== String(this.openChatId)) this.convos?.delete(id);
+      this.markStale(id);
     }
     if (name === 'message.new') {
       const m = data.message;
