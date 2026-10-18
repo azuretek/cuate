@@ -43,7 +43,8 @@
   Object.assign(marker.style, { position: 'fixed', top: '45%', left: '30%', zIndex: '9999' });
   document.body.append(marker);
 
-  let scheme = window.fixtureScheme === 'dark' ? 'dark' : 'light';
+  const launched = window.fixtureScheme === 'dark' ? 'dark' : 'light';
+  let scheme = launched;
   const report = async () => {
     root.settings = { ...root.settings, 'appearance.skin': scheme };
     await root.updateComplete;
@@ -87,9 +88,10 @@
     return proof;
   };
   // A runtime change of scheme, the way a skin chosen in settings arrives: the native test calls it on Android, and
-  // presses the marker on iOS.
+  // presses the marker on iOS. A press always means the scheme the test did not launch in, so the iOS test can press
+  // again after a tap the page never saw without undoing a press that did arrive (issue 471).
   window.systemBarsSwitch = (next) => { scheme = next === 'dark' ? 'dark' : 'light'; return report(); };
-  marker.addEventListener('click', () => { window.systemBarsSwitch(scheme === 'dark' ? 'light' : 'dark'); });
+  marker.addEventListener('click', () => { window.systemBarsSwitch(launched === 'dark' ? 'light' : 'dark'); });
 
   // The keyboard (issue 180). The native test taps a real field, the composer's or one in Settings, so the platform
   // raises its own keyboard; the page reports whether anything slid: the page's scroll, the visual viewport's offset,

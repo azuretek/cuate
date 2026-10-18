@@ -943,6 +943,51 @@ async function runSmoke(w) {
     console.log('text formatting: ' + JSON.stringify({ checks: fmtChecks, fmt }));
   }
 
+  // A mention in a group (issue 453): the fake engine's group carries Priya mentioning Jordan, which the server reads from
+  // the store. The name draws set apart, titled with the contact name the chat knows Jordan by, the rest plain, and the
+  // accessibility tree a screen reader reads names Jordan there.
+  {
+    await smokeStep('mention');
+    const menBack = await js("document.querySelector('app-root').openChatId");
+    await js("(() => { document.querySelector('.chat-row[data-chat=\"2\"]').click(); return true; })()");
+    await waitFor("String(document.querySelector('app-root').openChatId) === '2' && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    await waitFor("Boolean(document.querySelector('.bubble-row[data-id=\"FAKE-0022\"] .mention'))", 15000).catch(() => {});
+    const men = await js(`(() => {
+      const row = document.querySelector('.bubble-row[data-id="FAKE-0022"]');
+      if (!row) return { found: false };
+      row.scrollIntoView({ block: 'center' });
+      const bubble = row.querySelector('.bubble');
+      const el = row.querySelector('.mention');
+      const chat = document.querySelector('app-root').chats.find((c) => c.id === '2');
+      const known = ((chat && chat.members) || []).find((m) => m.handle === 'jordan@example.com');
+      return { found: true, bubble: bubble.textContent, mentions: row.querySelectorAll('.mention').length, words: el && el.textContent, title: el && el.getAttribute('title'), label: el && el.getAttribute('aria-label'), expected: (known && known.name) || 'jordan@example.com', apart: Boolean(el) && Number(getComputedStyle(el).fontWeight) > Number(getComputedStyle(bubble).fontWeight) };
+    })()`);
+    // What Chromium hands a screen reader: the mention's node in the accessibility tree, by its role and computed name.
+    const menSpoken = await (async () => {
+      try {
+        if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+        await within(wc.debugger.sendCommand('Accessibility.enable', {}), 8000);
+        const tree = await within(wc.debugger.sendCommand('Accessibility.getFullAXTree', {}), 8000);
+        return ((tree && tree.nodes) || []).filter((n) => !n.ignored && n.name && /, mention of /.test(String(n.name.value))).map((n) => ({ role: n.role && n.role.value, name: n.name.value }));
+      } catch (e) {
+        return [{ error: String((e && e.message) || e) }];
+      }
+    })();
+    await shot('03g-mention.png');
+    if (menBack !== null && String(menBack) !== '2') {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(String(menBack)) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(String(menBack)), 15000).catch(() => {});
+    }
+    const menChecks = {
+      drawn: men.found && men.bubble === 'Jordan, can you grab ice on the way?' && men.mentions === 1 && men.words === 'Jordan',
+      named: Boolean(men.title) && men.title === men.expected,
+      spoken: men.label === 'Jordan, mention of ' + men.expected && menSpoken.some((n) => (n.role === 'image' || n.role === 'img') && n.name === men.label),
+      apart: Boolean(men.apart),
+    };
+    report.mention = Object.values(menChecks).every(Boolean);
+    console.log('mention: ' + JSON.stringify({ checks: menChecks, men, spoken: menSpoken }));
+  }
+
   // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
   // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a
   // bar, which is the width the bar takes from the field's box. Shift+Enter is pressed as a real key and adds a line,

@@ -56,6 +56,17 @@ async function fetchTile(client, a, options, signal) {
   if (mediaStore) mediaStore.keepMedia(a, blob, options).catch(() => {});
   return blob;
 }
+// A conversation's own picture (its avatar or group photo, a person's face, its backdrop) by the same rule: drawn from
+// the device's store when it holds it, with no server needed yet, else fetched and offered to it.
+export const canFetchPicture = (client) => Boolean(client || mediaStore);
+export async function fetchPicture(client, a) {
+  const kept = mediaStore ? await mediaStore.media(a, { kind: 'picture' }).catch(() => null) : null;
+  if (kept) return kept;
+  if (!client) throw Object.assign(new Error('No server yet.'), { code: 'no_client' });
+  const blob = await client.attachment(a.id);
+  if (mediaStore) mediaStore.keepMedia(a, blob, { kind: 'picture' }).catch(() => {});
+  return blob;
+}
 // Where the server has no poster, the video is drawn a tenth of a second in: a media fragment makes the web view seek
 // and paint that frame, where a video that read only its metadata paints nothing at all on iPhone (issue 415).
 export const FIRST_FRAME = '#t=0.1';
