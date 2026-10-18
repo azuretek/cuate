@@ -44,3 +44,11 @@ class OpenFileTest {
         assertFalse(java.io.File(cache.root, OpenFile.FOLDER).exists())
     }
 }
+
+// Throwaway, for issue 468's proof: a deliberately red android leg, so the platforms status posts a failure. Removed with the pull request.
+class DeliberatelyRedForIssue468Test {
+    @org.junit.Test
+    fun theAndroidLegIsRedOnPurpose() {
+        org.junit.Assert.fail("deliberately red for issue 468's proof of the platforms status")
+    }
+}
