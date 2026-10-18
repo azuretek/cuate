@@ -31,7 +31,9 @@ const marginOf = (rootMargin, height) => {
 // moves with the page.
 const onWindow = (el) => (el.scrolls ? el.box : { top: el.box.top - view.top, bottom: el.box.bottom - view.top });
 const overlap = (a, b) => a.top < b.bottom && a.bottom > b.top;
+// An element that draws no box of its own (display: contents) never crosses anything, as a browser reports it.
 const crosses = (el, observer) => {
+  if (el.display === 'contents') return false;
   const box = onWindow(el);
   if (observer.root) {
     const r = onWindow(observer.root);
@@ -43,7 +45,7 @@ const crosses = (el, observer) => {
   const m = scroller ? 0 : marginOf(observer.rootMargin, view.height);
   return overlap(box, { top: -m, bottom: view.height + m });
 };
-globalThis.getComputedStyle = (n) => ({ overflowY: n.scrolls ? 'auto' : 'visible' });
+globalThis.getComputedStyle = (n) => ({ overflowY: n.scrolls ? 'auto' : 'visible', display: n.display || 'block' });
 class FakeObserver {
   constructor(callback, options = {}) {
     this.callback = callback;
@@ -94,6 +96,8 @@ const scrollTo = (top) => {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 await import('../app/components/app-attachment.js');
+await import('../app/components/app-avatar.js');
+const AppAvatar = defined['app-avatar'];
 const AppAttachment = defined['app-attachment'];
 
 // Every request the elements make, in order, held open until the test answers it.
@@ -302,9 +306,9 @@ test('the load order fixture is a Debug seam the iOS UI test reads its measureme
   assert.match(shell, /#if DEBUG[\s\S]*--load-order-fixture[\s\S]*#endif/, 'the fixture is a Debug seam');
   assert.match(file('ios/project.yml'), /CONFIGURATION.*Debug[\s\S]*core\/test\/load-order-fixture\.js/, 'copied into test builds only');
   const uiTest = file('ios/' + naming.product + 'UITests/LoadOrderTests.swift');
-  for (const part of ['--load-order-fixture', 'offscreenBeforeOnscreen', 'staleAtStop', 'order:ready']) assert.ok(uiTest.includes(part), 'the UI test reads the measurement: ' + part);
+  for (const part of ['--load-order-fixture', 'offscreenBeforeOnscreen', 'staleAtStop', 'avatarEarly', 'order:ready']) assert.ok(uiTest.includes(part), 'the UI test reads the measurement: ' + part);
   const fixture = file('core/test/load-order-fixture.js');
-  for (const part of ['firstMessage', 'firstMedia', 'offscreenBeforeOnscreen', 'staleAtStop', 'screenWaiting']) assert.ok(fixture.includes(part), 'the fixture measures ' + part);
+  for (const part of ['firstMessage', 'firstMedia', 'offscreenBeforeOnscreen', 'staleAtStop', 'avatarEarly', 'screenWaiting']) assert.ok(fixture.includes(part), 'the fixture measures ' + part);
   assert.doesNotMatch(file('core/app/main.js'), /load-order-fixture/);
 });
 
@@ -336,4 +340,85 @@ test('a scrolled view off screen holds nothing within reach, as the chat list be
   inView('hidden', scrolledView(5000, 5800));
   await settle();
   assert.deepEqual(asked(), [], 'nothing in a view that is off screen is fetched');
+});
+
+// A conversation's avatar (issue 426) goes through the same queue: a chat list draws a row for every conversation, and
+// a fresh start asked for every group photo at once, rows far down the list and rows behind an open conversation too.
+// The element draws no box of its own, as the stylesheet draws it (display: contents); the circle it renders is the box.
+const avatar = (id, top) => {
+  const el = Object.create(AppAvatar.prototype);
+  drawn.push(el);
+  el.title = 'Fixture Group';
+  el.src = '';
+  el.isConnected = true;
+  el.hasUpdated = true;
+  el.client = client;
+  el.display = 'contents';
+  el.box = { top: 0, bottom: 0 };
+  const face = { box: { top, bottom: top + 40 }, parentElement: el };
+  el.querySelector = (selector) => (selector === ':scope > .avatar' ? face : null);
+  el.photo = photo(id);
+  el.willUpdate(new Map([['photo', undefined]]));
+  el.updated(new Map([['photo', undefined], ['client', undefined]]));
+  return el;
+};
+
+test('an avatar off screen waits for the ones on screen, and one far down the list is never fetched (issue 426)', async () => {
+  reset();
+  const near = avatar('avatar-near', 1200);
+  const far = avatar('avatar-far', 4000);
+  const seen = avatar('avatar-seen', 100);
+  await settle();
+  assert.deepEqual(asked(), ['avatar-seen'], 'only the avatar on screen is asked for first');
+  await answer('avatar-seen');
+  assert.ok(seen.src, 'the avatar on screen draws its photo');
+  assert.deepEqual(asked(), ['avatar-seen', 'avatar-near'], 'then the one a screen away');
+  await answer('avatar-near');
+  assert.ok(near.src);
+  assert.equal(far.src, '', 'the one far out keeps its initials');
+  assert.ok(!asked().includes('avatar-far'), 'and is never asked for');
+});
+
+test('an avatar is watched through the box it draws, since the element itself draws none (issue 426)', async () => {
+  const css = readFileSync(new URL('../app/styles/app.css', import.meta.url), 'utf8');
+  assert.match(css, /app-avatar\s*\{\s*display:\s*contents;/, 'the stylesheet draws no box for the element, which is what this file models');
+  reset();
+  const el = avatar('avatar-box', 100);
+  await settle();
+  assert.deepEqual(asked(), ['avatar-box'], 'an avatar on screen is asked for');
+  await answer('avatar-box');
+  assert.ok(el.src, 'and draws its photo');
+});
+
+test('an avatar scrolled out of reach is cancelled, keeps its initials, and is fetched when it comes back (issue 426)', async () => {
+  reset();
+  const el = avatar('avatar-away', 100);
+  await settle();
+  const first = requests.find((r) => r.id === 'avatar-away');
+  assert.ok(first, 'the avatar on screen is asked for');
+  scrollTo(5000);
+  await settle();
+  assert.equal(first.options.signal?.aborted, true, 'scrolling it out of reach cancels its fetch');
+  first.answered = true;
+  first.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+  await settle();
+  assert.equal(el.src, '', 'the initials stand in');
+  const before = requests.length;
+  scrollTo(0);
+  await settle();
+  assert.ok(requests.slice(before).some((r) => r.id === 'avatar-away'), 'it is asked for again when it comes back');
+  await answer('avatar-away');
+  assert.ok(el.src);
+});
+
+test('an avatar whose photo is already held is drawn at once, with no fetch (issue 426)', async () => {
+  reset();
+  const el = avatar('avatar-held', 100);
+  await settle();
+  await answer('avatar-held');
+  assert.ok(el.src);
+  const again = avatar('avatar-held', 4000);
+  await settle();
+  assert.equal(again.src, el.src, 'a second avatar for the same photo draws it in the same step, even far out');
+  assert.equal(requests.filter((r) => r.id === 'avatar-held').length, 1, 'and asks for nothing');
 });

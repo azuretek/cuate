@@ -78,9 +78,9 @@ export default {
     }
     // The installed path: a server running from a version folder under an install root updates itself from releases.
     const secret = readFileSync(path.join(dataDir, 'secret'), 'utf8').trim();
-    const { makeTransport, attachmentsRoot, edits, changes, backgrounds, richText, voices, renames, sendEffects } = await engineSetup(config);
+    const { makeTransport, attachmentsRoot, edits, changes, backgrounds, richText, voices, renames, members, sendEffects } = await engineSetup(config);
     const engineLog = logger.child('engine');
-    const engine = createEngine({ kind: config.engine.kind, makeTransport: () => makeTransport(engineLog), log: engineLog, attachmentId: makeAttachmentId({ secret, store: s }), typingIncoming: Boolean(config.typing && config.typing.incoming), edits, changes, backgrounds, richText, voices, heard: { has: (id) => s.isPlayed(id) }, renames, sendEffects });
+    const engine = createEngine({ kind: config.engine.kind, makeTransport: () => makeTransport(engineLog), log: engineLog, attachmentId: makeAttachmentId({ secret, store: s }), typingIncoming: Boolean(config.typing && config.typing.incoming), edits, changes, backgrounds, richText, voices, renames, members, heard: { has: (id) => s.isPlayed(id) }, sendEffects });
     logger.emit('server.start', { port: config.port, engine: config.engine.kind, sending: config.sending.enabled });
     await engine.start();
     const mac = createMac({ log: macLog, settings: config.mac, platform: process.platform, engineNeedsScreen: Boolean(config.engine.needsScreen) });

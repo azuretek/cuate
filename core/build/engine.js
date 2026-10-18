@@ -76,6 +76,7 @@ var engine = (() => {
     MAX_THEMES: () => MAX_THEMES,
     MEDIA_CACHE_BYTES: () => MEDIA_CACHE_BYTES,
     MEDIA_ITEM_MAX_BYTES: () => MEDIA_ITEM_MAX_BYTES,
+    MEMBER_ACTIONS: () => MEMBER_ACTIONS,
     MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
     NOTICE_ECHO_LIMIT: () => NOTICE_ECHO_LIMIT,
@@ -305,6 +306,7 @@ var engine = (() => {
     isLivePhoto: () => isLivePhoto,
     isMachineName: () => isMachineName,
     isMediaAttachment: () => isMediaAttachment,
+    isMemberRow: () => isMemberRow,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
     isRenameRow: () => isRenameRow,
@@ -332,6 +334,7 @@ var engine = (() => {
     mediaNeighbours: () => mediaNeighbours,
     mediaOccurrence: () => mediaOccurrence,
     mediaStep: () => mediaStep,
+    memberAction: () => memberAction,
     mergeHeld: () => mergeHeld,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
@@ -2657,6 +2660,14 @@ var engine = (() => {
   function isRenameRow(m) {
     return Boolean(m) && m.item_type === RENAME_ITEM_TYPE && typeof m.group_title === "string";
   }
+  var MEMBER_ACTIONS = Object.freeze({ "1:0": "add", "1:1": "remove", "3:0": "leave" });
+  var MEMBER_ACTION_NAMES = new Set(Object.values(MEMBER_ACTIONS));
+  function memberAction(itemType, groupAction) {
+    return MEMBER_ACTIONS[Number(itemType) + ":" + Number(groupAction)] || null;
+  }
+  function isMemberRow(m) {
+    return Boolean(m) && MEMBER_ACTION_NAMES.has(m.member_action);
+  }
   var BACKGROUND_NAME = "Background";
   function mapBackground(status, { attachmentId }) {
     const s = status && typeof status === "object" ? status : null;
@@ -2695,6 +2706,10 @@ var engine = (() => {
     }
     if (isRenameRow(m)) {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "rename", name: m.group_title.trim() } };
+    }
+    if (isMemberRow(m)) {
+      const handle = m.member_action !== "leave" && m.member_handle ? String(m.member_handle) : "";
+      return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "member", action: m.member_action, ...handle ? { person: { handle, name: null } } : {} } };
     }
     const styles = stylesFromRuns(m.text, m.text_runs);
     const sendEffect = sendEffectOf(m.expressive_send_style_id);
@@ -2854,16 +2869,38 @@ var engine = (() => {
     if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
     if (m.event && m.event.kind === "background") return who + (m.event.action === "clear" ? " removed the background" : " changed the background");
     if (m.event && m.event.kind === "rename") return m.event.name ? who + " named the conversation \u201C" + m.event.name + "\u201D" : who + " removed the name from the conversation";
+    if (m.event && m.event.kind === "member") {
+      if (m.event.action === "leave") return who + " left the conversation";
+      const person = m.event.person ? String(m.event.person.name || m.event.person.handle || "") : "";
+      const whom = person || "someone";
+      if (m.event.action === "add") return who + " added " + whom + " to the conversation";
+      if (m.event.action === "remove") return who + " removed " + whom + " from the conversation";
+    }
     return "";
+  }
+  function eventPreview(e) {
+    const person = e.person && e.person.handle ? { person: { handle: String(e.person.handle), name: e.person.name ? String(e.person.name) : null } } : {};
+    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...person, ...typeof e.name === "string" ? { name: e.name } : {} };
+  }
+  function peopleAfter(c, message) {
+    const e = message.event;
+    if (!c.isGroup || !e || e.kind !== "member") return {};
+    const handle = e.action === "leave" ? message.fromMe ? "" : String(message.sender || "") : String(e.person && e.person.handle || "");
+    if (!handle) return {};
+    const participants = Array.isArray(c.participants) ? c.participants : [];
+    const members = Array.isArray(c.members) ? c.members : [];
+    if (e.action === "add") {
+      if (participants.includes(handle)) return {};
+      const name = e.person && e.person.name || handle;
+      return { participants: [...participants, handle], members: [...members, { handle, name, photo: null }] };
+    }
+    return { participants: participants.filter((a) => a !== handle), members: members.filter((x) => x && x.handle !== handle) };
   }
   function initials(name) {
     const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
     if (!words.length) return "?";
     if (/^\d/.test(words[0])) return "#";
     return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
-  }
-  function eventPreview(e) {
-    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...typeof e.name === "string" ? { name: e.name } : {} };
   }
   function applyMessageToChats(chats, message, { openChatId = null } = {}) {
     const i = chats.findIndex((c2) => c2.id === message.chatId);
@@ -2877,7 +2914,7 @@ var engine = (() => {
     const backdrop = message.event && message.event.kind === "background" && message.event.action === "clear" ? { background: null } : {};
     const renamed = message.event && message.event.kind === "rename" ? { name: String(message.event.name || "") } : {};
     const event = message.event ? eventPreview(message.event) : null;
-    out[i] = { ...c, ...photo, ...backdrop, ...renamed, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
+    out[i] = { ...c, ...photo, ...backdrop, ...renamed, ...peopleAfter(c, message), unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || message.sender || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
   function applyEditToChats(chats, message) {

@@ -38,6 +38,10 @@ final class LoadOrderTests: XCTestCase {
         let early = json["offscreenBeforeOnscreen"] as? Int ?? -1
         let ids = (json["offscreenBeforeOnscreenIds"] as? [String] ?? []).joined(separator: ", ")
         XCTAssertEqual(early, 0, "pictures off screen were asked for while one on screen was still waiting: " + ids)
+        // Issue 426: an avatar is fetched in the same order, so none is asked for off screen while the screen waits.
+        let avatarEarly = json["avatarEarly"] as? Int ?? -1
+        let avatarIds = (json["avatarEarlyIds"] as? [String] ?? []).joined(separator: ", ")
+        XCTAssertEqual(avatarEarly, 0, "avatars off screen were asked for while something on screen was still waiting: " + avatarIds)
         let onScreen = json["onScreen"] as? [String] ?? []
         XCTAssertFalse(onScreen.isEmpty, "no picture was on screen to measure")
         // A fling up through the history: no fetch is still going for a row flung past once the view has stopped.

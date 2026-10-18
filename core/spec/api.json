@@ -708,6 +708,11 @@
       "kind": "string",
       "photo": "Attachment?",
       "action": "string?",
+      "name": "string?",
+      "person": "EventPerson?"
+    },
+    "EventPerson": {
+      "handle": "string",
       "name": "string?"
     },
     "PushRegistration": {
