@@ -1,0 +1,20 @@
+{
+  "description": "Synthetic attributed message bodies with formatting (issue 447), archived on a Mac by Foundation's own NSArchiver from words and attributes written here, the shape Messages keeps in the attributedBody column. Each is a synthetic text with the message part attribute over all of it and the bold, italic, underline, strikethrough or text effect attributes its name says, each with the value 1 (or the effect's number); no row of any real store is in this file.",
+  "bodies": {
+    "each": {
+      "text": "Bold, italic, underlined and struck",
+      "attributes": "bold over 0+4, italic over 6+6, underline over 14+10, strikethrough over 29+6",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKyNCb2xkLCBpdGFsaWMsIHVuZGVybGluZWQgYW5kIHN0cnVja4aEAmlJAQSShISEDE5TRGljdGlvbmFyeQCVhAFpApKEmJgaX19rSU1UZXh0Qm9sZEF0dHJpYnV0ZU5hbWWGkoSEhAhOU051bWJlcgCEhAdOU1ZhbHVlAJWEASqEhAFxnwGGkoSYmB1fX2tJTU1lc3NhZ2VQYXJ0QXR0cmlidXRlTmFtZYaShJ2en58AhoaZAgKShJqbAZKgkqGGmQMGkoSamwKShJiYHF9fa0lNVGV4dEl0YWxpY0F0dHJpYnV0ZU5hbWWGkpySoJKhhpkCApkECpKEmpsCkoSYmB9fX2tJTVRleHRVbmRlcmxpbmVBdHRyaWJ1dGVOYW1lhpKckqCSoYaZAgWZBQaShJqbApKEmJgjX19rSU1UZXh0U3RyaWtldGhyb3VnaEF0dHJpYnV0ZU5hbWWGkpySoJKhhoY="
+    },
+    "stacked": {
+      "text": "All of them at once",
+      "attributes": "bold and italic over 0+11, underline over 7+4",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKxNBbGwgb2YgdGhlbSBhdCBvbmNlhoQCaUkBB5KEhIQMTlNEaWN0aW9uYXJ5AJWEAWkDkoSYmB1fX2tJTU1lc3NhZ2VQYXJ0QXR0cmlidXRlTmFtZYaShISECE5TTnVtYmVyAISEB05TVmFsdWUAlYQBKoSEAXGfAIaShJiYHF9fa0lNVGV4dEl0YWxpY0F0dHJpYnV0ZU5hbWWGkoSdnp+fAYaShJiYGl9fa0lNVGV4dEJvbGRBdHRyaWJ1dGVOYW1lhpKhhpkCBJKEmpsEkqKSoZKbkpyShJiYH19fa0lNVGV4dFVuZGVybGluZUF0dHJpYnV0ZU5hbWWGkqGSoJKhhpkDCJKEmpsBkpuSnIaG"
+    },
+    "withEffect": {
+      "text": "Bloom and bold",
+      "attributes": "text effect 6 (Bloom) over 0+14, bold over 10+4",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKw5CbG9vbSBhbmQgYm9sZIaEAmlJAQqShISEDE5TRGljdGlvbmFyeQCVhAFpApKEmJgcX19rSU1UZXh0RWZmZWN0QXR0cmlidXRlTmFtZYaShISECE5TTnVtYmVyAISEB05TVmFsdWUAlYQBKoSEAXGfBoaShJiYHV9fa0lNTWVzc2FnZVBhcnRBdHRyaWJ1dGVOYW1lhpKEnZ6fnwCGhpkCBJKEmpsDkqCSoZKbkpyShJiYGl9fa0lNVGV4dEJvbGRBdHRyaWJ1dGVOYW1lhpKEnZ6fnwGGhoY="
+    }
+  }
+}
