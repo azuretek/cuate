@@ -751,6 +751,7 @@ class AppRoot extends KitElement {
           this.historyWindow = fresh.historyWindow;
           this.hasMore = fresh.hasMore;
         }
+        if (!refresh) this.messageNote = null;
         this.openChatId = chatId;
         this.selecting = null;
         this.problem = '';

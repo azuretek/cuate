@@ -21,6 +21,9 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const bound = setTimeout(() => { process.stderr.write('message cache proof exceeded its deadline\n'); app.exit(2); }, 300000);
 const RUNS = [['off', 'cold'], ['off', 'warm'], ['on', 'cold'], ['on', 'warm']];
+// Each launch's window is closed before the next opens, and the last window closing would quit the app (and stop the
+// next launch's load) on Linux and Windows; the proof ends the app itself.
+app.on('window-all-closed', () => {});
 
 app.whenReady().then(async () => {
   let run = RUNS[0];
@@ -47,8 +50,7 @@ app.whenReady().then(async () => {
     const win = new BrowserWindow({ show: true, width: 420, height: 860, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
     win.webContents.on('did-fail-load', (_e, code, description, url, main) => process.stderr.write('message cache proof: load failed ' + JSON.stringify({ run, code, description, url, main }) + '\n'));
     win.webContents.on('render-process-gone', (_e, details) => process.stderr.write('message cache proof: renderer gone ' + JSON.stringify({ run, details }) + '\n'));
-    // Each launch loads its own address, so nothing the last window loaded is taken for this one.
-    await win.loadURL('app://bundle/core/app/index.html?launch=' + run.join('-'));
+    await win.loadURL('app://bundle/core/app/index.html');
     let state = '';
     const deadline = Date.now() + 90000;
     while (Date.now() < deadline) {
