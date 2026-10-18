@@ -146,6 +146,12 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The send effects fixture (issue 442), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--send-effects-fixture"),
+           let url = Bundle.main.url(forResource: "send-effects-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The mention fixture (issue 453), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--mention-fixture"),
            let url = Bundle.main.url(forResource: "mention-fixture", withExtension: "js"),
@@ -156,6 +162,13 @@ struct ShellWebView: UIViewRepresentable {
         // and raises a notice for a message that server does not have yet.
         if ProcessInfo.processInfo.arguments.contains("--late-notice-fixture"),
            let url = Bundle.main.url(forResource: "late-notice-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        // The load order fixture (issue 425), the same seam: Debug only. It signs the real page in to a stand-in server over
+        // an emulated slow link and measures what loads first.
+        if ProcessInfo.processInfo.arguments.contains("--load-order-fixture"),
+           let url = Bundle.main.url(forResource: "load-order-fixture", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }

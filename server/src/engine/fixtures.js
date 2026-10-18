@@ -70,6 +70,10 @@ export const TEXT_RUNS = {
   'FAKE-0022': [{ start: 0, length: 6, mention: 'jordan@example.com' }],
 };
 
+// The effects the store records a message was sent with (issue 442), in its expressive_send_style_id column, which
+// imsg's own rows never say: Jordan sent the plan for Saturday with Confetti.
+export const SEND_STYLE_ROWS = { 'FAKE-0007': 'com.apple.messages.effect.CKConfettiEffect' };
+
 // The message Avery has not read yet: the newest in the first conversation.
 const UNREAD = 'FAKE-0013';
 
