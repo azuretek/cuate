@@ -19,9 +19,9 @@
 // the page reports on one marker, kept current:
 //   au:boot              the script is running
 //   au:ready <json>      every player is drawn and shows how long it runs
-//   au:playing <json>    the first is playing, and its time and its elapsed clock have moved
+//   au:playing <json>    the first is playing, and its time, its elapsed clock and its waveform have moved
 //   au:paused <json>     the first was played and is paused part way in
-//   au:voice <json>      the voice message is playing, and its time and its elapsed clock have moved
+//   au:voice <json>      the voice message is playing, and its time, its elapsed clock and its waveform have moved
 //   au:fail <why>        the scene could not be set
 (async () => {
   const marker = document.createElement('output');
@@ -159,8 +159,11 @@
     const now = report();
     const first = now[0];
     const voice = now[2];
-    if (first.playing && first.currentTime >= 1 && first.elapsed !== '0:00') played = true;
-    const voicePlaying = voice.playing && voice.currentTime >= 1 && voice.elapsed !== '0:00';
+    // Playing is reported once everything a test asserts of it has moved, its waveform included: on a minute long clip
+    // the first bar fills a second in, so a read at exactly one second found the time moved and no bar filled yet.
+    const moved = (p) => p.playing && p.currentTime >= 1 && p.elapsed !== '0:00' && p.filled > 0;
+    if (moved(first)) played = true;
+    const voicePlaying = moved(voice);
     const state = voicePlaying ? 'voice' : first.playing && played ? 'playing' : played && first.paused && first.currentTime > 0 ? 'paused' : 'ready';
     say('au:' + state + ' ' + JSON.stringify({ viewport: [innerWidth, innerHeight], players: now }));
   };

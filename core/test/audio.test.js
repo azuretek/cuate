@@ -210,6 +210,9 @@ test('the audio fixture is a Debug seam the iOS and Android tests play (issue 43
   // Ready is what the player shows, not what its audio element knows: the element learns its duration a task before the
   // player draws it, and a report read between the two said 0:00 on the slower packaged desktop legs.
   assert.match(read('core/test/audio-fixture.js'), /drawnLength\(el\) !== '0:00'/, 'the fixture is ready only once every player shows its length');
+  // Playing is what the tests assert, all of it: a minute long clip filled its first bar a second in, and a read at one
+  // second found the clock moved and the waveform empty on every packaged desktop leg.
+  assert.match(read('core/test/audio-fixture.js'), /p\.elapsed !== '0:00' && p\.filled > 0/, 'the fixture reports playing only once its waveform has filled too');
 });
 
 // The clips outlast the slowest native look: on the iOS simulator XCUITest waited over half a minute for the app to go
