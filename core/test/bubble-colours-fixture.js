@@ -32,18 +32,20 @@
   const sam = '+15555550123';
   const at = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
   const chat = { id: 'fixture-bubbles-chat', name: 'Sam Example', isGroup: false, service: 'iMessage', participants: [sam], members: [{ handle: sam, name: 'Sam Example', photo: null }], unread: 0, lastMessageAt: at(1), lastMessage: null };
-  const message = (id, minutes, text, mine) => ({ id, chatId: chat.id, fromMe: mine, sender: mine ? null : sam, senderName: mine ? null : 'Sam Example', text, sentAt: at(minutes), replyTo: null, read: null, attachments: [], link: null, payloads: 0, reactions: [] });
+  const message = (id, minutes, text, mine, styles) => ({ id, chatId: chat.id, fromMe: mine, sender: mine ? null : sam, senderName: mine ? null : 'Sam Example', text, styles, sentAt: at(minutes), replyTo: null, read: null, attachments: [], link: null, payloads: 0, reactions: [] });
   const messages = [
     message('fixture-them-1', 9, 'Did the tickets come through?', false),
     message('fixture-me-1', 8, 'Yes, two seats on the aisle.', true),
     message('fixture-them-2', 7, 'Perfect, see you at seven.', false),
     message('fixture-me-2', 6, 'See you there!', true),
+    // A mention on a received bubble (issue 453) reads on the accent that bubble now is.
+    message('fixture-them-mention', 5, 'Sam, bring the umbrella', false, [{ start: 0, length: 3, mention: sam }]),
   ];
   const conv = document.createElement('app-conversation');
   Object.assign(conv, { chat, host, messages, sending: true, phone: true });
   Object.assign(conv.style, { position: 'fixed', inset: '0', zIndex: '9998', display: 'flex', flexDirection: 'column', background: 'var(--color-bg)' });
   document.body.append(conv);
-  await until(() => conv.querySelectorAll('.bubble.them').length === 2 && conv.querySelectorAll('.bubble.me').length === 2, 'the bubbles');
+  await until(() => conv.querySelectorAll('.bubble.them').length === 3 && conv.querySelectorAll('.bubble.me').length === 2 && Boolean(conv.querySelector('.bubble.them .mention')), 'the bubbles');
 
   // A colour as the page resolves it, read back through a canvas so any colour syntax the engine returns becomes sRGB.
   const cv = document.createElement('canvas');
@@ -95,6 +97,9 @@
       const r = { received: ratio(received.fg, received.bg), sent: ratio(sent.fg, sent.bg), standsOut: ratio(received.bg, page), quiet: ratio(sent.bg, page) };
       if (r.received < 4.5) problems.push(where + ' received text is ' + r.received + ':1');
       if (r.sent < 4.5) problems.push(where + ' sent text is ' + r.sent + ':1');
+      const mention = conv.querySelector('.bubble.them .mention');
+      r.mention = ratio(rgb(getComputedStyle(mention).color), rgb(getComputedStyle(mention.closest('.bubble')).backgroundColor));
+      if (r.mention < 4.5) problems.push(where + ' mention text is ' + r.mention + ':1 on the received bubble');
       if (!(r.standsOut > r.quiet)) problems.push(where + ' the received bubble (' + r.standsOut + ') does not stand out from the page more than ours (' + r.quiet + ')');
       seen[where] = r;
     }
