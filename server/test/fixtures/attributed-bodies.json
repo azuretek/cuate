@@ -1,0 +1,25 @@
+{
+  "description": "Synthetic attributed message bodies, archived on a Mac by Foundation's own NSArchiver from words and attributes written here, the shape Messages keeps in the attributedBody column (issue 433). Each is a synthetic text with the message part attribute over all of it and the attributes its name says; no row of any real store is in this file.",
+  "bodies": {
+    "bloom": {
+      "text": "Happy birthday!",
+      "attributes": "__kIMTextEffectAttributeName 6 over 6..15",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKw9IYXBweSBiaXJ0aGRheSGGhAJpSQEGkoSEhAxOU0RpY3Rpb25hcnkAlYQBaQGShJiYHV9fa0lNTWVzc2FnZVBhcnRBdHRyaWJ1dGVOYW1lhpKEhIQITlNOdW1iZXIAhIQHTlNWYWx1ZQCVhAEqhIQBcZ8AhoaZAgmShJqbApKEmJgcX19rSU1UZXh0RWZmZWN0QXR0cmlidXRlTmFtZYaShJ2en58GhpKbkpyGhg=="
+    },
+    "big": {
+      "text": "Big news 🎉 today",
+      "attributes": "__kIMTextEffectAttributeName 5 over all 17 code units",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKxNCaWcgbmV3cyDwn46JIHRvZGF5hoQCaUkBEZKEhIQMTlNEaWN0aW9uYXJ5AJWEAWkCkoSYmBxfX2tJTVRleHRFZmZlY3RBdHRyaWJ1dGVOYW1lhpKEhIQITlNOdW1iZXIAhIQHTlNWYWx1ZQCVhAEqhIQBcZ8FhpKEmJgdX19rSU1NZXNzYWdlUGFydEF0dHJpYnV0ZU5hbWWGkoSdnp+fAIaGhg=="
+    },
+    "inline": {
+      "text": "￼Look at this",
+      "attributes": "a file transfer at 0, __kIMTextEffectAttributeName 10 over 1..5",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKw/vv7xMb29rIGF0IHRoaXOGhAJpSQEBkoSEhAxOU0RpY3Rpb25hcnkAlYQBaQKShJiYIl9fa0lNRmlsZVRyYW5zZmVyR1VJREF0dHJpYnV0ZU5hbWWGkoSYmBJTWU5USEVUSUMtVFJBTlNGRVKGkoSYmB1fX2tJTU1lc3NhZ2VQYXJ0QXR0cmlidXRlTmFtZYaShISECE5TTnVtYmVyAISEB05TVmFsdWUAlYQBKoSEAXGfAIaGmQIEkoSamwKShJiYHF9fa0lNVGV4dEVmZmVjdEF0dHJpYnV0ZU5hbWWGkoSfnqGfCoaSnZKehpkDCJKEmpsBkp2SnoaG"
+    },
+    "plain": {
+      "text": "Just words",
+      "attributes": "none but the message part",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKwpKdXN0IHdvcmRzhoQCaUkBCpKEhIQMTlNEaWN0aW9uYXJ5AJWEAWkBkoSYmB1fX2tJTU1lc3NhZ2VQYXJ0QXR0cmlidXRlTmFtZYaShISECE5TTnVtYmVyAISEB05TVmFsdWUAlYQBKoSEAXGfAIaGhg=="
+    }
+  }
+}

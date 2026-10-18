@@ -45,13 +45,20 @@ export const SCRIPT = [
   // Priya set the group's background (issue 417): a row with no text and nothing attached, as Messages records it, that
   // the store names a background change and whose picture the engine reports.
   [2, 1450, false, 'priya@example.com', '', 'background'],
+  // Avery sent words with a text effect on part of them (issue 433): Bloom over "birthday to you!", which the store records
+  // on the row's attributed words and imsg's own row never says.
+  [1, 40, false, '+15555550100', 'Happy birthday to you!'],
   // Sam named the group before anyone wrote in it (issue 439): a row with no text and nothing attached, as Messages
   // records it, that the store names a rename with the name it gave.
   [2, 1510, false, '+15555550177', '', 'rename'],
 ];
 
-// The name each rename row gave the group, by its line in the script.
-const RENAMED = { 21: 'Weekend plans' };
+// The name each rename row in the script gave the group, in the order the rows appear.
+const RENAMED = ['Weekend plans'];
+
+// The text effects the store records on a row's words (issue 433), as rich-text.js reads them: a start and a length
+// in UTF-16 code units and Messages' own number for the effect (6 is Bloom).
+export const TEXT_RUNS = { 'FAKE-0021': [{ start: 6, length: 16, effect: 6 }] };
 
 // The message Avery has not read yet: the newest in the first conversation.
 const UNREAD = 'FAKE-0013';
@@ -116,6 +123,7 @@ export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes, 
   // The background changes the store records (issue 417), which imsg's own rows never say.
   const backgrounds = SCRIPT.map((line, i) => (line[5] === 'background' ? { guid: messages[i].guid, chatId: String(line[0]), action: 'set' } : null)).filter(Boolean);
   // The renames the store records (issue 439), each with the name it gave.
-  const renames = SCRIPT.map((line, i) => (line[5] === 'rename' ? { guid: messages[i].guid, chatId: String(line[0]), name: RENAMED[i + 1] || '' } : null)).filter(Boolean);
+  const renameLines = SCRIPT.map((line, i) => [line, i]).filter(([line]) => line[5] === 'rename');
+  const renames = renameLines.map(([line, i], k) => ({ guid: messages[i].guid, chatId: String(line[0]), name: RENAMED[k] || '' }));
   return { chats, messages, backgrounds, renames };
 }

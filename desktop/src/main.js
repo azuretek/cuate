@@ -893,6 +893,47 @@ async function runSmoke(w) {
     console.log('typing bubble: ' + JSON.stringify({ checks: typingChecks, atEnd, cleared, upBefore, upShown, upGone, reduced, device, deviceGone }));
   }
 
+  // Text effects (issue 433): the fake engine's birthday wishes carry Bloom over "birthday to you!", which the server
+  // reads from the store. Opening the conversation draws that stretch with its effect playing and the rest plain; it
+  // settles back to the words as sent; and under reduced motion it is drawn still.
+  {
+    await smokeStep('text effects');
+    const fxCdp = (method, params) => { if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); return wc.debugger.sendCommand(method, params); };
+    const fxMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+    const fxBack = await js("document.querySelector('app-root').openChatId");
+    const fxOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    };
+    const fxRead = () => js(`(() => {
+      const el = document.querySelector('.bubble-row[data-id="FAKE-0021"] .text-effect');
+      if (!el) return { found: false };
+      el.scrollIntoView({ block: 'center' });
+      return { found: true, effect: el.dataset.effect, words: el.textContent, bubble: el.closest('.bubble').textContent, running: el.getAnimations().filter((a) => a.playState === 'running').length, name: getComputedStyle(el).animationName, stretches: document.querySelectorAll('.text-effect').length };
+    })()`);
+    await fxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    await fxOpen('2');
+    await fxOpen('1');
+    const playing = await fxRead();
+    await pause(2200);
+    const settled = await fxRead();
+    await shot('03d-text-effect.png');
+    await fxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await fxOpen('2');
+    await fxOpen('1');
+    const reduced = await fxRead();
+    await fxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: fxMotionWas }] });
+    if (fxBack !== null && String(fxBack) !== '1') await fxOpen(String(fxBack));
+    const fxChecks = {
+      drawn: playing.found && playing.effect === 'bloom' && playing.words === 'birthday to you!' && playing.bubble === 'Happy birthday to you!' && playing.stretches === 1,
+      plays: playing.running > 0 && playing.name === 'text-bloom',
+      settles: settled.found && settled.running === 0 && settled.bubble === 'Happy birthday to you!',
+      reducedStill: reduced.found && reduced.running === 0 && reduced.name === 'none',
+    };
+    report.textEffects = Object.values(fxChecks).every(Boolean);
+    console.log('text effects: ' + JSON.stringify({ checks: fxChecks, playing, settled, reduced }));
+  }
+
   // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
   // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a
   // bar, which is the width the bar takes from the field's box. Shift+Enter is pressed as a real key and adds a line,
