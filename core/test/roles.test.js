@@ -122,3 +122,23 @@ test('the surface roles keep every text pair at 4.5:1 in both schemes of the def
     }
   }
 });
+
+// Issue 459: the other person's bubble is the bright one. It wears the theme's accent bubble (the bubble-me token, which an
+// import fills from the theme's primary) with that token's own text colour, ours is the quiet chart-2 tint, and the
+// received bubble stands out from the page more than ours does, in both schemes of the default palette and an import.
+test('the other person\'s bubble is the theme\'s accent bubble and ours the quiet tint, in both schemes of the default palette and an imported theme (issue 459)', () => {
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 1 / 255);
+  for (const [themeName, theme] of [['default', null], ['elegant-luxury', imported]]) {
+    for (const scheme of ['light', 'dark']) {
+      const palette = paletteFor(theme, scheme);
+      const roles = roleValues(palette, scheme);
+      const where = themeName + '/' + scheme;
+      assert.ok(near(roles.received, rgb(palette['bubble-me'])), where + ' the received bubble is the accent bubble');
+      assert.ok(near(roles['received-fg'], rgb(palette['bubble-me-fg'])), where + ' and carries the accent bubble\'s own text colour');
+      assert.ok(!near(roles.sent, rgb(palette['bubble-me'])), where + ' the sent bubble is not the accent bubble');
+      const received = contrastRatio(roles.received, roles.page);
+      const sent = contrastRatio(roles.sent, roles.page);
+      assert.ok(received > sent, where + ' the received bubble stands out from the page (' + received.toFixed(2) + ') more than ours (' + sent.toFixed(2) + ')');
+    }
+  }
+});
