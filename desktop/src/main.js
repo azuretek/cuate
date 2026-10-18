@@ -760,6 +760,31 @@ async function runSmoke(w) {
     }
     report.edit = Object.values(editChecks).every(Boolean);
     console.log('edit: ' + JSON.stringify({ checks: editChecks }));
+    // Edit history (issue 437): each edit above carried the words it replaced, so Edited under both is a control.
+    // Pressing it shows the earlier words above the message and reads Hide edits; pressing that folds them away.
+    await smokeStep('edit history');
+    const historyOf = (sel) => js("(() => { const r = document.querySelector(" + q(sel) + "); if (!r) return null; const t = r.querySelector('button.edited-toggle'); const cur = r.querySelector('.bubble:not(.edit-version)'); const v = [...r.querySelectorAll('.edit-version')]; return { toggle: t ? t.textContent.trim() : null, expanded: t ? t.getAttribute('aria-expanded') : null, versions: v.map((x) => x.textContent), above: v.every((x) => cur && x.getBoundingClientRect().bottom <= cur.getBoundingClientRect().top + 1) }; })()");
+    const pressToggle = (sel) => js("(() => { const t = document.querySelector(" + q(sel + ' button.edited-toggle') + "); if (!t) return false; t.scrollIntoView({ block: 'center' }); t.click(); return true; })()");
+    const remoteSel = await js("(() => { const r = " + rowWith(liveEdit) + "; return r ? '.bubble-row[data-id=\\\"' + r.dataset.id + '\\\"]' : null; })()");
+    const historyChecks = {};
+    for (const [name, sel, before] of [['remote', remoteSel, live], ['own', ownSel, text]]) {
+      if (!sel) { historyChecks[name] = false; continue; }
+      const folded = await historyOf(sel);
+      await pressToggle(sel);
+      await waitFor("document.querySelectorAll(" + q(sel + ' .edit-version') + ").length > 0", 10000).catch(() => {});
+      const shown = await historyOf(sel);
+      if (name === 'own') await shot('03e-edit-history.png');
+      await pause(700);
+      await pressToggle(sel);
+      await waitFor("document.querySelectorAll(" + q(sel + ' .edit-version') + ").length === 0", 10000).catch(() => {});
+      const hidden = await historyOf(sel);
+      historyChecks[name] = Boolean(folded && folded.toggle === 'Edited' && folded.expanded === 'false' && folded.versions.length === 0
+        && shown && shown.toggle === 'Hide edits' && shown.expanded === 'true' && shown.versions[shown.versions.length - 1] === before && shown.above
+        && hidden && hidden.toggle === 'Edited' && hidden.versions.length === 0);
+      console.log('edit history ' + name + ': ' + JSON.stringify({ folded, shown, hidden }));
+    }
+    report.editHistory = Object.values(historyChecks).every(Boolean);
+    console.log('edit history: ' + JSON.stringify({ checks: historyChecks }));
   }
   await pause(300);
   await shot('03-after-send.png');
