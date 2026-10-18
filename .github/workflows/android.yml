@@ -89,6 +89,7 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/video-controls-portrait.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/video-controls-landscape.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-effects.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/load-order.json
 
       - name: Keep the boot proof
         if: always()

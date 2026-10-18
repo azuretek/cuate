@@ -167,6 +167,25 @@ jobs:
         if: runner.os != 'Linux'
         timeout-minutes: 6
         run: pnpm --filter desktop exec electron scripts/prove-tray.mjs --shots "${{ runner.temp }}/proof-tray"
+      # Issue 425's proof on the desktop (desktop/scripts/prove-load-order.mjs): the real page signed in through the load
+      # order fixture over an emulated slow link, measured for the first visible message and picture, and failing when
+      # a picture off screen is asked for before the screen's or a fetch flung past outlives the fling. The same fixture
+      # runs in the iOS and Android shells' own web views. The measurement goes up as an artifact.
+      - name: Prove the load order (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 6
+        run: xvfb-run -a -s "-screen 0 1280x800x24" pnpm --filter desktop exec electron scripts/prove-load-order.mjs --shots "${{ runner.temp }}/proof-load-order"
+      - name: Prove the load order (macOS, Windows)
+        if: runner.os != 'Linux'
+        timeout-minutes: 6
+        run: pnpm --filter desktop exec electron scripts/prove-load-order.mjs --shots "${{ runner.temp }}/proof-load-order"
+      - name: Keep the load order proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-order-proof-${{ matrix.os }}
+          path: ${{ runner.temp }}/proof-load-order
+          if-no-files-found: warn
       - name: Keep the tray proof
         if: always()
         uses: actions/upload-artifact@v4
