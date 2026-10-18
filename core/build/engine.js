@@ -577,6 +577,8 @@ var engine = (() => {
       edit: (chatId, messageId, text) => call("PUT", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/text`, { text }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+      // A recording someone else sent was played here (issue 440): the server keeps it and tells every client.
+      played: (id) => call("POST", "/api/v1/attachments/" + encodeURIComponent(id) + "/played"),
       // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
       // a group conversation, and a group's name and people change through the Mac. Each answers the chat as it now is.
       createChat: ({ addresses, name, text }) => call("POST", "/api/v1/chats", { addresses, ...name ? { name } : {}, ...text ? { text } : {} }),
@@ -2509,11 +2511,17 @@ var engine = (() => {
     if (isBackgroundRow(m)) {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
     }
+    const parts = payloadParts(m, { attachmentId });
     return {
       ...base,
-      ...payloadParts(m, { attachmentId }),
+      ...parts,
+      attachments: m.is_audio_message ? parts.attachments.map((a) => markVoice(a, m)) : parts.attachments,
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean)
     };
+  }
+  var isRecording = (a) => /^audio\//i.test(String(a.mime || "")) || /\.(caf|amr)$/i.test(String(a.name || ""));
+  function markVoice(a, m) {
+    return isRecording(a) ? { ...a, voice: true, played: Boolean(m.is_played) } : a;
   }
   function mapReaction(m) {
     if (!m.is_reaction || !m.reacted_to_guid) return null;

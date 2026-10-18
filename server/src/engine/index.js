@@ -49,7 +49,10 @@ const omit = (o, keys) => {
 // backgrounds: where the adapter learns which rows are a conversation's background changing and what each chat's
 // background is now (backgrounds.js: the Messages store and `imsg chat-background status`; the fake keeps its own), or
 // null where there is no such source, in which case no row is a background change and no chat has one (issue 417).
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null }) {
+// voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
+// store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
+// client of ours has played, kept by the server ({ has(attachmentId) }), or null.
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, voices = null, heard = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -63,7 +66,34 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
     return msg;
   };
-  const toModel = (raw) => notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId }));
+  const toModel = (raw) => markHeard(notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId })));
+  // A recording a client of ours played is played on every client (issue 440): the server keeps it, and every read and
+  // live message carries it.
+  function markHeard(msg) {
+    if (!heard || !msg || !Array.isArray(msg.attachments)) return msg;
+    try {
+      for (const a of msg.attachments) if (!a.played && heard.has(a.id)) a.played = true;
+    } catch (e) {
+      log.emit('voice.failed', { error: failure(e) });
+    }
+    return msg;
+  }
+  // The rows with something attached are asked of the store in one read, and each voice message it names is marked with
+  // whether it was played before it is mapped (issue 440). A store that cannot be read leaves them unmarked, and says so
+  // by the failure's code.
+  const markVoices = (rows) => {
+    const maybe = voices ? rows.filter((m) => m && m.guid && !m.is_reaction && Array.isArray(m.attachments) && m.attachments.length) : [];
+    if (!maybe.length) return rows;
+    try {
+      const found = voices.among(maybe.map((m) => String(m.guid)));
+      return rows.map((m) => (found.has(String(m && m.guid)) ? { ...m, is_audio_message: true, is_played: Boolean(found.get(String(m.guid)).played) } : m));
+    } catch (e) {
+      log.emit('voice.failed', { error: failure(e) });
+      return rows;
+    }
+  };
+  // Every raw row passes the same marks before it is mapped, whichever read it came from.
+  const prepare = (rows) => markVoices(markBackgrounds(rows));
   // The rows that may be a background changing (no words, nothing attached) are asked of the store in one read, and
   // each it names is marked with its action before it is mapped, so the mapping stays the one pure rule (issue 417). A
   // store that cannot be read leaves them as they were, and says so.
@@ -247,7 +277,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return;
     }
     if (method === 'message' && params.message) {
-      const [raw] = markBackgrounds([params.message]);
+      const [raw] = prepare([params.message]);
       if (Number.isFinite(raw.id) && raw.id > lastRowid) lastRowid = raw.id;
       if (raw.is_reaction) {
         const r = mapReaction(raw);
@@ -384,7 +414,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     if (beforeCursor) params.before_cursor = beforeCursor;
     if (afterCursor) params.after_cursor = afterCursor;
     const r = await request('messages.history', params, timeoutMs, ['attachments']);
-    let list = markBackgrounds((r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction)).map((m) => toModel(m));
+    let list = prepare((r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction)).map((m) => toModel(m));
     if (before) list = list.filter((m) => m.sentAt < before);
     list.sort((a, b) => afterCursor ? compareHistory(a, b) : compareHistory(b, a));
     const selected = list.slice(0, limit);
@@ -443,7 +473,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   async function editedMessage(row) {
     const r = await request('messages.after', { since_rowid: Math.max(0, row.rowid - 1), chat_id: Number(row.chatId), limit: 1, attachments: true }, timeoutMs, ['attachments']);
     const raw = (r && Array.isArray(r.messages) ? r.messages : []).find((m) => Number(m.id) === row.rowid && !m.is_reaction);
-    return raw ? { ...toModel(raw), edited: true } : null;
+    return raw ? { ...toModel(prepare([raw])[0]), edited: true } : null;
   }
   async function scanOnce() {
     let found = 0;
@@ -496,7 +526,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     const r = await request('messages.after', params, timeoutMs, ['attachments', 'include_reactions']);
     const rows = r && Array.isArray(r.messages) ? r.messages : [];
     return {
-      messages: markBackgrounds(rows.filter((m) => includeReactions || !m.is_reaction)).map((m) => toModel(m)),
+      messages: prepare(rows.filter((m) => includeReactions || !m.is_reaction)).map((m) => toModel(m)),
       nextRowid: r && Number.isFinite(r.next_rowid) ? r.next_rowid : params.since_rowid,
       hasMore: Boolean(r && r.has_more),
     };
@@ -616,6 +646,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   function stop() {
     stopping = true;
     try { edits?.close?.(); } catch { /* already closed */ }
+    try { voices?.close?.(); } catch { /* already closed */ }
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     const c = current;
     current = null;

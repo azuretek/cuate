@@ -32,6 +32,22 @@ export function forgetPlayed() {
   playedIds = null;
 }
 
+// The players on the page, so a recording played on another device takes its mark off here at once (issue 440), and the
+// recordings this page has told the server it played, so each is told once.
+const onPage = new Set();
+const told = new Set();
+// A recording played on another device of the person's, as the server tells it: remembered here as played on this
+// device too, and every player of it draws again.
+export async function notePlayed(id, { bridge = globalThis.window?.bridge } = {}) {
+  const set = await rememberPlayed(id, { bridge });
+  for (const p of onPage) {
+    if (String(p.attachment?.id) !== String(id)) continue;
+    p.heard = set;
+    p.requestUpdate();
+  }
+  return set;
+}
+
 // What this web view says it plays, asked of an audio element of its own (issue 435). A page with no document answers
 // nothing, so a voice message asks for the server's copy.
 let probe = null;
@@ -92,6 +108,7 @@ class AppAudio extends KitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.watchPlayed();
     playedOnDevice().then((set) => { this.heard = set; });
     if (this.hasUpdated && !this.src) this.fetchWhenSeen();
   }
@@ -100,8 +117,14 @@ class AppAudio extends KitElement {
     if (!this.src) this.fetchWhenSeen();
   }
 
+  // Kept on the page's list while connected, so a play on another device reaches it.
+  watchPlayed() {
+    onPage.add(this);
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
+    onPage.delete(this);
     this.watch?.disconnect();
     this.request?.abort();
     this.request = null;
@@ -200,7 +223,16 @@ class AppAudio extends KitElement {
     this.playing = true;
     if (playingNow && playingNow !== this) playingNow.player()?.pause();
     playingNow = this;
-    if (this.attachment) rememberPlayed(this.attachment.id).then((set) => { this.heard = set; this.requestUpdate(); });
+    const a = this.attachment;
+    if (!a) return;
+    rememberPlayed(a.id).then((set) => { this.heard = set; this.requestUpdate(); });
+    // One someone else sent is told to the server once, which keeps it and tells every client (issue 440). What we sent
+    // is never marked, one already played everywhere is not told again, and a server that cannot be told leaves it
+    // played on this device.
+    const id = String(a.id);
+    if (this.mine || a.played || told.has(id) || typeof this.client?.played !== 'function') return;
+    told.add(id);
+    Promise.resolve().then(() => this.client.played(id)).catch(() => { told.delete(id); });
   }
 
   onPause() {
