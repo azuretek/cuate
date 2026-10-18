@@ -21,7 +21,7 @@ const INLINE_OBJECT = '\uFFFC';
  * and a stretch left with neither an effect nor a format is dropped.
  * @param {string} rawText the words as the engine read them
  * @param {{ start: number, length: number, effect?: number, bold?: number, italic?: number, underline?: number, strikethrough?: number }[]} runs
- * @returns {{ start: number, length: number, effect?: string, bold?: true, italic?: true, underline?: true, strikethrough?: true }[]}
+ * @returns {{ start: number, length: number, effect?: string, mention?: string, bold?: true, italic?: true, underline?: true, strikethrough?: true }[]}
  */
 export function stylesFromRuns(rawText, runs) {
   const text = String(rawText || '');
@@ -42,6 +42,8 @@ export function stylesFromRuns(rawText, runs) {
     const effect = TEXT_EFFECT_IDS[r.effect] || null;
     if (effect) marks.effect = effect;
     for (const f of TEXT_FORMATS) if (r[f]) marks[f] = true;
+    // A mention names the address it stands for (issue 453); one of nobody is no mention.
+    if (typeof r.mention === 'string' && r.mention.trim()) marks.mention = r.mention.trim();
     if (!Object.keys(marks).length) continue;
     const from = start - removedBefore[start];
     const to = start + length - removedBefore[start + length];
@@ -55,7 +57,7 @@ export function stylesFromRuns(rawText, runs) {
 
 // Whether a style carries exactly these marks: the same effect (or none) and the same formats.
 function sameMarks(style, marks) {
-  return (style.effect || null) === (marks.effect || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
+  return (style.effect || null) === (marks.effect || null) && (style.mention || null) === (marks.mention || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
 }
 
 // A stretch's letters, one per user-perceived character, so a letter effect moves each as it reads rather than splitting

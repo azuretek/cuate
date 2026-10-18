@@ -1,4 +1,6 @@
-// Test-only diagnostics. Event callbacks append timestamps; the sampling loop alone reads media and layout.
+// Test-only diagnostics. Event callbacks append timestamps; the sampling loop alone reads layout. The motion's own
+// timeupdate also reports its clock to the observation (progress), because on a busy simulator animation frames can
+// starve for the whole of a two second motion (issue 462).
 export function createLiveTrace(clock = Date.now) {
   const entries = [];
   return {
@@ -42,7 +44,17 @@ export function observeLiveMotion(stillBox) {
   let wrongBox = null;
   let last = null;
   let previousVideo = null;
+  const advance = (video) => {
+    if (!started && video.currentTime > 0.3 && !video.paused) started = video.currentTime;
+    if (started) played = Math.max(played, video.currentTime);
+  };
   return {
+    // The motion's clock from its own timeupdate event: no layout read and no change to playback. It counts only for a
+    // motion the loop has seen mounted in its box, so geometry is still proven by the loop.
+    progress(video) {
+      if (!previousVideo) return;
+      advance(video);
+    },
     sample(video, box) {
       // The loop can resume after ended removed the video. Read its retained clock, never infer progress just
       // from removal. Geometry must have been sampled while it was mounted; a never-seen video cannot pass.
@@ -54,8 +66,7 @@ export function observeLiveMotion(stillBox) {
       const b = box(video);
       if (!wrongBox && (Math.abs(b.w - stillBox.w) > 1 || Math.abs(b.h - stillBox.h) > 1)) wrongBox = b;
       last = { ready: video.readyState, t: video.currentTime, paused: video.paused, ended: video.ended, error: video.error?.code ?? null, box: b };
-      if (!started && video.currentTime > 0.3 && !video.paused) started = video.currentTime;
-      if (started) played = Math.max(played, video.currentTime);
+      advance(video);
     },
     get passed() { return started > 0 && played > started + 0.2; },
     get played() { return played; },

@@ -14,6 +14,8 @@ export const RICH_ATTRIBUTES = Object.freeze({
   __kIMTextItalicAttributeName: 'italic',
   __kIMTextUnderlineAttributeName: 'underline',
   __kIMTextStrikethroughAttributeName: 'strikethrough',
+  // A confirmed mention (issue 453): its value is the address of the person the name stands for.
+  __kIMMentionConfirmedMention: 'mention',
 });
 
 /**
@@ -35,7 +37,7 @@ export function richRuns(body) {
     let any = false;
     for (const [name, key] of Object.entries(RICH_ATTRIBUTES)) {
       const v = r.attributes.get(name);
-      if (typeof v === 'number' && v) { run[key] = v; any = true; }
+      if ((typeof v === 'number' && v) || (typeof v === 'string' && v)) { run[key] = v; any = true; }
     }
     if (any && r.length > 0) runs.push(run);
   }

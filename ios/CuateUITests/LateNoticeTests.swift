@@ -38,7 +38,8 @@ final class LateNoticeTests: XCTestCase {
             return
         }
 
-        // The shell has the notice shown a few seconds later, once the app is on the home screen, as a banner over it.
+        // The shell adds the notice once the app has left for the home screen, due a few seconds later, so it is drawn as a
+        // banner over the home screen and never while the app is in front (issue 466).
         let away = NSPredicate { _, _ in
             clearAlerts()
             if app.state == .runningForeground { XCUIDevice.shared.press(.home) }
@@ -51,12 +52,15 @@ final class LateNoticeTests: XCTestCase {
         }
         let notice = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Late fixture message")).firstMatch
         // A banner is drawn for a few seconds and a slow host can miss it, so a notice not seen as a banner is pressed
-        // where the system keeps it, in Notification Center, which is the same notice and the same press.
-        if !notice.waitForExistence(timeout: 15) {
+        // where the system keeps it, in Notification Center, which is the same notice and the same press. The wait for
+        // the banner allows for a busy simulator, whose snapshots alone can take tens of seconds.
+        // The system slides a notice in from the top, as a banner and in Notification Center alike, so a notice that
+        // exists may still be above the screen; it is pressed only once it is on screen and has held still (issue 466).
+        if !pressable(notice, in: springboard, timeout: 30) {
             keep("late-notice-no-banner")
             let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.005))
             top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.7)))
-            guard notice.waitForExistence(timeout: 15) else {
+            guard pressable(notice, in: springboard, timeout: 30) else {
                 keep("late-notice-not-in-center")
                 XCTFail("The notice was neither shown as a banner nor kept in Notification Center: " + springboard.debugDescription)
                 return
@@ -65,7 +69,14 @@ final class LateNoticeTests: XCTestCase {
         } else {
             print("late notice pressed from its banner")
         }
+        // A press in Notification Center can land on the cell without opening it, the first press only expanding it, so a
+        // notice still there and pressable after a while is pressed once more before the app is required in front.
         notice.tap()
+        if !app.wait(for: .runningForeground, timeout: 15), pressable(notice, in: springboard, timeout: 5) {
+            keep("late-notice-pressed-again")
+            print("late notice pressed again")
+            notice.tap()
+        }
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Pressing the notice brings the app back")
 
         let settled = NSPredicate { _, _ in label("late-notice:pass").exists || label("late-notice:fail").exists }
@@ -74,6 +85,23 @@ final class LateNoticeTests: XCTestCase {
         let failure = label("late-notice:fail")
         XCTAssertFalse(failure.exists, failure.exists ? failure.label : "")
         XCTAssertTrue(label("late-notice:pass").exists, "The late message was brought into view: " + app.debugDescription)
+    }
+
+    /// Whether the notice can be pressed: hittable, its centre on the screen, and its frame the same on consecutive reads,
+    /// so it is neither still sliding in nor sliding away. False when that does not hold within the timeout.
+    private func pressable(_ notice: XCUIElement, in springboard: XCUIApplication, timeout: TimeInterval) -> Bool {
+        var last = CGRect.null
+        var still = 0
+        let ready = NSPredicate { _, _ in
+            guard notice.exists, notice.isHittable else { still = 0; last = .null; return false }
+            let frame = notice.frame
+            let screen = springboard.frame
+            guard !frame.isEmpty, frame.minY >= screen.minY, screen.contains(CGPoint(x: frame.midX, y: frame.midY)) else { still = 0; last = .null; return false }
+            still = frame == last ? still + 1 : 0
+            last = frame
+            return still >= 2
+        }
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: timeout) == .completed
     }
 
     private func keep(_ name: String) {
