@@ -7,7 +7,7 @@
 // The verdict is the native test's: it presses play through the accessibility tree, as a person would, and reads what
 // the page reports on one marker, kept current:
 //   au:boot              the script is running
-//   au:ready <json>      both players are drawn and know how long they run
+//   au:ready <json>      every player is drawn and shows how long it runs
 //   au:playing <json>    the first is playing, and its time and its elapsed clock have moved
 //   au:paused <json>     the first was played and is paused part way in
 //   au:fail <why>        the scene could not be set
@@ -73,7 +73,10 @@
   });
   document.body.append(stage);
   const audio = (el) => el.querySelector('audio');
-  await until(() => players.every((el) => audio(el) && Number.isFinite(audio(el).duration) && audio(el).duration > 0), 'both recordings to know how long they run', 30000);
+  // Ready once every player SHOWS how long it runs, not only once its audio element knows: the element learns its
+  // duration a task before the player hears of it, and a report read in between showed 0:00 on a slower runner.
+  const drawnLength = (el) => el.querySelector('.voice-length')?.textContent || '0:00';
+  await until(() => players.every((el) => audio(el) && Number.isFinite(audio(el).duration) && audio(el).duration > 0 && drawnLength(el) !== '0:00'), 'every recording to show how long it runs', 30000);
 
   const report = () => players.map((el) => {
     const a = audio(el);

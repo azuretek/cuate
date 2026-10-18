@@ -204,6 +204,9 @@ test('the audio fixture is a Debug seam the iOS and Android tests play (issue 43
   const android = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replace(/\./g, '/') + '/AudioPlaybackTest.kt');
   for (const part of ['audio-fixture.js', 'audio-fixture.m4a', 'au:playing']) assert.ok(android.includes(part), 'the Android test plays the recording: ' + part);
   assert.doesNotMatch(read('core/app/main.js'), /audio-fixture/);
+  // Ready is what the player shows, not what its audio element knows: the element learns its duration a task before the
+  // player draws it, and a report read between the two said 0:00 on the slower packaged desktop legs.
+  assert.match(read('core/test/audio-fixture.js'), /drawnLength\(el\) !== '0:00'/, 'the fixture is ready only once every player shows its length');
 });
 
 // The desktop shells play it too: the smoke runs a proof in the shell's own Chromium on every desktop leg, pressing play
