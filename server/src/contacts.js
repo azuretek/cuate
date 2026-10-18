@@ -22,6 +22,11 @@ import { contactIndex, contactFor, contactName } from '../../core/app/rules/cont
 // answers no containers and a per-container read answers nobody, while an authorized enumeration reads every person
 // (issue 393). The keys are bridged with $([...]): a plain JavaScript array can reach the Contacts framework as a
 // dictionary, which it refuses with an unrecognized selector.
+//
+// ★ Every string the bridge returns is read through str(), which unwraps it with .js: String() of a bridged NSString is
+// the label "[id NSString]", not its text. The picture was read with String() alone, so every contact's picture
+// reached the server as that label, failed the image check, and no client ever drew one (measured on a Mac: 39 of
+// 39 pictures, issue 393).
 export const CONTACTS_JXA = [
   "ObjC.import('Contacts');",
   'const store = $.CNContactStore.alloc.init;',
@@ -51,7 +56,7 @@ export const CONTACTS_JXA = [
   '    for (let j = 0; emails && j < Number(emails.count); j += 1) {',
   '      try { const v = emails.objectAtIndex(j).value; if (v) rec.emails.push(String(v.js !== undefined ? v.js : v)); } catch (e) { /* a value with no address */ }',
   '    }',
-  '    try { if (c.thumbnailImageData) rec.photo = String(c.thumbnailImageData.base64EncodedStringWithOptions(0)); } catch (e) { /* a record with no picture */ }',
+  '    try { if (c.thumbnailImageData) { const b64 = str(c.thumbnailImageData.base64EncodedStringWithOptions(0)); if (b64) rec.photo = b64; } } catch (e) { /* a record with no picture */ }',
   '    out.push(rec);',
   '  });',
   '  if (!read) throw new Error("Contacts could not be read");',

@@ -172,6 +172,44 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .bubble.me { background: var(--role-sent); color: var(--role-sent-fg); }
 .bubble.state-sending { opacity: 0.7; }
 .bubble.state-failed, .bubble.state-uncertain { outline: var(--size-border) solid var(--color-danger); }
+/* Text effects a sender laid over stretches of their words (issue 433), played once as the message is drawn and still
+   under reduced motion. A stretch that moves as one is an inline block, since a transform does not reach an inline box;
+   a letter effect moves each letter on its own, each a little after the one before. Every length is a token. */
+.text-effect[data-effect="big"], .text-effect[data-effect="small"], .text-effect[data-effect="shake"], .text-effect[data-effect="nod"], .text-effect[data-effect="bloom"] { display: inline-block; animation: var(--motion-text-effect) var(--motion-ease) both; }
+.text-effect[data-effect="big"] { animation-name: text-big; }
+.text-effect[data-effect="small"] { animation-name: text-small; }
+.text-effect[data-effect="shake"] { animation-name: text-shake; animation-timing-function: linear; }
+.text-effect[data-effect="nod"] { animation-name: text-nod; animation-timing-function: linear; }
+.text-effect[data-effect="bloom"] { animation-name: text-bloom; }
+.text-effect .fx-letter { display: inline-block; white-space: pre; animation: var(--motion-text-effect) var(--motion-ease) both; }
+.text-effect[data-effect="ripple"] .fx-letter { animation-name: text-ripple; }
+.text-effect[data-effect="jitter"] .fx-letter { animation-name: text-jitter; animation-timing-function: linear; }
+.text-effect[data-effect="explode"] .fx-letter { animation-name: text-explode; }
+.text-effect[data-effect="explode"] .fx-letter:nth-child(even) { animation-name: text-explode-other; }
+.text-effect .fx-letter:nth-child(8n+2) { animation-delay: calc(var(--motion-fast) * 0.5); }
+.text-effect .fx-letter:nth-child(8n+3) { animation-delay: calc(var(--motion-fast) * 1); }
+.text-effect .fx-letter:nth-child(8n+4) { animation-delay: calc(var(--motion-fast) * 1.5); }
+.text-effect .fx-letter:nth-child(8n+5) { animation-delay: calc(var(--motion-fast) * 2); }
+.text-effect .fx-letter:nth-child(8n+6) { animation-delay: calc(var(--motion-fast) * 2.5); }
+.text-effect .fx-letter:nth-child(8n+7) { animation-delay: calc(var(--motion-fast) * 3); }
+.text-effect .fx-letter:nth-child(8n+8) { animation-delay: calc(var(--motion-fast) * 3.5); }
+@keyframes text-big { 0% { transform: scale(1); } 35% { transform: scale(1.8); } 70% { transform: scale(1.5); } 100% { transform: scale(1); } }
+@keyframes text-small { 0% { transform: scale(1); } 35% { transform: scale(0.5); } 70% { transform: scale(0.6); } 100% { transform: scale(1); } }
+@keyframes text-shake { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70% { transform: translateX(calc(var(--space-1) * -1)); } 20%, 40%, 60%, 80% { transform: translateX(var(--space-1)); } }
+@keyframes text-nod { 0%, 100% { transform: translateY(0); } 15%, 45%, 75% { transform: translateY(var(--space-1)); } 30%, 60%, 90% { transform: translateY(calc(var(--space-1) * -1)); } }
+@keyframes text-bloom { 0% { transform: scale(1); text-shadow: none; } 40% { transform: scale(1.25); text-shadow: 0 0 var(--space-2) currentColor; } 100% { transform: scale(1); text-shadow: none; } }
+@keyframes text-ripple { 0%, 60%, 100% { transform: translateY(0); } 20% { transform: translateY(calc(var(--space-2) * -1)); } 40% { transform: translateY(var(--space-1)); } }
+@keyframes text-jitter { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(var(--space-1), calc(var(--space-1) * -1)); } 40% { transform: translate(calc(var(--space-1) * -1), var(--space-1)); } 60% { transform: translate(var(--space-1), var(--space-1)); } 80% { transform: translate(calc(var(--space-1) * -1), calc(var(--space-1) * -1)); } }
+@keyframes text-explode { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(calc(var(--space-4) * -1), calc(var(--space-4) * -1)) rotate(-30deg); opacity: 0.4; } 60% { transform: translate(calc(var(--space-2) * -1), calc(var(--space-2) * -1)) rotate(-10deg); opacity: 0.8; } }
+@keyframes text-explode-other { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(var(--space-4), var(--space-4)) rotate(30deg); opacity: 0.4; } 60% { transform: translate(var(--space-2), var(--space-2)) rotate(10deg); opacity: 0.8; } }
+@media (prefers-reduced-motion: reduce) { .text-effect[data-effect], .text-effect[data-effect] .fx-letter { animation: none; } }
+/* Bold, italic, underline and strikethrough a sender laid on a stretch (issue 447), each its own class so any number
+   share a stretch; both lines draw where both are laid. */
+.fmt-bold { font-weight: var(--font-weight-bold); }
+.fmt-italic { font-style: italic; }
+.fmt-underline { text-decoration-line: underline; }
+.fmt-strikethrough { text-decoration-line: line-through; }
+.fmt-underline.fmt-strikethrough { text-decoration-line: underline line-through; }
 /* Reactions float at the bubble's top outer corner, the top right of a received message and the top left of a sent
    one, with no background, so adding one never moves a message (issue 182). */
 .reactions { position: absolute; top: 0; right: 0; z-index: 1; display: flex; gap: var(--space-1); transform: translate(50%, -50%); font-size: var(--font-size-sm); line-height: 1; white-space: nowrap; pointer-events: none; }
@@ -180,6 +218,12 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
 /* A message changed after it was sent says so under its bubble, quietly, on its own side (issue 391). */
 .edited-mark { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+/* Under a message with history the mark is a control (issue 437): pressing it shows what the message said before, above
+   it, oldest first, quieter than the message itself (an outline in the muted colour, no fill), and it then reads Hide
+   edits. */
+.edited-toggle { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.edited-toggle:hover, .edited-toggle:focus-visible { color: var(--color-fg); text-decoration: underline; }
+.bubble.edit-version { background: none; color: var(--color-fg-muted); border: var(--size-border) solid var(--color-border); font-size: var(--font-size-sm); margin-bottom: var(--space-1); }
 /* A message's actions (issues 138 and 169). A long press with a finger, a long click with the mouse or a right click
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */

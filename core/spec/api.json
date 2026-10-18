@@ -448,7 +448,22 @@
       "reactions": "Reaction[]",
       "event": "MessageEventKind?",
       "edited": "boolean?",
-      "historyCursor": "string?"
+      "historyCursor": "string?",
+      "styles": "TextStyle[]?",
+      "edits": "EditVersion[]?"
+    },
+    "EditVersion": {
+      "text": "string",
+      "at": "string"
+    },
+    "TextStyle": {
+      "start": "number",
+      "length": "number",
+      "effect": "string?",
+      "bold": "boolean?",
+      "italic": "boolean?",
+      "underline": "boolean?",
+      "strikethrough": "boolean?"
     },
     "Attachment": {
       "id": "string",

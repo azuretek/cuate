@@ -760,6 +760,31 @@ async function runSmoke(w) {
     }
     report.edit = Object.values(editChecks).every(Boolean);
     console.log('edit: ' + JSON.stringify({ checks: editChecks }));
+    // Edit history (issue 437): each edit above carried the words it replaced, so Edited under both is a control.
+    // Pressing it shows the earlier words above the message and reads Hide edits; pressing that folds them away.
+    await smokeStep('edit history');
+    const historyOf = (sel) => js("(() => { const r = document.querySelector(" + q(sel) + "); if (!r) return null; const t = r.querySelector('button.edited-toggle'); const cur = r.querySelector('.bubble:not(.edit-version)'); const v = [...r.querySelectorAll('.edit-version')]; return { toggle: t ? t.textContent.trim() : null, expanded: t ? t.getAttribute('aria-expanded') : null, versions: v.map((x) => x.textContent), above: v.every((x) => cur && x.getBoundingClientRect().bottom <= cur.getBoundingClientRect().top + 1), quieter: v.every((x) => cur && getComputedStyle(x).color !== getComputedStyle(cur).color && getComputedStyle(x).backgroundColor !== getComputedStyle(cur).backgroundColor) }; })()");
+    const pressToggle = (sel) => js("(() => { const t = document.querySelector(" + q(sel + ' button.edited-toggle') + "); if (!t) return false; t.scrollIntoView({ block: 'center' }); t.click(); return true; })()");
+    const remoteSel = await js("(() => { const r = " + rowWith(liveEdit) + "; return r ? '.bubble-row[data-id=\\\"' + r.dataset.id + '\\\"]' : null; })()");
+    const historyChecks = {};
+    for (const [name, sel, before] of [['remote', remoteSel, live], ['own', ownSel, text]]) {
+      if (!sel) { historyChecks[name] = false; continue; }
+      const folded = await historyOf(sel);
+      await pressToggle(sel);
+      await waitFor("document.querySelectorAll(" + q(sel + ' .edit-version') + ").length > 0", 10000).catch(() => {});
+      const shown = await historyOf(sel);
+      if (name === 'own') await shot('03e-edit-history.png');
+      await pause(700);
+      await pressToggle(sel);
+      await waitFor("document.querySelectorAll(" + q(sel + ' .edit-version') + ").length === 0", 10000).catch(() => {});
+      const hidden = await historyOf(sel);
+      historyChecks[name] = Boolean(folded && folded.toggle === 'Edited' && folded.expanded === 'false' && folded.versions.length === 0
+        && shown && shown.toggle === 'Hide edits' && shown.expanded === 'true' && shown.versions[shown.versions.length - 1] === before && shown.above && shown.quieter
+        && hidden && hidden.toggle === 'Edited' && hidden.versions.length === 0);
+      console.log('edit history ' + name + ': ' + JSON.stringify({ folded, shown, hidden }));
+    }
+    report.editHistory = Object.values(historyChecks).every(Boolean);
+    console.log('edit history: ' + JSON.stringify({ checks: historyChecks }));
   }
   await pause(300);
   await shot('03-after-send.png');
@@ -840,6 +865,82 @@ async function runSmoke(w) {
     };
     report.typingBubble = Object.values(typingChecks).every(Boolean);
     console.log('typing bubble: ' + JSON.stringify({ checks: typingChecks, atEnd, cleared, upBefore, upShown, upGone, reduced, device, deviceGone }));
+  }
+
+  // Text effects (issue 433): the fake engine's birthday wishes carry Bloom over "birthday to you!", which the server
+  // reads from the store. Opening the conversation draws that stretch with its effect playing and the rest plain; it
+  // settles back to the words as sent; and under reduced motion it is drawn still.
+  {
+    await smokeStep('text effects');
+    const fxCdp = (method, params) => { if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); return wc.debugger.sendCommand(method, params); };
+    const fxMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+    const fxBack = await js("document.querySelector('app-root').openChatId");
+    const fxOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    };
+    const fxRead = () => js(`(() => {
+      const el = document.querySelector('.bubble-row[data-id="FAKE-0021"] .text-effect');
+      if (!el) return { found: false };
+      el.scrollIntoView({ block: 'center' });
+      return { found: true, effect: el.dataset.effect, words: el.textContent, bubble: el.closest('.bubble').textContent, running: el.getAnimations().filter((a) => a.playState === 'running').length, name: getComputedStyle(el).animationName, stretches: document.querySelectorAll('.text-effect').length };
+    })()`);
+    await fxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    await fxOpen('2');
+    await fxOpen('1');
+    const playing = await fxRead();
+    await pause(2200);
+    const settled = await fxRead();
+    await shot('03d-text-effect.png');
+    await fxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await fxOpen('2');
+    await fxOpen('1');
+    const reduced = await fxRead();
+    await fxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: fxMotionWas }] });
+    if (fxBack !== null && String(fxBack) !== '1') await fxOpen(String(fxBack));
+    const fxChecks = {
+      drawn: playing.found && playing.effect === 'bloom' && playing.words === 'birthday to you!' && playing.bubble === 'Happy birthday to you!' && playing.stretches === 1,
+      plays: playing.running > 0 && playing.name === 'text-bloom',
+      settles: settled.found && settled.running === 0 && settled.bubble === 'Happy birthday to you!',
+      reducedStill: reduced.found && reduced.running === 0 && reduced.name === 'none',
+    };
+    report.textEffects = Object.values(fxChecks).every(Boolean);
+    console.log('text effects: ' + JSON.stringify({ checks: fxChecks, playing, settled, reduced }));
+  }
+
+  // Bold, italic, underline and strikethrough (issue 447): the fake engine's campsite question carries bold over "book",
+  // underline over "campsite" and italic over "weekend", which the server reads from the store. Each stretch draws with
+  // its own style, the rest plain, and the bubble reads the words as sent.
+  {
+    await smokeStep('text formatting');
+    const fmtBack = await js("document.querySelector('app-root').openChatId");
+    if (String(fmtBack) !== '1') {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"1\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === '1' && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    }
+    await waitFor("Boolean(document.querySelector('.bubble-row[data-id=\"FAKE-0016\"] .fmt'))", 15000).catch(() => {});
+    const fmt = await js(`(() => {
+      const row = document.querySelector('.bubble-row[data-id="FAKE-0016"]');
+      if (!row) return { found: false };
+      row.scrollIntoView({ block: 'center' });
+      const bubble = row.querySelector('.bubble');
+      const plain = Number(getComputedStyle(bubble).fontWeight);
+      const read = (cls) => { const el = row.querySelector('.fmt.' + cls); if (!el) return null; const cs = getComputedStyle(el); return { words: el.textContent, bold: Number(cs.fontWeight) > plain, italic: cs.fontStyle === 'italic', lines: cs.textDecorationLine }; };
+      return { found: true, bubble: bubble.textContent, stretches: row.querySelectorAll('.fmt').length, bold: read('fmt-bold'), underline: read('fmt-underline'), italic: read('fmt-italic') };
+    })()`);
+    await shot('03f-text-format.png');
+    if (fmtBack !== null && String(fmtBack) !== '1') {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(String(fmtBack)) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(String(fmtBack)), 15000).catch(() => {});
+    }
+    const fmtChecks = {
+      drawn: fmt.found && fmt.bubble === 'Did you book the campsite for the weekend?' && fmt.stretches === 3,
+      bold: Boolean(fmt.bold && fmt.bold.words === 'book' && fmt.bold.bold && !fmt.bold.italic),
+      underline: Boolean(fmt.underline && fmt.underline.words === 'campsite' && /underline/.test(fmt.underline.lines) && !fmt.underline.bold),
+      italic: Boolean(fmt.italic && fmt.italic.words === 'weekend' && fmt.italic.italic && !fmt.italic.bold),
+    };
+    report.textFormat = Object.values(fmtChecks).every(Boolean);
+    console.log('text formatting: ' + JSON.stringify({ checks: fmtChecks, fmt }));
   }
 
   // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's

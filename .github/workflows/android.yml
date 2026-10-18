@@ -71,6 +71,9 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
+          # The action's defaults, plus the host video decoder off (issue 443): with it on the guest hands H.264 to the
+          # emulator process, and the video controls test took the whole emulator down about one run in five.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -feature -HardwareDecoder
           working-directory: android
           script: |
             bash scripts/boot-proof.sh
@@ -85,6 +88,20 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/update-install-prompt-light.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/video-controls-portrait.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/video-controls-landscape.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-effects.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/edit-history.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-format.png
+
+      # Issue 443 again: with the host decoder off the emulator still exits under VideoControlsTest about one run in
+      # three, leaving no crash dump (the crash record holds only its settings), which a caught crash would have written.
+      # A process killed from outside writes none, so the kernel's own log is read for a kill and the memory it saw.
+      - name: Say why the emulator went away
+        if: failure()
+        working-directory: .
+        run: |
+          free -m
+          sudo dmesg -T | grep -iE 'killed process|out of memory|oom|qemu|segfault|emulator' | tail -40 || true
+          ls -la /tmp/android-runner/ 2>/dev/null || true
 
       - name: Keep the boot proof
         if: always()
@@ -96,6 +113,7 @@ jobs:
             android/app/build/reports/androidTests
             android/app/build/outputs/androidTest-results
             android/app/build/outputs/connected_android_test_additional_output
+            /tmp/android-runner/emu-crash-*.db
           if-no-files-found: warn
 
   # The publish half: the APK, signed with the Android release keystore.

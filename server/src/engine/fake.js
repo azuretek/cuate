@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { writePlist } from './bplist.js';
-import { buildFixtures, imsgReaction } from './fixtures.js';
+import { buildFixtures, imsgReaction, TEXT_RUNS } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { compareHistory } from '../../../core/app/rules/history.js';
 
@@ -116,6 +116,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const editListeners = new Set();
   let lastEditAt = 0;
   const editRow = (m, text) => {
+    // The words it replaced join its history, written when they were (issue 437), as Messages keeps each version.
+    m.edit_history = [...(m.edit_history || []), { text: m.text, at: new Date(m.edited_at || Date.parse(m.created_at)).toISOString() }];
     m.text = String(text);
     lastEditAt = Math.max(Date.now(), lastEditAt + 1);
     m.edited_at = lastEditAt;
@@ -136,6 +138,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     among(guids) {
       const want = new Set((guids || []).map(String));
       return new Map(editedRows().filter((m) => want.has(m.guid)).map((m) => [m.guid, new Date(m.edited_at).toISOString()]));
+    },
+    histories(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(editedRows().filter((m) => want.has(m.guid) && m.edit_history?.length).map((m) => [m.guid, m.edit_history.filter((v) => v.text).map((v) => ({ ...v }))]));
     },
     onChange(cb) { editListeners.add(cb); },
     close() {},
@@ -166,11 +172,24 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // The fake's stand-in for rich-text.js, with the same shape: of the rows asked about, the ones whose words the store
+  // records text effects on, each with its words and its runs (issue 433).
+  const richText = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      const found = new Map();
+      for (const m of messages) if (want.has(m.guid) && TEXT_RUNS[m.guid]) found.set(m.guid, { text: m.text, runs: TEXT_RUNS[m.guid].map((r) => ({ ...r })) });
+      return found;
+    },
+    close() {},
+  };
+
   const world = {
     sends,
     tapbacks,
     edits,
     backgrounds,
+    richText,
     // A participant sets (or clears) the conversation's background on their phone: Messages writes the row, the
     // rendered picture and the chat's record, and the row streams like any other (issue 417).
     changeBackground(chatId, sender, { clear = false } = {}) {
