@@ -64,12 +64,10 @@ wait "$control"
 cat "$data/control.out"
 
 echo "== TCC log since $start"
-log show --start "$start" --style compact --predicate 'subsystem == "com.apple.TCC"' > "$data/tcc-$label.log" 2>&1
-# Each request's attribution line, and the result line of the same msgID, for the helper's checks.
-ids="$(grep 'AUTHREQ_ATTRIBUTION' "$data/tcc-$label.log" | grep -i 'cuate' | sed -n 's/.*msgID=\([0-9.]*\),.*/\1/p' | sort -u)"
-for id in $ids; do
-  grep -E "msgID=$id[,)]" "$data/tcc-$label.log" | grep -E 'AUTHREQ_(CTX|ATTRIBUTION|RESULT)' | cut -c1-700
-done
+# The attribution lines are info level, so --info is needed to see them.
+log show --info --start "$start" --style compact --predicate 'subsystem == "com.apple.TCC"' > "$data/tcc-$label.log" 2>&1
+grep -E 'Handling access request|BUNDLE_ATTRIBUTION|AUTHREQ_ATTRIBUTION|AUTHREQ_RESULT|AttributionChain' "$data/tcc-$label.log" \
+  | grep -iE 'cuate|responsible=\{TCCDProcess: identifier=node' | cut -c1-640 | head -24
 echo "tcc lines: $(wc -l < "$data/tcc-$label.log")"
 
 launchctl bootout "$domain/$job" 2>/dev/null && echo "agent stopped"
