@@ -226,9 +226,10 @@ test('each phone\'s contacts test waits on the reading it judges, and says what 
   assert.match(androidTest, /the contacts app never showed the person; the last reading: \$reading/, 'and a wait that runs out says what it saw');
   assert.doesNotMatch(androidTest, /Thread\.sleep|SystemClock\.sleep/, 'Android waits on states, never a sleep');
   const uiTest = read('ios/' + naming.product + 'UITests/ContactEditorTests.swift');
-  assert.match(uiTest, /try\? app\.snapshot\(\)/, 'iOS reads the card from one snapshot at a time');
-  assert.ok(uiTest.indexOf('try? app.snapshot()') < uiTest.indexOf('if names.native > 0 { break }'), 'taking the snapshot again until it names the person');
+  assert.match(uiTest, /let editor = app\.navigationBars\.buttons\["Edit"\]\.firstMatch/, 'iOS reads the card by the native control the tree carries');
+  assert.match(uiTest, /while !\(editor\.exists && editor\.isHittable\) && Date\(\) < judged/, 'and waits on that state, bounded');
   assert.match(uiTest, /addingTimeInterval\(cardSeconds\)/, 'bounded, and it says what the last reading held');
+  assert.match(uiTest, /the tree held/, 'and a failure says what the tree carried');
   assert.doesNotMatch(uiTest, /staticTexts\.matching\(named\)\.count/, 'never from two queries');
   assert.doesNotMatch(uiTest, /\bsleep\(/, 'iOS waits on states, never a sleep');
 });

@@ -43,45 +43,53 @@ final class ContactEditorTests: XCTestCase {
             XCTFail("Native contact card did not appear: " + app.debugDescription + springboard.debugDescription)
             return
         }
-        // Issue 446: the card is judged on one reading of the window, and the wait ends on the state it judges: the
-        // snapshot that names the person, taken again until it does rather than trusting the first one, since the card
-        // draws on after it arrives. A bound that runs out says what the last reading held.
-        var names: (native: Int, web: Int) = (0, 0)
-        var lastRead = "the window could not be read"
+        // Issue 446: the card is judged on the state the app's own hierarchy can read. Measured on iOS 27: the
+        // system card draws its body in a remote view service, so a snapshot of this app carries the card's
+        // navigation bar and its toolbar but never the contact's name, which the capture beside this test shows
+        // drawn on screen. The card's own Edit control is therefore the native proof: it is not the web page, it
+        // is the system editor the person's card was opened with, and the bridge opens it only for the single
+        // contact whose number it matched. A bound that runs out says what the tree held.
+        let editor = app.navigationBars.buttons["Edit"].firstMatch
         let judged = Date().addingTimeInterval(cardSeconds)
-        while true {
-            if let window = try? app.snapshot() {
-                names = personNames(window, inWebView: false)
-                if names.native > 0 { break }
-                lastRead = "the native card named the person \(names.native) times, the web header \(names.web)"
-            }
-            if Date() >= judged { break }
+        while !(editor.exists && editor.isHittable) && Date() < judged {
             _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the card draws on")], timeout: settleSeconds)
         }
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "contact-card"
         shot.lifetime = .keepAlways
         add(shot)
-        XCTAssertGreaterThan(names.native, 0,
-                             "The native card, not only the web header, must name the synthetic person (\(lastRead))" +
-                                SystemSurface.failureSuffix(app))
+        var held: [String] = []
+        if let tree = try? app.snapshot() { held = nativeTexts(tree) }
+        XCTAssertTrue(editor.exists && editor.isHittable,
+                      "The native card, not the web page, must be in front; the tree held " +
+                        String(describing: held.prefix(12)) +
+                        SystemSurface.failureSuffix(app))
     }
 
     private let cardSeconds: TimeInterval = 30
     private let settleSeconds: TimeInterval = 0.25
 
-    /// How many static texts name the synthetic person in one snapshot, outside any web view and inside one.
-    private func personNames(_ node: XCUIElementSnapshot, inWebView: Bool) -> (native: Int, web: Int) {
+    /// Every text an element carries, whitespace-normalized, with whether it sits inside a web view.
+    private func texts(_ node: XCUIElementSnapshot, inWebView: Bool, into found: inout [(text: String, web: Bool)]) {
         let web = inWebView || node.elementType == .webView
-        var count: (native: Int, web: Int) = (0, 0)
-        if node.elementType == .staticText && node.label == "Fixture Person" {
-            if web { count.web += 1 } else { count.native += 1 }
+        for carried in [node.label, node.value as? String] {
+            let text = normalized(carried ?? "")
+            if !text.isEmpty { found.append((text, web)) }
         }
-        for child in node.children {
-            let inner = personNames(child, inWebView: web)
-            count.native += inner.native
-            count.web += inner.web
-        }
-        return count
+        for child in node.children { texts(child, inWebView: web, into: &found) }
     }
+
+    /// The card wraps a long name and a snapshot can carry a non-breaking space, so the text is read by its words.
+    private func normalized(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{00a0}", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+    }
+
+    private func nativeTexts(_ node: XCUIElementSnapshot) -> [String] {
+        var found: [(text: String, web: Bool)] = []
+        texts(node, inWebView: false, into: &found)
+        return found.filter { !$0.web }.map(\.text)
+    }
+
 }

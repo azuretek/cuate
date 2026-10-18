@@ -151,7 +151,7 @@ class ContactEditorTest {
                 if (left <= 0) {
                     throw AssertionError("the contacts app never showed the person; the last reading: $reading; in front: " + inFront())
                 }
-                automation.waitForIdle(minOf(WINDOW_SETTLE_MS, left))
+                try { automation.waitForIdle(WINDOW_SETTLE_MS, minOf(WINDOW_SETTLE_MS, left)) } catch (busy: java.util.concurrent.TimeoutException) { }
                 reading = read()
             }
             assertTrue("a contacts app, not this one, is in front: $reading", reading.packageName != context.packageName)
