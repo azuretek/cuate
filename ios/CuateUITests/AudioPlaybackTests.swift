@@ -4,7 +4,9 @@ import XCTest
 // fixture (core/test/audio-fixture.js) draws two synthetic recordings in a conversation in this shell's own web view, one
 // someone else sent and not played yet, and one we sent. This test presses play through the accessibility tree, as a
 // person would, and asserts from the page's report that the recording plays where it is: its time and its elapsed clock
-// move, its waveform fills, its mark goes, and pause holds it part way in. A screenshot of each state is kept.
+// move, its waveform fills, its mark goes, and pause holds it part way in. Then it plays a voice message (issue 435), a
+// synthetic Core Audio file with Opus inside, and asserts it plays too, from the copy that matches what this web view
+// says it plays. A screenshot of each state is kept.
 final class AudioPlaybackTests: XCTestCase {
     func testARecordingPlaysInItsMessage() {
         let app = XCUIApplication()
@@ -26,6 +28,10 @@ final class AudioPlaybackTests: XCTestCase {
         XCTAssertEqual(before?.first?["unplayed"] as? Bool, true, "the recording someone else sent is marked not played: " + marker.label)
         XCTAssertEqual(before?.first?["length"] as? String, "0:04", "it says how long it runs: " + marker.label)
         XCTAssertEqual(before?.second?["unplayed"] as? Bool, false, "ours is never marked: " + marker.label)
+        XCTAssertEqual(before?.voice?["unplayed"] as? Bool, true, "the voice message is marked not played: " + marker.label)
+        XCTAssertEqual(before?.voice?["length"] as? String, "0:03", "the voice message says how long it runs: " + marker.label)
+        let canPlay = before?.voice?["canPlay"] as? String ?? ""
+        XCTAssertEqual(before?.voice?["asked"] as? String, canPlay == "probably" ? "original" : "m4a", "the voice message asked for the copy this web view plays: " + marker.label)
         for player in before?.players ?? [] { XCTAssertEqual(player["clear"] as? Bool, true, "the waveform keeps clear of the time: " + marker.label) }
         keep(app, "audio ready")
 
@@ -54,6 +60,22 @@ final class AudioPlaybackTests: XCTestCase {
         print("audio fixture after pause: " + marker.label)
         XCTAssertTrue(marker.label.hasPrefix("au:paused"), "pause holds it part way in: " + marker.label + SystemSurface.failureSuffix(app))
         keep(app, "audio paused")
+
+        let voicePlay = page.buttons["Play Audio Message.caf"]
+        XCTAssertTrue(voicePlay.waitForExistence(timeout: 10), "the voice message's play control is in the accessibility tree" + SystemSurface.failureSuffix(app))
+        voicePlay.tap()
+        let voicing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'au:voice' OR label BEGINSWITH 'au:fail'"), object: marker)
+        _ = XCTWaiter().wait(for: [voicing], timeout: 30)
+        print("audio fixture after voice play: " + marker.label)
+        guard marker.label.hasPrefix("au:voice"), let spoken = AudioReport(marker.label)?.voice else {
+            XCTFail("the voice message did not play in its message: " + marker.label + SystemSurface.failureSuffix(app))
+            return
+        }
+        XCTAssertGreaterThanOrEqual(spoken["currentTime"] as? Double ?? 0, 1, "the voice message's time moved: " + marker.label)
+        XCTAssertNotEqual(spoken["elapsed"] as? String, "0:00", "its elapsed clock moved: " + marker.label)
+        XCTAssertGreaterThan(spoken["filled"] as? Int ?? 0, 0, "its waveform fills: " + marker.label)
+        XCTAssertEqual(spoken["unplayed"] as? Bool, false, "its mark is gone once played: " + marker.label)
+        keep(app, "audio voice")
     }
 
     private func keep(_ app: XCUIApplication, _ name: String) {
@@ -69,6 +91,7 @@ struct AudioReport {
     let players: [[String: Any]]
     var first: [String: Any]? { players.first }
     var second: [String: Any]? { players.count > 1 ? players[1] : nil }
+    var voice: [String: Any]? { players.count > 2 ? players[2] : nil }
 
     init?(_ label: String) {
         guard let space = label.firstIndex(of: " "),

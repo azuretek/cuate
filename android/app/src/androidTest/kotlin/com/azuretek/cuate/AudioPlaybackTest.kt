@@ -22,7 +22,9 @@ import java.util.concurrent.TimeUnit
 // fixture (core/test/audio-fixture.js) draws two synthetic recordings in a conversation in this shell's own web view, one
 // someone else sent and not played yet, and one we sent. This test presses play through the accessibility tree, as a
 // person would, and asserts from the page's report that the recording plays where it is: its time and its elapsed clock
-// move, its waveform fills, its mark goes, and pause holds it part way in. A screenshot of each state is kept.
+// move, its waveform fills, its mark goes, and pause holds it part way in. Then it plays a voice message (issue 435), a
+// synthetic Core Audio file with Opus inside that this WebView cannot play, from the server's MPEG-4 copy the player must
+// ask for. A screenshot of each state is kept.
 @RunWith(AndroidJUnit4::class)
 class AudioPlaybackTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -59,6 +61,10 @@ class AudioPlaybackTest {
             // Fixture bytes exist in the test APK only: the recording is handed to the page, which the shell has no route for.
             val clip = instrumentation.context.assets.open("audio-fixture.m4a").use { it.readBytes() }
             evaluate(scenario, "window.fixtureAudioBase64 = " + JSONObject.quote(Base64.encodeToString(clip, Base64.NO_WRAP)) + "; true")
+            val voice = instrumentation.context.assets.open("voice-fixture.caf").use { it.readBytes() }
+            evaluate(scenario, "window.fixtureVoiceBase64 = " + JSONObject.quote(Base64.encodeToString(voice, Base64.NO_WRAP)) + "; true")
+            val copy = instrumentation.context.assets.open("voice-fixture.m4a").use { it.readBytes() }
+            evaluate(scenario, "window.fixtureVoiceCopyBase64 = " + JSONObject.quote(Base64.encodeToString(copy, Base64.NO_WRAP)) + "; true")
             val fixture = instrumentation.context.assets.open("audio-fixture.js").bufferedReader().use { it.readText() }
             evaluate(scenario, fixture)
 
@@ -69,6 +75,11 @@ class AudioPlaybackTest {
             assertEquals("the recording someone else sent is marked not played: $ready", true, before.getJSONObject(0).getBoolean("unplayed"))
             assertEquals("it says how long it runs: $ready", "0:04", before.getJSONObject(0).getString("length"))
             assertEquals("ours is never marked: $ready", false, before.getJSONObject(1).getBoolean("unplayed"))
+            val voiceBefore = before.getJSONObject(2)
+            assertEquals("the voice message is marked not played: $ready", true, voiceBefore.getBoolean("unplayed"))
+            assertEquals("the voice message says how long it runs: $ready", "0:03", voiceBefore.getString("length"))
+            val canPlay = voiceBefore.optString("canPlay", "")
+            assertEquals("the voice message asked for the copy this WebView plays: $ready", if (canPlay == "probably") "original" else "m4a", voiceBefore.getString("asked"))
             for (i in 0 until before.length()) assertEquals("the waveform keeps clear of the time: $ready", true, before.getJSONObject(i).getBoolean("clear"))
             keepScreenshot("audio-ready.png")
 
@@ -86,6 +97,16 @@ class AudioPlaybackTest {
             val paused = await(scenario, "au:paused", 10)
             println("audio fixture after pause: $paused")
             keepScreenshot("audio-paused.png")
+
+            press("Play Audio Message.caf")
+            val voicing = await(scenario, "au:voice", 30)
+            println("audio fixture after voice play: $voicing")
+            val spoken = players(voicing).getJSONObject(2)
+            assertTrue("the voice message's time moved: $voicing", spoken.getDouble("currentTime") >= 1.0)
+            assertNotEquals("its elapsed clock moved: $voicing", "0:00", spoken.getString("elapsed"))
+            assertTrue("its waveform fills: $voicing", spoken.getInt("filled") > 0)
+            assertEquals("its mark is gone once played: $voicing", false, spoken.getBoolean("unplayed"))
+            keepScreenshot("audio-voice.png")
         }
     }
 

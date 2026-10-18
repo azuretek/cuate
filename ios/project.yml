@@ -102,6 +102,8 @@ targets:
             cp "$SRCROOT/../core/test/late-notice-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/late-notice-fixture.js"
             cp "$SRCROOT/../core/test/audio-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/audio-fixture.js"
             cp "$SRCROOT/../core/test/audio-fixture.m4a" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/audio-fixture.m4a"
+            cp "$SRCROOT/../core/test/voice-fixture.caf" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/voice-fixture.caf"
+            cp "$SRCROOT/../core/test/voice-fixture.m4a" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/voice-fixture.m4a"
           fi
         basedOnDependencyAnalysis: false
     settings:

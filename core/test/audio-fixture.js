@@ -1,8 +1,14 @@
-// Injected only by native test builds (issue 432). Two recordings in a conversation, drawn as the conversation
-// draws them, in the shell's own web view: one someone else sent, not played yet, and one we sent. Real components in
-// the real shell, synthetic audio only: a four second tone (core/test/audio-fixture.m4a) the shell serves from its test
-// build, or, where the shell cannot serve a test file (Android keeps fixtures in the test package), as base64 the test
-// hands over first in window.fixtureAudioBase64. No server, token or account.
+// Injected only by native test builds (issue 432). Three recordings in a conversation, drawn as the conversation
+// draws them, in the shell's own web view: one someone else sent, not played yet, one we sent, and a voice message
+// someone else sent (issue 435), a Core Audio file with Opus inside as current iPhones record it. Real components in the
+// real shell, synthetic audio only: a four second tone (core/test/audio-fixture.m4a), a three second voice message
+// (core/test/voice-fixture.caf) and the MPEG-4 copy a server on the Mac makes of it with afconvert
+// (core/test/voice-fixture.m4a), which the shell serves from its test build, or, where the shell cannot serve a test file
+// (Android keeps fixtures in the test package), as base64 the test hands over first in window.fixtureAudioBase64,
+// window.fixtureVoiceBase64 and window.fixtureVoiceCopyBase64. The stand-in server answers the voice message with the
+// copy when the player asks for format=m4a and with the original otherwise, and the report says which it asked for and
+// what the web view's canPlayType answered, so a run shows the copy matches what that web view plays. No server, token
+// or account.
 //
 // The verdict is the native test's: it presses play through the accessibility tree, as a person would, and reads what
 // the page reports on one marker, kept current:
@@ -10,6 +16,7 @@
 //   au:ready <json>      every player is drawn and shows how long it runs
 //   au:playing <json>    the first is playing, and its time and its elapsed clock have moved
 //   au:paused <json>     the first was played and is paused part way in
+//   au:voice <json>      the voice message is playing, and its time and its elapsed clock have moved
 //   au:fail <why>        the scene could not be set
 (async () => {
   const marker = document.createElement('output');
@@ -38,25 +45,39 @@
   await root.updateComplete;
   root.applyTheme();
 
-  let bytes;
-  if (typeof window.fixtureAudioBase64 === 'string' && window.fixtureAudioBase64) {
-    bytes = Uint8Array.from(atob(window.fixtureAudioBase64), (c) => c.charCodeAt(0));
-  } else {
-    const r = await fetch(new URL('/audio-fixture.m4a', document.baseURI));
-    if (!r.ok) throw new Error('the recording answered ' + r.status);
-    bytes = new Uint8Array(await r.arrayBuffer());
-  }
-  // Typed as the server types an MPEG-4 recording.
+  const fixture = async (handed, file) => {
+    if (typeof handed === 'string' && handed) return Uint8Array.from(atob(handed), (c) => c.charCodeAt(0));
+    const r = await fetch(new URL('/' + file, document.baseURI));
+    if (!r.ok) throw new Error(file + ' answered ' + r.status);
+    return new Uint8Array(await r.arrayBuffer());
+  };
+  const bytes = await fixture(window.fixtureAudioBase64, 'audio-fixture.m4a');
+  const voiceBytes = await fixture(window.fixtureVoiceBase64, 'voice-fixture.caf');
+  const copyBytes = await fixture(window.fixtureVoiceCopyBase64, 'voice-fixture.m4a');
+  // Typed as the server types each: an MPEG-4 recording, the Core Audio original, and the copy it makes of it.
   const clip = new Blob([bytes], { type: 'audio/mp4' });
-  const client = { attachment: async () => clip };
+  const voiceOriginal = new Blob([voiceBytes], { type: 'audio/x-caf' });
+  const voiceCopy = new Blob([copyBytes], { type: 'audio/mp4' });
+  const VOICE_ID = 'audvoice00001';
+  // What each player asked the stand-in server for: 'm4a' for the copy, 'original' for the file as it is.
+  const asked = {};
+  const client = {
+    attachment: async (id, options = {}) => {
+      asked[id] = options.format || 'original';
+      if (id !== VOICE_ID) return clip;
+      return options.format === 'm4a' ? voiceCopy : voiceOriginal;
+    },
+  };
+  const probe = document.createElement('audio');
 
   await customElements.whenDefined('app-attachment');
   const stage = document.createElement('div');
   stage.className = 'messages';
   Object.assign(stage.style, { position: 'fixed', top: '20%', left: '0', right: '0', zIndex: '9998', display: 'flex', flexDirection: 'column', gap: '24px', padding: '16px', background: 'var(--color-bg)' });
   const players = [
-    { id: 'audtheirs0001', name: 'memo.m4a', mine: false },
-    { id: 'audmine000001', name: 'reply.m4a', mine: true },
+    { id: 'audtheirs0001', name: 'memo.m4a', mime: 'audio/x-m4a', bytes: bytes.length, mine: false },
+    { id: 'audmine000001', name: 'reply.m4a', mime: 'audio/x-m4a', bytes: bytes.length, mine: true },
+    { id: VOICE_ID, name: 'Audio Message.caf', mime: 'audio/x-caf', bytes: voiceBytes.length, mine: false, voice: true },
   ].map((p) => {
     const row = document.createElement('div');
     row.className = 'bubble-row ' + (p.mine ? 'mine' : 'theirs');
@@ -65,7 +86,7 @@
     const el = document.createElement('app-attachment');
     el.client = client;
     el.mine = p.mine;
-    el.attachment = { id: p.id, name: p.name, mime: 'audio/x-m4a', bytes: bytes.length, sticker: false, missing: false };
+    el.attachment = { id: p.id, name: p.name, mime: p.mime, bytes: p.bytes, sticker: false, missing: false, ...(p.voice ? { voice: true, played: false } : {}) };
     body.append(el);
     row.append(body);
     stage.append(row);
@@ -90,6 +111,9 @@
     const clear = bars.every((r) => r.right <= wave.right + 0.5) && wave.right <= time.left + 0.5;
     return {
       label: el.querySelector('.voice-play').getAttribute('aria-label'),
+      mime: el.attachment.mime,
+      asked: asked[el.attachment.id] || null,
+      canPlay: probe.canPlayType(el.attachment.mime),
       playing: note.dataset.playing === 'true',
       unplayed: note.dataset.unplayed === 'true',
       elapsed: el.querySelector('.voice-elapsed').textContent,
@@ -107,8 +131,10 @@
   const publish = () => {
     const now = report();
     const first = now[0];
+    const voice = now[2];
     if (first.playing && first.currentTime >= 1 && first.elapsed !== '0:00') played = true;
-    const state = first.playing && played ? 'playing' : played && first.paused && first.currentTime > 0 ? 'paused' : 'ready';
+    const voicePlaying = voice.playing && voice.currentTime >= 1 && voice.elapsed !== '0:00';
+    const state = voicePlaying ? 'voice' : first.playing && played ? 'playing' : played && first.paused && first.currentTime > 0 ? 'paused' : 'ready';
     say('au:' + state + ' ' + JSON.stringify({ viewport: [innerWidth, innerHeight], players: now }));
   };
   publish();

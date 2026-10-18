@@ -2,6 +2,8 @@
 // The audio fixture (core/test/audio-fixture.js) draws recordings in a conversation; this presses play with real mouse
 // input at the play control's own middle, as a person would, and reads the page's report that the recording plays in
 // its message: its time and elapsed clock move, its waveform fills and its mark goes, and pause holds it part way in.
+// Then it plays a voice message (issue 435), a Core Audio file this Chromium cannot play, which the player must ask the
+// server's MPEG-4 copy of, and reads it play the same way.
 // Run with: xvfb-run -a electron desktop/scripts/prove-audio.mjs
 import { app, BrowserWindow, protocol } from 'electron';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -20,7 +22,7 @@ app.setPath('userData', profile);
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.m4a': 'audio/mp4', '.caf': 'audio/x-caf' };
-const fixtures = new Set(['/audio-fixture.m4a', '/voice-fixture.caf']);
+const fixtures = new Set(['/audio-fixture.m4a', '/voice-fixture.caf', '/voice-fixture.m4a']);
 let win;
 const bound = setTimeout(() => { console.error('audio proof exceeded its deadline'); app.exit(2); }, 120000);
 const report = async () => win.webContents.executeJavaScript('window.audioFixtureState || null');
@@ -59,10 +61,14 @@ app.whenReady().then(async () => {
   // Injected once the document has loaded, as the phone shells inject it at the document's end.
   await win.webContents.executeJavaScript(readFileSync(path.join(root, 'core/test/audio-fixture.js'), 'utf8'));
   const ready = await until('au:ready', 60000);
-  const [theirs, mine] = ready.scene.players;
+  const [theirs, mine, voice] = ready.scene.players;
   assert.equal(theirs.unplayed, true, 'the recording someone else sent is marked not played');
   assert.equal(theirs.length, '0:04', 'it says how long it runs');
   assert.equal(mine.unplayed, false, 'ours is never marked');
+  assert.equal(voice.unplayed, true, 'the voice message is marked not played');
+  assert.equal(voice.length, '0:03', 'the voice message says how long it runs');
+  // The copy it asked for matches what this web view plays: the original only where canPlayType says probably.
+  assert.equal(voice.asked, voice.canPlay === 'probably' ? 'original' : 'm4a', 'the voice message asked for the copy this web view plays: ' + JSON.stringify(voice));
   for (const p of ready.scene.players) assert.equal(p.clear, true, 'the waveform keeps clear of the time: ' + p.label);
   await shot('audio-ready.png');
   await press('Play ' + theirs.label.replace(/^Play /, ''));
@@ -75,9 +81,17 @@ app.whenReady().then(async () => {
   await press('Pause ' + theirs.label.replace(/^Play /, ''));
   const paused = await until('au:paused', 10000);
   await shot('audio-paused.png');
-  const result = { platform: process.platform, ready: ready.scene, playing: playing.scene, paused: paused.scene, passed: true };
+  await press('Play Audio Message.caf');
+  const voicing = await until('au:voice', 30000);
+  const spoken = voicing.scene.players[2];
+  assert.ok(spoken.currentTime >= 1 && spoken.elapsed !== '0:00', 'the voice message\'s time and elapsed clock moved');
+  assert.ok(spoken.filled > 0, 'its waveform fills');
+  assert.equal(spoken.unplayed, false, 'its mark is gone once played');
+  assert.equal(voicing.scene.players[0].playing, false, 'one recording plays at a time');
+  await shot('audio-voice.png');
+  const result = { platform: process.platform, ready: ready.scene, playing: playing.scene, paused: paused.scene, voice: voicing.scene, passed: true };
   writeFileSync(path.join(output, 'report.json'), JSON.stringify(result, null, 2));
-  console.log('AUDIO PROOF ' + JSON.stringify({ platform: result.platform, playing: first, paused: paused.scene.players[0] }));
+  console.log('AUDIO PROOF ' + JSON.stringify({ platform: result.platform, playing: first, paused: paused.scene.players[0], voice: spoken }));
   win.destroy(); rmSync(profile, { recursive: true, force: true });
   clearTimeout(bound); app.exit(0);
 }).catch(async (error) => {
