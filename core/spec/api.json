@@ -39,6 +39,10 @@
     "search": {
       "default": 50,
       "max": 200
+    },
+    "changes": {
+      "default": 200,
+      "max": 500
     }
   },
   "routes": [
@@ -86,6 +90,18 @@
         "limit"
       ],
       "returns": "ChatList"
+    },
+    {
+      "id": "changes",
+      "method": "GET",
+      "path": "/api/v1/changes",
+      "scope": "read",
+      "query": [
+        "since",
+        "limit",
+        "chats"
+      ],
+      "returns": "ChangeList"
     },
     {
       "id": "messages",
@@ -189,6 +205,13 @@
         "part"
       ],
       "returns": "binary"
+    },
+    {
+      "id": "attachment-played",
+      "method": "POST",
+      "path": "/api/v1/attachments/:attachmentId/played",
+      "scope": "send",
+      "returns": "AttachmentPlayed"
     },
     {
       "id": "link-media",
@@ -319,7 +342,8 @@
     "server.state": "ServerState",
     "settings.changed": "SettingsEvent",
     "mac.state": "MacEvent",
-    "server.update": "ServerUpdate"
+    "server.update": "ServerUpdate",
+    "attachment.played": "AttachmentPlayed"
   },
   "models": {
     "Health": {
@@ -425,6 +449,24 @@
       "senderName": "string?",
       "edited": "boolean?"
     },
+    "ChangeList": {
+      "cursor": "string",
+      "reset": "boolean?",
+      "more": "boolean",
+      "messages": "Message[]",
+      "reactions": "ReactionEvent[]",
+      "unsent": "Unsent[]",
+      "reads": "ReadReceipt[]"
+    },
+    "Unsent": {
+      "id": "string",
+      "chatId": "string"
+    },
+    "ReadReceipt": {
+      "id": "string",
+      "chatId": "string",
+      "readAt": "string"
+    },
     "MessageList": {
       "messages": "Message[]",
       "hasMore": "boolean",
@@ -473,7 +515,13 @@
       "bytes": "number",
       "sticker": "boolean",
       "missing": "boolean",
-      "live": "boolean?"
+      "live": "boolean?",
+      "voice": "boolean?",
+      "played": "boolean?"
+    },
+    "AttachmentPlayed": {
+      "attachmentId": "string",
+      "played": "boolean"
     },
     "LinkCard": {
       "url": "string",
