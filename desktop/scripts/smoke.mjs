@@ -133,7 +133,7 @@ const checks = [
   { key: 'themeUrl', bound: 'true', value: (report) => report.themeUrl, test: (v) => v === true },
   { key: 'themePage', bound: 'true', value: (report) => report.themePage, test: (v) => v === true },
   { key: 'themePicker', bound: 'true', value: (report) => report.themePicker, test: (v) => v === true },
-  { key: 'choiceContrast', bound: 'true', value: (report) => report.choiceContrast, test: (v) => v === true },
+  { key: 'choiceContrast', bound: 'every skin switch label, the text size reading and both bubbles read at 4.5:1 in light and dark of the default palette and an imported theme, and the received bubble is the theme\'s accent bubble, standing out more than ours (issue 459)', value: (report) => report.choiceContrast, test: (v) => v === true },
   { key: 'notices', bound: 'true', value: (report) => report.notices, test: (v) => v === true },
   { key: 'updates', bound: 'true', value: (report) => report.updates, test: (v) => v === true },
   { key: 'about', bound: 'true', value: (report) => report.about, test: (v) => v === true },
