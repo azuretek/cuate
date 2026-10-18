@@ -180,6 +180,34 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
 /* A message changed after it was sent says so under its bubble, quietly, on its own side (issue 391). */
 .edited-mark { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+/* The effect a message was sent with (issue 442). A quiet line under the message names it, with a Replay control; a
+   bubble effect plays on the bubble through the kit, and a screen effect draws its pieces in one layer over the
+   conversation, which takes no press. Invisible Ink veils the words until the bubble is pressed. Every colour is a
+   chart or role token and every length a size or space token; under reduced motion nothing plays, nothing is offered
+   to replay, the veil is still, and the line still names the effect. */
+.send-effect-line { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+.send-effect-replay { font: inherit; color: var(--color-accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.bubble[data-ink] { position: relative; cursor: pointer; }
+.bubble[data-ink="veiled"] .ink-words { filter: blur(var(--size-ink-blur)); opacity: 0.4; }
+.ink-veil { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background-image: radial-gradient(circle, currentColor var(--size-ink-grain), transparent calc(var(--size-ink-grain) * 1.5)); background-size: var(--space-1) var(--space-1); opacity: 0.6; animation: ink-shimmer var(--motion-send-bubble) linear infinite alternate; }
+@keyframes ink-shimmer { from { background-position: 0 0; opacity: 0.45; } to { background-position: var(--space-1) var(--space-2); opacity: 0.8; } }
+.screen-effect { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
+.fx-piece { position: absolute; left: 0; top: 0; --fx-colour: var(--color-chart-1); }
+.fx-piece[data-tone="1"] { --fx-colour: var(--color-chart-1); }
+.fx-piece[data-tone="2"] { --fx-colour: var(--color-chart-2); }
+.fx-piece[data-tone="3"] { --fx-colour: var(--color-chart-3); }
+.fx-piece[data-tone="4"] { --fx-colour: var(--color-chart-4); }
+.fx-piece[data-tone="5"] { --fx-colour: var(--color-chart-5); }
+.fx-balloon { width: var(--size-balloon); height: calc(var(--size-balloon) * 1.2); border-radius: 50%; background: var(--fx-colour); }
+.fx-confetti { width: var(--size-confetti); height: calc(var(--size-confetti) * 0.5); background: var(--fx-colour); }
+.fx-heart, .fx-star { color: var(--fx-colour); font-size: var(--font-size-xl); line-height: 1; }
+.fx-heart-big { font-size: var(--size-balloon); }
+.fx-beam { width: 150%; height: var(--space-1); transform-origin: 0 50%; border-radius: var(--radius-pill); background: linear-gradient(to right, var(--fx-colour), transparent); }
+.fx-spark { width: var(--size-typing-dot); height: var(--size-typing-dot); border-radius: 50%; background: var(--fx-colour); box-shadow: 0 0 var(--space-2) var(--fx-colour); }
+.fx-sparkle { width: var(--size-dot); height: var(--size-dot); border-radius: 50%; background: var(--fx-colour); box-shadow: 0 0 var(--space-3) var(--fx-colour); }
+.fx-echo { white-space: nowrap; font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); color: var(--color-fg); }
+.fx-spot { border-radius: var(--radius-lg); box-shadow: 0 0 0 var(--size-spotlight-reach) var(--color-scrim); }
+@media (prefers-reduced-motion: reduce) { .screen-effect { display: none; } .send-effect-replay { display: none; } .bubble[data-ink] .ink-veil { animation: none; } }
 /* A message's actions (issues 138 and 169). A long press with a finger, a long click with the mouse or a right click
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */
@@ -1054,4 +1082,4 @@ app-avatar { display: contents; }
    any picture. */
 .conv-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .conv-backdrop-picture { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
-.conv-body[data-backdrop] :is(.conv-event > span, .separator, .sender, .delivery, .message-note) { background: var(--color-bg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); }
+.conv-body[data-backdrop] :is(.conv-event > span, .separator, .sender, .delivery, .message-note, .send-effect-line) { background: var(--color-bg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); }

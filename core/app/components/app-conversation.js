@@ -21,6 +21,8 @@ import './app-composer.js';
 import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
 import { splitLinks, messageLinks } from '../rules/links.js';
+import { sendEffectLine, sendEffectName, sendEffectKind, INK_EFFECT } from '../rules/send-effects.js';
+import { playBubbleEffect, playScreenEffect } from './send-effects.js';
 import { emojiFallbackParts } from '../rules/emoji.js';
 import { canDrawEmoji } from '../emoji-support.js';
 import { copyToClipboard } from '../clipboard.js';
@@ -77,6 +79,8 @@ class AppConversation extends KitElement {
     // Whether the engine can edit a message (issue 391), handed down from the page, and the message being edited
     // ({ id, text }) while its words are in the composer.
     canEdit: {}, editing: { state: true },
+    // The messages sent with Invisible Ink whose words have been pressed into view (issue 442); every other one is veiled.
+    inkShown: { state: true },
   };
 
   constructor() {
@@ -108,6 +112,7 @@ class AppConversation extends KitElement {
     this.reactFor = null;
     this.canEdit = false;
     this.editing = null;
+    this.inkShown = new Set();
     this.pressTimer = null;
     this.swallowClick = { handleEvent: (e) => this.swallow(e), capture: true };
     // The message menu and an open thread close on a press outside them and on Escape, through the kit's one behaviour
@@ -192,6 +197,7 @@ class AppConversation extends KitElement {
       this.reactFor = null;
       this.editing = null;
       this.revealedId = null;
+      this.inkShown = new Set();
     }
   }
 
@@ -244,6 +250,11 @@ class AppConversation extends KitElement {
       const row = this.rowOf(id);
       const bubble = row && (row.querySelector('.bubble') || row);
       if (!bubble) continue;
+      // A message sent with an effect plays it as it arrives (issue 442): a bubble effect is the way its bubble arrives,
+      // and a screen effect plays over the conversation while the message slides in as any other does.
+      const m = (this.messages || []).find((x) => x.id === id);
+      if (m && m.sendEffect) this.playEffect(m);
+      if (m && sendEffectKind(m.sendEffect) === 'bubble' && m.sendEffect !== INK_EFFECT) continue;
       if (sent && field) {
         // From where its text was typed: the field's start, at the field's line height, then out to its own place.
         const r = field.getBoundingClientRect();
@@ -255,6 +266,25 @@ class AppConversation extends KitElement {
         play(bubble, [{ opacity: 0, translate: '0px ' + rise + 'px', scale: '0.96' }, { opacity: 1, translate: '0px 0px', scale: '1' }]);
       }
     }
+  }
+
+  // The effect a message was sent with, as it arrives or on a press of Replay (issue 442): a bubble effect on its bubble,
+  // a screen effect over the conversation, and Invisible Ink veiled again. The kit plays nothing under reduced motion.
+  playEffect(m) {
+    if (!m || !m.sendEffect) return;
+    if (m.sendEffect === INK_EFFECT && this.inkShown.has(m.id)) this.toggleInk(m.id);
+    const row = this.rowOf(m.id);
+    const bubble = row && row.querySelector('.bubble');
+    if (sendEffectKind(m.sendEffect) === 'bubble') playBubbleEffect(bubble, m.sendEffect);
+    else playScreenEffect(this.querySelector('.screen-effect'), m.sendEffect, { bubble, text: m.text });
+  }
+
+  // A press on a bubble sent with Invisible Ink shows its words, and another veils them again.
+  toggleInk(id) {
+    const next = new Set(this.inkShown);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.inkShown = next;
   }
 
   // A menu or panel opens above its message, and below it when the list has no room above (the first messages), so
@@ -505,17 +535,22 @@ class AppConversation extends KitElement {
     const busy = this.reacting === m.id;
     const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
     const note = this.ownNote && this.ownNote.id === m.id ? this.ownNote.text : this.note && this.note.id === m.id ? this.note.text : '';
+    // Invisible Ink (issue 442): the words are drawn under a veil until the bubble is pressed.
+    const ink = m.sendEffect === INK_EFFECT;
+    const veiled = ink && !this.inkShown.has(m.id);
+    const words = linkedText(m.text, (e, href) => this.openLink(e, href));
     return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${(this.chat.members || []).find((member) => handleKey(member.handle) === handleKey(m.sender))?.name || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
-        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href))}</div>` : nothing}
+        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} data-send-effect=${m.sendEffect || nothing} data-ink=${ink ? (this.inkShown.has(m.id) ? 'shown' : 'veiled') : nothing} @click=${ink ? () => this.toggleInk(m.id) : isReply ? () => this.openThread(m) : nothing}>${ink ? html`<span class="ink-words" aria-hidden=${veiled ? 'true' : nothing}>${words}</span>${veiled ? html`<span class="ink-veil" role="img" aria-label="Invisible Ink, press to reveal"></span>` : nothing}` : words}</div>` : nothing}
         ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
       </div>
       ${m.edited ? html`<div class="edited-mark">Edited</div>` : nothing}
+      ${sendEffectLine(m.sendEffect) ? html`<div class="send-effect-line"><span class="send-effect-name">${sendEffectLine(m.sendEffect)}</span><button type="button" class="send-effect-replay" aria-label=${'Replay ' + sendEffectName(m.sendEffect)} @click=${press(() => this.playEffect(m))}>Replay</button></div>` : nothing}
       ${label ? html`<div class="delivery">${label}${m.note ? ' \u00b7 ' + m.note : ''}</div>` : nothing}
       ${note ? html`<div class="message-note" role="status">${note}</div>` : nothing}
     </div>`;
@@ -560,6 +595,7 @@ class AppConversation extends KitElement {
           ${typingBubble(this.typing, now) ? this.typingRowHtml() : nothing}
           ${this.reveal?.pending ? html`<div class="reveal-pending" role="status">The message you opened is still loading.</div>` : nothing}
         </div>
+        <div class="screen-effect" aria-hidden="true"></div>
         ${thread ? this.threadView() : nothing}
       </div>
       <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} .editing=${this.editing} @send=${(e) => respond(e, this.onSend(e.detail))} @edit-cancel=${() => this.cancelEdit()} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
