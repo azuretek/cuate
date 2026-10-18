@@ -38,7 +38,8 @@ final class LateNoticeTests: XCTestCase {
             return
         }
 
-        // The shell has the notice shown a few seconds later, once the app is on the home screen, as a banner over it.
+        // The shell adds the notice once the app has left for the home screen, due a few seconds later, so it is drawn as a
+        // banner over the home screen and never while the app is in front (issue 466).
         let away = NSPredicate { _, _ in
             clearAlerts()
             if app.state == .runningForeground { XCUIDevice.shared.press(.home) }
@@ -51,14 +52,15 @@ final class LateNoticeTests: XCTestCase {
         }
         let notice = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Late fixture message")).firstMatch
         // A banner is drawn for a few seconds and a slow host can miss it, so a notice not seen as a banner is pressed
-        // where the system keeps it, in Notification Center, which is the same notice and the same press.
+        // where the system keeps it, in Notification Center, which is the same notice and the same press. The wait for
+        // the banner allows for a busy simulator, whose snapshots alone can take tens of seconds.
         // The system slides a notice in from the top, as a banner and in Notification Center alike, so a notice that
         // exists may still be above the screen; it is pressed only once it is on screen and has held still (issue 466).
-        if !pressable(notice, in: springboard, timeout: 15) {
+        if !pressable(notice, in: springboard, timeout: 30) {
             keep("late-notice-no-banner")
             let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.005))
             top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.7)))
-            guard pressable(notice, in: springboard, timeout: 15) else {
+            guard pressable(notice, in: springboard, timeout: 30) else {
                 keep("late-notice-not-in-center")
                 XCTFail("The notice was neither shown as a banner nor kept in Notification Center: " + springboard.debugDescription)
                 return
@@ -67,7 +69,14 @@ final class LateNoticeTests: XCTestCase {
         } else {
             print("late notice pressed from its banner")
         }
+        // A press in Notification Center can land on the cell without opening it, the first press only expanding it, so a
+        // notice still there and pressable after a while is pressed once more before the app is required in front.
         notice.tap()
+        if !app.wait(for: .runningForeground, timeout: 15), pressable(notice, in: springboard, timeout: 5) {
+            keep("late-notice-pressed-again")
+            print("late notice pressed again")
+            notice.tap()
+        }
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Pressing the notice brings the app back")
 
         let settled = NSPredicate { _, _ in label("late-notice:pass").exists || label("late-notice:fail").exists }
