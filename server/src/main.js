@@ -63,15 +63,16 @@ function engineSetup(config) {
     const root = path.join(dataDir, 'fake-attachments');
     return import('./engine/fake.js').then(({ createFakeImsg }) => {
       const world = createFakeImsg({ attachmentsRoot: root, liveText: process.env.FAKE_LIVE || config.engine.live || null, liveEdit: process.env.FAKE_LIVE_EDIT || null });
-      return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, members: world.members };
+      return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, members: world.members, sendEffects: world.sendEffects };
     });
   }
   // Which messages were edited is read from the Messages store the engine reads, read-only (issue 391), and so is
   // which rows are a conversation's background changing, whose picture the engine names (issue 417), which words carry
   // text effects (issue 433), which messages are voice messages and whether each was played (issue 440), and which
-  // were unsent or read by the other person, so a client can ask what changed since it last looked (issue 441), and
-  // which rows are a person added to a group, removed from it or leaving it, with whom each was about (issue 456).
-  return Promise.all([import('./engine/child.js'), import('./engine/edits.js'), import('./engine/backgrounds.js'), import('./engine/rich-text.js'), import('./engine/voices.js'), import('./engine/changes.js'), import('./engine/members.js')]).then(([{ childTransport }, { createEditReader }, { createBackgroundReader }, { createRichTextReader }, { createVoiceReader }, { createChangeReader }, { createMemberReader }]) => ({
+  // were unsent or read by the other person, so a client can ask what changed since it last looked (issue 441), the
+  // effect a message was sent with (issue 442), and which rows are a person added to a group, removed from it or leaving
+  // it, with whom each was about (issue 456).
+  return Promise.all([import('./engine/child.js'), import('./engine/edits.js'), import('./engine/backgrounds.js'), import('./engine/rich-text.js'), import('./engine/voices.js'), import('./engine/changes.js'), import('./engine/send-effects.js'), import('./engine/members.js')]).then(([{ childTransport }, { createEditReader }, { createBackgroundReader }, { createRichTextReader }, { createVoiceReader }, { createChangeReader }, { createSendEffectReader }, { createMemberReader }]) => ({
     makeTransport: (log) => childTransport({ bin: config.engine.bin, args: ['rpc', ...(config.engine.db ? ['--db', config.engine.db] : [])], log }),
     attachmentsRoot: config.attachmentsRoot || messagesAttachmentsRoot(),
     edits: createEditReader({ dbPath: messagesDatabasePath(config) }),
@@ -79,6 +80,7 @@ function engineSetup(config) {
     backgrounds: createBackgroundReader({ dbPath: messagesDatabasePath(config), bin: config.engine.bin, engineDb: config.engine.db || null }),
     voices: createVoiceReader({ dbPath: messagesDatabasePath(config) }),
     richText: createRichTextReader({ dbPath: messagesDatabasePath(config) }),
+    sendEffects: createSendEffectReader({ dbPath: messagesDatabasePath(config) }),
     members: createMemberReader({ dbPath: messagesDatabasePath(config) }),
   }));
 }

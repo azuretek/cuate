@@ -240,7 +240,7 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   const c = chats[i];
   if (c.lastMessageAt && c.lastMessageAt > message.sentAt) return { chats, known: true };
   const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
-  const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
+  const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0, ...(message.sendEffect ? { sendEffect: message.sendEffect } : {}) };
   const out = chats.slice();
   const photo = message.event && message.event.kind === 'groupPhoto' ? { photo: message.event.photo } : {};
   // A background cleared takes the backdrop away at once; a new one arrives from the server as the chat changing,

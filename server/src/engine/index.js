@@ -69,12 +69,15 @@ const omit = (o, keys) => {
 // richText: where the adapter learns the attributes a message's words carry, its text effects (rich-text.js reads the
 // Messages store; the fake keeps its own), or null where there is no such source, in which case every message is drawn
 // as plain words (issue 433).
+// sendEffects: where the adapter learns the bubble or screen effect a message was sent with (send-effects.js reads the
+// Messages store; the fake keeps its own), or null where there is no such source, in which case no message carries one
+// (issue 442).
 // changes: where the adapter learns which rows were unsent or read by the other person since a mark (changes.js reads
 // the Messages store; the fake keeps its own), or null, in which case no client can ask what changed (issue 441).
 // voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
 // store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
 // client of ours has played, kept by the server ({ has(attachmentId) }), or null.
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, members = null }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, members = null, sendEffects = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -160,8 +163,23 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return rows;
     }
   };
+  // The rows a read holds are asked of the store for the effect each was sent with in one read, and each it names is
+  // marked with Messages' identifier before it is mapped, so the mapping stays the one pure rule (issue 442). A store
+  // that cannot be read leaves every row plain, and says so.
+  const markSendEffects = (rows) => {
+    const asked = sendEffects ? rows.filter((m) => m && m.guid && !m.is_reaction && !m.expressive_send_style_id) : [];
+    if (!asked.length) return rows;
+    try {
+      const found = sendEffects.among(asked.map((m) => String(m.guid)));
+      if (!found.size) return rows;
+      return rows.map((m) => (m && m.guid && found.has(String(m.guid)) ? { ...m, expressive_send_style_id: found.get(String(m.guid)) } : m));
+    } catch (e) {
+      log.emit('sendeffect.failed', { error: failure(e) });
+      return rows;
+    }
+  };
   // Every raw row passes the same marks before it is mapped, whichever read it came from.
-  const prepare = (rows) => markVoices(markRichText(markStoreEvents(rows)));
+  const prepare = (rows) => markVoices(markSendEffects(markRichText(markStoreEvents(rows))));
   // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
   // again only when its background has changed since.
   const backdrops = new Map();
@@ -763,6 +781,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   function stop() {
     stopping = true;
     try { edits?.close?.(); } catch { /* already closed */ }
+    try { sendEffects?.close?.(); } catch { /* already closed */ }
     try { changeReader?.close?.(); } catch { /* already closed */ }
     try { voices?.close?.(); } catch { /* already closed */ }
     try { members?.close?.(); } catch { /* already closed */ }

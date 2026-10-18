@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { writePlist } from './bplist.js';
-import { buildFixtures, imsgReaction, TEXT_RUNS, CONTACTS } from './fixtures.js';
+import { buildFixtures, imsgReaction, TEXT_RUNS, SEND_STYLE_ROWS, CONTACTS } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { compareHistory } from '../../../core/app/rules/history.js';
 
@@ -242,6 +242,16 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     broadcast(m);
     return m;
   };
+  // The fake's stand-in for send-effects.js, with the same shape: of the rows asked about, the ones the store records an
+  // effect on, each with Messages' identifier for it (issue 442). A message that arrives with one keeps it here too.
+  const sendStyles = new Map(Object.entries(SEND_STYLE_ROWS));
+  const sendEffects = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map([...sendStyles].filter(([guid]) => want.has(guid)));
+    },
+    close() {},
+  };
 
   const world = {
     sends,
@@ -282,6 +292,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       voiceFault = error;
     },
     richText,
+    sendEffects,
     // A message unsent by its sender (issue 441): the row empties and is stamped, and nothing is said on the stream.
     unsendElsewhere(guid) {
       const m = messages.find((x) => x.guid === guid && !x.is_reaction);
@@ -329,9 +340,11 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     messages,
     requests: [],
     get attempts() { return attempts; },
-    incoming(chatId, text, sender) {
+    // sendStyle: Messages' identifier for the effect the message was sent with, which the store records (issue 442).
+    incoming(chatId, text, sender, { sendStyle = null } = {}) {
       const chat = chats.find((c) => c.id === chatId);
       const m = add({ chat_id: chatId, is_from_me: false, sender: sender || chat.participants[0], text, is_read: false });
+      if (sendStyle) sendStyles.set(m.guid, String(sendStyle));
       // An unread message raises its conversation's count, as it does in chat.db.
       chat.unread_count = (chat.unread_count || 0) + 1;
       broadcast(m);
