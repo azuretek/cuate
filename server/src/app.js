@@ -65,6 +65,10 @@ const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
 
 export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
   const routes = compile(apiSpec.routes);
+  // A page served from another origin (the desktop app, a phone's web view) is let through for every method a route
+  // answers, read from the routes themselves: a list kept by hand left DELETE out, so the browser's preflight refused
+  // removing a person from a group, and a phone unregistering its push, before either reached a route (issue 456).
+  const allowMethods = [...new Set([...routes.map((r) => r.method), 'OPTIONS'])].join(', ');
   const previews = new Map();
   const paging = apiSpec.paging;
   const LIST_TTL_MS = 5 * 60 * 1000;
@@ -436,7 +440,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     const url = new URL(req.url, 'http://127.0.0.1');
     res.setHeader('access-control-allow-origin', '*');
     res.setHeader('access-control-allow-headers', 'authorization, content-type, traceparent');
-    res.setHeader('access-control-allow-methods', 'GET, POST, PUT, OPTIONS');
+    res.setHeader('access-control-allow-methods', allowMethods);
     res.setHeader('access-control-max-age', '600');
     if (req.method === 'OPTIONS') {
       res.setHeader('access-control-allow-private-network', 'true');

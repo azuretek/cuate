@@ -8,7 +8,7 @@ import { createEngine } from '../src/engine/index.js';
 import { createMemberReader } from '../src/engine/members.js';
 import { createContacts } from '../src/contacts.js';
 import { createLogger } from '../../core/kit/log.js';
-import { logSpec } from '../src/paths.js';
+import { logSpec, apiSpec } from '../src/paths.js';
 import { eventText, chatPreview, applyMessageToChats, upsertChat } from '../../core/app/rules/chats.js';
 import { MEMBER_ACTIONS, memberAction } from '../../core/app/rules/engine-imsg.js';
 import { buildFixtures, SCRIPT, CONTACTS } from '../src/engine/fixtures.js';
@@ -198,4 +198,13 @@ test('end to end: the history draws each line, a change on another phone or from
   await waitFor(() => a.frames.some((f) => f.type === 'event' && f.name === 'chat.changed' && f.data.id === '2' && f.data.participants.includes('priya@example.com')));
   const since = await (await s.get('/api/v1/changes?since=' + encodeURIComponent(head.cursor), s.tokens.device)).json();
   assert.deepEqual(since.messages.filter((m) => m.event).map(eventText), ['Jordan Lee added Priya Shah to the conversation']);
+});
+
+test('a page on another origin may remove a person: the preflight allows every method a route answers (issue 456)', async (t) => {
+  const s = await boot();
+  t.after(() => s.close());
+  const res = await fetch(s.base + '/api/v1/chats/2/members/' + encodeURIComponent('riley@example.com'), { method: 'OPTIONS', headers: { origin: 'http://elsewhere.test', 'access-control-request-method': 'DELETE', 'access-control-request-headers': 'authorization' } });
+  assert.equal(res.status, 204);
+  const allowed = String(res.headers.get('access-control-allow-methods') || '').split(',').map((m) => m.trim());
+  for (const method of new Set(apiSpec.routes.map((r) => r.method))) assert.ok(allowed.includes(method), method + ' is let through, as every route answering it needs');
 });

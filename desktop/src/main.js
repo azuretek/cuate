@@ -2150,6 +2150,8 @@ async function runSmoke(w) {
     const mbRemoveDrawn = await mbSettle(mbLined(MB_REMOVE));
     const mbRemovePerson = await mbSettle('!' + mbListed(MB_PERSON), 10000);
     const mbRemovePreview = await mbSettle(mbPreview(mbId, MB_REMOVE), 10000);
+    // What the page shows once the removal has settled, so a red check says which part failed and why.
+    const mbRemoved = { drawn: mbRemoveDrawn, person: mbRemovePerson, preview: mbRemovePreview, ...(await js("(() => { const r = document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(mbId) + ") + '\"]'); return { lines: [...document.querySelectorAll('.messages .bubble-row.event')].map((x) => x.textContent.trim()), listed: r ? (r.querySelector('.chat-preview') || {}).textContent : null, problem: (document.querySelector('app-group-info .compose-problem') || {}).textContent || null }; })()")) };
     await js("document.querySelector('app-group-info .confirm-actions .button.primary').click()");
     await waitFor("!document.querySelector('app-group-info .group-info-person')");
     // The smoke's group goes, as the edit step's does, and the list is in the order it had.
@@ -2168,7 +2170,7 @@ async function runSmoke(w) {
       orderKept: mbGone,
     };
     report.groupMembers = Object.values(mbChecks).every(Boolean);
-    console.log('group members: ' + JSON.stringify({ checks: mbChecks, mbAdded, mbLeft, mbEmpty, mbId, mbMineLine, mbBefore }));
+    console.log('group members: ' + JSON.stringify({ checks: mbChecks, mbAdded, mbLeft, mbEmpty, mbId, mbMineLine, mbBefore, mbRemoved }));
   }
 
   // The Edit control stays one line (it replaced Add group, which issue 122 held to this): at the smallest window the
@@ -2982,7 +2984,8 @@ async function runSmoke(w) {
   report.notices = report.noticeFired && report.noticeSuppressed;
 
   // A pressed message notice opens its conversation at its message (issue 331): a notice raised through the bridge for
-  // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
+  // the oldest message of a listed conversation that is not open (a hidden one, such as the group members step's, is
+  // never drawn, so its message can never be in view), pressed through the same handler the system's press calls,
   // leaves that conversation open with that message in view and focused, and never marked (issue 368): no ring on the
   // row or its bubble, and nothing animating it.
   await smokeStep('notice opens');
@@ -2991,7 +2994,7 @@ async function runSmoke(w) {
   // in force (Settings, for the steps that follow) is put back once the press is checked.
   const pressView = await js("document.querySelector('app-root').view");
   const pressList = await js("document.querySelector('app-root').listOpen");
-  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
+  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const hidden = (r.settings && r.settings['chats.hidden']) || []; const other = r.chats.find((c) => c.id !== r.openChatId && !hidden.includes(c.id)); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
   smokeNotices.length = 0;
   let pressSeen = null;
   if (pressTo) {
