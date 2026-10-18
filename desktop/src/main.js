@@ -2683,12 +2683,17 @@ async function runSmoke(w) {
   // The Import button shows the import in flight (issue 140), so the step waits for its press to settle. presses is how
   // many times it is pressed at once: the double press must reach the theme's host once.
   const importButton = "document.querySelector('app-settings .theme-url-action')";
-  const importUrl = async (url, presses = 1) => {
+  // A theme page's import also fetches its fonts from Google Fonts through the server (server/src/theme-fonts.js): each
+  // family it names is asked in turn, its stylesheet and then its files each bounded at 10 s, beside the page and the
+  // registry item at 10 s each. Elegant Luxury names two families, so the server may take up to a minute before it
+  // answers, and the wait for that press covers the server's own bound rather than a slow font service failing the smoke.
+  const THEME_PAGE_IMPORT_MS = 60000;
+  const importUrl = async (url, presses = 1, settleMs = 15000) => {
     await waitFor(importButton + ".dataset.press !== 'pending'", 15000);
     await js(`(() => { const i = document.querySelector('app-settings .theme-url-input'); i.value = ${JSON.stringify(url)}; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await waitFor('!' + importButton + '.disabled');
     const states = await js('(() => { const b = ' + importButton + '; const seen = []; for (let i = 0; i < ' + presses + '; i += 1) { b.click(); seen.push(b.dataset.press || \'idle\'); } return seen; })()');
-    await waitFor(importButton + ".dataset.press !== 'pending' && Boolean(document.querySelector('app-settings .theme-url-note'))", 15000);
+    await waitFor(importButton + ".dataset.press !== 'pending' && Boolean(document.querySelector('app-settings .theme-url-note'))", settleMs);
     return { note: await js("document.querySelector('app-settings .theme-url-note').textContent"), states };
   };
   try {
@@ -2716,7 +2721,9 @@ async function runSmoke(w) {
     // runner without the network still imports the theme, named in the note. The System, Light, Dark switch and the
     // text size chips are read in each scheme, in this theme and in the default palette, and every label must hold
     // 4.5:1 against what it is drawn on, with the thumb under the selected label (issue 135).
-    const pageNote = await importUrl(themeBase + '/editor/theme?theme=elegant-luxury');
+    const pageStarted = Date.now();
+    const pageNote = await importUrl(themeBase + '/editor/theme?theme=elegant-luxury', 1, THEME_PAGE_IMPORT_MS);
+    console.log('theme page import: ' + JSON.stringify({ ms: Date.now() - pageStarted }));
     const lux = ((await held())['appearance.themes'] || []).find((t) => t.id === 'elegant-luxury');
     report.themePageHeld = Boolean(lux) && lux.name === 'Elegant Luxury' && lux.font?.family === 'Poppins, sans-serif' && lux.radius?.md === '0.375rem' && Boolean(lux.shadow?.md);
     await waitFor("Boolean(document.querySelector('app-settings .theme-card[data-theme-id=\"elegant-luxury\"]'))", 10000);
