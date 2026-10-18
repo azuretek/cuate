@@ -12,7 +12,7 @@ test('a typing state expires on its own and announces a stop', async () => {
   typing.relay({ chatId: '1', from: 'device-a', typing: true });
   assert.deepEqual(seen.map((s) => s.data.typing), [true]);
   assert.equal(seen[0].except, 'device-a', 'the device that sent it is left out of its own start');
-  await new Promise((r) => setTimeout(r, 70));
+  await waitFor(() => seen.length === 2);
   assert.deepEqual(seen.map((s) => s.data.typing), [true, false], 'the stale state ends itself');
   assert.equal(typing.size(), 0);
 });
@@ -127,7 +127,7 @@ test('outbound typing taken down when a device goes quiet, and an engine refusal
   const told = [];
   const typing = createTyping({ publish: () => {}, outbound: (chatId, on) => { told.push([chatId, on]); return Promise.reject(new Error('refused')); }, ttlMs: 30 });
   typing.relay({ chatId: '3', from: 'a', typing: true });
-  await new Promise((r) => setTimeout(r, 70));
+  await waitFor(() => told.length === 2);
   assert.deepEqual(told, [['3', true], ['3', false]], 'the expiry takes it down');
 });
 
