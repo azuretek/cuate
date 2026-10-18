@@ -120,6 +120,7 @@ const checks = [
   { key: 'windowBar', bound: 'true', value: (report) => report.windowBar, test: (v) => v === true },
   { key: 'appMenu', bound: 'true', value: (report) => report.appMenu, test: (v) => v === true },
   { key: 'live', bound: 'true', value: (report) => report.live, test: (v) => v === true },
+  { key: 'sendEffects', bound: 'a message sent with an effect is named under it with Replay, plays nothing from the history, plays as it arrives (a bubble effect on its bubble, a screen effect over the conversation), Invisible Ink is veiled in the bubble and the preview until pressed, and nothing plays under reduced motion (issue 442)', value: (report) => report.sendEffects, test: (v) => v === true },
   { key: 'sent', bound: 'true', value: (report) => report.sent, test: (v) => v === true },
   { key: 'edit', bound: 'an edit made on another device and one made here each replace the words live, marked Edited, in the conversation, the list preview and on reload (issue 391)', value: (report) => report.edit, test: (v) => v === true },
   { key: 'typingBubble', bound: 'the other person typing draws three dots under the newest message and clears, a reader scrolled up is not moved, and our other device is a header note (issue 390)', value: (report) => report.typingBubble, test: (v) => v === true },

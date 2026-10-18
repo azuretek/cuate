@@ -764,6 +764,100 @@ async function runSmoke(w) {
   await pause(300);
   await shot('03-after-send.png');
 
+  // Bubble and screen effects (issue 442). The fake engine's group holds Jordan's plan for Saturday sent with Confetti,
+  // which the server reads from the store. Opening the group names it under the message and plays nothing (the history
+  // is a place, not news); Replay plays it over the conversation, a layer that takes no press. Each message that arrives
+  // through the page's own event handler, the path the server's message.new takes, plays as it lands: Slam on its
+  // bubble, Love over the conversation, and Invisible Ink veils its words, in the list preview too, until pressed.
+  // Under reduced motion nothing plays and nothing is offered to replay, and the line still names the effect.
+  {
+    await smokeStep('send effects');
+    const sfxCdp = (method, params) => { if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); return wc.debugger.sendCommand(method, params); };
+    const sfxMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+    const sfxBack = await js("document.querySelector('app-root').openChatId");
+    const sfxOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    };
+    const sfxLayer = () => js(`(() => {
+      const layer = document.querySelector('.screen-effect');
+      const pieces = layer ? [...layer.querySelectorAll('.fx-piece')] : [];
+      return { effect: layer ? layer.dataset.effect || null : null, pieces: pieces.length, running: pieces.flatMap((p) => p.getAnimations()).filter((a) => a.playState === 'running' && a.id === 'send-' + (layer.dataset.effect || '')).length, pointer: layer ? getComputedStyle(layer).pointerEvents : null };
+    })()`);
+    const sfxRow = (id) => js(`(() => {
+      const r = document.querySelector('.messages .bubble-row[data-id=' + JSON.stringify(${JSON.stringify(id)}) + ']');
+      if (!r) return { found: false };
+      r.scrollIntoView({ block: 'center' });
+      const b = r.querySelector('.bubble');
+      const replay = r.querySelector('.send-effect-replay');
+      const words = b && b.querySelector('.ink-words');
+      return { found: true, line: (r.querySelector('.send-effect-name') || {}).textContent || '', replay: Boolean(replay), replayShown: Boolean(replay && replay.offsetParent), running: b ? b.getAnimations().filter((a) => a.playState === 'running' && String(a.id).startsWith('send-')).length : 0, ink: b ? b.dataset.ink || null : null, filter: words ? getComputedStyle(words).filter : null, text: b ? b.textContent.trim() : '' };
+    })()`);
+    const sfxArrive = (id, sendEffect, text) => js(`(() => {
+      const r = document.querySelector('app-root');
+      r.onEvent({ name: 'message.new', data: { message: { id: ${JSON.stringify(id)}, chatId: '2', fromMe: false, sender: 'jordan@example.com', senderName: 'Jordan Lee', text: ${JSON.stringify(text)}, sentAt: new Date().toISOString(), replyTo: null, read: false, attachments: [], link: null, payloads: 0, reactions: [], sendEffect: ${JSON.stringify(sendEffect)} } } });
+      return true;
+    })()`);
+    const sfxQuiet = () => waitFor("!document.querySelector('.screen-effect .fx-piece')", 15000).catch(() => {});
+    await sfxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    await sfxOpen('1');
+    await sfxOpen('2');
+    await pause(400);
+    const history = await sfxRow('FAKE-0007');
+    const opened = await sfxLayer();
+    await js("document.querySelector('.messages .bubble-row[data-id=\"FAKE-0007\"] .send-effect-replay').click()");
+    await waitFor("document.querySelector('.screen-effect')?.dataset.effect === 'confetti' && document.querySelectorAll('.screen-effect .fx-piece').length > 0", 5000).catch(() => {});
+    await pause(500);
+    const replayed = await sfxLayer();
+    await shot('03e-send-effect-confetti.png');
+    await sfxQuiet();
+    await sfxArrive('SMOKE-FX-SLAM', 'slam', 'Slammed in by the smoke');
+    await waitFor("Boolean(document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-SLAM\"] .bubble'))", 5000).catch(() => {});
+    const slam = await sfxRow('SMOKE-FX-SLAM');
+    const slamLayer = await sfxLayer();
+    await sfxArrive('SMOKE-FX-LOVE', 'love', 'Sent with love by the smoke');
+    await waitFor("document.querySelector('.screen-effect')?.dataset.effect === 'love'", 5000).catch(() => {});
+    await pause(300);
+    const love = await sfxLayer();
+    await shot('03f-send-effect-love.png');
+    await sfxQuiet();
+    await sfxArrive('SMOKE-FX-INK', 'invisible-ink', 'A secret from the smoke');
+    await waitFor("Boolean(document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-INK\"] .bubble'))", 5000).catch(() => {});
+    const veiled = await sfxRow('SMOKE-FX-INK');
+    const preview = await js("(() => { const p = document.querySelector('.chat-row[data-chat=\"2\"] .chat-preview'); return p ? p.textContent : ''; })()");
+    await shot('03g-send-effect-ink.png');
+    await js("document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-INK\"] .bubble').click()");
+    await pause(200);
+    const shown = await sfxRow('SMOKE-FX-INK');
+    await sfxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await pause(200);
+    await js("document.querySelector('.messages .bubble-row[data-id=\"FAKE-0007\"] .send-effect-replay').click()");
+    await pause(300);
+    const reducedLayer = await sfxLayer();
+    const reducedLine = await sfxRow('FAKE-0007');
+    await sfxArrive('SMOKE-FX-GENTLE', 'gentle', 'Gently from the smoke');
+    await waitFor("Boolean(document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-GENTLE\"] .bubble'))", 5000).catch(() => {});
+    const gentle = await sfxRow('SMOKE-FX-GENTLE');
+    await sfxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: sfxMotionWas }] });
+    // The arrivals were the page's own; reading the server again puts back what it holds, for the steps after this one.
+    await js("document.querySelector('app-root').reload()");
+    await pause(800);
+    if (sfxBack !== null && String(sfxBack) !== '2') await sfxOpen(String(sfxBack));
+    const sfxChecks = {
+      named: history.found && history.line === 'Sent with Confetti' && history.replay && history.replayShown,
+      historyStill: opened.pieces === 0,
+      replays: replayed.effect === 'confetti' && replayed.running > 0 && replayed.pointer === 'none',
+      bubbleArrives: slam.found && slam.running > 0 && slam.line === 'Sent with Slam' && slamLayer.pieces === 0,
+      screenArrives: love.effect === 'love' && love.running > 0,
+      inkVeiled: veiled.ink === 'veiled' && Boolean(veiled.filter) && veiled.filter !== 'none' && veiled.line === 'Sent with Invisible Ink',
+      inkPreview: preview.includes('Sent with Invisible Ink') && !preview.includes('A secret from the smoke'),
+      inkPressed: shown.ink === 'shown' && shown.text === 'A secret from the smoke',
+      reducedStill: reducedLayer.pieces === 0 && reducedLine.line === 'Sent with Confetti' && !reducedLine.replayShown && gentle.found && gentle.running === 0 && gentle.line === 'Sent with Gentle',
+    };
+    report.sendEffects = Object.values(sfxChecks).every(Boolean);
+    console.log('send effects: ' + JSON.stringify({ checks: sfxChecks, history, opened, replayed, slam, slamLayer, love, veiled, preview, shown, reducedLayer, reducedLine, gentle }));
+  }
+
   // The other person typing (issue 390): an incoming bubble of three dots at the foot of the conversation, under the
   // newest message, gone when typing stops. The event goes through the page's own event handler, the path the server's
   // typing event takes. A view at its end follows the bubble in, a reader scrolled up stays on their message, the dots
