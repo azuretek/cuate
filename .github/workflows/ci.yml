@@ -155,6 +155,25 @@ jobs:
         if: runner.os != 'Linux'
         timeout-minutes: 6
         run: pnpm --filter desktop exec electron scripts/prove-window-chrome.mjs --shots "${{ runner.temp }}/proof-window-chrome"
+      # The message store's proof (desktop/scripts/prove-message-cache.mjs, issue 441): the same fixture the iOS and
+      # Android legs run, in Electron's own web view, measuring a cold and a warm launch over an emulated slow link with
+      # the store and without it. It fails when a warm launch reads a page or a picture again, or costs more than a
+      # fraction of the bytes and the time it did. The report and a capture of each launch go up as an artifact.
+      - name: Prove the message store's launch cost (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 8
+        run: xvfb-run -a -s "-screen 0 1280x900x24" pnpm --filter desktop exec electron scripts/prove-message-cache.mjs --out "${{ runner.temp }}/proof-message-cache"
+      - name: Prove the message store's launch cost (macOS, Windows)
+        if: runner.os != 'Linux'
+        timeout-minutes: 8
+        run: pnpm --filter desktop exec electron scripts/prove-message-cache.mjs --out "${{ runner.temp }}/proof-message-cache"
+      - name: Keep the message store proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: message-cache-proof-${{ matrix.os }}
+          path: ${{ runner.temp }}/proof-message-cache
+          if-no-files-found: warn
       # The tray's own proof (desktop/scripts/prove-tray.mjs, issue 115): the menu the icon carries, as Electron resolves
       # it, checked for its order; that menu captured as the platform draws it; and on macOS the template icon in the
       # light and the dark menu bar. The captures go up as an artifact for the pull request.
