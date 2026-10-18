@@ -212,6 +212,47 @@ test('the audio fixture is a Debug seam the iOS and Android tests play (issue 43
   assert.match(read('core/test/audio-fixture.js'), /drawnLength\(el\) !== '0:00'/, 'the fixture is ready only once every player shows its length');
 });
 
+// The clips outlast the slowest native look: on the iOS simulator XCUITest waited over half a minute for the app to go
+// idle after its press and read the marker several seconds apart, so a four second clip had played to its end and gone
+// back to 0:00 before the first read, and read as never played. Each clip's own header says how long it runs.
+test('the audio fixture clips run long enough for every shell to see them play and press pause (issue 432)', () => {
+  const file = (f) => readFileSync(new URL('./' + f, import.meta.url));
+  // MPEG-4: the movie header's duration over its time scale.
+  const mp4Seconds = (buf) => {
+    const at = buf.indexOf(Buffer.from('mvhd'));
+    assert.ok(at > 0, 'an MPEG-4 file has a movie header');
+    const v1 = buf[at + 4] === 1;
+    const scale = buf.readUInt32BE(at + (v1 ? 24 : 16));
+    const length = v1 ? Number(buf.readBigUInt64BE(at + 28)) : buf.readUInt32BE(at + 20);
+    return length / scale;
+  };
+  // Core Audio: the packet table's valid frames over the description's sample rate.
+  const cafSeconds = (buf) => {
+    const desc = buf.indexOf(Buffer.from('desc'));
+    const pakt = buf.indexOf(Buffer.from('pakt'));
+    assert.ok(desc > 0 && pakt > 0, 'a Core Audio file has a description and a packet table');
+    const rate = buf.readDoubleBE(desc + 12);
+    const frames = Number(buf.readBigInt64BE(pakt + 20));
+    return frames / rate;
+  };
+  const tone = mp4Seconds(file('audio-fixture.m4a'));
+  const voice = cafSeconds(file('voice-fixture.caf'));
+  const copy = mp4Seconds(file('voice-fixture.m4a'));
+  assert.ok(tone >= 59.5 && tone <= 60.5, 'the recording runs a minute, which every test reads as 1:00: ' + tone);
+  assert.ok(voice >= 44.5 && voice <= 45.5, 'the voice message runs 45 seconds, read as 0:45: ' + voice);
+  assert.ok(Math.abs(copy - voice) < 0.5, 'and its copy runs as long: ' + copy);
+  const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  for (const [where, text] of [
+    ['iOS', read('ios/' + naming.product + 'UITests/AudioPlaybackTests.swift')],
+    ['Android', read('android/app/src/androidTest/kotlin/' + naming.ids.android.replace(/\./g, '/') + '/AudioPlaybackTest.kt')],
+    ['desktop', read('desktop/scripts/prove-audio.mjs')],
+  ]) {
+    assert.ok(text.includes('"1:00"') || text.includes("'1:00'"), where + ' reads the recording as 1:00');
+    assert.ok(text.includes('"0:45"') || text.includes("'0:45'"), where + ' reads the voice message as 0:45');
+  }
+});
+
 // The desktop shells play it too: the smoke runs a proof in the shell's own Chromium on every desktop leg, pressing play
 // with real mouse input and reading the same fixture's report.
 test('the desktop smoke plays a recording in its message with real input (issue 432)', () => {

@@ -26,10 +26,10 @@ final class AudioPlaybackTests: XCTestCase {
         SystemSurface.requireOurs(app)
         let before = AudioReport(marker.label)
         XCTAssertEqual(before?.first?["unplayed"] as? Bool, true, "the recording someone else sent is marked not played: " + marker.label)
-        XCTAssertEqual(before?.first?["length"] as? String, "0:04", "it says how long it runs: " + marker.label)
+        XCTAssertEqual(before?.first?["length"] as? String, "1:00", "it says how long it runs: " + marker.label)
         XCTAssertEqual(before?.second?["unplayed"] as? Bool, false, "ours is never marked: " + marker.label)
         XCTAssertEqual(before?.voice?["unplayed"] as? Bool, true, "the voice message is marked not played: " + marker.label)
-        XCTAssertEqual(before?.voice?["length"] as? String, "0:03", "the voice message says how long it runs: " + marker.label)
+        XCTAssertEqual(before?.voice?["length"] as? String, "0:45", "the voice message says how long it runs: " + marker.label)
         let canPlay = before?.voice?["canPlay"] as? String ?? ""
         XCTAssertEqual(before?.voice?["asked"] as? String, canPlay == "probably" ? "original" : "m4a", "the voice message asked for the copy this web view plays: " + marker.label)
         for player in before?.players ?? [] { XCTAssertEqual(player["clear"] as? Bool, true, "the waveform keeps clear of the time: " + marker.label) }

@@ -68,10 +68,10 @@ app.whenReady().then(async () => {
   const ready = await until('au:ready', 60000);
   const [theirs, mine, voice] = ready.scene.players;
   assert.equal(theirs.unplayed, true, 'the recording someone else sent is marked not played');
-  assert.equal(theirs.length, '0:04', 'it says how long it runs');
+  assert.equal(theirs.length, '1:00', 'it says how long it runs');
   assert.equal(mine.unplayed, false, 'ours is never marked');
   assert.equal(voice.unplayed, true, 'the voice message is marked not played');
-  assert.equal(voice.length, '0:03', 'the voice message says how long it runs');
+  assert.equal(voice.length, '0:45', 'the voice message says how long it runs');
   // The copy it asked for matches what this web view plays: the original only where canPlayType says probably.
   assert.equal(voice.asked, voice.canPlay === 'probably' ? 'original' : 'm4a', 'the voice message asked for the copy this web view plays: ' + JSON.stringify(voice));
   for (const p of ready.scene.players) assert.equal(p.clear, true, 'the waveform keeps clear of the time: ' + p.label);

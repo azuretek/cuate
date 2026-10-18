@@ -66,7 +66,7 @@ export function clock(seconds) {
 }
 
 // How long a recording runs, to the nearest second. Web views disagree on a file's last fraction of a second (WebKit
-// reads the four second fixture as 3.95, Chromium as 4.0), and cutting it off made one recording say 0:03 on a phone and
+// reads a four second recording as 3.95, Chromium as 4.0), and cutting it off made one recording say 0:03 on a phone and
 // 0:04 on a desktop; the elapsed clock still counts whole seconds as they pass.
 export function lengthClock(seconds) {
   const s = Number(seconds);

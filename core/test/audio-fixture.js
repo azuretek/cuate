@@ -1,7 +1,7 @@
 // Injected only by native test builds (issue 432). Three recordings in a conversation, drawn as the conversation
 // draws them, in the shell's own web view: one someone else sent, not played yet, one we sent, and a voice message
 // someone else sent (issue 435), a Core Audio file with Opus inside as current iPhones record it. Real components in the
-// real shell, synthetic audio only: a four second tone (core/test/audio-fixture.m4a), a three second voice message
+// real shell, synthetic audio only: a one minute tone (core/test/audio-fixture.m4a), a 45 second voice message
 // (core/test/voice-fixture.caf) and the MPEG-4 copy a server on the Mac makes of it with afconvert
 // (core/test/voice-fixture.m4a), which the shell serves from its test build, or, where the shell cannot serve a test file
 // (Android keeps fixtures in the test package), as base64 the test hands over first in window.fixtureAudioBase64,
@@ -9,6 +9,11 @@
 // copy when the player asks for format=m4a and with the original otherwise, and the report says which it asked for and
 // what the web view's canPlayType answered, so a run shows the copy matches what that web view plays. No server, token
 // or account.
+//
+// Each clip runs far longer than any check needs, because a native test sees the page late: on the iOS simulator
+// XCUITest waited for the app to go idle for over half a minute after its press and polled the marker several seconds
+// apart, so a four second clip had already played to its end and gone back to 0:00 before the first read, and the
+// press on pause would have landed after the end. The proof must outlast the slowest shell's look and second press.
 //
 // The verdict is the native test's: it presses play through the accessibility tree, as a person would, and reads what
 // the page reports on one marker, kept current:
