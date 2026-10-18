@@ -212,6 +212,7 @@ var engine = (() => {
     dropNoticeRead: () => dropNoticeRead,
     durationMs: () => durationMs,
     editRefusal: () => editRefusal,
+    editVersions: () => editVersions,
     emojiFallbackParts: () => emojiFallbackParts,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
@@ -3361,8 +3362,13 @@ var engine = (() => {
     const i = messages.findIndex((m) => m.id === edited.id);
     if (i < 0) return messages;
     const out = messages.slice();
-    out[i] = { ...messages[i], text: edited.text, link: edited.link ?? messages[i].link ?? null, edited: true };
+    const edits = Array.isArray(edited.edits) ? edited.edits : messages[i].edits;
+    out[i] = { ...messages[i], text: edited.text, link: edited.link ?? messages[i].link ?? null, edited: true, ...edits ? { edits } : {} };
     return out;
+  }
+  function editVersions(message) {
+    const list = Array.isArray(message && message.edits) ? message.edits : [];
+    return list.filter((v) => v && typeof v.text === "string" && v.text.trim() !== "").map((v, i) => ({ v, i, at: Date.parse(v.at) })).sort((a, b) => Number.isNaN(a.at) || Number.isNaN(b.at) ? a.i - b.i : a.at - b.at || a.i - b.i).map((x) => x.v);
   }
   function threadRoot(messages, id) {
     return rootIn(new Map((messages || []).map((m) => [m.id, m])), id);

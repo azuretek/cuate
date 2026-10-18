@@ -99,8 +99,20 @@ export function applyEdit(messages, edited) {
   const i = messages.findIndex((m) => m.id === edited.id);
   if (i < 0) return messages;
   const out = messages.slice();
-  out[i] = { ...messages[i], text: edited.text, link: edited.link ?? messages[i].link ?? null, edited: true };
+  // The history the edit grew to comes with it (issue 437); an edit told without one keeps the one it had.
+  const edits = Array.isArray(edited.edits) ? edited.edits : messages[i].edits;
+  out[i] = { ...messages[i], text: edited.text, link: edited.link ?? messages[i].link ?? null, edited: true, ...(edits ? { edits } : {}) };
   return out;
+}
+
+// What an edited message said before (issue 437): its earlier versions the server sent, oldest first, each with words.
+export function editVersions(message) {
+  const list = Array.isArray(message && message.edits) ? message.edits : [];
+  return list
+    .filter((v) => v && typeof v.text === 'string' && v.text.trim() !== '')
+    .map((v, i) => ({ v, i, at: Date.parse(v.at) }))
+    .sort((a, b) => (Number.isNaN(a.at) || Number.isNaN(b.at) ? a.i - b.i : a.at - b.at || a.i - b.i))
+    .map((x) => x.v);
 }
 
 // The first message of the thread a message belongs to, followed up through replyTo (a parent not loaded included).

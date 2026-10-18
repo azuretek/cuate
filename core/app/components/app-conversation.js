@@ -10,7 +10,7 @@ import { chatTitle, eventText } from '../rules/chats.js';
 import { hasContactEditor, handleKey } from '../rules/contacts.js';
 import './app-avatar.js';
 import './app-backdrop.js';
-import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel, editRefusal } from '../rules/messages.js';
+import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel, editRefusal, editVersions } from '../rules/messages.js';
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
@@ -86,11 +86,14 @@ class AppConversation extends KitElement {
     // Whether the engine can edit a message (issue 391), handed down from the page, and the message being edited
     // ({ id, text }) while its words are in the composer.
     canEdit: {}, editing: { state: true },
+    // The edited messages whose earlier versions are shown above them (issue 437), by id.
+    shownEdits: { state: true },
   };
 
   constructor() {
     super();
     this.messages = [];
+    this.shownEdits = new Set();
     this.hasMore = false;
     this.sending = false;
     // What the contact header draws for the platform, and the window's own state for the middle button's glyph, both
@@ -514,20 +517,32 @@ class AppConversation extends KitElement {
     const busy = this.reacting === m.id;
     const open = front && this.pop && this.pop.id === m.id ? this.pop.kind : null;
     const note = this.ownNote && this.ownNote.id === m.id ? this.ownNote.text : this.note && this.note.id === m.id ? this.note.text : '';
+    // What an edited message said before, shown above it oldest first once its Edited control is pressed (issue 437).
+    const versions = m.edited ? editVersions(m) : [];
+    const showEdits = versions.length > 0 && Boolean(this.shownEdits && this.shownEdits.has(m.id));
     return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${(this.chat.members || []).find((member) => handleKey(member.handle) === handleKey(m.sender))?.name || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
+        ${showEdits ? versions.map((v) => html`<div class="bubble edit-version ${kind}">${v.text}</div>`) : nothing}
         ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href), m.styles)}</div>` : nothing}
         ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
       </div>
-      ${m.edited ? html`<div class="edited-mark">Edited</div>` : nothing}
+      ${m.edited && versions.length ? html`<button type="button" class="edited-mark edited-toggle" aria-expanded="${showEdits ? 'true' : 'false'}" @click=${press(() => this.toggleEdits(m.id))}>${showEdits ? 'Hide edits' : 'Edited'}</button>` : m.edited ? html`<div class="edited-mark">Edited</div>` : nothing}
       ${label ? html`<div class="delivery">${label}${m.note ? ' \u00b7 ' + m.note : ''}</div>` : nothing}
       ${note ? html`<div class="message-note" role="status">${note}</div>` : nothing}
     </div>`;
+  }
+
+  // Edited under a message with history shows its earlier versions, and Hide edits folds them away (issue 437).
+  toggleEdits(id) {
+    const next = new Set(this.shownEdits);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.shownEdits = next;
   }
 
   // The open thread: only its original and every reply, in order, each under its day and time, with the delivery status
