@@ -719,6 +719,15 @@ async function runSmoke(w) {
     report.sendOnce = double.press === 'pending' && double.busy === 'true' && double.kept === text && bubblesSent === 1 && serverHeld === 1;
     console.log('send once: ' + JSON.stringify({ double, bubblesSent, serverHeld }));
     report.sent = true;
+    // The bubbles from both sides in each scheme (issue 459): the other person's in the theme's accent, ours the quiet
+    // tint. The choice contrast check measures them; these are the pictures.
+    for (const scheme of ['light', 'dark']) {
+      nativeTheme.themeSource = scheme;
+      await pause(400);
+      await shot('02c-bubbles-' + scheme + '.png');
+    }
+    nativeTheme.themeSource = 'light';
+    await pause(300);
   }
   // Edits (issue 391). The live message's sender edits it on their phone once we have answered it (the fake engine's
   // FAKE_LIVE_EDIT): the new words replace the old in the open conversation, live, marked Edited, and a reload keeps
@@ -2678,14 +2687,31 @@ async function runSmoke(w) {
         out.push({ what: 'switch ' + l.textContent.trim(), on, under: on ? Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 2 : true, fg: rgb(getComputedStyle(l).color), bg: rgb(on ? fill : track) });
       }
       const sv = s.querySelector('.scale-value'); const srows = sv && sv.closest('.sheet-rows'); if (sv) out.push({ what: 'text size', on: false, under: true, fg: rgb(getComputedStyle(sv).color), bg: rgb(getComputedStyle(srows || sv).backgroundColor) });
-      return out;
+      // Both bubbles of the open conversation (issue 459): each keeps its text, and the received one is the accent bubble
+      // the theme resolves, read from the token itself on a probe, against the page it sits on.
+      const bubble = (sel) => [...document.querySelectorAll('.messages ' + sel)].find((b) => !/\\bstate-/.test(b.className));
+      const them = bubble('.bubble.them'); const me = bubble('.bubble.me');
+      if (them) out.push({ what: 'received bubble', on: false, under: true, fg: rgb(getComputedStyle(them).color), bg: rgb(getComputedStyle(them).backgroundColor) });
+      if (me) out.push({ what: 'sent bubble', on: false, under: true, fg: rgb(getComputedStyle(me).color), bg: rgb(getComputedStyle(me).backgroundColor) });
+      const probe = document.createElement('div'); probe.style.cssText = 'position:fixed;width:0;height:0;background:var(--color-bubble-me);color:var(--color-bubble-me-fg)'; document.body.append(probe);
+      const accent = { bg: rgb(getComputedStyle(probe).backgroundColor), fg: rgb(getComputedStyle(probe).color) };
+      probe.style.background = 'var(--role-page)'; const page = rgb(getComputedStyle(probe).backgroundColor); probe.remove();
+      return { pairs: out, accent, page };
     })()`;
     const contrastIn = async (label) => {
       await pause(400);
-      const pairs = await js(choicePairs);
+      const { pairs, accent, page } = await js(choicePairs);
       const rows = pairs.map((p) => ({ what: p.what, on: p.on, under: p.under, ratio: Math.round(contrastRatio(p.fg, p.bg) * 100) / 100 }));
-      const ok = rows.length >= 4 && rows.filter((r) => r.on).length === 1 && rows.every((r) => r.under && r.ratio >= 4.5);
-      console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, rows }));
+      const near = (a, b) => Boolean(a && b) && a.every((v, i) => Math.abs(v - b[i]) <= 2 / 255);
+      const received = pairs.find((p) => p.what === 'received bubble');
+      const sent = pairs.find((p) => p.what === 'sent bubble');
+      const bubbles = {
+        receivedIsAccent: Boolean(received) && near(received.bg, accent.bg) && near(received.fg, accent.fg),
+        sentIsQuiet: Boolean(sent) && !near(sent.bg, accent.bg),
+        receivedStandsOut: Boolean(received && sent) && contrastRatio(received.bg, page) > contrastRatio(sent.bg, page),
+      };
+      const ok = rows.length >= 6 && rows.filter((r) => r.on).length === 1 && rows.every((r) => r.under && r.ratio >= 4.5) && Object.values(bubbles).every(Boolean);
+      console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, bubbles, rows }));
       return ok;
     };
     const drawn = {};

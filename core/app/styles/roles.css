@@ -1,7 +1,7 @@
 /* The surface roles (issue 217, the "chart colours" direction Abi chose). Every surface the eye has to separate
    reads one role here, and a role is only a pointer at a palette token the theme carries, so an imported theme
    restyles every surface and this block is the one place the direction lives. The theme's chart colours finally earn
-   their place: avatars cycle through chart-1 to chart-5, notices and received bubbles take a chart-2 tint, the sort,
+   their place: avatars cycle through chart-1 to chart-5, notices and our own sent bubbles take a chart-2 tint, the sort,
    filter and menu hovers use chart-3, the chips chart-4, and the unread mark chart-1. The text pairs these roles draw
    are held at 4.5:1 in both schemes of the default palette and an imported theme by core/test/roles.test.js. */
 :root {
@@ -43,10 +43,13 @@
   --role-composer-field-ring: color-mix(in oklab, var(--color-accent) 22%, var(--color-border));
   --role-focus: var(--color-ring);
 
-  --role-sent: var(--color-bubble-me);
-  --role-sent-fg: var(--color-bubble-me-fg);
-  --role-received: color-mix(in oklab, var(--color-chart-2) 14%, var(--color-bg));
-  --role-received-fg: var(--color-fg);
+  /* The other person's bubble is the bright one (issue 459): it wears the theme's accent bubble, the bubble-me token an
+     import fills from the theme's primary (the token keeps its name because held themes carry it), and ours is the quiet
+     chart-2 tint, one colour whatever the platform. */
+  --role-received: var(--color-bubble-me);
+  --role-received-fg: var(--color-bubble-me-fg);
+  --role-sent: color-mix(in oklab, var(--color-chart-2) 14%, var(--color-bg));
+  --role-sent-fg: var(--color-fg);
 
   /* A notice wears the sheet's own surface (issue 342): the raised card and its plain border. */
   --role-notice: var(--color-bg-raised);

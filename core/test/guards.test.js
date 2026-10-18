@@ -673,8 +673,9 @@ test('no component overrides a DOM method the renderer calls', () => {
   }
 });
 
-// Abi, 2026-10-12: every message we send wears the theme's colour whatever the platform. The lock is in the message's
-// menu beside the time, and the Apple-devices mark is beside the conversation's name.
+// 2026-10-12: what we send is one colour whatever the platform (since issue 459 the quiet bubble, the other person's
+// wearing the accent). The lock is in the message's menu beside the time, and the Apple-devices mark is beside the
+// conversation's name.
 test('one colour for what we send, a lock in the menu and a mark by the name', () => {
   const src = read('core/app/components/app-conversation.js');
   const css = read('core/app/styles/app.css');
