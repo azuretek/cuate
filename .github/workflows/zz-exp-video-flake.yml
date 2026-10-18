@@ -1,0 +1,56 @@
+name: experiment video flake
+
+# Temporary: the held video controls test, with the viewer as it was and as it is on this branch.
+on: create
+
+permissions:
+  contents: read
+
+jobs:
+  held:
+    name: held (${{ matrix.viewer }} ${{ matrix.replica }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        viewer: [before, after]
+        replica: [a, b]
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+      - name: The viewer as it was
+        if: matrix.viewer == 'before'
+        run: git checkout HEAD~2 -- ../core/app/components/app-image-viewer.js && git status --short
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Loop
+        timeout-minutes: 25
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          working-directory: android
+          script: bash scripts/exp-video-loop.sh ${{ matrix.viewer }}
+      - name: Keep
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp3-${{ matrix.viewer }}-${{ matrix.replica }}
+          path: android/exp
+          if-no-files-found: warn
