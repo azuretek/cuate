@@ -10,12 +10,17 @@ build="${BUILD:-0}"
 commit="${COMMIT:-unknown}"
 app="$out/Cuate Helper.app"
 
-rm -rf "$app" "$out/obj"
-mkdir -p "$app/Contents/MacOS" "$out/obj"
-for arch in arm64 x86_64; do
-  xcrun swiftc -O -target "$arch-apple-macos13.0" -o "$out/obj/cuate-helper-$arch" "$here/Sources/main.swift"
-done
-lipo -create -output "$app/Contents/MacOS/cuate-helper" "$out/obj/cuate-helper-arm64" "$out/obj/cuate-helper-x86_64"
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+echo "== swift build (universal)"
+xcrun swift build -c release --package-path "$here" --arch arm64 --arch x86_64
+binary="$(xcrun swift build -c release --package-path "$here" --arch arm64 --arch x86_64 --show-bin-path)/cuate-helper"
+[ -x "$binary" ] || { echo "missing built binary at $binary"; exit 1; }
+cp "$binary" "$app/Contents/MacOS/cuate-helper"
+chmod 755 "$app/Contents/MacOS/cuate-helper"
+lipo -info "$app/Contents/MacOS/cuate-helper"
+
 sed -e "s/@VERSION@/$version/" -e "s/@BUILD@/$build/" -e "s/@COMMIT@/$commit/" "$here/Info.plist.in" > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
 

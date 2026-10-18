@@ -1,6 +1,7 @@
 # Spike for issue #479 (Phase 0c). Lives only on its spike branch, which never merges.
-# Signs Cuate Helper.app with the Developer ID Application certificate, notarizes it with the
-# App Store Connect API key, staples it and verifies it, then uploads the stapled bundle.
+# Tests the capability model, signs Cuate Helper.app with the Developer ID Application
+# certificate, notarizes it with the App Store Connect API key, staples it and verifies it,
+# then uploads the stapled bundle.
 name: spike-mac-helper
 on:
   push:
@@ -19,6 +20,9 @@ jobs:
       APP: spike/mac-helper/build/Cuate Helper.app
     steps:
       - uses: actions/checkout@v4
+
+      - name: Test the capability model
+        run: xcrun swift test --package-path "$HELPER"
 
       - name: Import the Developer ID certificate into a temporary keychain
         env:
@@ -86,6 +90,7 @@ jobs:
           xcrun stapler validate "$APP"
           codesign --display --requirements - "$APP"
           plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist"
+          plutil -p "$APP/Contents/Info.plist" | grep -E 'NSContactsUsageDescription|NSAppleEventsUsageDescription|LSUIElement'
           ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/Cuate-Helper.zip"
           shasum -a 256 "$RUNNER_TEMP/Cuate-Helper.zip"
 

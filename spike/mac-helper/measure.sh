@@ -24,6 +24,8 @@ responsible() { sudo -n launchctl procinfo "$1" 2>&1 | grep -E '^responsible (pi
 
 start="$(date '+%Y-%m-%d %H:%M:%S')"
 echo "== $label at $start"
+echo "== tests"
+bash "$here/test.sh" || echo "tests failed"
 if [ -n "$zip" ]; then
   launchctl bootout "$domain/$job" 2>/dev/null
   rm -rf "$app" && mkdir -p "$HOME/Applications" && ditto -x -k "$zip" "$HOME/Applications/"
@@ -37,6 +39,13 @@ xcrun stapler validate "$app"
 codesign --display --verbose=2 "$app" 2>&1 | grep -E '^(Identifier|TeamIdentifier|CDHash)='
 codesign --display --requirements - "$app" 2>&1 | grep designated
 echo "version $(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")"
+echo "== Info.plist privacy keys"
+plutil -p "$app/Contents/Info.plist" | grep -E 'UsageDescription|LSUIElement|NSPrincipalClass'
+
+echo "== capability object from the bundle, headless"
+"$app/Contents/MacOS/cuate-helper" --capabilities
+"$app/Contents/MacOS/cuate-helper" --setup-model
+"$app/Contents/MacOS/cuate-helper" --menu-model
 
 echo "== launchd agent"
 sed -e "s|@LABEL@|$job|" -e "s|@APP@|$app|" -e "s|@DATA@|$data|g" "$here/agent.plist.in" > "$data/agent.plist"
@@ -49,8 +58,12 @@ launchctl print "$domain/$job" | grep -E '^\s+(program|pid|state) = '
 echo "helper pid $pid"
 responsible "$pid"
 node "$here/client.mjs" "$data/run/helper.sock" hello
+node "$here/client.mjs" "$data/run/helper.sock" capabilities
 node "$here/client.mjs" "$data/run/helper.sock" chatdb.count
 node "$here/client.mjs" "$data/run/helper.sock" tcc.preflight
+node "$here/client.mjs" "$data/run/helper.sock" setup.model
+node "$here/client.mjs" "$data/run/helper.sock" menu.model
+node "$here/client.mjs" "$data/run/helper.sock" send.preflight
 
 echo "== control: the same executable spawned by node"
 rm -f "$data/run/control.sock" "$data/control.out"
