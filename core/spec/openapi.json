@@ -2243,6 +2243,9 @@
           },
           "strikethrough": {
             "type": "boolean"
+          },
+          "mention": {
+            "type": "string"
           }
         },
         "required": [
