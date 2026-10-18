@@ -962,6 +962,8 @@ async function runSmoke(w) {
     await waitFor("String(document.querySelector('app-root').openChatId) === '2' && document.querySelectorAll('.bubble-row').length > 0", 15000);
     await waitFor("Boolean(document.querySelector('.bubble-row[data-id=\"FAKE-0022\"] .mention'))", 15000).catch(() => {});
     const men = await js(`(() => {
+      const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1; const g = cv.getContext('2d', { willReadFrequently: true });
+      const rgbOf = (c) => { g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3).map((n) => n / 255); };
       const row = document.querySelector('.bubble-row[data-id="FAKE-0022"]');
       if (!row) return { found: false };
       row.scrollIntoView({ block: 'center' });
@@ -969,8 +971,10 @@ async function runSmoke(w) {
       const el = row.querySelector('.mention');
       const chat = document.querySelector('app-root').chats.find((c) => c.id === '2');
       const known = ((chat && chat.members) || []).find((m) => m.handle === 'jordan@example.com');
-      return { found: true, bubble: bubble.textContent, mentions: row.querySelectorAll('.mention').length, words: el && el.textContent, title: el && el.getAttribute('title'), label: el && el.getAttribute('aria-label'), expected: (known && known.name) || 'jordan@example.com', apart: Boolean(el) && Number(getComputedStyle(el).fontWeight) > Number(getComputedStyle(bubble).fontWeight) };
+      return { found: true, bubble: bubble.textContent, mentions: row.querySelectorAll('.mention').length, words: el && el.textContent, title: el && el.getAttribute('title'), label: el && el.getAttribute('aria-label'), expected: (known && known.name) || 'jordan@example.com', apart: Boolean(el) && Number(getComputedStyle(el).fontWeight) > Number(getComputedStyle(bubble).fontWeight), fg: el && rgbOf(getComputedStyle(el).color), bg: rgbOf(getComputedStyle(bubble).backgroundColor) };
     })()`);
+    // The mention reads on its bubble (issue 459): the received bubble is the accent, so the name keeps its text colour.
+    men.ratio = men.fg && men.bg ? Math.round(contrastRatio(men.fg, men.bg) * 100) / 100 : 0;
     // What Chromium hands a screen reader: the mention's node in the accessibility tree, by its role and computed name.
     const menSpoken = await (async () => {
       try {
@@ -992,6 +996,7 @@ async function runSmoke(w) {
       named: Boolean(men.title) && men.title === men.expected,
       spoken: men.label === 'Jordan, mention of ' + men.expected && menSpoken.some((n) => (n.role === 'image' || n.role === 'img') && n.name === men.label),
       apart: Boolean(men.apart),
+      readable: Boolean(men.ratio) && men.ratio >= 4.5,
     };
     report.mention = Object.values(menChecks).every(Boolean);
     console.log('mention: ' + JSON.stringify({ checks: menChecks, men, spoken: menSpoken }));
