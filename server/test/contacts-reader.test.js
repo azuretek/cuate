@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { CONTACTS_JXA } from '../src/contacts.js';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { CONTACTS_JXA, createContacts } from '../src/contacts.js';
 
 // The Mac's program run against a fake Contacts framework, so the read is proven off a Mac. Synthetic people only.
 const array = (items) => ({ count: items.length, objectAtIndex: (i) => items[i] });
@@ -68,4 +71,26 @@ test('native reader reports a refusal with the state macOS gave and reads nobody
 test('native reader fails loudly when the enumeration fails rather than answering an empty store', () => {
   const { run } = framework({ people: [], read: false });
   assert.throws(run, /Contacts could not be read/);
+});
+
+// What the bridge hands back for an NSString: an object whose own string form is the bridge's label, with the text
+// itself only behind .js. Reading the base64 picture with String() alone turned every picture into that label.
+const nsString = (s) => ({ js: s, toString: () => '[id NSString]' });
+// A synthetic 1x1 PNG, so the server's own picture path can be run on what the reader produced.
+const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a5c50000000049454e44ae426082', 'hex').toString('base64');
+
+test('native reader unwraps the picture the bridge returns, so the server serves it as an image (issue 393)', async () => {
+  const { run } = framework({ people: [person({ thumbnailImageData: { base64EncodedStringWithOptions: () => nsString(PNG) } })] });
+  const answer = run();
+  assert.equal(answer.contacts[0].photo, PNG);
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'contacts-photo-'));
+  try {
+    const contacts = createContacts({ run: async () => JSON.stringify(answer), dataDir, watchDir: null });
+    await contacts.load();
+    const pic = await contacts.photo(contacts.records[0]);
+    assert.ok(pic, 'the picture is served');
+    assert.equal(pic.mime, 'image/png');
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
 });

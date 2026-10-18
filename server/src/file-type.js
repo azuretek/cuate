@@ -17,6 +17,9 @@ const SNIFFED = [
   { mime: 'audio/mp4', ext: 'm4a', brands: ['M4A ', 'M4B '] },
   { mime: 'video/mp4', ext: 'mp4', alt: ['m4v'], brands: ['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'dash'] },
   { mime: 'application/pdf', ext: 'pdf', test: (b) => ascii(b, 0, '%PDF-') },
+  // A voice message as Messages records it (issue 435): a Core Audio file, and on older phones an AMR recording.
+  { mime: 'audio/x-caf', ext: 'caf', test: (b) => ascii(b, 0, 'caff') },
+  { mime: 'audio/amr', ext: 'amr', test: (b) => ascii(b, 0, '#!AMR') },
 ];
 
 // Formats known by extension only: their bytes carry no signature the server reads, or one shared with others (a
@@ -24,7 +27,7 @@ const SNIFFED = [
 const NAMED = {
   bin: 'application/octet-stream', dat: 'application/octet-stream',
   txt: 'text/plain', csv: 'text/csv', json: 'application/json', zip: 'application/zip', vcf: 'text/vcard',
-  mp3: 'audio/mpeg', wav: 'audio/wav', aac: 'audio/aac', caf: 'audio/x-caf',
+  mp3: 'audio/mpeg', wav: 'audio/wav', aac: 'audio/aac',
   doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',

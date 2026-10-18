@@ -1,0 +1,116 @@
+name: platforms status
+
+# The pull request's platforms verdict, posted as a commit status instead of
+# waited for on a runner.
+#
+# ci.yml used to call platforms-gate.yml on every pull request, and that job
+# sat on an ubuntu runner for up to two hours polling the ios and android runs
+# for the same commit. With ten pull requests open that was ten idle runners
+# queued ahead of the jobs that do the work. This workflow replaces it for pull
+# requests only: GitHub raises workflow_run when ci, ios or android completes,
+# this job looks ONCE at every phone pipeline's run for that head commit, and
+#
+#   a pipeline still running, or with
+#   no run registered yet           exits 0 and posts nothing. The pipeline that
+#                                   finishes last raises its own event and is the
+#                                   one that decides.
+#   every listed job success        posts the status "platforms" as success.
+#   skipped / cancelled / timed_out /
+#   failure                         posts "platforms" as failure, naming the
+#                                   platform, the job and its conclusion, and
+#                                   pointing at the run.
+#   superseded                      posts nothing: the branch moved on and the
+#                                   newer commit gets its own verdict.
+#
+# The rules are scripts/release/gate.mjs's, unchanged and shared with the
+# publishing gate (MODE=no-wait selects the single look; desktop/test/gate.test.js
+# holds both). "platforms" is a required status check on main beside "gate", so
+# a pull request whose phone leg is red, skipped or missing cannot merge, exactly
+# as before, and nothing waits for it.
+#
+# A push to main keeps the waiting gate in ci.yml: the TestFlight publish really
+# does have to wait for the iOS release job before it can proceed.
+#
+# ★ Fork pull requests. workflow_run runs on the default branch with the base
+# repository's token, which is what lets it post a status at all, and that is
+# also why the checkout below is main's tree and never the pull request's: the
+# only code this token ever runs is scripts/release/gate.mjs as merged on main.
+# The token carries actions: read to read the runs and statuses: write to post
+# the one status, and nothing else.
+#
+# workflow_dispatch re-judges one commit by hand, for a head whose completion
+# event was lost (GitHub drops one now and then); it posts the same status the
+# event would have.
+
+on:
+  workflow_run:
+    # Every pipeline a pull request runs. ci is listed too, so a lost event from
+    # one phone pipeline still has a later completion to decide on.
+    workflows: [ci, ios, android]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The pull request head commit to judge and post the status on.
+        required: true
+        type: string
+      ref_name:
+        description: The head branch the runs are recorded against. Empty picks the newest run of each pipeline for the commit.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# One look at a time per commit, never cancelled: two pipelines finishing within
+# seconds of each other both raise an event, and both looks reach the same
+# verdict, so the second posting repeats the first rather than racing it.
+concurrency:
+  group: platforms-status-${{ github.event.workflow_run.head_sha || inputs.sha }}
+  cancel-in-progress: false
+
+jobs:
+  platforms:
+    name: platforms
+    # Only a pull request's pipelines. A push to main raises the same events,
+    # and its verdict is the waiting gate's in ci.yml and release.yml.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    # One look and one POST; a run that takes longer than this is GitHub's API
+    # misbehaving, and gate.mjs already retries a transient answer a bounded
+    # number of times.
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      statuses: write
+    steps:
+      # main's tree (the default branch, where workflow_run runs), never the pull
+      # request's: see the fork note above.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Judge every phone pipeline once and post the verdict as a status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha || inputs.sha }}
+          REF_NAME: ${{ github.event.workflow_run.head_branch || inputs.ref_name }}
+          PURPOSE: merge
+          # The same list and the same exemptions ci.yml's pull request gate
+          # carried: the phone pipelines, minus the publish jobs a pull request
+          # skips by design. desktop/test/gate.test.js holds the two in step.
+          PLATFORMS: ios, android
+          EXEMPT: release to TestFlight|sign and publish the APK
+          MODE: no-wait
+          STATUS_CONTEXT: platforms
+        run: |
+          # An undecided look exits 0 with nothing posted. A verdict exits 0 once
+          # GitHub has recorded the status, pass or fail. Anything else (a run it
+          # cannot read, a status it cannot post) fails this job, and a required
+          # status that is missing blocks the merge, which is the safe side.
+          set -eo pipefail
+          node scripts/release/gate.mjs

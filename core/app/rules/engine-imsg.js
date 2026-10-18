@@ -201,13 +201,22 @@ export function mapMessage(m, { attachmentId }) {
   // The bubble or screen effect the message was sent with (issue 442), which the server reads from the store and marks
   // on the row as expressive_send_style_id; a message sent with none, or with one this app cannot play, carries none.
   const sendEffect = sendEffectOf(m.expressive_send_style_id);
+  const parts = payloadParts(m, { attachmentId });
   return {
     ...base,
-    ...payloadParts(m, { attachmentId }),
+    ...parts,
+    attachments: m.is_audio_message ? parts.attachments.map((a) => markVoice(a, m)) : parts.attachments,
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
     ...(styles.length ? { styles } : {}),
     ...(sendEffect ? { sendEffect } : {}),
   };
+}
+
+// A voice message's recording (issue 440): the store marks the row a voice message and whether it was played on any of
+// the person's devices, and its one recording carries both. Anything else attached to the row is left as it is.
+const isRecording = (a) => /^audio\//i.test(String(a.mime || '')) || /\.(caf|amr)$/i.test(String(a.name || ''));
+function markVoice(a, m) {
+  return isRecording(a) ? { ...a, voice: true, played: Boolean(m.is_played) } : a;
 }
 
 // A standalone tapback row from the live stream, applied to the message it targets.
