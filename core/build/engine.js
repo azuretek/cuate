@@ -2445,6 +2445,7 @@ var engine = (() => {
       const effect = TEXT_EFFECT_IDS[r.effect] || null;
       if (effect) marks.effect = effect;
       for (const f of TEXT_FORMATS) if (r[f]) marks[f] = true;
+      if (typeof r.mention === "string" && r.mention.trim()) marks.mention = r.mention.trim();
       if (!Object.keys(marks).length) continue;
       const from = start - removedBefore[start];
       const to = start + length - removedBefore[start + length];
@@ -2456,7 +2457,7 @@ var engine = (() => {
     return out;
   }
   function sameMarks(style, marks) {
-    return (style.effect || null) === (marks.effect || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
+    return (style.effect || null) === (marks.effect || null) && (style.mention || null) === (marks.mention || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
   }
   function letters(text) {
     const s = String(text || "");
@@ -3851,7 +3852,7 @@ var engine = (() => {
       if (p.href) links.push({ start: at, end: at + p.text.length, href: p.href });
       at += p.text.length;
     }
-    const laid = (Array.isArray(styles) ? styles : []).filter((x) => x && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length).map((x) => ({ start: x.start, end: x.start + x.length, effect: TEXT_EFFECTS.includes(x.effect) ? x.effect : null, formats: TEXT_FORMATS.filter((f) => x[f] === true) })).filter((x) => x.effect || x.formats.length);
+    const laid = (Array.isArray(styles) ? styles : []).filter((x) => x && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length).map((x) => ({ start: x.start, end: x.start + x.length, effect: TEXT_EFFECTS.includes(x.effect) ? x.effect : null, formats: TEXT_FORMATS.filter((f) => x[f] === true), mention: typeof x.mention === "string" && x.mention ? x.mention : null })).filter((x) => x.effect || x.formats.length || x.mention);
     const cuts = /* @__PURE__ */ new Set([0, s.length]);
     for (const r of [...links, ...laid]) {
       cuts.add(r.start);
@@ -3869,9 +3870,11 @@ var engine = (() => {
       const part2 = { text: s.slice(from, to) };
       if (link) part2.href = link.href;
       if (effect) part2.effect = effect.effect;
+      const mention = over.find((r) => r.mention);
+      if (mention) part2.mention = mention.mention;
       for (const f of TEXT_FORMATS) if (over.some((r) => r.formats.includes(f))) part2[f] = true;
       const prev = parts[parts.length - 1];
-      if (prev && prev.href === part2.href && prev.effect === part2.effect && TEXT_FORMATS.every((f) => prev[f] === part2[f])) prev.text += part2.text;
+      if (prev && prev.href === part2.href && prev.effect === part2.effect && prev.mention === part2.mention && TEXT_FORMATS.every((f) => prev[f] === part2[f])) prev.text += part2.text;
       else parts.push(part2);
     }
     return parts;
