@@ -88,6 +88,8 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
     edit: (chatId, messageId, text) => call('PUT', `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/text`, { text }),
     upload: ({ name, mime, data }) => call('POST', '/api/v1/attachments', { name, mime, data }),
     markRead: (chatId) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+    // A recording someone else sent was played here (issue 440): the server keeps it and tells every client.
+    played: (id) => call('POST', '/api/v1/attachments/' + encodeURIComponent(id) + '/played'),
     // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
     // a group conversation, and a group's name and people change through the Mac. Each answers the chat as it now is.
     createChat: ({ addresses, name, text }) => call('POST', '/api/v1/chats', { addresses, ...(name ? { name } : {}), ...(text ? { text } : {}) }),

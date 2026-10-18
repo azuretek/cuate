@@ -26,7 +26,7 @@ var engine = (() => {
     APP_ICONS: () => APP_ICONS,
     APP_ICON_KEY: () => APP_ICON_KEY,
     ATTACH_ACCEPT: () => ATTACH_ACCEPT,
-    AUDIO_PREVIEW_MAX_BYTES: () => AUDIO_PREVIEW_MAX_BYTES,
+    AUDIO_INLINE_MAX_BYTES: () => AUDIO_INLINE_MAX_BYTES,
     BACKGROUND_ACTIONS: () => BACKGROUND_ACTIONS,
     BACKGROUND_NAME: () => BACKGROUND_NAME,
     BADGE_APART: () => BADGE_APART,
@@ -88,11 +88,14 @@ var engine = (() => {
     PDF_PREVIEW_MAX_BYTES: () => PDF_PREVIEW_MAX_BYTES,
     PHOTO_SCAN_ROWS: () => PHOTO_SCAN_ROWS,
     PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
+    PLAYED_KEY: () => PLAYED_KEY,
+    PLAYED_MAX: () => PLAYED_MAX,
     PRESS_STATES: () => PRESS_STATES,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
     SEARCH_MODES: () => SEARCH_MODES,
     SEARCH_MODE_LABELS: () => SEARCH_MODE_LABELS,
+    SEEK_STEP_SECONDS: () => SEEK_STEP_SECONDS,
     SERVER_UPDATE_ERRORS: () => SERVER_UPDATE_ERRORS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
@@ -121,6 +124,9 @@ var engine = (() => {
     TYPING_BUBBLE_LABEL: () => TYPING_BUBBLE_LABEL,
     TYPING_TTL_MS: () => TYPING_TTL_MS,
     UNKNOWN: () => UNKNOWN,
+    WAVE_BARS: () => WAVE_BARS,
+    WAVE_DECODE_MAX_BYTES: () => WAVE_DECODE_MAX_BYTES,
+    WAVE_LEVELS: () => WAVE_LEVELS,
     WINDOW_CONTROLS: () => WINDOW_CONTROLS,
     ZOOM_DOUBLE_TAP: () => ZOOM_DOUBLE_TAP,
     ZOOM_DOUBLE_TAP_MS: () => ZOOM_DOUBLE_TAP_MS,
@@ -159,6 +165,7 @@ var engine = (() => {
     autoDownloadEnabled: () => autoDownloadEnabled,
     availableBanner: () => availableBanner,
     badgeLabel: () => badgeLabel,
+    barsDone: () => barsDone,
     bugReportBlock: () => bugReportBlock,
     buildNumberOf: () => buildNumberOf,
     canTarget: () => canTarget,
@@ -178,6 +185,7 @@ var engine = (() => {
     clampScale: () => clampScale,
     cleanTones: () => cleanTones,
     clientReport: () => clientReport,
+    clock: () => clock,
     closedByEscape: () => closedByEscape,
     closedByPress: () => closedByPress,
     coerceSetting: () => coerceSetting,
@@ -194,6 +202,7 @@ var engine = (() => {
     contrast: () => contrast,
     contrastRatio: () => contrastRatio,
     controlLayout: () => controlLayout,
+    copyFormat: () => copyFormat,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
     createLogger: () => createLogger,
@@ -201,6 +210,7 @@ var engine = (() => {
     cssVarName: () => cssVarName,
     currentBanner: () => currentBanner,
     daysAgo: () => daysAgo,
+    decodePlayed: () => decodePlayed,
     deleteGrapheme: () => deleteGrapheme,
     deliveryLabel: () => deliveryLabel,
     digitsOf: () => digitsOf,
@@ -223,6 +233,7 @@ var engine = (() => {
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
     emptyListText: () => emptyListText,
+    encodePlayed: () => encodePlayed,
     engineLabel: () => engineLabel,
     eventText: () => eventText,
     extensionOf: () => extensionOf,
@@ -234,6 +245,7 @@ var engine = (() => {
     filterChats: () => filterChats,
     firstUrl: () => firstUrl,
     fixedPalette: () => fixedPalette,
+    flatWave: () => flatWave,
     foldReactions: () => foldReactions,
     forgetChats: () => forgetChats,
     forgetNoticeState: () => forgetNoticeState,
@@ -285,6 +297,8 @@ var engine = (() => {
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
+    isUnplayed: () => isUnplayed,
+    lengthClock: () => lengthClock,
     letters: () => letters,
     linkHref: () => linkHref,
     linkMediaKey: () => linkMediaKey,
@@ -361,10 +375,12 @@ var engine = (() => {
     platformOf: () => platformOf,
     platformReactionUnsupported: () => platformReactionUnsupported,
     platformThreadUnsupported: () => platformThreadUnsupported,
+    playsInPlace: () => playsInPlace,
     policy: () => policy,
     pressOutside: () => pressOutside,
     previewKind: () => previewKind,
     progressFor: () => progressFor,
+    progressOf: () => progressOf,
     putNotice: () => putNotice,
     quietCount: () => quietCount,
     quietNotices: () => quietNotices,
@@ -392,6 +408,8 @@ var engine = (() => {
     scrollFor: () => scrollFor,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
+    seekAt: () => seekAt,
+    seekByKey: () => seekByKey,
     sentNoticeRead: () => sentNoticeRead,
     serverDigest: () => serverDigest,
     serverUpdateNotice: () => serverUpdateNotice,
@@ -470,6 +488,7 @@ var engine = (() => {
     validate: () => validate,
     velocityFor: () => velocityFor,
     verificationCheck: () => verificationCheck,
+    wavePeaks: () => wavePeaks,
     wheelFactor: () => wheelFactor,
     withNoticeState: () => withNoticeState,
     withRuntime: () => withRuntime,
@@ -582,6 +601,8 @@ var engine = (() => {
       edit: (chatId, messageId, text) => call("PUT", `/api/v1/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/text`, { text }),
       upload: ({ name, mime, data }) => call("POST", "/api/v1/attachments", { name, mime, data }),
       markRead: (chatId) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/read`),
+      // A recording someone else sent was played here (issue 440): the server keeps it and tells every client.
+      played: (id) => call("POST", "/api/v1/attachments/" + encodeURIComponent(id) + "/played"),
       // Conversations and groups are the message service's own (issue 326): one address starts or opens a direct chat, several start
       // a group conversation, and a group's name and people change through the Mac. Each answers the chat as it now is.
       createChat: ({ addresses, name, text }) => call("POST", "/api/v1/chats", { addresses, ...name ? { name } : {}, ...text ? { text } : {} }),
@@ -1471,14 +1492,14 @@ var engine = (() => {
   }
   function fromOklch([L, C, h]) {
     const at = (c) => oklabToLinear(clamp01(L), c * Math.cos(h * Math.PI / 180), c * Math.sin(h * Math.PI / 180));
-    const fits2 = (lin2) => lin2.every((x) => x >= -1e-7 && x <= 1 + 1e-7);
+    const fits3 = (lin2) => lin2.every((x) => x >= -1e-7 && x <= 1 + 1e-7);
     let lin = at(C);
-    if (!fits2(lin)) {
+    if (!fits3(lin)) {
       let lo = 0;
       let hi = C;
       for (let step = 0; step < 24; step += 1) {
         const mid = (lo + hi) / 2;
-        if (fits2(at(mid))) lo = mid;
+        if (fits3(at(mid))) lo = mid;
         else hi = mid;
       }
       lin = at(lo);
@@ -2558,12 +2579,18 @@ var engine = (() => {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
     }
     const styles = stylesFromRuns(m.text, m.text_runs);
+    const parts = payloadParts(m, { attachmentId });
     return {
       ...base,
-      ...payloadParts(m, { attachmentId }),
+      ...parts,
+      attachments: m.is_audio_message ? parts.attachments.map((a) => markVoice(a, m)) : parts.attachments,
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
       ...styles.length ? { styles } : {}
     };
+  }
+  var isRecording = (a) => /^audio\//i.test(String(a.mime || "")) || /\.(caf|amr)$/i.test(String(a.name || ""));
+  function markVoice(a, m) {
+    return isRecording(a) ? { ...a, voice: true, played: Boolean(m.is_played) } : a;
   }
   function mapReaction(m) {
     if (!m.is_reaction || !m.reacted_to_guid) return null;
@@ -3899,7 +3926,6 @@ var engine = (() => {
   // core/app/rules/documents.js
   var TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
   var PDF_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
-  var AUDIO_PREVIEW_MAX_BYTES = 100 * 1024 * 1024;
   var TEXT_EXTENSIONS = /* @__PURE__ */ new Set([
     "txt",
     "text",
@@ -3972,24 +3998,6 @@ var engine = (() => {
     "application/x-subrip"
   ]);
   var NOT_TEXT_TYPES = /* @__PURE__ */ new Set(["text/html", "text/rtf", "text/richtext", "text/enriched"]);
-  var AUDIO_EXTENSIONS = /* @__PURE__ */ new Set(["mp3", "m4a", "aac", "wav", "oga", "ogg", "opus", "flac"]);
-  var AUDIO_TYPES = /* @__PURE__ */ new Set([
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/mp4",
-    "audio/x-m4a",
-    "audio/m4a",
-    "audio/aac",
-    "audio/x-aac",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/wave",
-    "audio/ogg",
-    "audio/opus",
-    "audio/webm",
-    "audio/flac",
-    "audio/x-flac"
-  ]);
   function extensionOf(name) {
     const base = String(name || "").split(/[\\/]/).pop();
     const dot = base.lastIndexOf(".");
@@ -4007,7 +4015,6 @@ var engine = (() => {
     const generic = !type || type === "application/octet-stream";
     if (NOT_TEXT_TYPES.has(type)) return null;
     if (type === "application/pdf" || generic && ext === "pdf") return fits(a, PDF_PREVIEW_MAX_BYTES) ? "pdf" : null;
-    if (AUDIO_TYPES.has(type) || generic && AUDIO_EXTENSIONS.has(ext)) return fits(a, AUDIO_PREVIEW_MAX_BYTES) ? "audio" : null;
     const text = type.startsWith("text/") || TEXT_TYPES.has(type) || generic && TEXT_EXTENSIONS.has(ext);
     if (text) return fits(a, TEXT_PREVIEW_MAX_BYTES) ? "text" : null;
     return null;
@@ -4037,6 +4044,127 @@ var engine = (() => {
     const want = Math.max(1, Number(ratio) || 1);
     const r = Math.min(want, Math.sqrt(maxPixels / (cssWidth * cssHeight)));
     return { cssWidth, cssHeight, width: Math.max(1, Math.floor(cssWidth * r)), height: Math.max(1, Math.floor(cssHeight * r)), ratio: r };
+  }
+
+  // core/app/rules/audio.js
+  var AUDIO_INLINE_MAX_BYTES = 100 * 1024 * 1024;
+  var WAVE_DECODE_MAX_BYTES = 10 * 1024 * 1024;
+  var AUDIO_EXTENSIONS = /* @__PURE__ */ new Set(["mp3", "m4a", "aac", "wav", "oga", "ogg", "opus", "flac"]);
+  var AUDIO_TYPES = /* @__PURE__ */ new Set([
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/m4a",
+    "audio/aac",
+    "audio/x-aac",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/ogg",
+    "audio/opus",
+    "audio/webm",
+    "audio/flac",
+    "audio/x-flac"
+  ]);
+  var VOICE_EXTENSIONS = /* @__PURE__ */ new Set(["caf", "amr", "3gp", "3ga"]);
+  var VOICE_TYPES = /* @__PURE__ */ new Set(["audio/x-caf", "audio/caf", "audio/amr", "audio/3gpp", "audio/3gpp2"]);
+  var bareType2 = (mime) => String(mime || "").split(";")[0].trim().toLowerCase();
+  var fits2 = (a, max) => !(Number.isFinite(Number(a.bytes)) && Number(a.bytes) > max);
+  function playsInPlace(a) {
+    if (!isFileAttachment(a)) return false;
+    const type = bareType2(a.mime);
+    const generic = !type || type === "application/octet-stream";
+    const ext = extensionOf(a.name);
+    const audio = AUDIO_TYPES.has(type) || VOICE_TYPES.has(type) || generic && (AUDIO_EXTENSIONS.has(ext) || VOICE_EXTENSIONS.has(ext));
+    return audio && fits2(a, AUDIO_INLINE_MAX_BYTES);
+  }
+  function copyFormat(a, canPlayType) {
+    const type = bareType2(a && a.mime);
+    const generic = !type || type === "application/octet-stream";
+    const voice = VOICE_TYPES.has(type) || generic && VOICE_EXTENSIONS.has(extensionOf(a && a.name));
+    if (!voice) return null;
+    const asked = generic ? "audio/x-caf" : type;
+    let answer;
+    try {
+      answer = typeof canPlayType === "function" ? String(canPlayType(asked) || "") : "";
+    } catch {
+      answer = "";
+    }
+    return answer === "probably" ? null : "m4a";
+  }
+  function clock(seconds) {
+    const s = Number.isFinite(Number(seconds)) && Number(seconds) > 0 ? Math.floor(Number(seconds)) : 0;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor(s % 3600 / 60);
+    const ss = String(s % 60).padStart(2, "0");
+    return h ? h + ":" + String(m).padStart(2, "0") + ":" + ss : m + ":" + ss;
+  }
+  function lengthClock(seconds) {
+    const s = Number(seconds);
+    return clock(Number.isFinite(s) && s > 0 ? Math.round(s) : 0);
+  }
+  function progressOf(current, duration) {
+    const d = Number(duration);
+    if (!Number.isFinite(d) || d <= 0) return 0;
+    return Math.min(1, Math.max(0, (Number(current) || 0) / d));
+  }
+  var WAVE_BARS = 28;
+  var WAVE_LEVELS = 8;
+  function flatWave(bars = WAVE_BARS) {
+    return Array.from({ length: bars }, () => 2);
+  }
+  function wavePeaks(channels2, bars = WAVE_BARS) {
+    const list = (channels2 || []).filter((c) => c && c.length);
+    const length = list.length ? Math.min(...list.map((c) => c.length)) : 0;
+    if (!length) return flatWave(bars);
+    const peaks = [];
+    for (let b = 0; b < bars; b += 1) {
+      const from = Math.floor(b * length / bars);
+      const to = Math.max(from + 1, Math.floor((b + 1) * length / bars));
+      let peak = 0;
+      for (const c of list) for (let i = from; i < to && i < length; i += 1) peak = Math.max(peak, Math.abs(c[i]) || 0);
+      peaks.push(peak);
+    }
+    const loudest = Math.max(...peaks);
+    if (!(loudest > 0)) return flatWave(bars);
+    return peaks.map((p) => Math.max(1, Math.min(WAVE_LEVELS, Math.ceil(p / loudest * WAVE_LEVELS))));
+  }
+  function barsDone(progress, bars = WAVE_BARS) {
+    const p = Math.min(1, Math.max(0, Number(progress) || 0));
+    return Math.min(bars, Math.floor(p * bars + 0.5));
+  }
+  function seekAt(x, left, width, duration) {
+    const d = Number(duration);
+    const w = Number(width);
+    if (!Number.isFinite(d) || d <= 0 || !(w > 0)) return null;
+    const f = Math.min(1, Math.max(0, (Number(x) - Number(left)) / w));
+    return f * d;
+  }
+  var SEEK_STEP_SECONDS = 5;
+  function seekByKey(key, current, duration) {
+    const d = Number(duration);
+    if (!Number.isFinite(d) || d <= 0) return null;
+    const now = Number(current) || 0;
+    const to = { ArrowRight: now + SEEK_STEP_SECONDS, ArrowUp: now + SEEK_STEP_SECONDS, ArrowLeft: now - SEEK_STEP_SECONDS, ArrowDown: now - SEEK_STEP_SECONDS, Home: 0, End: d }[key];
+    return to === void 0 ? null : Math.min(d, Math.max(0, to));
+  }
+  var PLAYED_KEY = "audio.played";
+  var PLAYED_MAX = 500;
+  function encodePlayed(ids) {
+    return JSON.stringify([...new Set((ids || []).map(String))].slice(-PLAYED_MAX));
+  }
+  function decodePlayed(text) {
+    try {
+      const list = JSON.parse(String(text || ""));
+      return Array.isArray(list) ? list.filter((id) => typeof id === "string" && id) : [];
+    } catch {
+      return [];
+    }
+  }
+  function isUnplayed(a, { mine = false, played = null } = {}) {
+    if (!a || mine || a.played) return false;
+    return !(played && played.has(String(a.id)));
   }
 
   // core/app/rules/places.js
@@ -4719,12 +4847,12 @@ var engine = (() => {
     const b = dayKey(now, timeZone);
     return Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
   }
-  var clock = (t, locale, timeZone) => new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone }).format(t);
+  var clock2 = (t, locale, timeZone) => new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone }).format(t);
   function formatListTime(iso2, { now, locale, timeZone } = {}) {
     if (!iso2) return "";
     const t = Date.parse(iso2);
     const d = daysAgo(iso2, { now, timeZone });
-    if (d <= 0) return clock(t, locale, timeZone);
+    if (d <= 0) return clock2(t, locale, timeZone);
     if (d === 1) return "Yesterday";
     if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t);
     return new Intl.DateTimeFormat(locale, { year: "numeric", month: "numeric", day: "numeric", timeZone }).format(t);
@@ -4732,9 +4860,9 @@ var engine = (() => {
   function formatSeparator(iso2, { now, locale, timeZone } = {}) {
     const t = Date.parse(iso2);
     const d = daysAgo(iso2, { now, timeZone });
-    if (d <= 0) return "Today " + clock(t, locale, timeZone);
-    if (d === 1) return "Yesterday " + clock(t, locale, timeZone);
-    if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t) + " " + clock(t, locale, timeZone);
+    if (d <= 0) return "Today " + clock2(t, locale, timeZone);
+    if (d === 1) return "Yesterday " + clock2(t, locale, timeZone);
+    if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t) + " " + clock2(t, locale, timeZone);
     return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(t);
   }
 

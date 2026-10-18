@@ -21,7 +21,7 @@ export async function boot({ contacts = null, sending = true, perMinute = 20, se
   // The database the engine reads, in this run's own directory, so a test can change it and the server watches it.
   const watchedDb = dbPath === true ? path.join(dir, 'chat.db') : dbPath;
   const world = createFakeImsg({ attachmentsRoot: root, capabilities, features });
-  const engine = createEngine({ kind: 'fake', makeTransport: () => world.transport(), log: logger.child('engine'), attachmentId: makeAttachmentId({ secret: 'test-secret', store }), sendTimeoutMs, typingIncoming, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText });
+  const engine = createEngine({ kind: 'fake', makeTransport: () => world.transport(), log: logger.child('engine'), attachmentId: makeAttachmentId({ secret: 'test-secret', store }), sendTimeoutMs, typingIncoming, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, heard: { has: (id) => store.isPlayed(id) } });
   await engine.start();
   const srv = await startServer({ contacts, config, store, engine, log: logger.child('http'), dataDir: dir, attachmentsRoot: root, dbPath: watchedDb, mac, restarts, webhookOptions, updatePending, readSyncMs, pushFetch });
   const tokens = {

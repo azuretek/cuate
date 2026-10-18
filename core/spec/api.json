@@ -207,6 +207,13 @@
       "returns": "binary"
     },
     {
+      "id": "attachment-played",
+      "method": "POST",
+      "path": "/api/v1/attachments/:attachmentId/played",
+      "scope": "send",
+      "returns": "AttachmentPlayed"
+    },
+    {
       "id": "link-media",
       "method": "GET",
       "path": "/api/v1/links/media",
@@ -335,7 +342,8 @@
     "server.state": "ServerState",
     "settings.changed": "SettingsEvent",
     "mac.state": "MacEvent",
-    "server.update": "ServerUpdate"
+    "server.update": "ServerUpdate",
+    "attachment.played": "AttachmentPlayed"
   },
   "models": {
     "Health": {
@@ -506,7 +514,13 @@
       "bytes": "number",
       "sticker": "boolean",
       "missing": "boolean",
-      "live": "boolean?"
+      "live": "boolean?",
+      "voice": "boolean?",
+      "played": "boolean?"
+    },
+    "AttachmentPlayed": {
+      "attachmentId": "string",
+      "played": "boolean"
     },
     "LinkCard": {
       "url": "string",

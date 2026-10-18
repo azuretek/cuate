@@ -3,6 +3,8 @@ import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
 import { isMediaAttachment, mediaKind, isLivePhoto } from '../rules/media.js';
 import { previewKind, filePress } from '../rules/documents.js';
+import { playsInPlace } from '../rules/audio.js';
+import './app-audio.js';
 
 const needsJpeg = (a) => /heic|heif/i.test(a.mime);
 
@@ -95,7 +97,7 @@ export const saveAttachment = (a, options) => handFile('file.save', a, options);
 export const openAttachment = (a, options) => handFile('file.open', a, options);
 
 class AppAttachment extends KitElement {
-  static properties = { attachment: { attribute: false }, client: { attribute: false }, src: { state: true }, poster: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
+  static properties = { attachment: { attribute: false }, client: { attribute: false }, mine: { attribute: false }, src: { state: true }, poster: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
 
   constructor() {
     super();
@@ -105,6 +107,8 @@ class AppAttachment extends KitElement {
     // A link whose video the server resolves (issue 243): the still previews it, and a press plays the video rather
     // than the still. Empty for an ordinary attachment.
     this.linkUrl = '';
+    // Whether the message is one we sent, so a recording of ours is never marked as not played (issue 432).
+    this.mine = false;
   }
 
   // The bytes belong to the held set above, which lets them go, so an element leaving the page keeps nothing to free.
@@ -226,7 +230,7 @@ class AppAttachment extends KitElement {
     this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { from, src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: isLivePhoto(this.attachment) ? 'video' : mediaKind(this.attachment) || 'image' } }));
   }
 
-  // Pressing a document (issue 374): a kind the app shows itself (a PDF, text, or audio a web view plays) opens in the
+  // Pressing a document (issue 374): a kind the app shows itself (a PDF or text) opens in the
   // media viewer, which offers Open in and Save beside it; any other kind goes straight to Open in. The press stops
   // here, so the message it sits in never takes it as a press of its own (a thread reply's text opens its thread; an
   // attachment never does).
@@ -259,6 +263,9 @@ class AppAttachment extends KitElement {
       const label = (moves ? 'Play ' : 'Open ') + a.name;
       return html`<button type="button" class="attachment-preview" aria-label=${label} data-moves=${moves ? 'true' : nothing} @click=${press(() => this.open())}>${media}${moves ? html`<span class="media-play" aria-hidden="true"><span class="icon" data-icon="play"></span></span>` : nothing}</button>`;
     }
+    // A recording plays where it was sent (issue 432), in a player of its own. One the web view cannot fetch or play
+    // is drawn as the file card below, which opens it in the device's own apps.
+    if (playsInPlace(a) && this.client && !this.failed) return html`<app-audio .attachment=${a} .client=${this.client} .mine=${Boolean(this.mine)} @audio-failed=${() => { this.failed = true; }}></app-audio>`;
     if (a.missing || a.local || !this.client) return html`<div class="attachment-file"><span class="attachment-name">${a.name}</span>${a.missing ? html`<span class="muted small"> Not on the Mac</span>` : nothing}</div>`;
     // A document the viewer shows reads as a document; one that goes straight to the device's own apps says so.
     const view = filePress(a) === 'view';
