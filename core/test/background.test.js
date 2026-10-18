@@ -32,4 +32,9 @@ test('the background proof is a Debug seam, copied into test builds only (issue 
   const uiTest = read('ios/' + naming.product + 'UITests/BackgroundTests.swift');
   for (const part of ['--background-fixture', 'hasPrefix("background:pass")', 'Sam Example changed the background', 'where:backdrop ']) assert.ok(uiTest.includes(part), 'the UI test reads the verdict and the screen: ' + part);
   assert.doesNotMatch(read('core/app/main.js'), /background-fixture/);
+  // A canvas WebKit gave no backing store answers toBlob with null; the fixture then draws the same colour as SVG and
+  // says so, rather than failing before the conversation is drawn.
+  const fixture = read('core/test/background-fixture.js');
+  assert.match(fixture, /if \(!picture\) \{[\s\S]*image\/svg\+xml/, 'a null toBlob falls back to an SVG picture of the same colour');
+  assert.match(fixture, /' source=' \+ source/, 'the verdict names which picture was used');
 });

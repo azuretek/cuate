@@ -147,6 +147,32 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // Unsends and read receipts as Messages records them (issue 441): the row is stamped in place and nothing is said on the
+  // message stream. The adapter learns of them through `changes`, the fake's stand-in for the store reader in
+  // changes.js, with the same shape and the same [time, row] marks.
+  let lastStamp = 0;
+  const stamp = () => (lastStamp = Math.max(Date.now(), lastStamp + 1));
+  const after = (cursor) => (m, field) => m[field] > cursor[0] || (m[field] === cursor[0] && m.id > cursor[1]);
+  const stampedSince = (field, keep, row) => (cursor = [0, 0], limit = 200) => {
+    const later = after(cursor);
+    const rows = messages.filter((m) => m[field] && keep(m) && later(m, field)).sort((a, b) => a[field] - b[field] || a.id - b.id).slice(0, limit);
+    const last = rows.at(-1);
+    return { rows: rows.map(row), cursor: last ? [last[field], last.id] : cursor, more: rows.length >= limit };
+  };
+  const newest = (field, keep) => messages.filter((m) => m[field] && keep(m)).reduce((a, m) => (m[field] > a[0] || (m[field] === a[0] && m.id > a[1]) ? [m[field], m.id] : a), [0, 0]);
+  const mine = (m) => Boolean(m.is_from_me);
+  const any = () => true;
+  const changes = {
+    latest: () => ({ rowid, unsent: newest('retracted_at', any), read: newest('read_at', mine) }),
+    unsentSince: stampedSince('retracted_at', any, (m) => ({ rowid: m.id, guid: m.guid, chatId: String(m.chat_id) })),
+    readSince: stampedSince('read_at', mine, (m) => ({ rowid: m.id, guid: m.guid, chatId: String(m.chat_id), readAt: new Date(m.read_at).toISOString() })),
+    unsentAmong: (guids) => {
+      const want = new Set((guids || []).map(String));
+      return new Set(messages.filter((m) => m.retracted_at && want.has(m.guid)).map((m) => m.guid));
+    },
+    close() {},
+  };
+
   // The fake's stand-in for backgrounds.js, with the same shape: which rows the store records as a background change,
   // each chat's newest one, and what `imsg chat-background status` answers for a chat.
   const backgrounds = {
@@ -168,6 +194,21 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       const latest = row ? { row_id: row.id, guid: row.guid, action: e.action, date: row.created_at } : undefined;
       if (!e || e.action !== 'set') return { ok: true, chat_id: chat.id, chat_guid: chat.guid, background_set: false, latest_event: latest };
       return { ok: true, chat_id: chat.id, chat_guid: chat.guid, background_set: true, background_channel_guid: e.guid, file_size: e.bytes, communication_safety_state: 0, watch_background_path: backdropPath(e.guid), watch_background_exists: true, latest_event: latest };
+    },
+    close() {},
+  };
+
+  // Voice messages as Messages records them (issue 440): a row with one Core Audio recording, marked a voice message in
+  // the store, and played there once it is played on any of the person's devices, which imsg's row never says. The
+  // adapter learns of it through `voices`, the fake's stand-in for the store reader in voices.js, with the same shape.
+  const voiceRows = new Map();
+  let voiceFault = null;
+  const voices = {
+    among(guids) {
+      if (voiceFault) throw voiceFault;
+      const found = new Map();
+      for (const g of guids || []) if (voiceRows.has(String(g))) found.set(String(g), { ...voiceRows.get(String(g)) });
+      return found;
     },
     close() {},
   };
@@ -208,7 +249,28 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     sends,
     tapbacks,
     edits,
+    changes,
     backgrounds,
+    voices,
+    // Someone sends a voice message: a synthetic Core Audio file under the attachments folder, on a row of its own. With
+    // live it streams like any new message; without it, it is only in the history. Answers the message's guid.
+    voiceMessage(chatId, sender, { live = false } = {}) {
+      const chat = chats.find((c) => c.id === chatId);
+      const file = path.join(attachmentsRoot, 'fake', 'voice-' + (rowid + 1) + '.caf');
+      writeFileSync(file, Buffer.concat([Buffer.from('caff'), Buffer.from([0, 1, 0, 0]), Buffer.from('desc'), Buffer.alloc(52)]));
+      const m = add({ chat_id: chatId, is_from_me: false, sender: sender || (chat && chat.participants[0]) || '', text: '', is_read: true, attachments: [{ filename: 'Audio Message.caf', transfer_name: 'Audio Message.caf', uti: 'com.apple.coreaudio-format', mime_type: 'audio/x-caf', total_bytes: 64, is_sticker: false, missing: false, original_path: file }] });
+      voiceRows.set(m.guid, { played: false });
+      if (live) broadcast(m);
+      return m.guid;
+    },
+    // The voice message is played on the person's phone: the store marks its row, and nothing is said on the stream.
+    playElsewhere(guid) {
+      if (voiceRows.has(String(guid))) voiceRows.set(String(guid), { played: true, playedAt: new Date().toISOString() });
+    },
+    // The store cannot be read: every ask fails with this error.
+    breakVoices(error) {
+      voiceFault = error;
+    },
     richText,
     renames,
     // A participant names the group (or removes its name, with '') on their phone (issue 439).
@@ -218,6 +280,22 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       const handle = sender || chat.participants[0];
       const known = CONTACTS.find((c) => c.phones.includes(handle) || c.emails.includes(handle));
       return renameRow(chat, { is_from_me: false, sender: handle, sender_name: known ? known.displayName : '' }, name);
+    },
+    // A message unsent by its sender (issue 441): the row empties and is stamped, and nothing is said on the stream.
+    unsendElsewhere(guid) {
+      const m = messages.find((x) => x.guid === guid && !x.is_reaction);
+      if (!m) return null;
+      m.text = '';
+      m.attachments = [];
+      m.retracted_at = stamp();
+      return m;
+    },
+    // The other person read one of our messages (issue 441): the row is stamped with when, and nothing is said.
+    readByRecipient(guid) {
+      const m = messages.find((x) => x.guid === guid && x.is_from_me);
+      if (!m) return null;
+      m.read_at = stamp();
+      return m;
     },
     // A participant sets (or clears) the conversation's background on their phone: Messages writes the row, the
     // rendered picture and the chat's record, and the row streams like any other (issue 417).
