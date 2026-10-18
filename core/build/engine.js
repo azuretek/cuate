@@ -32,6 +32,7 @@ var engine = (() => {
     BADGE_APART: () => BADGE_APART,
     BADGE_TEXT_FLOOR: () => BADGE_TEXT_FLOOR,
     BUILD_SPEC: () => BUILD_SPEC,
+    CHANGE_PAGES_MAX: () => CHANGE_PAGES_MAX,
     CHATS_DEFAULT: () => CHATS_DEFAULT,
     CHATS_MIN: () => CHATS_MIN,
     CONVERSATION_MIN: () => CONVERSATION_MIN,
@@ -70,6 +71,8 @@ var engine = (() => {
     LINK_SITES: () => LINK_SITES,
     MANUAL: () => MANUAL,
     MAX_THEMES: () => MAX_THEMES,
+    MEDIA_CACHE_BYTES: () => MEDIA_CACHE_BYTES,
+    MEDIA_ITEM_MAX_BYTES: () => MEDIA_ITEM_MAX_BYTES,
     MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
     NOTICE_ECHO_LIMIT: () => NOTICE_ECHO_LIMIT,
@@ -145,6 +148,8 @@ var engine = (() => {
     appIconFor: () => appIconFor,
     appIconVariants: () => appIconVariants,
     appUpdateNotice: () => appUpdateNotice,
+    applyChangeList: () => applyChangeList,
+    applyChangesToShown: () => applyChangesToShown,
     applyEdit: () => applyEdit,
     applyEditToChats: () => applyEditToChats,
     applyMessageToChats: () => applyMessageToChats,
@@ -246,7 +251,9 @@ var engine = (() => {
     hasTones: () => hasTones,
     hideChats: () => hideChats,
     historyCursor: () => historyCursor,
+    holdable: () => holdable,
     holdsAfter: () => holdsAfter,
+    holdsMedia: () => holdsMedia,
     hostOf: () => hostOf,
     hueDistance: () => hueDistance,
     iconColours: () => iconColours,
@@ -290,12 +297,15 @@ var engine = (() => {
     mapReaction: () => mapReaction,
     matchesTerm: () => matchesTerm,
     mayBeBackgroundRow: () => mayBeBackgroundRow,
+    mediaEvictions: () => mediaEvictions,
     mediaIndex: () => mediaIndex,
     mediaItems: () => mediaItems,
+    mediaKey: () => mediaKey,
     mediaKind: () => mediaKind,
     mediaNeighbours: () => mediaNeighbours,
     mediaOccurrence: () => mediaOccurrence,
     mediaStep: () => mediaStep,
+    mergeHeld: () => mergeHeld,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
     messageActions: () => messageActions,
@@ -318,6 +328,7 @@ var engine = (() => {
     noticeStateOf: () => noticeStateOf,
     noticeTarget: () => noticeTarget,
     offersReaction: () => offersReaction,
+    olderFromHeld: () => olderFromHeld,
     onGroup: () => onGroup,
     openapiDocument: () => openapiDocument,
     optionLabel: () => optionLabel,
@@ -380,6 +391,7 @@ var engine = (() => {
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
     sentNoticeRead: () => sentNoticeRead,
+    serverDigest: () => serverDigest,
     serverUpdateNotice: () => serverUpdateNotice,
     serviceNote: () => serviceNote,
     setAllChecked: () => setAllChecked,
@@ -392,6 +404,7 @@ var engine = (() => {
     settingsTabs: () => settingsTabs,
     settlesOpen: () => settlesOpen,
     settlesOpenAt: () => settlesOpenAt,
+    sha256Hex: () => sha256Hex,
     sheetLeaveDeadline: () => sheetLeaveDeadline,
     shiftWindow: () => shiftWindow,
     sizeLabel: () => sizeLabel,
@@ -556,6 +569,8 @@ var engine = (() => {
         }
       },
       chats: (o = {}) => call("GET", "/api/v1/chats" + query({ limit: o.limit })),
+      // What changed since a cursor the server wrote (issue 441): new messages, edits, unsends, reactions and read receipts.
+      changes: (o = {}) => call("GET", "/api/v1/changes" + query({ since: o.since, limit: o.limit, chats: o.chats })),
       messages: (chatId, o = {}) => call("GET", `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before, beforeCursor: o.beforeCursor, afterCursor: o.afterCursor, includeTotal: o.includeTotal })),
       send: (chatId, { text, file, clientKey, replyTo }) => call("POST", `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...file ? { file } : {}, clientKey, ...replyTo ? { replyTo } : {} }),
       // `text` is the message being reacted to, carried only so the server can compose the platform's own text
@@ -1697,8 +1712,8 @@ var engine = (() => {
   function unreadTotal(chats) {
     return (Array.isArray(chats) ? chats : []).reduce((sum, c) => sum + (Number.isFinite(c?.unread) && c.unread > 0 ? c.unread : 0), 0);
   }
-  function badgeLabel(count, size2) {
-    const n = Math.max(0, Math.floor(Number(count) || 0));
+  function badgeLabel(count2, size2) {
+    const n = Math.max(0, Math.floor(Number(count2) || 0));
     if (n === 0) return null;
     if (size2 < 22) return "";
     if (n <= 9) return String(n);
@@ -2308,14 +2323,14 @@ var engine = (() => {
     const link = m && m.link;
     if (link) return String(link.title || link.site || link.url || "").trim();
     const list = Array.isArray(m && m.attachments) ? m.attachments : null;
-    const count = list ? list.length : typeof (m && m.attachments) === "number" ? m.attachments : 0;
+    const count2 = list ? list.length : typeof (m && m.attachments) === "number" ? m.attachments : 0;
     if (list) {
       const names2 = list.map((a) => String(a && a.name || "").trim()).filter(Boolean);
       if (names2.length === 1) return names2[0];
-      if (count > 1) return count + " attachments";
+      if (count2 > 1) return count2 + " attachments";
     } else {
-      if (count === 1) return "1 attachment";
-      if (count > 1) return count + " attachments";
+      if (count2 === 1) return "1 attachment";
+      if (count2 > 1) return count2 + " attachments";
     }
     if (m && Number(m.payloads) > 0) return "Attachment";
     return "";
@@ -3383,7 +3398,7 @@ var engine = (() => {
       marks.set(m.id, { root });
       replies.set(root, (replies.get(root) || 0) + 1);
     }
-    for (const [root, count] of replies) if (byId.has(root)) marks.set(root, { ...marks.get(root) || {}, replies: count });
+    for (const [root, count2] of replies) if (byId.has(root)) marks.set(root, { ...marks.get(root) || {}, replies: count2 });
     return marks;
   }
   function threadPath(messages, id) {
@@ -3398,8 +3413,8 @@ var engine = (() => {
     }
     return path;
   }
-  function replyCountLabel(count) {
-    return count + (count === 1 ? " Reply" : " Replies");
+  function replyCountLabel(count2) {
+    return count2 + (count2 === 1 ? " Reply" : " Replies");
   }
   function myReaction(m) {
     return (m && Array.isArray(m.reactions) ? m.reactions.find((r) => r.fromMe) : null) || null;
@@ -3462,7 +3477,7 @@ var engine = (() => {
       const g = reactionGlyph(r);
       counts.set(g, (counts.get(g) || 0) + 1);
     }
-    return [...counts].map(([glyph, count]) => ({ glyph, count }));
+    return [...counts].map(([glyph, count2]) => ({ glyph, count: count2 }));
   }
 
   // core/app/rules/history-window.js
@@ -3502,6 +3517,226 @@ var engine = (() => {
       next[direction === "older" ? "hasNewer" : "hasOlder"] = true;
     }
     return next;
+  }
+
+  // core/app/rules/message-store.js
+  var MEDIA_CACHE_BYTES = 48 * 1024 * 1024;
+  var MEDIA_ITEM_MAX_BYTES = 1024 * 1024;
+  var CHANGE_PAGES_MAX = 20;
+  var holdable = (m) => Boolean(m) && typeof m.id === "string" && !m.id.startsWith("local:") && !m.state;
+  var flag = (v, fallback) => typeof v === "boolean" ? v : fallback;
+  var count = (a, b) => Math.max(Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0) || void 0;
+  var fresh = (incoming, page) => ({ messages: mergeMessages([], page), hasOlder: flag(incoming.hasOlder, true), current: flag(incoming.current, false), totalCount: count(incoming.totalCount) });
+  function mergeHeld(held, incoming, { adjacent = false } = {}) {
+    const page = (incoming.messages || []).filter(holdable);
+    if (!held || !held.messages.length) return fresh(incoming, page);
+    if (!page.length) return { ...held, hasOlder: flag(incoming.hasOlder, held.hasOlder), current: flag(incoming.current, held.current), totalCount: count(held.totalCount, incoming.totalCount) };
+    const ids = new Set(held.messages.map((m) => m.id));
+    const overlaps = page.some((m) => ids.has(m.id));
+    const messages = mergeMessages(held.messages, page);
+    const at = (id) => messages.findIndex((m) => m.id === id);
+    const heldFirst = held.messages[0].id;
+    const heldLast = held.messages[held.messages.length - 1].id;
+    const pageFirst = messages.find((m) => page.some((p) => p.id === m.id)).id;
+    const pageLast = [...messages].reverse().find((m) => page.some((p) => p.id === m.id)).id;
+    if (!overlaps && !adjacent) return at(pageLast) > at(heldLast) ? fresh(incoming, page) : held;
+    return {
+      messages,
+      hasOlder: at(pageFirst) <= at(heldFirst) ? flag(incoming.hasOlder, held.hasOlder) : held.hasOlder,
+      current: at(pageLast) >= at(heldLast) ? flag(incoming.current, held.current) : held.current,
+      totalCount: count(held.totalCount, incoming.totalCount)
+    };
+  }
+  function applyChangeList(held, list, chatId) {
+    if (!held) return { held, changed: false };
+    const id = String(chatId);
+    let messages = held.messages;
+    let changed = false;
+    const have = new Map(messages.map((m) => [m.id, m]));
+    const take = (list.messages || []).filter((m) => String(m.chatId) === id && holdable(m) && (have.has(m.id) || held.current));
+    if (take.length) {
+      messages = mergeMessages(messages, take.map((m) => have.has(m.id) ? { ...m, reactions: have.get(m.id).reactions || m.reactions } : m));
+      changed = true;
+    }
+    const gone = new Set((list.unsent || []).filter((u) => String(u.chatId) === id).map((u) => u.id));
+    if (gone.size && messages.some((m) => gone.has(m.id))) {
+      messages = messages.filter((m) => !gone.has(m.id));
+      changed = true;
+    }
+    for (const r of (list.reactions || []).filter((x) => String(x.chatId) === id)) {
+      const next = applyReaction(messages, r);
+      if (next !== messages) {
+        messages = next;
+        changed = true;
+      }
+    }
+    const read = applyReads(messages, list, id);
+    if (read !== messages) {
+      messages = read;
+      changed = true;
+    }
+    return { held: changed ? { ...held, messages } : held, changed };
+  }
+  function applyReads(messages, list, id) {
+    let out = messages;
+    for (const r of (list.reads || []).filter((x) => String(x.chatId) === id)) {
+      const i = out.findIndex((m) => m.id === r.id);
+      if (i < 0 || out[i].readAt === r.readAt) continue;
+      out = out.slice();
+      out[i] = { ...out[i], read: true, readAt: r.readAt };
+    }
+    return out;
+  }
+  function applyChangesToShown(messages, list, chatId) {
+    const id = String(chatId);
+    let out = messages;
+    const have = new Set(messages.map((m) => m.id));
+    const arrived = [];
+    for (const m of (list.messages || []).filter((x) => String(x.chatId) === id)) {
+      if (have.has(m.id)) out = applyEdit(out, m);
+      else arrived.push(m);
+    }
+    const gone = new Set((list.unsent || []).filter((u) => String(u.chatId) === id).map((u) => u.id));
+    if (gone.size) out = out.filter((m) => !gone.has(m.id));
+    for (const r of (list.reactions || []).filter((x) => String(x.chatId) === id)) out = applyReaction(out, r);
+    return { messages: applyReads(out, list, id), arrived };
+  }
+  function olderFromHeld(held, edgeId, size2) {
+    if (!held) return null;
+    const i = held.messages.findIndex((m) => m.id === edgeId);
+    if (i <= 0) return null;
+    const from = Math.max(0, i - size2);
+    return { messages: held.messages.slice(from, i), hasMore: from > 0 || held.hasOlder };
+  }
+  function mediaEvictions(entries, { cap = MEDIA_CACHE_BYTES, keep = null } = {}) {
+    let total = entries.reduce((sum, e) => sum + (e.size || 0), 0);
+    const out = [];
+    for (const e of [...entries].sort((a, b) => a.usedAt - b.usedAt || String(a.key).localeCompare(String(b.key)))) {
+      if (total <= cap) break;
+      if (e.key === keep) continue;
+      out.push(e.key);
+      total -= e.size || 0;
+    }
+    return out;
+  }
+  function holdsMedia(attachment, { part: part2 = null, size: size2 = 0 } = {}) {
+    if (!attachment || !(size2 > 0) || size2 > MEDIA_ITEM_MAX_BYTES) return false;
+    if (part2 === "poster") return true;
+    if (part2) return false;
+    return /^image\//i.test(String(attachment.mime || ""));
+  }
+  var mediaKey = (attachment, { part: part2 = null, format = null } = {}) => String(attachment.id) + (part2 ? ":" + part2 : "") + (format ? ":" + format : "");
+  function serverDigest(url) {
+    const text = String(url || "").trim().replace(/\/+$/, "").replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, (m) => m.toLowerCase());
+    return sha256Hex(text);
+  }
+  var K = Uint32Array.from([
+    1116352408,
+    1899447441,
+    3049323471,
+    3921009573,
+    961987163,
+    1508970993,
+    2453635748,
+    2870763221,
+    3624381080,
+    310598401,
+    607225278,
+    1426881987,
+    1925078388,
+    2162078206,
+    2614888103,
+    3248222580,
+    3835390401,
+    4022224774,
+    264347078,
+    604807628,
+    770255983,
+    1249150122,
+    1555081692,
+    1996064986,
+    2554220882,
+    2821834349,
+    2952996808,
+    3210313671,
+    3336571891,
+    3584528711,
+    113926993,
+    338241895,
+    666307205,
+    773529912,
+    1294757372,
+    1396182291,
+    1695183700,
+    1986661051,
+    2177026350,
+    2456956037,
+    2730485921,
+    2820302411,
+    3259730800,
+    3345764771,
+    3516065817,
+    3600352804,
+    4094571909,
+    275423344,
+    430227734,
+    506948616,
+    659060556,
+    883997877,
+    958139571,
+    1322822218,
+    1537002063,
+    1747873779,
+    1955562222,
+    2024104815,
+    2227730452,
+    2361852424,
+    2428436474,
+    2756734187,
+    3204031479,
+    3329325298
+  ]);
+  function sha256Hex(text) {
+    const bytes = new TextEncoder().encode(String(text));
+    const padded = new Uint8Array(bytes.length + 9 + 63 >> 6 << 6);
+    padded.set(bytes);
+    padded[bytes.length] = 128;
+    const view = new DataView(padded.buffer);
+    view.setUint32(padded.length - 8, Math.floor(bytes.length / 536870912));
+    view.setUint32(padded.length - 4, bytes.length * 8 >>> 0);
+    const h = Uint32Array.from([1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]);
+    const w = new Uint32Array(64);
+    const rotr = (x, n) => x >>> n | x << 32 - n;
+    for (let off = 0; off < padded.length; off += 64) {
+      for (let i = 0; i < 16; i += 1) w[i] = view.getUint32(off + i * 4);
+      for (let i = 16; i < 64; i += 1) {
+        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ w[i - 15] >>> 3;
+        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ w[i - 2] >>> 10;
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1 >>> 0;
+      }
+      let [a, b, c, d, e, f, g, k] = h;
+      for (let i = 0; i < 64; i += 1) {
+        const t1 = k + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + (e & f ^ ~e & g) + K[i] + w[i] >>> 0;
+        const t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + (a & b ^ a & c ^ b & c) >>> 0;
+        k = g;
+        g = f;
+        f = e;
+        e = d + t1 >>> 0;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2 >>> 0;
+      }
+      h[0] += a;
+      h[1] += b;
+      h[2] += c;
+      h[3] += d;
+      h[4] += e;
+      h[5] += f;
+      h[6] += g;
+      h[7] += k;
+    }
+    return Array.from(h, (x) => x.toString(16).padStart(8, "0")).join("");
   }
 
   // core/app/rules/links.js
@@ -4326,8 +4561,8 @@ var engine = (() => {
     return { chatId, messageId: id(value.messageId) };
   }
   function messageNotice(title, m) {
-    const count = Array.isArray(m.attachments) ? m.attachments.length : 0;
-    return { title, body: messageSummary(m) || (count > 1 ? count + " attachments" : "Attachment") };
+    const count2 = Array.isArray(m.attachments) ? m.attachments.length : 0;
+    return { title, body: messageSummary(m) || (count2 > 1 ? count2 + " attachments" : "Attachment") };
   }
 
   // core/app/rules/sheet.js
@@ -4505,8 +4740,8 @@ var engine = (() => {
     return typingActive(state, now) && state.kind === "contact";
   }
   var TYPING_BUBBLE_LABEL = "typing";
-  function typingPulse(index, count, lift) {
-    const n = Math.max(1, count);
+  function typingPulse(index, count2, lift) {
+    const n = Math.max(1, count2);
     const span = 0.6 / n;
     const peak = 0.2 + index * span;
     const rest = { opacity: 0.4, translate: "0px 0px" };
