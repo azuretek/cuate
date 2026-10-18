@@ -2,7 +2,8 @@
 // HEIF photo is converted to JPEG with the Mac's own sips when a client asks, and the conversion is cached in the
 // data folder so it happens once. A Live Photo's motion is served from beside its still when a client asks for the
 // live part, and from inside the attachments folder only, as the still is. A video's poster, the still a client draws
-// in its tile, is made once on the Mac and served as the poster part (issue 415).
+// in its tile, is made once on the Mac and served as the poster part (issue 415). A voice message no web view plays is
+// converted once on the Mac to AAC in an MPEG-4 file when a client asks for it as m4a (issue 435).
 import os from 'node:os';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
@@ -33,7 +34,16 @@ const qlPoster = async (src, out) => {
   }
 };
 
-export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform, convertMotion = avconvert, makePoster = qlPoster }) {
+// A voice message (issue 435) is a Core Audio file, Opus inside on current iPhones and AMR or AAC on older ones, and an
+// older recording can be bare AMR. Chromium (the desktop shells and Android's WebView) has no demuxer for either, so on a
+// Mac it is converted once with the system's own afconvert to AAC in an MPEG-4 file, which every web view plays.
+// Injectable, so it is tested without a Mac.
+const afconvert = (src, out) => new Promise((resolve, reject) => execFile('afconvert', ['-f', 'm4af', '-d', 'aac', src, out], { timeout: 60000 }, (err) => (err ? reject(err) : resolve())));
+// The recordings that need the copy: the types Messages and a sniff give a voice message.
+const NEEDS_AUDIO_COPY = new Set(['audio/x-caf', 'audio/caf', 'audio/amr', 'audio/3gpp', 'audio/3gpp2']);
+const needsAudioCopy = (mime) => NEEDS_AUDIO_COPY.has(String(mime || '').split(';')[0].trim().toLowerCase());
+
+export function createAttachments({ attachmentsRoot, dataDir, platform = process.platform, convertMotion = avconvert, makePoster = qlPoster, convertAudio = afconvert }) {
   // The recorded path is real, and inside the attachments folder or Messages' sticker cache beside it (a sticker's
   // picture is kept there, issue 341), or there is nothing to serve.
   // The Contacts cache joins the Messages folders: a contact's picture is served by the same route, from the data
@@ -141,6 +151,30 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
     return posters.get(out);
   }
 
+  // The voice message's copy in the data folder's cache, made once and reused, written beside its final name and renamed
+  // into place, one conversion however many ask. A copy that cannot be made leaves the original to be served.
+  const voices = new Map();
+  async function toM4a(src, id) {
+    const dir = path.join(dataDir, 'cache');
+    const out = path.join(dir, id + '.voice.m4a');
+    try { await access(out); return out; } catch { /* not converted yet */ }
+    if (!voices.has(out)) {
+      voices.set(out, (async () => {
+        await mkdir(dir, { recursive: true });
+        const part = out + '.part.m4a';
+        try {
+          await convertAudio(src, part);
+          await rename(part, out);
+        } catch (e) {
+          await rm(part, { force: true }).catch(() => {});
+          throw e;
+        }
+        return out;
+      })().finally(() => voices.delete(out)));
+    }
+    return voices.get(out);
+  }
+
   return {
     async resolve(rec, format, part = null) {
       if (part === 'poster') {
@@ -178,6 +212,10 @@ export function createAttachments({ attachmentsRoot, dataDir, platform = process
       if (format === 'jpeg' && /heic|heif/i.test(rec.mime) && platform === 'darwin') {
         file = await toJpeg(real, rec.id);
         mime = 'image/jpeg';
+      }
+      if (format === 'm4a' && needsAudioCopy(mime) && platform === 'darwin') {
+        const copy = await toM4a(real, rec.id).catch(() => null);
+        if (copy) return { file: copy, mime: 'audio/mp4', size: (await stat(copy)).size };
       }
       const st = await stat(file);
       return { file, mime, size: st.size };

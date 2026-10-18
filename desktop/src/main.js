@@ -943,6 +943,51 @@ async function runSmoke(w) {
     console.log('text formatting: ' + JSON.stringify({ checks: fmtChecks, fmt }));
   }
 
+  // A mention in a group (issue 453): the fake engine's group carries Priya mentioning Jordan, which the server reads from
+  // the store. The name draws set apart, titled with the contact name the chat knows Jordan by, the rest plain, and the
+  // accessibility tree a screen reader reads names Jordan there.
+  {
+    await smokeStep('mention');
+    const menBack = await js("document.querySelector('app-root').openChatId");
+    await js("(() => { document.querySelector('.chat-row[data-chat=\"2\"]').click(); return true; })()");
+    await waitFor("String(document.querySelector('app-root').openChatId) === '2' && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    await waitFor("Boolean(document.querySelector('.bubble-row[data-id=\"FAKE-0022\"] .mention'))", 15000).catch(() => {});
+    const men = await js(`(() => {
+      const row = document.querySelector('.bubble-row[data-id="FAKE-0022"]');
+      if (!row) return { found: false };
+      row.scrollIntoView({ block: 'center' });
+      const bubble = row.querySelector('.bubble');
+      const el = row.querySelector('.mention');
+      const chat = document.querySelector('app-root').chats.find((c) => c.id === '2');
+      const known = ((chat && chat.members) || []).find((m) => m.handle === 'jordan@example.com');
+      return { found: true, bubble: bubble.textContent, mentions: row.querySelectorAll('.mention').length, words: el && el.textContent, title: el && el.getAttribute('title'), label: el && el.getAttribute('aria-label'), expected: (known && known.name) || 'jordan@example.com', apart: Boolean(el) && Number(getComputedStyle(el).fontWeight) > Number(getComputedStyle(bubble).fontWeight) };
+    })()`);
+    // What Chromium hands a screen reader: the mention's node in the accessibility tree, by its role and computed name.
+    const menSpoken = await (async () => {
+      try {
+        if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+        await within(wc.debugger.sendCommand('Accessibility.enable', {}), 8000);
+        const tree = await within(wc.debugger.sendCommand('Accessibility.getFullAXTree', {}), 8000);
+        return ((tree && tree.nodes) || []).filter((n) => !n.ignored && n.name && /, mention of /.test(String(n.name.value))).map((n) => ({ role: n.role && n.role.value, name: n.name.value }));
+      } catch (e) {
+        return [{ error: String((e && e.message) || e) }];
+      }
+    })();
+    await shot('03g-mention.png');
+    if (menBack !== null && String(menBack) !== '2') {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(String(menBack)) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(String(menBack)), 15000).catch(() => {});
+    }
+    const menChecks = {
+      drawn: men.found && men.bubble === 'Jordan, can you grab ice on the way?' && men.mentions === 1 && men.words === 'Jordan',
+      named: Boolean(men.title) && men.title === men.expected,
+      spoken: men.label === 'Jordan, mention of ' + men.expected && menSpoken.some((n) => (n.role === 'image' || n.role === 'img') && n.name === men.label),
+      apart: Boolean(men.apart),
+    };
+    report.mention = Object.values(menChecks).every(Boolean);
+    console.log('mention: ' + JSON.stringify({ checks: menChecks, men, spoken: menSpoken }));
+  }
+
   // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
   // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a
   // bar, which is the width the bar takes from the field's box. Shift+Enter is pressed as a real key and adds a line,
@@ -2420,8 +2465,9 @@ async function runSmoke(w) {
   console.log('switch place: ' + JSON.stringify({ placeA, placeB, placeA2, switchMs }));
   // The server's answer to a conversation we already hold is held open on purpose: the pane must still draw the other
   // conversation at once, and the search field and the composer must take input, so a switch never waits on a fetch.
-  const heldSwitch = await js("(async () => { const root = document.querySelector('app-root'); const real = root.client.messages.bind(root.client); let release; const gate = new Promise((r) => { release = r; }); let asked = 0; root.client.messages = async (...args) => { asked += 1; await gate; return real(...args); }; const title = () => { const t = document.querySelector('.conv-head .chat-name'); return t ? t.textContent : null; }; [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name').textContent === " + JSON.stringify(SWITCH_B) + ").click(); const t0 = performance.now(); while (title() !== " + JSON.stringify(SWITCH_B) + " && performance.now() - t0 < 1000) await new Promise((r) => requestAnimationFrame(r)); const swappedMs = performance.now() - t0; const swapped = title() === " + JSON.stringify(SWITCH_B) + "; const search = document.querySelector('.sidebar-head .chat-search'); search.focus(); search.value = 'q'; search.dispatchEvent(new Event('input', { bubbles: true })); const typed = search.value === 'q'; search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); const ta = document.querySelector('app-composer textarea'); ta.focus(); ta.value = 'hi'; ta.dispatchEvent(new Event('input', { bubbles: true })); const composed = ta.value === 'hi'; ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); release(); root.client.messages = real; await new Promise((r) => setTimeout(r, 50)); return { asked, swapped, swappedMs: Math.round(swappedMs), typed, composed }; })()");
-  report.switchInstant = Boolean(heldSwitch) && heldSwitch.asked >= 1 && heldSwitch.swapped && heldSwitch.swappedMs < 900 && heldSwitch.typed && heldSwitch.composed;
+  const heldSwitch = await js("(async () => { const root = document.querySelector('app-root'); const real = root.client.messages.bind(root.client); let release; const gate = new Promise((r) => { release = r; }); let asked = 0; root.client.messages = async (...args) => { asked += 1; await gate; return real(...args); }; const title = () => { const t = document.querySelector('.conv-head .chat-name'); return t ? t.textContent : null; }; [...document.querySelectorAll('.chat-row')].find((x) => x.querySelector('.chat-name').textContent === " + JSON.stringify(SWITCH_B) + ").click(); const t0 = performance.now(); while (title() !== " + JSON.stringify(SWITCH_B) + " && performance.now() - t0 < 1000) await new Promise((r) => requestAnimationFrame(r)); const swappedMs = performance.now() - t0; const swapped = title() === " + JSON.stringify(SWITCH_B) + "; const search = document.querySelector('.sidebar-head .chat-search'); search.focus(); search.value = 'q'; search.dispatchEvent(new Event('input', { bubbles: true })); const typed = search.value === 'q'; search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); const ta = document.querySelector('app-composer textarea'); ta.focus(); ta.value = 'hi'; ta.dispatchEvent(new Event('input', { bubbles: true })); const composed = ta.value === 'hi'; ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); const current = Boolean(root.cache && root.upToDate && root.cache.heldNow(root.openChatId)?.current); release(); root.client.messages = real; await new Promise((r) => setTimeout(r, 50)); return { asked, current, swapped, swappedMs: Math.round(swappedMs), typed, composed }; })()");
+  // A conversation the device's store holds and is current is not read again at all (issue 441); any other is refreshed.
+  report.switchInstant = Boolean(heldSwitch) && (heldSwitch.asked >= 1 || heldSwitch.current) && heldSwitch.swapped && heldSwitch.swappedMs < 900 && heldSwitch.typed && heldSwitch.composed;
   console.log('switch instant: ' + JSON.stringify(heldSwitch));
   await clickRow(SWITCH_A);
   await waitFor(showsName(SWITCH_A), 10000);
@@ -2682,12 +2728,17 @@ async function runSmoke(w) {
   // The Import button shows the import in flight (issue 140), so the step waits for its press to settle. presses is how
   // many times it is pressed at once: the double press must reach the theme's host once.
   const importButton = "document.querySelector('app-settings .theme-url-action')";
-  const importUrl = async (url, presses = 1) => {
+  // A theme page's import also fetches its fonts from Google Fonts through the server (server/src/theme-fonts.js): each
+  // family it names is asked in turn, its stylesheet and then its files each bounded at 10 s, beside the page and the
+  // registry item at 10 s each. Elegant Luxury names two families, so the server may take up to a minute before it
+  // answers, and the wait for that press covers the server's own bound rather than a slow font service failing the smoke.
+  const THEME_PAGE_IMPORT_MS = 60000;
+  const importUrl = async (url, presses = 1, settleMs = 15000) => {
     await waitFor(importButton + ".dataset.press !== 'pending'", 15000);
     await js(`(() => { const i = document.querySelector('app-settings .theme-url-input'); i.value = ${JSON.stringify(url)}; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await waitFor('!' + importButton + '.disabled');
     const states = await js('(() => { const b = ' + importButton + '; const seen = []; for (let i = 0; i < ' + presses + '; i += 1) { b.click(); seen.push(b.dataset.press || \'idle\'); } return seen; })()');
-    await waitFor(importButton + ".dataset.press !== 'pending' && Boolean(document.querySelector('app-settings .theme-url-note'))", 15000);
+    await waitFor(importButton + ".dataset.press !== 'pending' && Boolean(document.querySelector('app-settings .theme-url-note'))", settleMs);
     return { note: await js("document.querySelector('app-settings .theme-url-note').textContent"), states };
   };
   try {
@@ -2715,7 +2766,9 @@ async function runSmoke(w) {
     // runner without the network still imports the theme, named in the note. The System, Light, Dark switch and the
     // text size chips are read in each scheme, in this theme and in the default palette, and every label must hold
     // 4.5:1 against what it is drawn on, with the thumb under the selected label (issue 135).
-    const pageNote = await importUrl(themeBase + '/editor/theme?theme=elegant-luxury');
+    const pageStarted = Date.now();
+    const pageNote = await importUrl(themeBase + '/editor/theme?theme=elegant-luxury', 1, THEME_PAGE_IMPORT_MS);
+    console.log('theme page import: ' + JSON.stringify({ ms: Date.now() - pageStarted }));
     const lux = ((await held())['appearance.themes'] || []).find((t) => t.id === 'elegant-luxury');
     report.themePageHeld = Boolean(lux) && lux.name === 'Elegant Luxury' && lux.font?.family === 'Poppins, sans-serif' && lux.radius?.md === '0.375rem' && Boolean(lux.shadow?.md);
     await waitFor("Boolean(document.querySelector('app-settings .theme-card[data-theme-id=\"elegant-luxury\"]'))", 10000);

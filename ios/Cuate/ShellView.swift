@@ -119,6 +119,15 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The message cache fixture (issue 441), the same seam: Debug only. It signs the real page in to a stand-in server
+        // over an emulated slow link and measures a launch with the device's store and without it, cold and warm.
+        if ProcessInfo.processInfo.arguments.contains("--message-cache-fixture"),
+           let url = Bundle.main.url(forResource: "message-cache-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let mode = ProcessInfo.processInfo.arguments.contains("--fixture-cache-off") ? "off" : "on"
+            let run = ProcessInfo.processInfo.arguments.contains("--fixture-cache-warm") ? "warm" : "cold"
+            controller.addUserScript(WKUserScript(source: "window.fixtureCacheMode = '\(mode)'; window.fixtureCacheRun = '\(run)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The edit history fixture (issue 437), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--edit-history-fixture"),
            let url = Bundle.main.url(forResource: "edit-history-fixture", withExtension: "js"),
@@ -131,12 +140,26 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The mention fixture (issue 453), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--mention-fixture"),
+           let url = Bundle.main.url(forResource: "mention-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The late notice fixture (issue 414), the same seam: Debug only. It signs the real page in to a stand-in server
         // and raises a notice for a message that server does not have yet.
         if ProcessInfo.processInfo.arguments.contains("--late-notice-fixture"),
            let url = Bundle.main.url(forResource: "late-notice-fixture", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        // The audio fixture (issue 432), the same seam: Debug only, and its script and its synthetic recording are
+        // copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--audio-fixture"),
+           let url = Bundle.main.url(forResource: "audio-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let scheme = ProcessInfo.processInfo.arguments.contains("--fixture-dark") ? "dark" : "light"
+            controller.addUserScript(WKUserScript(source: "window.fixtureScheme = '\(scheme)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
         #endif
         configuration.userContentController = controller

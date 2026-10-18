@@ -3,6 +3,8 @@ import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
 import { isMediaAttachment, mediaKind, isLivePhoto } from '../rules/media.js';
 import { previewKind, filePress } from '../rules/documents.js';
+import { playsInPlace } from '../rules/audio.js';
+import './app-audio.js';
 
 const needsJpeg = (a) => /heic|heif/i.test(a.mime);
 
@@ -42,6 +44,18 @@ export function heldPoster(a) {
   return url;
 }
 const holdPoster = (a, url) => holdMedia(a, url, posterKey(a));
+// The device's store (issue 441), which keeps the pictures tiles draw across launches under its own byte cap, or null.
+// A picture it holds is drawn from it with no server read; one it lacks is fetched and offered to it.
+let mediaStore = null;
+export function useMediaStore(store) { mediaStore = store || null; }
+async function fetchTile(client, a, options, signal) {
+  const kept = mediaStore ? await mediaStore.media(a, options).catch(() => null) : null;
+  if (kept) return kept;
+  if (!client) throw Object.assign(new Error('No server yet.'), { code: 'no_client' });
+  const blob = await client.attachment(a.id, { ...options, signal });
+  if (mediaStore) mediaStore.keepMedia(a, blob, options).catch(() => {});
+  return blob;
+}
 // Where the server has no poster, the video is drawn a tenth of a second in: a media fragment makes the web view seek
 // and paint that frame, where a video that read only its metadata paints nothing at all on iPhone (issue 415).
 export const FIRST_FRAME = '#t=0.1';
@@ -83,7 +97,7 @@ export const saveAttachment = (a, options) => handFile('file.save', a, options);
 export const openAttachment = (a, options) => handFile('file.open', a, options);
 
 class AppAttachment extends KitElement {
-  static properties = { attachment: { attribute: false }, client: { attribute: false }, src: { state: true }, poster: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
+  static properties = { attachment: { attribute: false }, client: { attribute: false }, mine: { attribute: false }, src: { state: true }, poster: { state: true }, failed: { state: true }, linkUrl: { attribute: false } };
 
   constructor() {
     super();
@@ -93,6 +107,8 @@ class AppAttachment extends KitElement {
     // A link whose video the server resolves (issue 243): the still previews it, and a press plays the video rather
     // than the still. Empty for an ordinary attachment.
     this.linkUrl = '';
+    // Whether the message is one we sent, so a recording of ours is never marked as not played (issue 432).
+    this.mine = false;
   }
 
   // The bytes belong to the held set above, which lets them go, so an element leaving the page keeps nothing to free.
@@ -140,6 +156,11 @@ class AppAttachment extends KitElement {
   }
 
   updated(changed) {
+    // A tile drawn from the device's store before the server was reached asks again once it is (issue 441).
+    if (changed.has('client') && this.client && !changed.get('client') && !changed.has('attachment')) {
+      if (!this.src && !this.failed) this.fetchWhenSeen();
+      else if (this.src && !this.poster) this.loadPoster();
+    }
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
       this.loadRequest?.abort();
       this.loadRequest = null;
@@ -158,19 +179,19 @@ class AppAttachment extends KitElement {
   // identity check dropped the blob with no second load to replace it, leaving the placeholder up for good.
   async load() {
     const a = this.attachment;
-    if (!isMediaAttachment(a) || !this.client) return;
+    if (!isMediaAttachment(a) || (!this.client && !mediaStore)) return;
     const request = new AbortController();
     this.loadRequest?.abort();
     this.loadRequest = request;
     if (!this.poster) this.loadPoster();
     try {
-      const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined, signal: request.signal });
+      const blob = await fetchTile(this.client, a, needsJpeg(a) ? { format: 'jpeg' } : {}, request.signal);
       if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
       const url = heldMedia(a) || URL.createObjectURL(blob);
       holdMedia(a, url);
       if (this.attachment?.id === a.id) this.src = url;
-    } catch {
-      if (!request.signal.aborted && this.attachment?.id === a.id) this.failed = true;
+    } catch (e) {
+      if (!request.signal.aborted && this.attachment?.id === a.id && e?.code !== 'no_client') this.failed = true;
     } finally { if (this.loadRequest === request) this.loadRequest = null; }
   }
 
@@ -179,12 +200,12 @@ class AppAttachment extends KitElement {
   // a failed video. It lands under the same id match as the video.
   async loadPoster() {
     const a = this.attachment;
-    if (!a || mediaKind(a) !== 'video' || a.sticker || !this.client) return;
+    if (!a || mediaKind(a) !== 'video' || a.sticker || (!this.client && !mediaStore)) return;
     const request = new AbortController();
     this.posterRequest?.abort();
     this.posterRequest = request;
     try {
-      const blob = await this.client.attachment(a.id, { part: 'poster', signal: request.signal });
+      const blob = await fetchTile(this.client, a, { part: 'poster' }, request.signal);
       if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
       const url = heldPoster(a) || URL.createObjectURL(blob);
       holdPoster(a, url);
@@ -209,7 +230,7 @@ class AppAttachment extends KitElement {
     this.dispatchEvent(new CustomEvent('view-image', { bubbles: true, composed: true, detail: { from, src: this.src, alt: this.attachment?.name || '', attachmentId: this.attachment?.id || '', kind: isLivePhoto(this.attachment) ? 'video' : mediaKind(this.attachment) || 'image' } }));
   }
 
-  // Pressing a document (issue 374): a kind the app shows itself (a PDF, text, or audio a web view plays) opens in the
+  // Pressing a document (issue 374): a kind the app shows itself (a PDF or text) opens in the
   // media viewer, which offers Open in and Save beside it; any other kind goes straight to Open in. The press stops
   // here, so the message it sits in never takes it as a press of its own (a thread reply's text opens its thread; an
   // attachment never does).
@@ -242,6 +263,9 @@ class AppAttachment extends KitElement {
       const label = (moves ? 'Play ' : 'Open ') + a.name;
       return html`<button type="button" class="attachment-preview" aria-label=${label} data-moves=${moves ? 'true' : nothing} @click=${press(() => this.open())}>${media}${moves ? html`<span class="media-play" aria-hidden="true"><span class="icon" data-icon="play"></span></span>` : nothing}</button>`;
     }
+    // A recording plays where it was sent (issue 432), in a player of its own. One the web view cannot fetch or play
+    // is drawn as the file card below, which opens it in the device's own apps.
+    if (playsInPlace(a) && this.client && !this.failed) return html`<app-audio .attachment=${a} .client=${this.client} .mine=${Boolean(this.mine)} @audio-failed=${() => { this.failed = true; }}></app-audio>`;
     if (a.missing || a.local || !this.client) return html`<div class="attachment-file"><span class="attachment-name">${a.name}</span>${a.missing ? html`<span class="muted small"> Not on the Mac</span>` : nothing}</div>`;
     // A document the viewer shows reads as a document; one that goes straight to the device's own apps says so.
     const view = filePress(a) === 'view';

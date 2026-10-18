@@ -126,6 +126,7 @@ const checks = [
   { key: 'typingBubble', bound: 'the other person typing draws three dots under the newest message and clears, a reader scrolled up is not moved, and our other device is a header note (issue 390)', value: (report) => report.typingBubble, test: (v) => v === true },
   { key: 'textEffects', bound: 'a text effect plays over the stretch it was laid on, settles back to the words as sent, and is drawn still under reduced motion (issue 433)', value: (report) => report.textEffects, test: (v) => v === true },
   { key: 'textFormat', bound: 'bold, underlined and italic stretches the server read from the store each draw with their own style, the rest plain, and the bubble reads the words as sent (issue 447)', value: (report) => report.textFormat, test: (v) => v === true },
+  { key: 'mention', bound: 'a mention the server read from the store draws set apart, titled with the contact name the chat knows its person by and named so to a screen reader, the rest plain (issue 453)', value: (report) => report.mention, test: (v) => v === true },
   { key: 'composerGrows', bound: 'true', value: (report) => report.composerGrows, test: (v) => v === true },
   { key: 'closeToTray', bound: 'true', value: (report) => report.closeToTray, test: (v) => v === true },
   { key: 'tray', bound: 'true', value: (report) => report.tray, test: (v) => v === true },
@@ -228,4 +229,8 @@ try {
 // A failed page boundary, memory bound or scroll anchor fails the desktop smoke too.
 const proofElectron = createRequire(path.join(root, 'desktop', 'package.json'))('electron');
 execFileSync(proofElectron, [path.join(root, 'desktop/scripts/prove-history-window.mjs')], { timeout: 240000, stdio: 'inherit', env: { ...process.env, HISTORY_PROOF_OUT: path.join(out, 'history-window') } });
+// A recording plays in its message in this shell's own Chromium (issue 432): real mouse input presses play on a
+// synthetic recording, and its time, elapsed clock, waveform and played mark must move. A recording that does not play
+// fails the desktop smoke too.
+execFileSync(proofElectron, [path.join(root, 'desktop/scripts/prove-audio.mjs')], { timeout: 180000, stdio: 'inherit', env: { ...process.env, AUDIO_PROOF_OUT: path.join(out, 'audio') } });
 console.log('smoke ok: ' + JSON.stringify(report) + '; ' + verdict.results.length + ' checks measured; captures in ' + out);

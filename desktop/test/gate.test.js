@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { parse } from 'yaml';
-import { judge, isSupersession, check, findRun, splitList, ghJson, isTransient } from '../../scripts/release/gate.mjs';
+import { judge, isSupersession, check, findRun, splitList, ghJson, isTransient, statusFor, postStatus, STATUS_DESCRIPTION_MAX } from '../../scripts/release/gate.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -137,6 +137,93 @@ test('check waits past a partial job list and refuses when the window runs out',
   assert.match(result.refusals[0].reason, /has not passed after/);
 });
 
+// ★ The pull request's path: one look, no runner held. A pipeline that is still
+// running or has no run yet makes the look undecided, so nothing is posted and
+// the pipeline that finishes last decides; the look never waits, so a clock
+// that only advances on a wait stays at zero.
+test('a no-wait look is undecided while a pipeline is still running, and never waits', () => {
+  const gh = fakeGitHub({ run: { id: 7, name: 'ios', head_branch: 'feat/x', created_at: 'x', html_url: 'u' }, states: [jobs(['boot', '', 'in_progress'])] });
+  const result = check({ repo: 'o/r', sha: 'abc', refName: 'feat/x', pipelines: ['ios'], wait: false }, gh.io);
+  assert.equal(result.ok, null);
+  assert.equal(result.undecided.length, 1);
+  assert.match(result.undecided[0].waitFor, /not finished/);
+  assert.equal(gh.io.now(), 0, 'a no-wait look must not wait');
+  assert.equal(statusFor(result, { pipelines: ['ios'] }), null, 'an undecided look posts nothing');
+});
+
+test('a no-wait look is undecided while a pipeline has not registered a run, and never waits', () => {
+  const gh = fakeGitHub({ run: null, states: [[]] });
+  const result = check({ repo: 'o/r', sha: 'abc', refName: 'feat/x', pipelines: ['ios'], wait: false }, gh.io);
+  assert.equal(result.ok, null);
+  assert.match(result.undecided[0].waitFor, /not registered a run/);
+  assert.equal(gh.io.now(), 0, 'a no-wait look must not wait for the run to appear');
+  assert.equal(statusFor(result, { pipelines: ['ios'] }), null);
+});
+
+// Several pipelines: one green and one unfinished is still undecided, because
+// the status is one answer for all of them.
+test('a no-wait look stays undecided until the LAST pipeline has finished', () => {
+  const runs = { ios: { id: 1, name: 'ios', head_branch: 'feat/x', created_at: 'x', html_url: 'ios-run' }, android: { id: 2, name: 'android', head_branch: 'feat/x', created_at: 'x', html_url: 'android-run' } };
+  const io = {
+    ...fakeGitHub({ run: null, states: [[]] }).io,
+    runsFor: () => Object.values(runs),
+    jobsFor: (id) => (id === 1 ? jobs(['build and boot (simulator)', 'success']) : jobs(['build and boot (emulator)', '', 'in_progress'])),
+  };
+  const result = check({ repo: 'o/r', sha: 'abc', refName: 'feat/x', pipelines: ['ios', 'android'], wait: false }, io);
+  assert.equal(result.ok, null);
+  assert.deepEqual(result.undecided.map((entry) => entry.pipeline), ['android']);
+});
+
+test('a no-wait look passes once every pipeline is green, and the status names them all', () => {
+  const gh = fakeGitHub({ run: { id: 7, name: 'ios', head_branch: 'feat/x', created_at: 'x', html_url: 'u' }, states: [jobs(['build and boot (simulator)', 'success'], ['release to TestFlight', 'skipped'])] });
+  const result = check({ repo: 'o/r', sha: 'abc', refName: 'feat/x', pipelines: ['ios'], exempt: 'release to TestFlight', wait: false }, gh.io);
+  assert.equal(result.ok, true);
+  const status = statusFor(result, { pipelines: ['ios', 'android'] });
+  assert.equal(status.state, 'success');
+  assert.match(status.description, /ios, android/);
+});
+
+test('a no-wait look refuses a red leg, and the status names the platform, the job, its conclusion and the run', () => {
+  const gh = fakeGitHub({ run: { id: 7, name: 'ios', head_branch: 'feat/x', created_at: 'x', html_url: 'https://example.com/run/7' }, states: [jobs(['build and boot (simulator)', 'failure'])] });
+  const result = check({ repo: 'o/r', sha: 'abc', refName: 'feat/x', pipelines: ['ios'], wait: false, purpose: 'merge' }, gh.io);
+  assert.equal(result.ok, false);
+  const status = statusFor(result, { pipelines: ['ios'], purpose: 'merge' });
+  assert.equal(status.state, 'failure');
+  assert.match(status.description, /ios did not pass \(build and boot \(simulator\): failure\)/);
+  assert.equal(status.target_url, 'https://example.com/run/7');
+  // A skipped leg refuses here exactly as it does on the publishing gate.
+  const skipped = fakeGitHub({ run: { id: 8, name: 'android', head_branch: 'feat/x', created_at: 'x', html_url: 'u' }, states: [jobs(['build and boot (emulator)', 'skipped'])] });
+  assert.equal(check({ repo: 'o/r', sha: 'abc', refName: 'feat/x', pipelines: ['android'], wait: false }, skipped.io).ok, false);
+});
+
+test('a no-wait look stands down on a superseded run and posts nothing', () => {
+  const gh = fakeGitHub({ run: { id: 7, name: 'ios', head_branch: 'feat/x', created_at: 'x', html_url: 'u' }, states: [jobs(['boot', 'cancelled'])], newer: 1 });
+  const result = check({ repo: 'o/r', sha: 'abc', refName: 'feat/x', pipelines: ['ios'], wait: false }, gh.io);
+  assert.equal(result.ok, null);
+  assert.deepEqual(result.superseded.map((entry) => entry.pipeline), ['ios']);
+  assert.equal(statusFor(result, { pipelines: ['ios'] }), null);
+});
+
+test('a status description fits GitHub\'s limit, however long the job names are', () => {
+  const red = Array.from({ length: 6 }, (_, i) => ({ name: 'a job with a very long name number ' + i, conclusion: 'failure' }));
+  const status = statusFor({ ok: false, refusals: [{ pipeline: 'ios', red, run: { html_url: 'u' } }, { pipeline: 'android', red: [], run: { html_url: 'v' } }] }, { pipelines: ['ios', 'android'] });
+  assert.ok(status.description.length <= STATUS_DESCRIPTION_MAX, status.description.length + ' characters');
+  assert.match(status.description, /^ios did not pass/);
+});
+
+test('posting a status reads back what GitHub recorded, and refuses a different answer', () => {
+  const calls = [];
+  const ok = postStatus({ repo: 'o/r', sha: 'abc', context: 'platforms', status: { state: 'failure', description: 'd', target_url: 'u' } }, {}, (bin, args) => {
+    calls.push([bin, args]);
+    return { state: 'failure', context: 'platforms' };
+  });
+  assert.equal(ok.state, 'failure');
+  assert.equal(calls[0][0], 'gh');
+  assert.deepEqual(calls[0][1].slice(0, 4), ['api', '-X', 'POST', 'repos/o/r/statuses/abc']);
+  assert.ok(calls[0][1].includes('target_url=u'));
+  assert.throws(() => postStatus({ repo: 'o/r', sha: 'abc', context: 'platforms', status: { state: 'success', description: 'd' } }, {}, () => ({ state: 'pending', context: 'platforms' })), /different status/);
+});
+
 test('a GitHub answer larger than the 1 MiB default output buffer is read whole', () => {
   // A page of 100 runs on main measured 1.37 MB and failed the gate with ENOBUFS; three times the default stands in for it.
   const size = 3 * 1024 * 1024;
@@ -227,6 +314,51 @@ function gateCalls() {
   }
   return calls;
 }
+
+// ★ The pull request path and the push path carry the same rules. The status
+// workflow runs on the completion of every pipeline a pull request runs, judges
+// the same phone pipelines with the same exemptions ci.yml's gate used to, posts
+// through gate.mjs's no-wait mode, and never checks out the pull request's tree,
+// since it runs with the base repository's token. ci.yml's own gate call is a
+// push's alone, and its gate step reads the platforms leg differently per event.
+test('the pull request platforms status is the no-wait form of the same gate, and is not a pipeline', () => {
+  const status = readWorkflow('platforms-status.yml');
+  const ci = readWorkflow('ci.yml');
+  assert.deepEqual(Object.keys(status.on).sort(), ['workflow_dispatch', 'workflow_run'], 'the status workflow runs on completions, never as a pipeline of its own');
+  assert.ok(!pipelines().includes(String(status.name)), 'the status workflow must not count as a pipeline the publishing gate has to name');
+  assert.deepEqual(status.on.workflow_run.types, ['completed']);
+  const phone = splitList(ci.jobs.platforms.with.platforms);
+  for (const pipeline of ['ci', ...phone]) assert.ok(status.on.workflow_run.workflows.includes(pipeline), 'the status workflow does not wake on ' + pipeline + ' completing');
+  for (const named of status.on.workflow_run.workflows) assert.ok(pipelines().includes(named), named + ' is not a pipeline');
+
+  const job = status.jobs.platforms;
+  assert.equal(job.name, 'platforms', 'the job is named for the status it posts');
+  assert.match(String(job.if), /workflow_run\.event == 'pull_request'/, 'only a pull request\'s pipelines are judged here');
+  assert.equal(job.permissions.statuses, 'write');
+  assert.equal(job.permissions.actions, 'read');
+  assert.equal(job.permissions.contents, undefined, 'the status job writes nothing but the status');
+  assert.ok(Number(job['timeout-minutes']) > 0 && Number(job['timeout-minutes']) <= 15, 'one look is bounded in minutes, not hours');
+  for (const step of job.steps.filter((entry) => String(entry.uses || '').startsWith('actions/checkout'))) {
+    assert.equal(step.with?.ref, undefined, 'the checkout is the default branch\'s tree, never the pull request\'s');
+    assert.equal(step.with?.['persist-credentials'], false);
+  }
+  const step = job.steps.find((entry) => String(entry.run || '').includes('scripts/release/gate.mjs'));
+  assert.ok(step, 'the status job runs gate.mjs');
+  assert.equal(step.env.MODE, 'no-wait');
+  assert.equal(step.env.STATUS_CONTEXT, 'platforms');
+  assert.equal(step.env.PURPOSE, 'merge');
+  assert.deepEqual(splitList(step.env.PLATFORMS).sort(), phone.sort(), 'the status judges the same phone pipelines as the push gate');
+  assert.equal(step.env.EXEMPT, 'release to TestFlight|sign and publish the APK', 'the publish jobs a pull request skips by design are exempt, as they were');
+  assert.equal(step.env.SHA, '$' + '{{ github.event.workflow_run.head_sha || inputs.sha }}', 'the status goes on the head commit the runs were recorded against');
+
+  // ci.yml: the waiting gate is a push's alone, and the gate step reads it so.
+  assert.equal(ci.jobs.platforms.if, "github.event_name == 'push'", 'the waiting gate in ci.yml must not run on a pull request');
+  assert.ok(ci.jobs.gate.needs.includes('platforms'));
+  const gateRun = String(ci.jobs.gate.steps[0].run);
+  assert.match(gateRun, /pull_request/, 'the gate step must read the platforms leg per event');
+  assert.match(gateRun, /skipped/, 'on a pull request the platforms leg must be skipped, and the gate step says so');
+  assert.equal(ci.jobs.gate.steps[0].env.PLATFORMS, '$' + '{{ needs.platforms.result }}');
+});
 
 test('every pipeline that builds a platform is named by the publishing gate', () => {
   const all = pipelines();
