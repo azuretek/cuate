@@ -112,12 +112,23 @@
     let lastActivity = performance.now();
     let linkFreeAt = 0;
     const encoder = new TextEncoder();
-    const respond = async (path, body) => {
+    // A request the page gives up on (a tile scrolled away, a row reused) is cut off as a real one is: what it had not
+    // yet received is never sent, and it is counted as dropped rather than as bytes.
+    let dropped = 0;
+    const abortable = (signal) => () => {
+      if (!signal || !signal.aborted) return;
+      dropped += 1;
+      throw new DOMException('The request was dropped.', 'AbortError');
+    };
+    const respond = async (path, body, signal) => {
       const size = body instanceof Blob ? body.size : encoder.encode(JSON.stringify(body)).length;
+      const check = abortable(signal);
       await sleep(RTT_MS);
+      check();
       const start = Math.max(performance.now(), linkFreeAt);
       linkFreeAt = start + (size / BYTES_PER_SECOND) * 1000;
       await sleep(linkFreeAt - performance.now());
+      check();
       bytes += size;
       asked.push({ path, bytes: size });
       return {
@@ -155,7 +166,7 @@
       lastActivity = performance.now();
       try {
         const u = new URL(url);
-        return await respond(method + ' ' + u.pathname + u.search, route(url, method));
+        return await respond(method + ' ' + u.pathname + u.search, route(url, method), init.signal);
       } finally {
         pending -= 1;
         lastActivity = performance.now();
@@ -195,7 +206,8 @@
       mode: MODE, run: RUN, store: Boolean(root.cache), link: { rttMs: RTT_MS, bytesPerSecond: BYTES_PER_SECOND },
       bytes, requests: asked.length, listMs: Math.round(listMs), firstVisibleMs: Math.round(firstVisibleMs), newestVisibleMs: Math.round(newestVisibleMs),
       pageReads: asked.filter((a) => /\/messages/.test(a.path)).length, pictureReads: asked.filter((a) => /\/attachments\//.test(a.path)).length,
-      changesReads: asked.filter((a) => /\/changes/.test(a.path)).length, shownEdit: RUN === 'warm' ? shownEdit : null,
+      changesReads: asked.filter((a) => /\/changes/.test(a.path)).length, dropped, shownEdit: RUN === 'warm' ? shownEdit : null,
+      asked: asked.map((a) => a.path.replace(/\?.*$/, '') + ' ' + a.bytes),
     }));
   } catch (e) {
     say('cache:fail ' + (e && e.message ? e.message : String(e)));
