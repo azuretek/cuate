@@ -2936,6 +2936,9 @@
           },
           "action": {
             "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         },
         "required": [

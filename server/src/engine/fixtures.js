@@ -45,7 +45,13 @@ export const SCRIPT = [
   // Priya set the group's background (issue 417): a row with no text and nothing attached, as Messages records it, that
   // the store names a background change and whose picture the engine reports.
   [2, 1450, false, 'priya@example.com', '', 'background'],
+  // Sam named the group before anyone wrote in it (issue 439): a row with no text and nothing attached, as Messages
+  // records it, that the store names a rename with the name it gave.
+  [2, 1510, false, '+15555550177', '', 'rename'],
 ];
+
+// The name each rename row gave the group, by its line in the script.
+const RENAMED = { 21: 'Weekend plans' };
 
 // The message Avery has not read yet: the newest in the first conversation.
 const UNREAD = 'FAKE-0013';
@@ -68,7 +74,7 @@ export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes, 
   // more than one media item and the viewer has a neighbour to step to (issue 181); 'doc' is the booking PDF a press
   // saves rather than opens (issue 219).
   const attachmentFor = (kind) => {
-    if (kind === 'background') return [];
+    if (kind === 'background' || kind === 'rename') return [];
     if (kind === 'doc') return [{ filename: 'booking.pdf', transfer_name: 'booking.pdf', uti: 'com.adobe.pdf', mime_type: 'application/pdf', total_bytes: docBytes, is_sticker: false, missing: false, original_path: docPath }];
     if (kind) return [
       { filename: 'sunset.png', transfer_name: 'sunset.png', uti: 'public.png', mime_type: 'image/png', total_bytes: imageBytes, is_sticker: false, missing: false, original_path: imagePath },
@@ -109,5 +115,7 @@ export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes, 
   }
   // The background changes the store records (issue 417), which imsg's own rows never say.
   const backgrounds = SCRIPT.map((line, i) => (line[5] === 'background' ? { guid: messages[i].guid, chatId: String(line[0]), action: 'set' } : null)).filter(Boolean);
-  return { chats, messages, backgrounds };
+  // The renames the store records (issue 439), each with the name it gave.
+  const renames = SCRIPT.map((line, i) => (line[5] === 'rename' ? { guid: messages[i].guid, chatId: String(line[0]), name: RENAMED[i + 1] || '' } : null)).filter(Boolean);
+  return { chats, messages, backgrounds, renames };
 }

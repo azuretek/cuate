@@ -20,6 +20,7 @@
     "engine.overflow": { "level": "warn", "msg": "engine watch overflowed; resubscribing", "fields": { "resume_after": "number" } },
     "edit.scan": { "level": "debug", "msg": "edited messages found in the Messages store and told", "fields": { "found": "number" } },
     "background.failed": { "level": "warn", "msg": "reading a conversation background failed", "fields": { "error": "string" } },
+    "rename.failed": { "level": "warn", "msg": "reading which messages renamed a group failed", "fields": { "error": "string" } },
     "edit.failed": { "level": "warn", "msg": "reading which messages were edited failed", "fields": { "error": "string" } },
     "db.watch": { "level": "notice", "msg": "database watch", "fields": { "ok": "boolean", "reason": "string" } },
     "db.changed": { "level": "debug", "msg": "the engine database changed", "fields": { "kind": "string" } },

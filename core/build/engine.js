@@ -85,6 +85,7 @@ var engine = (() => {
     PHOTO_SCAN_ROWS: () => PHOTO_SCAN_ROWS,
     PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PRESS_STATES: () => PRESS_STATES,
+    RENAME_ITEM_TYPE: () => RENAME_ITEM_TYPE,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
     SEARCH_MODES: () => SEARCH_MODES,
@@ -214,6 +215,7 @@ var engine = (() => {
     emptyFilters: () => emptyFilters,
     emptyListText: () => emptyListText,
     engineLabel: () => engineLabel,
+    eventPreview: () => eventPreview,
     eventText: () => eventText,
     extensionOf: () => extensionOf,
     failedBanner: () => failedBanner,
@@ -273,6 +275,7 @@ var engine = (() => {
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
+    isRenameRow: () => isRenameRow,
     linkHref: () => linkHref,
     linkMediaKey: () => linkMediaKey,
     linkMediaSite: () => linkMediaSite,
@@ -285,7 +288,7 @@ var engine = (() => {
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
     matchesTerm: () => matchesTerm,
-    mayBeBackgroundRow: () => mayBeBackgroundRow,
+    mayBeStoreEventRow: () => mayBeStoreEventRow,
     mediaIndex: () => mediaIndex,
     mediaItems: () => mediaItems,
     mediaKind: () => mediaKind,
@@ -2452,8 +2455,12 @@ var engine = (() => {
   function isBackgroundRow(m) {
     return Boolean(m) && BACKGROUND_ACTION_NAMES.has(m.background_action);
   }
-  function mayBeBackgroundRow(m) {
+  function mayBeStoreEventRow(m) {
     return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
+  }
+  var RENAME_ITEM_TYPE = 2;
+  function isRenameRow(m) {
+    return Boolean(m) && m.item_type === RENAME_ITEM_TYPE && typeof m.group_title === "string";
   }
   var BACKGROUND_NAME = "Background";
   function mapBackground(status, { attachmentId }) {
@@ -2490,6 +2497,9 @@ var engine = (() => {
     }
     if (isBackgroundRow(m)) {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
+    }
+    if (isRenameRow(m)) {
+      return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "rename", name: m.group_title.trim() } };
     }
     return {
       ...base,
@@ -2638,6 +2648,7 @@ var engine = (() => {
     const who = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
     if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
     if (m.event && m.event.kind === "background") return who + (m.event.action === "clear" ? " removed the background" : " changed the background");
+    if (m.event && m.event.kind === "rename") return m.event.name ? who + " named the conversation \u201C" + m.event.name + "\u201D" : who + " removed the name from the conversation";
     return "";
   }
   function initials(name) {
@@ -2645,6 +2656,9 @@ var engine = (() => {
     if (!words.length) return "?";
     if (/^\d/.test(words[0])) return "#";
     return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+  }
+  function eventPreview(e) {
+    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...typeof e.name === "string" ? { name: e.name } : {} };
   }
   function applyMessageToChats(chats, message, { openChatId = null } = {}) {
     const i = chats.findIndex((c2) => c2.id === message.chatId);
@@ -2656,8 +2670,9 @@ var engine = (() => {
     const out = chats.slice();
     const photo = message.event && message.event.kind === "groupPhoto" ? { photo: message.event.photo } : {};
     const backdrop = message.event && message.event.kind === "background" && message.event.action === "clear" ? { background: null } : {};
-    const event = message.event ? { kind: message.event.kind, ...message.event.action ? { action: message.event.action } : {} } : null;
-    out[i] = { ...c, ...photo, ...backdrop, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
+    const renamed = message.event && message.event.kind === "rename" ? { name: String(message.event.name || "") } : {};
+    const event = message.event ? eventPreview(message.event) : null;
+    out[i] = { ...c, ...photo, ...backdrop, ...renamed, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
   function applyEditToChats(chats, message) {
@@ -2735,7 +2750,7 @@ var engine = (() => {
   function upsertChat(chats = [], chat) {
     if (!chat || chat.id == null) return chats;
     const i = chats.findIndex((c) => c.id === chat.id);
-    const out = i < 0 ? [...chats, chat] : chats.map((c, k) => k === i ? { ...c, ...chat } : c);
+    const out = i < 0 ? [...chats, chat] : chats.map((c, k) => k === i ? { ...c, ...chat, lastMessage: chat.lastMessage || c.lastMessage || null } : c);
     return orderChats(out);
   }
   var LINK = /^(sms|smsto|mms|mmsto|im|imessage):(?:\/\/)?([^?]*)(?:\?(.*))?$/i;

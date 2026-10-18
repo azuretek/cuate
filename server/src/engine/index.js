@@ -8,7 +8,7 @@ import { createRpc } from './rpc.js';
 import { isReady, nextDelay } from './link.js';
 import { annotatePayloads } from './payload.js';
 import { annotateLivePhotos } from './live-photo.js';
-import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS, mayBeBackgroundRow, mapBackground } from '../../../core/app/rules/engine-imsg.js';
+import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS, mayBeStoreEventRow, mapBackground, RENAME_ITEM_TYPE } from '../../../core/app/rules/engine-imsg.js';
 import { EMOJI_TAPBACK_VERSION } from '../../../core/app/rules/messages.js';
 
 // Whether a Live Photo's motion is on the disk beside its still (live-photo.js), with the same home expansion as below.
@@ -49,7 +49,10 @@ const omit = (o, keys) => {
 // backgrounds: where the adapter learns which rows are a conversation's background changing and what each chat's
 // background is now (backgrounds.js: the Messages store and `imsg chat-background status`; the fake keeps its own), or
 // null where there is no such source, in which case no row is a background change and no chat has one (issue 417).
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null }) {
+// renames: where the adapter learns which rows are a group being named or its name removed, and the name each gave
+// (renames.js: the Messages store; the fake keeps its own), or null where there is no such source, in which case no row
+// is a rename (issue 439).
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, renames = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -64,19 +67,32 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return msg;
   };
   const toModel = (raw) => notePhoto(mapMessage(annotateLivePhotos(annotatePayloads(raw, readHead), motionExists), { attachmentId }));
-  // The rows that may be a background changing (no words, nothing attached) are asked of the store in one read, and
-  // each it names is marked with its action before it is mapped, so the mapping stays the one pure rule (issue 417). A
-  // store that cannot be read leaves them as they were, and says so.
-  const markBackgrounds = (rows) => {
-    const maybe = backgrounds ? rows.filter(mayBeBackgroundRow) : [];
-    if (!maybe.length) return rows;
+  // The rows that may be an event only the store names (no words, nothing attached) are asked of the store in one read
+  // per kind, and each it names is marked before it is mapped, so the mapping stays the one pure rule: a background
+  // change with its action (issue 417), a rename with its item type and the name it gave (issue 439). A store that
+  // cannot be read leaves them as they were, and says so.
+  const markFrom = (source, maybe, mark, failed) => {
+    if (!source || !maybe.length) return new Map();
     try {
-      const found = backgrounds.among(maybe.map((m) => String(m.guid)));
-      return rows.map((m) => (found.has(String(m.guid)) ? { ...m, background_action: found.get(String(m.guid)) } : m));
+      const found = source.among(maybe.map((m) => String(m.guid)));
+      return new Map([...found].map(([guid, value]) => [guid, mark(value)]));
     } catch (e) {
-      log.emit('background.failed', { error: failure(e) });
-      return rows;
+      log.emit(failed, { error: failure(e) });
+      return new Map();
     }
+  };
+  const markStoreEvents = (rows) => {
+    const maybe = backgrounds || renames ? rows.filter(mayBeStoreEventRow) : [];
+    if (!maybe.length) return rows;
+    const marks = [
+      markFrom(backgrounds, maybe, (action) => ({ background_action: action }), 'background.failed'),
+      markFrom(renames, maybe, (title) => ({ item_type: RENAME_ITEM_TYPE, group_title: String(title || '') }), 'rename.failed'),
+    ];
+    return rows.map((m) => {
+      const guid = String(m.guid);
+      const mark = marks.find((x) => x.has(guid));
+      return mark ? { ...m, ...mark.get(guid) } : m;
+    });
   };
   // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
   // again only when its background has changed since.
@@ -247,7 +263,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return;
     }
     if (method === 'message' && params.message) {
-      const [raw] = markBackgrounds([params.message]);
+      const [raw] = markStoreEvents([params.message]);
       if (Number.isFinite(raw.id) && raw.id > lastRowid) lastRowid = raw.id;
       if (raw.is_reaction) {
         const r = mapReaction(raw);
@@ -384,7 +400,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     if (beforeCursor) params.before_cursor = beforeCursor;
     if (afterCursor) params.after_cursor = afterCursor;
     const r = await request('messages.history', params, timeoutMs, ['attachments']);
-    let list = markBackgrounds((r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction)).map((m) => toModel(m));
+    let list = markStoreEvents((r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction)).map((m) => toModel(m));
     if (before) list = list.filter((m) => m.sentAt < before);
     list.sort((a, b) => afterCursor ? compareHistory(a, b) : compareHistory(b, a));
     const selected = list.slice(0, limit);
@@ -496,7 +512,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     const r = await request('messages.after', params, timeoutMs, ['attachments', 'include_reactions']);
     const rows = r && Array.isArray(r.messages) ? r.messages : [];
     return {
-      messages: markBackgrounds(rows.filter((m) => includeReactions || !m.is_reaction)).map((m) => toModel(m)),
+      messages: markStoreEvents(rows.filter((m) => includeReactions || !m.is_reaction)).map((m) => toModel(m)),
       nextRowid: r && Number.isFinite(r.next_rowid) ? r.next_rowid : params.since_rowid,
       hasMore: Boolean(r && r.has_more),
     };

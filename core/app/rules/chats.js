@@ -187,11 +187,12 @@ export function chatPreview(chat) {
 }
 
 // The words for an event in a conversation (issue 341): who did it, then what changed. A background is the
-// conversation's own (issue 417), set or cleared.
+// conversation's own (issue 417), set or cleared, and a rename gives the group its name or removes it (issue 439).
 export function eventText(m) {
   const who = m.fromMe ? 'You' : String(m.senderName || m.sender || 'Someone');
   if (m.event && m.event.kind === 'groupPhoto') return who + ' changed the group photo';
   if (m.event && m.event.kind === 'background') return who + (m.event.action === 'clear' ? ' removed the background' : ' changed the background');
+  if (m.event && m.event.kind === 'rename') return m.event.name ? who + ' named the conversation \u201c' + m.event.name + '\u201d' : who + ' removed the name from the conversation';
   return '';
 }
 
@@ -200,6 +201,11 @@ export function initials(name) {
   if (!words.length) return '?';
   if (/^\d/.test(words[0])) return '#';
   return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase();
+}
+
+// What a list preview keeps of an event: its kind, and the action or name its words need.
+export function eventPreview(e) {
+  return { kind: e.kind, ...(e.action ? { action: e.action } : {}), ...(typeof e.name === 'string' ? { name: e.name } : {}) };
 }
 
 // A live message moves its chat to the top with a new preview; an inbound one in a chat that is not open adds unread.
@@ -215,8 +221,10 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   // A background cleared takes the backdrop away at once; a new one arrives from the server as the chat changing,
   // carrying the picture, since only the server can read it (issue 417).
   const backdrop = message.event && message.event.kind === 'background' && message.event.action === 'clear' ? { background: null } : {};
-  const event = message.event ? { kind: message.event.kind, ...(message.event.action ? { action: message.event.action } : {}) } : null;
-  out[i] = { ...c, ...photo, ...backdrop, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
+  // A rename is the group's title from now on, on every client at once (issue 439).
+  const renamed = message.event && message.event.kind === 'rename' ? { name: String(message.event.name || '') } : {};
+  const event = message.event ? eventPreview(message.event) : null;
+  out[i] = { ...c, ...photo, ...backdrop, ...renamed, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
   return { chats: orderChats(out), known: true };
 }
 
@@ -325,11 +333,13 @@ export function groupAddresses(chats = [], ids = []) {
 }
 
 // A chat the server says changed (created, renamed, a member added or removed) replaces the one the list holds, or
-// joins it, and the list keeps its order.
+// joins it, and the list keeps its order. A change that carries no preview keeps the one the list already draws: the
+// preview is the newest message's, which the message stream brings, so a rename's own line is not wiped by the chat
+// changing straight after it (issue 439).
 export function upsertChat(chats = [], chat) {
   if (!chat || chat.id == null) return chats;
   const i = chats.findIndex((c) => c.id === chat.id);
-  const out = i < 0 ? [...chats, chat] : chats.map((c, k) => (k === i ? { ...c, ...chat } : c));
+  const out = i < 0 ? [...chats, chat] : chats.map((c, k) => (k === i ? { ...c, ...chat, lastMessage: chat.lastMessage || c.lastMessage || null } : c));
   return orderChats(out);
 }
 
