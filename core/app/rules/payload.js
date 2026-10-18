@@ -3,6 +3,8 @@
 // is never a file a person sent, so its raw name is never drawn: what it holds becomes a link card, or media we show
 // like any other attachment, or nothing at all, and either way it is drawn quietly.
 
+import { INK_EFFECT, sendEffectLine } from './send-effects.js';
+
 // The suffix the system gives a file that is a message's own payload rather than a file it carried.
 const PAYLOAD_SUFFIX = /\.pluginpayloadattachment$/i;
 
@@ -38,8 +40,10 @@ export function quietCount(payloads) {
 }
 
 // The readable one line a notice or a chat-list preview shows for a message: its text, else the link it is, else its
-// real attachments, else a quiet word when only a payload is left. A payload's own name is never one of them.
+// real attachments, else a quiet word when only a payload is left. A payload's own name is never one of them. Words sent
+// with Invisible Ink stay hidden there too, and the line names the effect instead (issue 442).
 export function messageSummary(m) {
+  if (m && m.sendEffect === INK_EFFECT) return sendEffectLine(INK_EFFECT);
   const text = String((m && m.text) || '').replace(/\s+/g, ' ').trim();
   if (text) return text;
   const link = m && m.link;
