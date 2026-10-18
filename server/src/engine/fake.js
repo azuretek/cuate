@@ -116,6 +116,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const editListeners = new Set();
   let lastEditAt = 0;
   const editRow = (m, text) => {
+    // The words it replaced join its history, written when they were (issue 437), as Messages keeps each version.
+    m.edit_history = [...(m.edit_history || []), { text: m.text, at: new Date(m.edited_at || Date.parse(m.created_at)).toISOString() }];
     m.text = String(text);
     lastEditAt = Math.max(Date.now(), lastEditAt + 1);
     m.edited_at = lastEditAt;
@@ -136,6 +138,10 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     among(guids) {
       const want = new Set((guids || []).map(String));
       return new Map(editedRows().filter((m) => want.has(m.guid)).map((m) => [m.guid, new Date(m.edited_at).toISOString()]));
+    },
+    histories(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(editedRows().filter((m) => want.has(m.guid) && m.edit_history?.length).map((m) => [m.guid, m.edit_history.filter((v) => v.text).map((v) => ({ ...v }))]));
     },
     onChange(cb) { editListeners.add(cb); },
     close() {},

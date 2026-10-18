@@ -2188,6 +2188,12 @@
               "$ref": "#/components/schemas/TextStyle"
             }
           },
+          "edits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EditVersion"
+            }
+          },
           "sendEffect": {
             "type": "string"
           }
@@ -2201,6 +2207,22 @@
           "attachments",
           "payloads",
           "reactions"
+        ],
+        "additionalProperties": false
+      },
+      "EditVersion": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "at"
         ],
         "additionalProperties": false
       },

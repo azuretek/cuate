@@ -451,7 +451,12 @@
       "edited": "boolean?",
       "historyCursor": "string?",
       "styles": "TextStyle[]?",
+      "edits": "EditVersion[]?",
       "sendEffect": "string?"
+    },
+    "EditVersion": {
+      "text": "string",
+      "at": "string"
     },
     "TextStyle": {
       "start": "number",

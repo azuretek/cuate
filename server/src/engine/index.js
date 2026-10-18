@@ -460,8 +460,15 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   function markEdited(list) {
     if (!edits || !list.length) return list;
     try {
-      const found = edits.among(list.filter((m) => !m.id.startsWith('row:')).map((m) => m.id));
-      for (const m of list) if (found.has(m.id)) m.edited = true;
+      const ids = list.filter((m) => !m.id.startsWith('row:')).map((m) => m.id);
+      const found = edits.among(ids);
+      // The earlier versions of each edited one (issue 437), where the store keeps them.
+      const history = found.size && typeof edits.histories === 'function' ? edits.histories([...found.keys()]) : new Map();
+      for (const m of list) {
+        if (!found.has(m.id)) continue;
+        m.edited = true;
+        if (history.has(m.id)) m.edits = history.get(m.id);
+      }
     } catch (e) {
       log.emit('edit.failed', { error: String(e && e.message ? e.message : e) });
     }
@@ -485,7 +492,16 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   async function editedMessage(row) {
     const r = await request('messages.after', { since_rowid: Math.max(0, row.rowid - 1), chat_id: Number(row.chatId), limit: 1, attachments: true }, timeoutMs, ['attachments']);
     const raw = (r && Array.isArray(r.messages) ? r.messages : []).find((m) => Number(m.id) === row.rowid && !m.is_reaction);
-    return raw ? { ...toModel(prepare([raw])[0]), edited: true } : null;
+    if (!raw) return null;
+    const message = { ...toModel(prepare([raw])[0]), edited: true };
+    // The history it has grown to, so the words this edit replaced reach every client with it (issue 437).
+    try {
+      const earlier = typeof edits.histories === 'function' ? edits.histories([message.id]).get(message.id) : null;
+      if (earlier && earlier.length) message.edits = earlier;
+    } catch (e) {
+      log.emit('edit.failed', { error: String(e && e.message ? e.message : e) });
+    }
+    return message;
   }
   async function scanOnce() {
     let found = 0;
