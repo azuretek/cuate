@@ -12,7 +12,7 @@
 // is dimmed from its token in both schemes, at desktop and phone width.
 // Run it under a display (xvfb-run on Linux).
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -228,15 +228,7 @@ try {
 // The shared-core history proof runs beside the shell checks, against the real API and synthetic data.
 // A failed page boundary, memory bound or scroll anchor fails the desktop smoke too.
 const proofElectron = createRequire(path.join(root, 'desktop', 'package.json'))('electron');
-// The packaged leg uploads only the captures at the top of its folder, so a failed proof's capture is copied up beside
-// them, and a red run on a runner we cannot sit at shows what the window held when it failed (issue 465).
-try {
-  execFileSync(proofElectron, [path.join(root, 'desktop/scripts/prove-history-window.mjs')], { timeout: 240000, stdio: 'inherit', env: { ...process.env, HISTORY_PROOF_OUT: path.join(out, 'history-window') } });
-} catch (error) {
-  const capture = path.join(out, 'history-window', 'failure.png');
-  if (existsSync(capture)) copyFileSync(capture, path.join(out, 'history-window-failure.png'));
-  throw error;
-}
+execFileSync(proofElectron, [path.join(root, 'desktop/scripts/prove-history-window.mjs')], { timeout: 240000, stdio: 'inherit', env: { ...process.env, HISTORY_PROOF_OUT: path.join(out, 'history-window') } });
 // A recording plays in its message in this shell's own Chromium (issue 432): real mouse input presses play on a
 // synthetic recording, and its time, elapsed clock, waveform and played mark must move. A recording that does not play
 // fails the desktop smoke too.
