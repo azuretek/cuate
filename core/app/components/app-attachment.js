@@ -1,6 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
+import { loadQueue } from '../../kit/load-order.js';
 import { isMediaAttachment, mediaKind, isLivePhoto } from '../rules/media.js';
 import { previewKind, filePress } from '../rules/documents.js';
 import { playsInPlace } from '../rules/audio.js';
@@ -71,6 +72,14 @@ export async function fetchPicture(client, a) {
 // and paint that frame, where a video that read only its metadata paints nothing at all on iPhone (issue 415).
 export const FIRST_FRAME = '#t=0.1';
 const mediaLabel = (kind) => (kind === 'video' ? 'video' : 'image');
+// A request that ends when the load queue's signal does (issue 425); the answer stops following it once the request is done.
+function follow(signal, request) {
+  if (!signal) return () => {};
+  const abort = () => request.abort();
+  if (signal.aborted) abort();
+  else signal.addEventListener('abort', abort, { once: true });
+  return () => signal.removeEventListener('abort', abort);
+}
 
 // A file in a conversation is kept with Save and handed to the device's own apps with Open in (issues 219 and 374):
 // the page hands the shell the file's bytes under its real name and type. Save offers to keep it, a save dialog on the
@@ -132,24 +141,21 @@ class AppAttachment extends KitElement {
     }
   }
 
-  // Only what is seen is fetched: a picture is asked for when its row comes within a screen of the view, so a long
-  // conversation does not pull every picture it holds the moment it opens, and one scrolled toward is there before it
-  // is reached. Where there is no observer (a test, an old engine) it is fetched at once, as before.
-  // A row reused for another message re-arms the watch, so its new picture waits to be seen as a fresh one does.
-  fetchWhenSeen() {
-    if (typeof IntersectionObserver !== 'function' || !this.isConnected) {
-      this.load();
+  // Only what is seen is fetched, in the order it is seen (issue 425): the page's one load queue (core/kit/load-order.js)
+  // asks for a picture when its row is on screen, for one within a screen of the view only once everything on screen
+  // has landed, and never for one further out, so a long conversation does not pull every picture it holds the moment
+  // it opens, the picture a person can see is never queued behind one above it, and one scrolled toward is there before
+  // it is reached. A fetch scrolled out of reach is cancelled, and asked for again when it comes back. Where there is no
+  // observer (a test, an old engine) it is fetched at once, as before. A row reused for another message asks again, so
+  // its new picture waits its turn as a fresh one does.
+  fetchWhenSeen(task = (signal) => this.load(signal)) {
+    this.ticket?.cancel();
+    this.ticket = null;
+    if (!this.isConnected) {
+      task();
       return;
     }
-    if (!this.watch) {
-      this.watch = new IntersectionObserver((entries) => {
-        if (!entries.some((x) => x.isIntersecting)) return;
-        this.watch.disconnect();
-        if (!this.src && !this.failed) this.load();
-      }, { rootMargin: '100% 0px' });
-    }
-    this.watch.disconnect();
-    this.watch.observe(this);
+    this.ticket = loadQueue().request(this, task);
   }
 
   connectedCallback() {
@@ -159,9 +165,10 @@ class AppAttachment extends KitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.ticket?.cancel();
+    this.ticket = null;
     this.loadRequest?.abort();
     this.loadRequest = null;
-    if (this.watch) this.watch.disconnect();
     this.posterRequest?.abort();
     this.posterRequest = null;
   }
@@ -170,9 +177,11 @@ class AppAttachment extends KitElement {
     // A tile drawn from the device's store before the server was reached asks again once it is (issue 441).
     if (changed.has('client') && this.client && !changed.get('client') && !changed.has('attachment')) {
       if (!this.src && !this.failed) this.fetchWhenSeen();
-      else if (this.src && !this.poster) this.loadPoster();
+      else if (this.src && !this.poster && mediaKind(this.attachment) === 'video') this.fetchWhenSeen((signal) => this.loadPoster(signal));
     }
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
+      this.ticket?.cancel();
+      this.ticket = null;
       this.loadRequest?.abort();
       this.loadRequest = null;
       this.posterRequest?.abort();
@@ -181,20 +190,23 @@ class AppAttachment extends KitElement {
       this.src = heldMedia(this.attachment);
       this.poster = heldPoster(this.attachment);
       if (!this.src) this.fetchWhenSeen();
-      else if (!this.poster) this.loadPoster();
+      else if (!this.poster && mediaKind(this.attachment) === 'video') this.fetchWhenSeen((signal) => this.loadPoster(signal));
     }
   }
 
   // A load lands while the element still shows the attachment it asked for, matched by id as updated() matches it: a
   // resync refetches the open conversation in place, so the same attachment arrives as a new object mid-load, and an
   // identity check dropped the blob with no second load to replace it, leaving the placeholder up for good.
-  async load() {
+  // The queue's signal cancels it when its row is scrolled out of reach, which is not a failure (issue 425); the load
+  // settles once the video's still has too, so the queue counts the slot until both have landed.
+  async load(signal) {
     const a = this.attachment;
     if (!isMediaAttachment(a) || (!this.client && !mediaStore)) return;
     const request = new AbortController();
     this.loadRequest?.abort();
     this.loadRequest = request;
-    if (!this.poster) this.loadPoster();
+    const stop = follow(signal, request);
+    const poster = this.poster ? null : this.loadPoster(signal);
     try {
       const blob = await fetchTile(this.client, a, needsJpeg(a) ? { format: 'jpeg' } : {}, request.signal);
       if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
@@ -203,18 +215,23 @@ class AppAttachment extends KitElement {
       if (this.attachment?.id === a.id) this.src = url;
     } catch (e) {
       if (!request.signal.aborted && this.attachment?.id === a.id && e?.code !== 'no_client') this.failed = true;
-    } finally { if (this.loadRequest === request) this.loadRequest = null; }
+    } finally {
+      stop();
+      if (this.loadRequest === request) this.loadRequest = null;
+    }
+    await poster;
   }
 
   // A video's poster is asked for beside the video itself (issue 415). A server with none (one not on a Mac, or a still
   // it could not make) answers 404, and the tile then draws the video's own first frame, so a missing poster is never
   // a failed video. It lands under the same id match as the video.
-  async loadPoster() {
+  async loadPoster(signal) {
     const a = this.attachment;
     if (!a || mediaKind(a) !== 'video' || a.sticker || (!this.client && !mediaStore)) return;
     const request = new AbortController();
     this.posterRequest?.abort();
     this.posterRequest = request;
+    const stop = follow(signal, request);
     try {
       const blob = await fetchTile(this.client, a, { part: 'poster' }, request.signal);
       if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
@@ -223,7 +240,10 @@ class AppAttachment extends KitElement {
       this.poster = url;
     } catch {
       // No poster: the first frame is drawn from the video.
-    } finally { if (this.posterRequest === request) this.posterRequest = null; }
+    } finally {
+      stop();
+      if (this.posterRequest === request) this.posterRequest = null;
+    }
   }
 
   // Pressing a preview opens it in the viewer, which the page draws over everything (app-image-viewer). The detail names
