@@ -24,24 +24,25 @@ const listen = async (s) => {
 const voiceOf = (page, id) => page.messages.find((m) => m.id === id)?.attachments?.[0] || null;
 const page = async (s) => (await s.get('/api/v1/chats/1/messages?limit=50', s.tokens.device)).json();
 
+// The folder is removed once the reader has let the store go: Windows refuses to remove a database still open.
 function store(t, columns) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'voices-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const readers = [];
+  t.after(() => { for (const r of readers) r.close(); rmSync(dir, { recursive: true, force: true }); });
   const file = path.join(dir, 'chat.db');
   const db = new DatabaseSync(file);
   db.exec('CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT UNIQUE' + (columns ? ', is_audio_message INTEGER DEFAULT 0, is_played INTEGER DEFAULT 0, date_played INTEGER DEFAULT 0' : '') + ')');
-  return { file, db };
+  return { file, db, keep: (reader) => { readers.push(reader); return reader; } };
 }
 
 test('the store reader names the voice messages among the rows asked about, and which were played (issue 440)', (t) => {
-  const { file, db } = store(t, true);
+  const { file, db, keep } = store(t, true);
   const insert = db.prepare('INSERT INTO message (guid, is_audio_message, is_played, date_played) VALUES (?, ?, ?, ?)');
   insert.run('SYNTH-VOICE-NEW', 1, 0, 0);
   insert.run('SYNTH-VOICE-HEARD', 1, 1, 750000000000000000);
   insert.run('SYNTH-TEXT', 0, 0, 0);
   db.close();
-  const reader = createVoiceReader({ dbPath: file });
-  t.after(() => reader.close());
+  const reader = keep(createVoiceReader({ dbPath: file }));
   const found = reader.among(['SYNTH-VOICE-NEW', 'SYNTH-VOICE-HEARD', 'SYNTH-TEXT', 'SYNTH-ABSENT']);
   assert.deepEqual([...found.keys()].sort(), ['SYNTH-VOICE-HEARD', 'SYNTH-VOICE-NEW'], 'only the voice messages');
   assert.equal(found.get('SYNTH-VOICE-NEW').played, false);
@@ -53,11 +54,10 @@ test('the store reader names the voice messages among the rows asked about, and 
 });
 
 test('a store from before voice messages had a mark names none (issue 440)', (t) => {
-  const { file, db } = store(t, false);
+  const { file, db, keep } = store(t, false);
   db.prepare('INSERT INTO message (guid) VALUES (?)').run('SYNTH-OLD');
   db.close();
-  const reader = createVoiceReader({ dbPath: file });
-  t.after(() => reader.close());
+  const reader = keep(createVoiceReader({ dbPath: file }));
   assert.equal(reader.among(['SYNTH-OLD']).size, 0);
 });
 
