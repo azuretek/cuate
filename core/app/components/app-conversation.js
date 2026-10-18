@@ -45,10 +45,10 @@ const formattedText = (p, inner) => {
   const formats = TEXT_FORMATS.filter((f) => p[f]);
   return formats.length ? html`<span class="${'fmt ' + formats.map((f) => 'fmt-' + f).join(' ')}">${inner}</span>` : inner;
 };
-// A name the sender mentioned (issue 453): set apart, and titled with the person it stands for, by the name the caller
-// knows them by.
 // The name a conversation knows a person by: their contact name among the chat's members, or the address itself.
 const memberName = (chat, handle) => ((chat && chat.members) || []).find((member) => handleKey(member.handle) === handleKey(handle))?.name || String(handle || '');
+// A name the sender mentioned (issue 453): set apart, and titled with the person it stands for, by the name the caller
+// knows them by.
 const mentionText = (p, inner, nameOf) => (p.mention ? html`<span class="mention" title="${nameOf(p.mention)}">${inner}</span>` : inner);
 const linkedText = (text, open, styles = [], nameOf = (handle) => handle) => styledParts(text, styles).map((p) => {
   const inner = formattedText(p, mentionText(p, p.effect ? effectText(p) : drawnText(p.text), nameOf));
