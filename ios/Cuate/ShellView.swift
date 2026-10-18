@@ -119,6 +119,15 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The message cache fixture (issue 441), the same seam: Debug only. It signs the real page in to a stand-in server
+        // over an emulated slow link and measures a launch with the device's store and without it, cold and warm.
+        if ProcessInfo.processInfo.arguments.contains("--message-cache-fixture"),
+           let url = Bundle.main.url(forResource: "message-cache-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            let mode = ProcessInfo.processInfo.arguments.contains("--fixture-cache-off") ? "off" : "on"
+            let run = ProcessInfo.processInfo.arguments.contains("--fixture-cache-warm") ? "warm" : "cold"
+            controller.addUserScript(WKUserScript(source: "window.fixtureCacheMode = '\(mode)'; window.fixtureCacheRun = '\(run)';\n" + source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The late notice fixture (issue 414), the same seam: Debug only. It signs the real page in to a stand-in server
         // and raises a notice for a message that server does not have yet.
         if ProcessInfo.processInfo.arguments.contains("--late-notice-fixture"),
