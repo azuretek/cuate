@@ -2084,6 +2084,9 @@
           },
           "edited": {
             "type": "boolean"
+          },
+          "sendEffect": {
+            "type": "string"
           }
         },
         "required": [
@@ -2177,6 +2180,9 @@
             "type": "boolean"
           },
           "historyCursor": {
+            "type": "string"
+          },
+          "sendEffect": {
             "type": "string"
           }
         },

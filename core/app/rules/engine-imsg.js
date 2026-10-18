@@ -2,6 +2,7 @@
 // declares. The server imports it; its fake engine speaks the same JSON, so tests exercise this path end to end.
 import { isPayloadName, firstUrl, linkSite, payloadMedia } from './payload.js';
 import { isPlayableLink } from './link-media.js';
+import { sendEffectOf } from './send-effects.js';
 
 const TAPBACKS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
 
@@ -193,10 +194,14 @@ export function mapMessage(m, { attachmentId }) {
   if (isBackgroundRow(m)) {
     return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'background', action: m.background_action } };
   }
+  // The bubble or screen effect the message was sent with (issue 442), which the server reads from the store and marks
+  // on the row as expressive_send_style_id; a message sent with none, or with one this app cannot play, carries none.
+  const sendEffect = sendEffectOf(m.expressive_send_style_id);
   return {
     ...base,
     ...payloadParts(m, { attachmentId }),
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
+    ...(sendEffect ? { sendEffect } : {}),
   };
 }
 

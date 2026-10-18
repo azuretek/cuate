@@ -423,7 +423,8 @@
       "payloads": "number?",
       "event": "MessageEventKind?",
       "senderName": "string?",
-      "edited": "boolean?"
+      "edited": "boolean?",
+      "sendEffect": "string?"
     },
     "MessageList": {
       "messages": "Message[]",
@@ -448,7 +449,8 @@
       "reactions": "Reaction[]",
       "event": "MessageEventKind?",
       "edited": "boolean?",
-      "historyCursor": "string?"
+      "historyCursor": "string?",
+      "sendEffect": "string?"
     },
     "Attachment": {
       "id": "string",

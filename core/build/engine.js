@@ -31,6 +31,7 @@ var engine = (() => {
     BACKGROUND_NAME: () => BACKGROUND_NAME,
     BADGE_APART: () => BADGE_APART,
     BADGE_TEXT_FLOOR: () => BADGE_TEXT_FLOOR,
+    BUBBLE_EFFECTS: () => BUBBLE_EFFECTS,
     BUILD_SPEC: () => BUILD_SPEC,
     CHATS_DEFAULT: () => CHATS_DEFAULT,
     CHATS_MIN: () => CHATS_MIN,
@@ -61,6 +62,7 @@ var engine = (() => {
     ICON_KINDS: () => ICON_KINDS,
     ICON_MASTERS: () => ICON_MASTERS,
     ICON_TOKENS: () => ICON_TOKENS,
+    INK_EFFECT: () => INK_EFFECT,
     INSTALL: () => INSTALL,
     KEY_STEP: () => KEY_STEP,
     LETTER_OTHER: () => LETTER_OTHER,
@@ -87,8 +89,11 @@ var engine = (() => {
     PRESS_STATES: () => PRESS_STATES,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
+    SCREEN_EFFECTS: () => SCREEN_EFFECTS,
     SEARCH_MODES: () => SEARCH_MODES,
     SEARCH_MODE_LABELS: () => SEARCH_MODE_LABELS,
+    SEND_EFFECTS: () => SEND_EFFECTS,
+    SEND_STYLES: () => SEND_STYLES,
     SERVER_UPDATE_ERRORS: () => SERVER_UPDATE_ERRORS,
     SETTINGS_SCHEMA: () => SETTINGS_SCHEMA,
     SETTLE: () => SETTLE,
@@ -208,6 +213,7 @@ var engine = (() => {
     dropNoticeRead: () => dropNoticeRead,
     durationMs: () => durationMs,
     editRefusal: () => editRefusal,
+    effectPieces: () => effectPieces,
     emojiFallbackParts: () => emojiFallbackParts,
     emojiInCategory: () => emojiInCategory,
     emojiPickerSections: () => emojiPickerSections,
@@ -375,6 +381,10 @@ var engine = (() => {
     scrollFor: () => scrollFor,
     scrub: () => scrub,
     searchEmoji: () => searchEmoji,
+    sendEffectKind: () => sendEffectKind,
+    sendEffectLine: () => sendEffectLine,
+    sendEffectName: () => sendEffectName,
+    sendEffectOf: () => sendEffectOf,
     sentNoticeRead: () => sentNoticeRead,
     serverUpdateNotice: () => serverUpdateNotice,
     serviceNote: () => serviceNote,
@@ -1887,8 +1897,8 @@ var engine = (() => {
   }
   function appIconFor(values, spec = APP_ICONS) {
     const id = values && values[APP_ICON_KEY];
-    const known = id === FOLLOW_THEME || appIconVariants(spec).some((v) => v.id === id);
-    return known ? id : spec.default;
+    const known2 = id === FOLLOW_THEME || appIconVariants(spec).some((v) => v.id === id);
+    return known2 ? id : spec.default;
   }
   function fixedPalette(id, spec = APP_ICONS) {
     const variant = appIconVariants(spec).find((v) => v.id === id);
@@ -2274,6 +2284,84 @@ var engine = (() => {
     return out;
   }
 
+  // core/app/rules/send-effects.js
+  var SEND_EFFECTS = Object.freeze({
+    slam: Object.freeze({ name: "Slam", kind: "bubble" }),
+    loud: Object.freeze({ name: "Loud", kind: "bubble" }),
+    gentle: Object.freeze({ name: "Gentle", kind: "bubble" }),
+    "invisible-ink": Object.freeze({ name: "Invisible Ink", kind: "bubble" }),
+    echo: Object.freeze({ name: "Echo", kind: "screen" }),
+    spotlight: Object.freeze({ name: "Spotlight", kind: "screen" }),
+    balloons: Object.freeze({ name: "Balloons", kind: "screen" }),
+    confetti: Object.freeze({ name: "Confetti", kind: "screen" }),
+    love: Object.freeze({ name: "Love", kind: "screen" }),
+    lasers: Object.freeze({ name: "Lasers", kind: "screen" }),
+    fireworks: Object.freeze({ name: "Fireworks", kind: "screen" }),
+    celebration: Object.freeze({ name: "Celebration", kind: "screen" }),
+    "shooting-star": Object.freeze({ name: "Shooting Star", kind: "screen" })
+  });
+  var BUBBLE_EFFECTS = Object.freeze(Object.keys(SEND_EFFECTS).filter((k) => SEND_EFFECTS[k].kind === "bubble"));
+  var SCREEN_EFFECTS = Object.freeze(Object.keys(SEND_EFFECTS).filter((k) => SEND_EFFECTS[k].kind === "screen"));
+  var INK_EFFECT = "invisible-ink";
+  var SEND_STYLES = Object.freeze({
+    "com.apple.MobileSMS.expressivesend.impact": "slam",
+    "com.apple.MobileSMS.expressivesend.loud": "loud",
+    "com.apple.MobileSMS.expressivesend.gentle": "gentle",
+    "com.apple.MobileSMS.expressivesend.invisibleink": "invisible-ink",
+    "com.apple.messages.effect.CKEchoEffect": "echo",
+    "com.apple.messages.effect.CKSpotlightEffect": "spotlight",
+    "com.apple.messages.effect.CKHappyBirthdayEffect": "balloons",
+    "com.apple.messages.effect.CKConfettiEffect": "confetti",
+    "com.apple.messages.effect.CKHeartEffect": "love",
+    "com.apple.messages.effect.CKLasersEffect": "lasers",
+    "com.apple.messages.effect.CKFireworksEffect": "fireworks",
+    "com.apple.messages.effect.CKSparklesEffect": "celebration",
+    "com.apple.messages.effect.CKShootingStarEffect": "shooting-star"
+  });
+  var known = (key) => typeof key === "string" && Object.prototype.hasOwnProperty.call(SEND_EFFECTS, key);
+  function sendEffectOf(styleId) {
+    return typeof styleId === "string" && Object.prototype.hasOwnProperty.call(SEND_STYLES, styleId) ? SEND_STYLES[styleId] : null;
+  }
+  function sendEffectName(key) {
+    return known(key) ? SEND_EFFECTS[key].name : "";
+  }
+  function sendEffectKind(key) {
+    return known(key) ? SEND_EFFECTS[key].kind : null;
+  }
+  function sendEffectLine(key) {
+    return known(key) ? "Sent with " + SEND_EFFECTS[key].name : "";
+  }
+  var PIECES = Object.freeze({ echo: 12, spotlight: 1, balloons: 10, confetti: 40, love: 9, lasers: 6, fireworks: 36, celebration: 24, "shooting-star": 7 });
+  var GOLDEN = 0.6180339887498949;
+  var frac = (v) => v - Math.floor(v);
+  var round = (v) => Math.round(v * 1e3) / 1e3;
+  function effectPieces(effect) {
+    const n = PIECES[effect] || 0;
+    const out = [];
+    for (let i = 0; i < n; i += 1) {
+      const a = frac(0.5 + i * GOLDEN);
+      const b = frac(0.25 + i * GOLDEN * GOLDEN);
+      const c = frac(0.75 + i * 0.7548776662466927);
+      let piece = { x: a, y: b, delay: c, tone: i % 5 + 1, turn: frac(i * 0.4142135623730951) };
+      if (effect === "fireworks") {
+        const burst = Math.floor(i / 12);
+        piece = { x: [0.3, 0.7, 0.5][burst], y: [0.3, 0.25, 0.5][burst], delay: burst / 4, tone: burst + 1, turn: i % 12 / 12 };
+      } else if (effect === "spotlight") {
+        piece = { x: 0.5, y: 0.5, delay: 0, tone: 1, turn: 0 };
+      } else if (effect === "love") {
+        piece = i === 0 ? { x: 0.5, y: 0.5, delay: 0, tone: 1, turn: 0 } : { ...piece, tone: 1, delay: c / 2 };
+      } else if (effect === "shooting-star") {
+        piece = { x: 0, y: 0.2, delay: i / 20, tone: 3, turn: i / n };
+      } else if (effect === "lasers") {
+        piece = { x: 0.5, y: 0.35, delay: i % 2 / 8, tone: i % 5 + 1, turn: i / n };
+      } else if (effect === "celebration") {
+        piece = { ...piece, x: 1 - a * a, y: b * b, tone: 3 };
+      }
+      out.push({ x: round(piece.x), y: round(piece.y), delay: round(piece.delay), tone: piece.tone, turn: round(piece.turn) });
+    }
+    return out;
+  }
+
   // core/app/rules/payload.js
   var PAYLOAD_SUFFIX = /\.pluginpayloadattachment$/i;
   function isPayloadName(name) {
@@ -2297,6 +2385,7 @@ var engine = (() => {
     return (Array.isArray(payloads) ? payloads : []).length;
   }
   function messageSummary(m) {
+    if (m && m.sendEffect === INK_EFFECT) return sendEffectLine(INK_EFFECT);
     const text = String(m && m.text || "").replace(/\s+/g, " ").trim();
     if (text) return text;
     const link = m && m.link;
@@ -2491,10 +2580,12 @@ var engine = (() => {
     if (isBackgroundRow(m)) {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
     }
+    const sendEffect = sendEffectOf(m.expressive_send_style_id);
     return {
       ...base,
       ...payloadParts(m, { attachmentId }),
-      reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean)
+      reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
+      ...sendEffect ? { sendEffect } : {}
     };
   }
   function mapReaction(m) {
@@ -2652,7 +2743,7 @@ var engine = (() => {
     const c = chats[i];
     if (c.lastMessageAt && c.lastMessageAt > message.sentAt) return { chats, known: true };
     const unread = !message.fromMe && message.chatId !== openChatId ? (c.unread || 0) + 1 : c.unread || 0;
-    const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0 };
+    const lastMessage = { text: message.text, fromMe: message.fromMe, sentAt: message.sentAt, attachments: message.attachments.length, link: message.link || null, payloads: message.payloads || 0, ...message.sendEffect ? { sendEffect: message.sendEffect } : {} };
     const out = chats.slice();
     const photo = message.event && message.event.kind === "groupPhoto" ? { photo: message.event.photo } : {};
     const backdrop = message.event && message.event.kind === "background" && message.event.action === "clear" ? { background: null } : {};

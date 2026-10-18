@@ -158,7 +158,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return Math.min(hi, Math.max(lo, Number(v)));
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
-  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind, ...(m.event.action ? { action: m.event.action } : {}) }, senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}) });
+  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind, ...(m.event.action ? { action: m.event.action } : {}) }, senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}), ...(m.sendEffect ? { sendEffect: m.sendEffect } : {}) });
   // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
