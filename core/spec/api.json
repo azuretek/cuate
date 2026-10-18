@@ -449,7 +449,12 @@
       "event": "MessageEventKind?",
       "edited": "boolean?",
       "historyCursor": "string?",
-      "styles": "TextStyle[]?"
+      "styles": "TextStyle[]?",
+      "edits": "EditVersion[]?"
+    },
+    "EditVersion": {
+      "text": "string",
+      "at": "string"
     },
     "TextStyle": {
       "start": "number",
