@@ -439,21 +439,44 @@ final class HostBridge: NSObject, WKScriptMessageHandler {
         // answered: on an iOS 27 simulator a second question with other options
         // left the add that raced it refused, and the notice was never shown.
         let center = UNUserNotificationCenter.current()
-        var trigger: UNNotificationTrigger?
         #if DEBUG
-        // The late notice fixture (issue 414) has its notice shown ten seconds later, by the system, so the test has the
-        // app on the home screen when it is drawn as a banner to press: a notice shown with the app in front is never
-        // drawn. The system holds the request, so nothing depends on the app running once it has left. Debug only.
+        // The late notice fixture (issue 414) needs the notice drawn with the app on the home screen, as a banner to
+        // press: a notice shown with the app in front is never drawn, nor kept in Notification Center. A fixed delay
+        // from posting raced the test's trip to the home screen, and on a busy simulator the notice fell due while the
+        // app was still in front and was lost (issue 466). So the request is added only once the app has left, due a
+        // few seconds later; the system holds it from there, so nothing depends on the app running. Debug only.
         if ProcessInfo.processInfo.arguments.contains("--late-notice-fixture") {
-            trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                guard granted else { return }
+                DispatchQueue.main.async { Self.addOnceAway(content, to: center) }
+            }
+            return true
         }
         #endif
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             if granted { center.add(request) }
         }
         return true
     }
+
+    #if DEBUG
+    /// The late notice fixture's notice (issue 466): added the moment the app is in the background, or at once if it
+    /// already is, and due three seconds later, so it is always drawn over the home screen and never while in front.
+    private static func addOnceAway(_ content: UNNotificationContent, to center: UNUserNotificationCenter) {
+        let add = {
+            let due = UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: due))
+        }
+        if UIApplication.shared.applicationState == .background { add(); return }
+        var away: NSObjectProtocol?
+        away = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            if let observer = away { NotificationCenter.default.removeObserver(observer) }
+            away = nil
+            add()
+        }
+    }
+    #endif
 
     /// A document pressed in a conversation (issue 219): the page hands the bytes as base64 under the file's real
     /// name, and the system's share sheet, which includes Save to Files, is offered from the top view controller.

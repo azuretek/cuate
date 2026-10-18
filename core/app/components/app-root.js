@@ -46,9 +46,13 @@ import './app-chat-list.js';
 import './app-compose.js';
 import './app-group-info.js';
 import './app-conversation.js';
+import { useMediaStore } from './app-attachment.js';
+import { openMessageCache } from '../message-cache.js';
+import { applyChangesToShown, olderFromHeld, CHANGE_PAGES_MAX } from '../rules/message-store.js';
 import './app-settings.js';
 import './app-about.js';
 import './app-image-viewer.js';
+import { notePlayed } from './app-audio.js';
 import './app-slide-confirm.js';
 
 const API_VERSION = 1;
@@ -475,10 +479,17 @@ class AppRoot extends KitElement {
     this.problem = '';
     if (this.client) this.client.close();
     const client = createApiClient({ baseUrl: url, token, onEvent: (e) => this.onEvent(e), onState: (s) => this.onConnState(s) });
+    // The store on the device (issue 441) paints the conversation list it holds at once, before any server read
+    // answers, and opening a conversation it holds draws that at once too. One opened for another server starts empty.
+    let ready;
+    this.storeReady = new Promise((resolve) => { ready = resolve; });
+    await this.openStore(url);
     try {
       const info = await client.info();
       if (info.apiVersion !== API_VERSION) throw new Error(connectionSentence('version-mismatch'));
-      const { chats } = await client.chats();
+      // What changed since the store's cursor is asked beside the list, so a conversation held and current is never
+      // read again on open.
+      const [{ chats }] = await Promise.all([client.chats(), this.catchUp(client)]);
       this.client = client;
       this.info = info;
       this.serverUrl = url;
@@ -494,6 +505,7 @@ class AppRoot extends KitElement {
       this.applyTheme();
       this.chats = orderChats(chats);
       this.phase = 'ready';
+      ready();
       client.connect();
       this.takeLink();
       // Signed in, so notifications are asked for now, on every platform, rather than on the first message (issue
@@ -513,9 +525,92 @@ class AppRoot extends KitElement {
       this.takeNotice();
     } catch (e) {
       client.close();
+      ready();
       this.phase = 'onboarding';
       this.problem = this.describe(e);
     }
+  }
+
+  // The device's store for this server (issue 441), or none where the web view has no IndexedDB or refuses it.
+  async openStore(url) {
+    if (this.cache && this.cacheUrl === url) return this.cache;
+    if (this.cache) this.cache.close();
+    this.cache = null;
+    this.cacheUrl = url;
+    this.upToDate = false;
+    try {
+      this.cache = await openMessageCache(url);
+    } catch {
+      this.cache = null;
+    }
+    useMediaStore(this.cache);
+    if (this.cache && this.cache.chats.length && !this.chats.length) {
+      this.chats = orderChats(this.cache.chats);
+      this.phase = 'ready';
+    }
+    return this.cache;
+  }
+
+  // Asks the server only for what changed since the store's cursor (issue 441), page after page, and applies it to the
+  // store, the conversation on screen and those held in memory. A cursor the server cannot honour empties the store and
+  // starts it again from the head. Too much to follow, or a server with no such route, leaves every conversation to be
+  // read again when it is opened. One catch-up runs at a time; a second ask shares it.
+  catchUp(client = this.client) {
+    const cache = this.cache;
+    if (!cache || !client || typeof client.changes !== 'function') return Promise.resolve(false);
+    if (this.catching) return this.catching;
+    const run = (async () => {
+      try {
+        let since = cache.cursor;
+        for (let page = 0; page < CHANGE_PAGES_MAX; page += 1) {
+          const list = await client.changes({ since });
+          if (this.cache !== cache) return false;
+          if (list.reset) {
+            if (since !== null) this.convos = new Map();
+            await cache.reset(list.cursor);
+          } else {
+            await cache.apply(list);
+            this.showChanges(list);
+          }
+          since = list.cursor;
+          if (!list.more) { this.upToDate = true; return true; }
+        }
+        await cache.stale();
+        this.upToDate = false;
+        return false;
+      } catch {
+        this.upToDate = false;
+        return false;
+      } finally {
+        if (this.catching === run) this.catching = null;
+      }
+    })();
+    this.catching = run;
+    return run;
+  }
+
+  // A conversation held in memory and not on screen still draws at once when it is opened again, and is then drawn
+  // again from the store, which holds what changed in it since (issue 441).
+  markStale(chatId) {
+    const id = String(chatId);
+    if (id === String(this.openChatId)) return;
+    const held = this.convos?.get(id);
+    if (held && !held.stale) this.convos.set(id, { ...held, stale: true });
+  }
+
+  // Changes made while the page was away, drawn on the conversation on screen and on those held in memory.
+  showChanges(list) {
+    for (const [id, held] of this.convos || []) {
+      const { messages, arrived } = applyChangesToShown(held.messages, list, id);
+      if (arrived.length || messages !== held.messages) this.markStale(id);
+    }
+    if (!this.openChatId) return;
+    const { messages, arrived } = applyChangesToShown(this.messages, list, this.openChatId);
+    if (messages !== this.messages) {
+      if (this.historyWindow) this.applyWindow({ ...this.historyWindow, messages });
+      else this.messages = messages;
+    }
+    for (const m of arrived) this.receiveHistoryMessage(m);
   }
 
   // The server holds every setting; the page only draws what it holds. A read that fails leaves the schema defaults.
@@ -572,6 +667,13 @@ class AppRoot extends KitElement {
     if (this.client) this.client.pushUnregister().catch(() => {});
     if (this.client) this.client.close();
     this.client = null;
+    // Everything the device holds for this server goes with the token (issue 441).
+    const cache = this.cache;
+    this.cache = null;
+    this.cacheUrl = null;
+    this.upToDate = false;
+    useMediaStore(null);
+    if (cache) await cache.clear().catch(() => {});
     await this.bridge('storage.delete', { key: 'server.token' });
     this.chats = [];
     this.messages = [];
@@ -606,11 +708,17 @@ class AppRoot extends KitElement {
     if (this.typingChat && this.typingChat !== chatId) this.clearTyping();
     this.resetTyping();
     const refresh = this.openChatId === chatId;
+    const seq = (this.openSeq = (this.openSeq || 0) + 1);
     // The conversation we already hold draws at once, before the server answers, so switching back never leaves the
     // pane on the last conversation while a page is fetched and never blanks it (issue 200). A chat never opened has
     // nothing to draw yet, so the list marks it and the pane keeps the conversation it has until the page arrives.
+    // One the device's store holds draws the same way, on a launch as on a switch (issue 441).
     const convos = this.convos || (this.convos = new Map());
-    const cached = convos.get(String(chatId));
+    let cached = convos.get(String(chatId));
+    if (!cached && this.cache) {
+      cached = await this.storedWindow(chatId);
+      if (this.openSeq !== seq) return;
+    }
     if (cached) {
       this.openChatId = chatId;
       this.selecting = null;
@@ -628,13 +736,38 @@ class AppRoot extends KitElement {
     // every time a conversation opens, not only when this page counted it unread: a count this page had not caught up
     // with (a message that arrived while it was away) still has to be read on the Mac (issue 323).
     readOnMac(this, chatId);
+    if (this.cache) {
+      // What is current is known once the launch's catch-up has answered; a conversation held and current is not read
+      // again, since the server has said nothing in it changed that the store does not already hold (issue 441).
+      await this.storeReady;
+      if (this.openSeq !== seq || !this.client) return;
+      readOnMac(this, chatId);
+      if (cached && this.upToDate && this.cache?.heldNow(chatId)?.current) {
+        // A conversation held in memory that the live stream or a catch-up has since changed is drawn again from the
+        // store, which took those changes.
+        const fresh = cached.stale ? await this.storedWindow(chatId) : null;
+        if (this.openSeq !== seq) return;
+        if (fresh) {
+          this.messages = fresh.messages;
+          this.historyWindow = fresh.historyWindow;
+          this.hasMore = fresh.hasMore;
+        }
+        if (!refresh) this.messageNote = null;
+        this.openChatId = chatId;
+        this.selecting = null;
+        this.problem = '';
+        if (show) this.listOpen = false;
+        return;
+      }
+    }
     const arrived = [];
     const watch = (m) => { if (m.chatId === chatId) arrived.push(m); };
     if (!this.arrivals) this.arrivals = new Set();
     this.arrivals.add(watch);
-    const seq = (this.openSeq = (this.openSeq || 0) + 1);
     try {
       const { messages, hasMore, totalCount } = await this.client.messages(chatId, { limit: HISTORY_PAGE_SIZE, includeTotal: true });
+      // The newest page, read after the store's cursor was taken, is the conversation as it is now.
+      this.cache?.keep(chatId, { messages, hasOlder: hasMore, totalCount, current: Boolean(this.cache.cursor) });
       if (this.openSeq !== seq) return;
       if (!refresh) this.messageNote = null;
       this.openChatId = chatId;
@@ -644,6 +777,8 @@ class AppRoot extends KitElement {
       const pane = this.querySelector('app-conversation');
       // A window held scrolled back keeps its place, unless the newest messages are what was asked for: a pressed notice
       // looks for its message among them (issue 414).
+      // What the store drew may be an older stretch than the page, so the page is laid out on its own.
+      if (cached?.fromStore) cached = null;
       if (cached?.historyWindow?.afterCount && !newest) {
         const fresh = new Map(messages.map((m) => [m.id, m]));
         this.applyWindow({ ...cached.historyWindow, messages: cached.messages.map((m) => fresh.get(m.id) || m) });
@@ -761,7 +896,28 @@ class AppRoot extends KitElement {
   // Opening it again does all three, in place, keeping a window held scrolled back where it is.
   async onShown() {
     if (pageHidden() || !this.openChatId) return;
+    await this.catchUp();
     await this.open(this.openChatId);
+  }
+
+  // What is drawn is kept on the device (issue 441): the conversation on screen, merged into what the store holds, and
+  // the conversation list. The store writes only what changed, a moment after the renders settle.
+  keepShown() {
+    if (!this.cache || !this.client || this.phase !== 'ready') return;
+    if (this.openChatId) this.cache.keep(this.openChatId, { messages: this.messages });
+    if (this.chats !== this.keptChats) { this.keptChats = this.chats; this.cache.saveChats(this.chats); }
+  }
+
+  // A conversation the device's store holds, laid out as a window at its newest messages (issue 441), or null.
+  async storedWindow(chatId) {
+    let held;
+    try { held = await this.cache.convo(chatId); } catch { return null; }
+    if (!held || !held.messages.length) return null;
+    const messages = foldFor(held.messages, this.chats, chatId);
+    const pane = this.querySelector('app-conversation');
+    const hasMore = held.messages.length > HISTORY_MAX_MESSAGES || held.hasOlder;
+    const state = initialWindow(messages, { totalCount: Math.max(held.totalCount || 0, messages.length), hasMore, estimate: pane?.historyMeasurements().estimate || 1 });
+    return { messages: state.messages, hasMore: state.hasOlder, historyWindow: state, fromStore: true };
   }
 
   // The Load earlier press shows itself working and drops a second press (core/kit/press.js), so no flag is kept here.
@@ -787,10 +943,17 @@ class AppRoot extends KitElement {
     const chatId = this.openChatId;
     const seq = this.openSeq;
     const edge = direction === 'older' ? this.messages[0] : this.messages.at(-1);
+    // Older messages the device's store holds are drawn from it, with no server read (issue 441).
+    const held = direction === 'older' ? olderFromHeld(this.cache?.heldNow(chatId), edge.id, HISTORY_PAGE_SIZE) : null;
+    if (held && held.messages.length) {
+      this.applyWindow(shiftWindow({ ...state, messages: this.messages }, foldFor(held.messages, this.chats, chatId), { direction, hasMore: held.hasMore, heights: detail?.heights }));
+      return true;
+    }
     if (!edge.historyCursor) { this.problem = 'Update the message engine to browse the whole conversation.'; return false; }
     this.pendingHistory = true;
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: HISTORY_PAGE_SIZE, [direction === 'older' ? 'beforeCursor' : 'afterCursor']: edge.historyCursor });
+      this.cache?.keep(chatId, direction === 'older' ? { messages, hasOlder: hasMore } : { messages }, { adjacent: true });
       if (this.openChatId !== chatId || this.openSeq !== seq) return false;
       const next = shiftWindow({ ...state, messages: this.messages }, foldFor(messages, this.chats, chatId), { direction, hasMore, heights: detail?.heights });
       this.applyWindow(next);
@@ -813,7 +976,7 @@ class AppRoot extends KitElement {
   async reload() {
     if (!this.client) return;
     try {
-      const { chats } = await this.client.chats();
+      const [{ chats }] = await Promise.all([this.client.chats(), this.catchUp()]);
       this.chats = orderChats(chats);
       if (this.openChatId) await this.open(this.openChatId);
     } catch (e) {
@@ -823,6 +986,14 @@ class AppRoot extends KitElement {
 
   onEvent({ name, data }) {
     if (name === 'resync') { this.reload(); return; }
+    // What the live stream says keeps the device's store current while the page runs (issue 441); a conversation held
+    // in memory and not on screen is drawn from the store the next time it opens.
+    if (this.cache && (name === 'message.new' || name === 'message.edited' || name === 'reaction')) {
+      const one = name === 'reaction' ? { reactions: [data] } : { messages: [data.message] };
+      this.cache.live(one).catch(() => {});
+      const id = String(name === 'reaction' ? data.chatId : data.message.chatId);
+      this.markStale(id);
+    }
     if (name === 'message.new') {
       const m = data.message;
       if (this.arrivals) for (const watch of this.arrivals) watch(m);
@@ -851,6 +1022,9 @@ class AppRoot extends KitElement {
     } else if (name === 'chat.changed') {
       // A conversation started, a group renamed or its people changed, on any device (issue 326).
       this.chats = upsertChat(this.chats, data);
+    } else if (name === 'attachment.played') {
+      // A recording played on another of the person's devices (issue 440) takes its mark off here at once.
+      notePlayed(String(data.attachmentId)).catch(() => {});
     } else if (name === 'chat.read') {
       // A chat read on any device clears here too, so the count is the server's and not this page's own idea.
       const id = String(data.chatId);
@@ -1854,6 +2028,7 @@ class AppRoot extends KitElement {
       convos.set(String(this.openChatId), { messages: this.messages, hasMore: this.hasMore, historyWindow: this.historyWindow ? { ...this.historyWindow, messages: this.messages } : null });
       while (convos.size > HISTORY_CACHED_CHATS) convos.delete(convos.keys().next().value);
     }
+    this.keepShown();
     // Every open menu wears the shared caret, aimed at the control that opened it (issue 217).
     aimCarets(this);
     // The divider's seam follows the width the settings hold, and the separator reports the width a screen reader should

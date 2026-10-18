@@ -33,7 +33,16 @@
   const g = canvas.getContext('2d');
   g.fillStyle = 'rgb(' + COLOUR.join(',') + ')';
   g.fillRect(0, 0, canvas.width, canvas.height);
-  const picture = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  // WebKit answers toBlob with null when it could not give the canvas a backing store, which one iOS simulator run did
+  // at launch right after the previous test's app was torn down, and the fixture then failed on picture.size before
+  // drawing anything. The same solid colour as a picture of its own (SVG, which an img draws with no canvas) stands in,
+  // and the verdict says which was used.
+  let source = 'canvas';
+  let picture = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!picture) {
+    source = 'svg';
+    picture = new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas.width + '" height="' + canvas.height + '"><rect width="100%" height="100%" fill="rgb(' + COLOUR.join(',') + ')"/></svg>'], { type: 'image/svg+xml' });
+  }
   let fetched = 0;
   const client = { attachment: async (id) => { if (id !== 'fixture-background') throw new Error('no such attachment'); fetched += 1; return picture; } };
   const sam = '+15555550123';
@@ -84,7 +93,7 @@
   if (!(there === list || (there && there.classList.contains('history-space')))) problems.push('the point chosen is covered by ' + (there ? there.className || there.tagName : 'nothing'));
   if (Math.max(above, below) < 24) problems.push('no bare backdrop beside the messages');
   say('where', 'where:backdrop ' + x + ' ' + y + ' ' + window.innerWidth + ' ' + window.innerHeight);
-  const detail = 'line="' + line + '" rows=' + rows.length + ' fetched=' + fetched + ' picture=' + img.naturalWidth + 'x' + img.naturalHeight + ' colour=' + COLOUR.join(',') + ' behind-line=' + behind;
+  const detail = 'line="' + line + '" rows=' + rows.length + ' fetched=' + fetched + ' picture=' + img.naturalWidth + 'x' + img.naturalHeight + ' source=' + source + ' colour=' + COLOUR.join(',') + ' behind-line=' + behind;
   say('verdict', problems.length ? 'background:fail ' + problems.join('; ') : 'background:pass ' + detail);
   window.backgroundProof = { ok: !problems.length, problems, line, rows: rows.length };
 })().catch((error) => {

@@ -38,6 +38,10 @@ name: platforms gate
 # A refusal names the platform, the jobs that were not green and the run to look
 # at, in the gate job's own name, an annotation and the step summary. A release
 # that silently does not happen is its own bug.
+#
+# This is the WAITING form, for a push and a release, where the publish that
+# follows cannot proceed without the answer. A pull request's phone verdict is
+# the same rules run once, without a runner held, by platforms-status.yml.
 
 on:
   workflow_call:

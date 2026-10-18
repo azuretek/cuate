@@ -50,6 +50,12 @@ test('the merge gate requires every desktop leg and the phone pipelines', () => 
   const merge = Object.values(ci.jobs).filter((job) => job.uses && job.uses.endsWith('platforms-gate.yml'));
   assert.equal(merge.length, 1, 'the ci workflow must call the platforms gate exactly once to require the phone pipelines');
   assert.deepEqual(splitList(merge[0].with.platforms).sort(), phonePipelines, 'the ci gate does not require every phone pipeline');
+  // A pull request's phone verdict is the "platforms" status, posted by platforms-status.yml from the same list,
+  // so a phone pipeline the spec names is required there too, and not only on a push.
+  const status = workflow('platforms-status');
+  const look = status.jobs.platforms.steps.find((step) => String(step.run || '').includes('scripts/release/gate.mjs'));
+  assert.ok(look, 'the platforms status workflow does not run the gate');
+  assert.deepEqual(splitList(look.env.PLATFORMS).sort(), phonePipelines, 'the pull request platforms status does not require every phone pipeline');
 });
 
 test('the publishing gate names every pipeline that builds a platform, ci included', () => {
