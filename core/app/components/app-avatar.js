@@ -1,6 +1,6 @@
 import { html } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
-import { heldMedia, holdMedia } from './app-attachment.js';
+import { heldMedia, holdMedia, fetchPicture, canFetchPicture } from './app-attachment.js';
 import { initials } from '../rules/chats.js';
 
 // A conversation's avatar (issue 341): the group's own photo when it has one, else the initials of its title. The
@@ -27,10 +27,10 @@ class AppAvatar extends KitElement {
 
   async load() {
     const p = this.photo;
-    if (!p || !this.client || this.loading === p.id) return;
+    if (!p || !canFetchPicture(this.client) || this.loading === p.id) return;
     this.loading = p.id;
     try {
-      const blob = await this.client.attachment(p.id);
+      const blob = await fetchPicture(this.client, p);
       const url = heldMedia(p) || URL.createObjectURL(blob);
       holdMedia(p, url);
       if (this.photo?.id === p.id) this.src = url;

@@ -80,6 +80,8 @@ app.whenReady().then(async () => {
   assert.ok(onCold.store && onWarm.store, 'the desktop web view keeps the store');
   assert.equal(onWarm.pageReads, 0, 'a warm open reads no page of a conversation the store holds');
   assert.equal(onWarm.pictureReads, 0, 'nor any picture a tile drew before');
+  assert.ok(offWarm.photoReads > 0 && onWarm.photoReads === 0, 'a conversation\'s photo and backdrop are read on every launch without the store, and on none with it');
+  assert.ok(onWarm.themedMs !== null && onWarm.themedMs < offWarm.themedMs / 2, 'and its scheme is drawn in a fraction of the time');
   assert.equal(onWarm.shownEdit, true, 'and still draws an edit made while it was closed');
   assert.ok(onWarm.bytes < offWarm.bytes / 4, 'a warm open costs a fraction of the bytes it did');
   assert.ok(onWarm.firstVisibleMs < offWarm.firstVisibleMs / 2, 'and draws its first message in a fraction of the time');

@@ -3,7 +3,9 @@
 // the first message drawn in the conversation opened, on a cold open (an empty store) and on a warm open (a relaunch
 // over the store the cold open left). The real page signs in to a stand-in server held in this script, which answers
 // the API's own shapes over an emulated slow link (a round trip and a bandwidth every response shares), and counts
-// every byte it answers. Synthetic records and pictures only: no server, token or account.
+// every byte it answers. The conversations carry the pictures a launch draws besides messages: a photo for each of the
+// first eight in the list, a backdrop behind the one opened, and the settings choose the dark scheme, so a launch also
+// says when it drew its pictures and its scheme. Synthetic records and pictures only: no server, token or account.
 //
 //   window.fixtureCacheMode  'on' (the store as shipped) or 'off' (a web view with no IndexedDB, which is the page as it
 //                            was before the store)
@@ -53,21 +55,24 @@
     // starts so drawing them is never measured.
     let seed = 441;
     const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-    const picture = async (hue) => {
+    const picture = async (hue, width = 300, height = 400) => {
       const canvas = document.createElement('canvas');
-      canvas.width = 300;
-      canvas.height = 400;
+      canvas.width = width;
+      canvas.height = height;
       const g = canvas.getContext('2d');
       g.fillStyle = 'hsl(' + hue + ', 60%, 50%)';
-      g.fillRect(0, 0, 300, 400);
-      for (let i = 0; i < 1400; i += 1) {
+      g.fillRect(0, 0, width, height);
+      for (let i = 0; i < (1400 * width * height) / 120000; i += 1) {
         g.fillStyle = 'hsla(' + Math.floor(rand() * 360) + ', 70%, ' + Math.floor(rand() * 100) + '%, 0.7)';
-        g.fillRect(rand() * 300, rand() * 400, 4 + rand() * 18, 4 + rand() * 18);
+        g.fillRect(rand() * width, rand() * height, 4 + rand() * 18, 4 + rand() * 18);
       }
       return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
     };
     const pictures = [];
     for (let i = 0; i < 8; i += 1) pictures.push(await picture(i * 45));
+    const faces = [];
+    for (let i = 0; i < 8; i += 1) faces.push(await picture(i * 45 + 20, 96, 96));
+    const backdrop = await picture(200, 600, 800);
 
     // The server's history. A warm run's server has moved on since the cold run: one message edited and one new.
     const at = (n) => new Date(Date.UTC(2026, 0, 1, 9, 0, 0) + n * 60000).toISOString();
@@ -91,10 +96,17 @@
     const edited = { ...c1[HISTORY - 3], text: 'Fixture edited while the app was closed', edited: true };
     const arrived = message('c1', HISTORY + 1);
     if (RUN === 'warm') { c1[HISTORY - 3] = edited; c1.push(arrived); }
-    const pictureFor = (id) => pictures[(Number(String(id).replace('att', '')) / 6) % pictures.length];
+    const pictureFor = (id) => {
+      const s = String(id);
+      if (s.startsWith('photo-')) return faces[(Number(s.slice('photo-c'.length)) - 1) % faces.length];
+      if (s.startsWith('backdrop-')) return backdrop;
+      return pictures[(Number(s.replace('att', '')) / 6) % pictures.length];
+    };
     const chats = [...history.entries()].map(([id, list], i) => ({
       id, name: 'Fixture ' + id, isGroup: false, service: 'iMessage', participants: ['+15555550' + String(200 + i)], unread: 0,
       lastMessageAt: list.at(-1).sentAt, lastMessage: { text: list.at(-1).text },
+      ...(i < 8 ? { photo: { id: 'photo-' + id, mime: 'image/jpeg' } } : {}),
+      ...(id === 'c1' ? { background: { id: 'backdrop-' + id, mime: 'image/jpeg' } } : {}),
     }));
     const COLD_HEAD = 'v1.' + HISTORY;
     const WARM_HEAD = 'v1.' + (HISTORY + 1);
@@ -144,7 +156,7 @@
       const q = u.searchParams;
       if (p === '/api/v1/info') return { apiVersion: 1, sending: true, serverVersion: '1.0.0', engine: { kind: 'fake', version: '1.0.0' } };
       if (p === '/api/v1/chats' && method === 'GET') return { chats: chats.map((c) => ({ ...c })) };
-      if (p === '/api/v1/settings' && method === 'GET') return { values: {} };
+      if (p === '/api/v1/settings' && method === 'GET') return { values: { 'appearance.skin': 'dark' } };
       if (p === '/api/v1/changes') return changesAfter(q.get('since'));
       const page = /^\/api\/v1\/chats\/([^/]+)\/messages$/.exec(p);
       if (page && method === 'GET') {
@@ -185,6 +197,22 @@
     // moment the list is drawn, as a person pressing it would.
     say('cache:measuring');
     const t0 = performance.now();
+    let themedMs = null;
+    let photosMs = null;
+    let backdropMs = null;
+    const drawn = (el) => { const img = el && el.shadowRoot ? el.shadowRoot.querySelector('img') : el && el.querySelector && el.querySelector('img'); return Boolean(img && img.complete && img.naturalWidth > 0); };
+    const watchPictures = async () => {
+      const deadline = performance.now() + 60000;
+      while (performance.now() < deadline && (themedMs === null || photosMs === null || backdropMs === null)) {
+        const now = performance.now() - t0;
+        if (themedMs === null && document.documentElement.dataset.scheme === 'dark') themedMs = now;
+        const photos = [...document.querySelectorAll('app-chat-list app-avatar')].filter((el) => el.photo);
+        if (photosMs === null && photos.length && photos.every(drawn)) photosMs = now;
+        if (backdropMs === null && drawn(document.querySelector('app-backdrop'))) backdropMs = now;
+        await frame();
+      }
+    };
+    const watching = watchPictures();
     const started = root.start(SERVER, 'fixture-token');
     await until(() => root.phase === 'ready' && root.chats.length, 'the conversation list', 60000);
     const listMs = performance.now() - t0;
@@ -200,12 +228,15 @@
     await opened;
     // Settled: nothing asked of the server for two seconds, bounded.
     await until(() => pending === 0 && performance.now() - lastActivity > 2000, 'the page to settle', 60000);
+    await watching;
     await root.cache?.flush();
     const shownEdit = (root.messages.find((m) => m.id === edited.id) || {}).text === edited.text;
     say('cache:result ' + JSON.stringify({
       mode: MODE, run: RUN, store: Boolean(root.cache), link: { rttMs: RTT_MS, bytesPerSecond: BYTES_PER_SECOND },
       bytes, requests: asked.length, listMs: Math.round(listMs), firstVisibleMs: Math.round(firstVisibleMs), newestVisibleMs: Math.round(newestVisibleMs),
+      themedMs: themedMs === null ? null : Math.round(themedMs), photosMs: photosMs === null ? null : Math.round(photosMs), backdropMs: backdropMs === null ? null : Math.round(backdropMs),
       pageReads: asked.filter((a) => /\/messages/.test(a.path)).length, pictureReads: asked.filter((a) => /\/attachments\//.test(a.path)).length,
+      photoReads: asked.filter((a) => /\/attachments\/(photo|backdrop)-/.test(a.path)).length,
       changesReads: asked.filter((a) => /\/changes/.test(a.path)).length, dropped, shownEdit: RUN === 'warm' ? shownEdit : null,
       asked: asked.map((a) => a.path.replace(/\?.*$/, '') + ' ' + a.bytes),
     }));
