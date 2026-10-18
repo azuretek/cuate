@@ -2,7 +2,8 @@
 // load order fixture (core/test/load-order-fixture.js) to its stand-in server over the same emulated slow link the
 // phone shells measure on, a conversation of synthetic photos opened at its newest message and then flung up through.
 // It prints the measurement, keeps it and a capture under --shots, and fails when a picture off screen was asked for
-// while one on screen was still waiting, or a fetch for a row flung past was still going when the view stopped.
+// while one on screen was still waiting (an avatar too, issue 426), or a fetch for a row flung past was still going
+// when the view stopped.
 // Synthetic records and pictures only: no server, token or account. Run it with a display:
 //
 //   xvfb-run -a ./desktop/node_modules/.bin/electron desktop/scripts/prove-load-order.mjs --shots <dir>
@@ -62,6 +63,8 @@ app.whenReady().then(async () => {
   const problems = [];
   if (!proof.onScreen?.length) problems.push('no picture was on screen to measure');
   if (proof.offscreenBeforeOnscreen !== 0) problems.push('pictures off screen were asked for while one on screen was still waiting: ' + proof.offscreenBeforeOnscreenIds.join(', '));
+  // Issue 426: an avatar is fetched in the same order, so none is asked for off screen while the screen waits.
+  if (proof.avatarEarly !== 0) problems.push('avatars off screen were asked for while something on screen was still waiting: ' + (proof.avatarEarlyIds || []).join(', '));
   if (proof.fling?.allDrawn !== true) problems.push('the pictures where the fling stopped never all drew');
   if (proof.fling?.staleAtStop !== 0) problems.push('fetches for rows flung past were still going when the view stopped: ' + (proof.fling?.staleAtStopIds || []).join(', '));
   if (problems.length) throw new Error(problems.join('; '));
