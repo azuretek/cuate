@@ -153,6 +153,13 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The load order fixture (issue 425), the same seam: Debug only. It signs the real page in to a stand-in server over
+        // an emulated slow link and measures what loads first.
+        if ProcessInfo.processInfo.arguments.contains("--load-order-fixture"),
+           let url = Bundle.main.url(forResource: "load-order-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The audio fixture (issue 432), the same seam: Debug only, and its script and its synthetic recording are
         // copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--audio-fixture"),

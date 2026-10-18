@@ -105,6 +105,7 @@ targets:
             cp "$SRCROOT/../core/test/voice-fixture.caf" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/voice-fixture.caf"
             cp "$SRCROOT/../core/test/voice-fixture.m4a" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/voice-fixture.m4a"
             cp "$SRCROOT/../core/test/text-effects-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/text-effects-fixture.js"
+            cp "$SRCROOT/../core/test/load-order-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/load-order-fixture.js"
             cp "$SRCROOT/../core/test/message-cache-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/message-cache-fixture.js"
             cp "$SRCROOT/../core/test/edit-history-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/edit-history-fixture.js"
             cp "$SRCROOT/../core/test/text-format-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/text-format-fixture.js"

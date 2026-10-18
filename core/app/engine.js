@@ -15,6 +15,7 @@ export { tokensCss, iconSvg } from '../kit/rules/tokens.js';
 export { springCurve } from '../kit/rules/motion.js';
 export { PRESS_STATES, admitPress, outcomeOf, holdsAfter, durationMs } from '../kit/rules/press.js';
 export { anchorFrom, scrollFor } from '../kit/rules/scroll.js';
+export { planLoads, LOAD_LIMIT } from '../kit/rules/load-order.js';
 export { pressOutside, closedByPress, closedByEscape, stackOf, swallows, SWALLOW_MS } from '../kit/rules/dismiss.js';
 export * from '../kit/rules/popover.js';
 export * from '../kit/rules/build.js';
