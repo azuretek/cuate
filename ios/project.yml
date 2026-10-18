@@ -109,6 +109,7 @@ targets:
             cp "$SRCROOT/../core/test/edit-history-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/edit-history-fixture.js"
             cp "$SRCROOT/../core/test/text-format-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/text-format-fixture.js"
             cp "$SRCROOT/../core/test/mention-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/mention-fixture.js"
+            cp "$SRCROOT/../core/test/group-members-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/group-members-fixture.js"
           fi
         basedOnDependencyAnalysis: false
     settings:

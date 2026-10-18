@@ -73,6 +73,7 @@ var engine = (() => {
     MAX_THEMES: () => MAX_THEMES,
     MEDIA_CACHE_BYTES: () => MEDIA_CACHE_BYTES,
     MEDIA_ITEM_MAX_BYTES: () => MEDIA_ITEM_MAX_BYTES,
+    MEMBER_ACTIONS: () => MEMBER_ACTIONS,
     MESSAGE_GUID: () => MESSAGE_GUID,
     NONE: () => NONE,
     NOTICE_ECHO_LIMIT: () => NOTICE_ECHO_LIMIT,
@@ -236,6 +237,7 @@ var engine = (() => {
     emptyListText: () => emptyListText,
     encodePlayed: () => encodePlayed,
     engineLabel: () => engineLabel,
+    eventPreview: () => eventPreview,
     eventText: () => eventText,
     extensionOf: () => extensionOf,
     failedBanner: () => failedBanner,
@@ -296,6 +298,7 @@ var engine = (() => {
     isLivePhoto: () => isLivePhoto,
     isMachineName: () => isMachineName,
     isMediaAttachment: () => isMediaAttachment,
+    isMemberRow: () => isMemberRow,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
     isUnplayed: () => isUnplayed,
@@ -313,7 +316,7 @@ var engine = (() => {
     mapMessage: () => mapMessage,
     mapReaction: () => mapReaction,
     matchesTerm: () => matchesTerm,
-    mayBeBackgroundRow: () => mayBeBackgroundRow,
+    mayBeStoreEventRow: () => mayBeStoreEventRow,
     mediaEvictions: () => mediaEvictions,
     mediaIndex: () => mediaIndex,
     mediaItems: () => mediaItems,
@@ -322,6 +325,7 @@ var engine = (() => {
     mediaNeighbours: () => mediaNeighbours,
     mediaOccurrence: () => mediaOccurrence,
     mediaStep: () => mediaStep,
+    memberAction: () => memberAction,
     mergeHeld: () => mergeHeld,
     mergeMessages: () => mergeMessages,
     mergeSettings: () => mergeSettings,
@@ -2541,8 +2545,16 @@ var engine = (() => {
   function isBackgroundRow(m) {
     return Boolean(m) && BACKGROUND_ACTION_NAMES.has(m.background_action);
   }
-  function mayBeBackgroundRow(m) {
+  function mayBeStoreEventRow(m) {
     return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
+  }
+  var MEMBER_ACTIONS = Object.freeze({ "1:0": "add", "1:1": "remove", "3:0": "leave" });
+  var MEMBER_ACTION_NAMES = new Set(Object.values(MEMBER_ACTIONS));
+  function memberAction(itemType, groupAction) {
+    return MEMBER_ACTIONS[Number(itemType) + ":" + Number(groupAction)] || null;
+  }
+  function isMemberRow(m) {
+    return Boolean(m) && MEMBER_ACTION_NAMES.has(m.member_action);
   }
   var BACKGROUND_NAME = "Background";
   function mapBackground(status, { attachmentId }) {
@@ -2579,6 +2591,10 @@ var engine = (() => {
     }
     if (isBackgroundRow(m)) {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
+    }
+    if (isMemberRow(m)) {
+      const handle = m.member_action !== "leave" && m.member_handle ? String(m.member_handle) : "";
+      return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "member", action: m.member_action, ...handle ? { person: { handle, name: null } } : {} } };
     }
     const styles = stylesFromRuns(m.text, m.text_runs);
     const parts = payloadParts(m, { attachmentId });
@@ -2735,7 +2751,32 @@ var engine = (() => {
     const who = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
     if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
     if (m.event && m.event.kind === "background") return who + (m.event.action === "clear" ? " removed the background" : " changed the background");
+    if (m.event && m.event.kind === "member") {
+      if (m.event.action === "leave") return who + " left the conversation";
+      const person = m.event.person ? String(m.event.person.name || m.event.person.handle || "") : "";
+      const whom = person || "someone";
+      if (m.event.action === "add") return who + " added " + whom + " to the conversation";
+      if (m.event.action === "remove") return who + " removed " + whom + " from the conversation";
+    }
     return "";
+  }
+  function eventPreview(e) {
+    const person = e.person && e.person.handle ? { person: { handle: String(e.person.handle), name: e.person.name ? String(e.person.name) : null } } : {};
+    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...person };
+  }
+  function peopleAfter(c, message) {
+    const e = message.event;
+    if (!c.isGroup || !e || e.kind !== "member") return {};
+    const handle = e.action === "leave" ? message.fromMe ? "" : String(message.sender || "") : String(e.person && e.person.handle || "");
+    if (!handle) return {};
+    const participants = Array.isArray(c.participants) ? c.participants : [];
+    const members = Array.isArray(c.members) ? c.members : [];
+    if (e.action === "add") {
+      if (participants.includes(handle)) return {};
+      const name = e.person && e.person.name || handle;
+      return { participants: [...participants, handle], members: [...members, { handle, name, photo: null }] };
+    }
+    return { participants: participants.filter((a) => a !== handle), members: members.filter((x) => x && x.handle !== handle) };
   }
   function initials(name) {
     const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
@@ -2753,8 +2794,8 @@ var engine = (() => {
     const out = chats.slice();
     const photo = message.event && message.event.kind === "groupPhoto" ? { photo: message.event.photo } : {};
     const backdrop = message.event && message.event.kind === "background" && message.event.action === "clear" ? { background: null } : {};
-    const event = message.event ? { kind: message.event.kind, ...message.event.action ? { action: message.event.action } : {} } : null;
-    out[i] = { ...c, ...photo, ...backdrop, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
+    const event = message.event ? eventPreview(message.event) : null;
+    out[i] = { ...c, ...photo, ...backdrop, ...peopleAfter(c, message), unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || message.sender || null } : lastMessage };
     return { chats: orderChats(out), known: true };
   }
   function applyEditToChats(chats, message) {
@@ -2832,7 +2873,7 @@ var engine = (() => {
   function upsertChat(chats = [], chat) {
     if (!chat || chat.id == null) return chats;
     const i = chats.findIndex((c) => c.id === chat.id);
-    const out = i < 0 ? [...chats, chat] : chats.map((c, k) => k === i ? { ...c, ...chat } : c);
+    const out = i < 0 ? [...chats, chat] : chats.map((c, k) => k === i ? { ...c, ...chat, lastMessage: chat.lastMessage || c.lastMessage || null } : c);
     return orderChats(out);
   }
   var LINK = /^(sms|smsto|mms|mmsto|im|imessage):(?:\/\/)?([^?]*)(?:\?(.*))?$/i;

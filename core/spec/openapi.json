@@ -3233,10 +3233,28 @@
           },
           "action": {
             "type": "string"
+          },
+          "person": {
+            "$ref": "#/components/schemas/EventPerson"
           }
         },
         "required": [
           "kind"
+        ],
+        "additionalProperties": false
+      },
+      "EventPerson": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
         ],
         "additionalProperties": false
       },

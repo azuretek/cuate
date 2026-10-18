@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { writePlist } from './bplist.js';
-import { buildFixtures, imsgReaction, TEXT_RUNS } from './fixtures.js';
+import { buildFixtures, imsgReaction, TEXT_RUNS, CONTACTS } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { compareHistory } from '../../../core/app/rules/history.js';
 
@@ -59,7 +59,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = syntheticPdf(SYNTHETIC_PDF_PAGES);
   writeFileSync(docPath, pdf);
-  const { chats, messages, backgrounds: backgroundEvents } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
+  const { chats, messages, backgrounds: backgroundEvents, members: memberEvents } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
   // A conversation background (issue 417), as Messages keeps it: the picture it rendered for the chat, in a property
   // list in the transcript background cache beside the attachments folder, named for the row that set it.
   const backgroundCache = path.join(path.dirname(attachmentsRoot), 'TranscriptBackgroundCache');
@@ -225,6 +225,24 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // The fake's stand-in for members.js, with the same shape: which rows the store records as a person added to a group,
+  // removed from it or leaving it, each with its action and the person added or removed (issue 456).
+  const members = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(memberEvents.filter((e) => want.has(e.guid)).map((e) => [e.guid, { action: e.action, handle: e.handle }]));
+    },
+    close() {},
+  };
+  // A group's people changing, as Messages records it wherever the change was made: the chat's people change, and a row
+  // of its own with no text and nothing attached is written, which streams like any other (issue 456).
+  const memberRow = (chat, fields, action, handle = null) => {
+    const m = add({ chat_id: chat.id, text: '', is_read: true, ...fields });
+    memberEvents.push({ guid: m.guid, chatId: String(chat.id), action, handle: action === 'leave' ? null : handle });
+    broadcast(m);
+    return m;
+  };
+
   const world = {
     sends,
     tapbacks,
@@ -232,6 +250,18 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     changes,
     backgrounds,
     voices,
+    members,
+    // A participant adds someone to the group, removes someone, or leaves it (handle unused), on their phone (issue 456).
+    memberElsewhere(chatId, sender, action, handle = null) {
+      const chat = chats.find((c) => c.id === chatId && c.is_group);
+      if (!chat) return null;
+      const actor = sender || chat.participants[0];
+      if (action === 'add' && !chat.participants.includes(handle)) chat.participants = [...chat.participants, String(handle)];
+      else if (action === 'remove') chat.participants = chat.participants.filter((a) => a !== handle);
+      else if (action === 'leave') chat.participants = chat.participants.filter((a) => a !== actor);
+      const known = CONTACTS.find((c) => c.phones.includes(actor) || c.emails.includes(actor));
+      return memberRow(chat, { is_from_me: false, sender: actor, sender_name: known ? known.displayName : '' }, action, handle);
+    },
     // Someone sends a voice message: a synthetic Core Audio file under the attachments folder, on a row of its own. With
     // live it streams like any new message; without it, it is only in the history. Answers the message's guid.
     voiceMessage(chatId, sender, { live = false } = {}) {
@@ -438,8 +468,15 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             if (!chat) return fail(req.id, -32602, 'unknown chat_id');
             if (!chat.is_group) return fail(req.id, -32602, 'not a group chat');
             if (req.method === 'group.rename') { chat.display_name = String(p.name || ''); chat.name = chat.display_name; }
-            else if (req.method === 'group.addParticipant') { if (!chat.participants.includes(p.address)) chat.participants = [...chat.participants, String(p.address)]; }
-            else chat.participants = chat.participants.filter((a) => a !== p.address);
+            else if (req.method === 'group.addParticipant') {
+              if (!chat.participants.includes(p.address)) {
+                chat.participants = [...chat.participants, String(p.address)];
+                memberRow(chat, { is_from_me: true }, 'add', String(p.address));
+              }
+            } else if (chat.participants.includes(p.address)) {
+              chat.participants = chat.participants.filter((a) => a !== p.address);
+              memberRow(chat, { is_from_me: true }, 'remove', String(p.address));
+            }
             return reply(req.id, { ok: true });
           }
           case 'read': {

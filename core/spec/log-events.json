@@ -20,6 +20,7 @@
     "engine.overflow": { "level": "warn", "msg": "engine watch overflowed; resubscribing", "fields": { "resume_after": "number" } },
     "edit.scan": { "level": "debug", "msg": "edited messages found in the Messages store and told", "fields": { "found": "number" } },
     "background.failed": { "level": "warn", "msg": "reading a conversation background failed", "fields": { "error": "string" } },
+    "member.failed": { "level": "warn", "msg": "reading who joined or left a group failed", "fields": { "error": "string" } },
     "voice.failed": { "level": "warn", "msg": "reading which messages are voice messages, and which were played, failed", "fields": { "error": "string" } },
     "edit.failed": { "level": "warn", "msg": "reading which messages were edited failed", "fields": { "error": "string" } },
     "richtext.failed": { "level": "warn", "msg": "reading the text effects a message carries failed", "fields": { "error": "string" } },
