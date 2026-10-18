@@ -1,0 +1,52 @@
+name: experiment video flake
+
+# Temporary: measures the video controls tests on the CI emulator with the host decoder and with the guest's own.
+on: create
+
+permissions:
+  contents: read
+
+jobs:
+  loop:
+    name: loop (${{ matrix.decoder }} ${{ matrix.replica }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        decoder: [host, guest]
+        replica: [a, b]
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Loop
+        timeout-minutes: 25
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          working-directory: android
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim ${{ matrix.decoder == 'guest' && '-feature -HardwareDecoder' || '' }}
+          script: bash scripts/exp-video-loop.sh ${{ matrix.decoder }}
+      - name: Keep
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp-${{ matrix.decoder }}-${{ matrix.replica }}
+          path: android/exp
+          if-no-files-found: warn
