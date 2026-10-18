@@ -85,6 +85,7 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/update-install-prompt-light.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/video-controls-portrait.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/video-controls-landscape.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-effects.png
 
       - name: Keep the boot proof
         if: always()
