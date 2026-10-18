@@ -228,4 +228,8 @@ try {
 // A failed page boundary, memory bound or scroll anchor fails the desktop smoke too.
 const proofElectron = createRequire(path.join(root, 'desktop', 'package.json'))('electron');
 execFileSync(proofElectron, [path.join(root, 'desktop/scripts/prove-history-window.mjs')], { timeout: 240000, stdio: 'inherit', env: { ...process.env, HISTORY_PROOF_OUT: path.join(out, 'history-window') } });
+// A recording plays in its message in this shell's own Chromium (issue 432): real mouse input presses play on a
+// synthetic recording, and its time, elapsed clock, waveform and played mark must move. A recording that does not play
+// fails the desktop smoke too.
+execFileSync(proofElectron, [path.join(root, 'desktop/scripts/prove-audio.mjs')], { timeout: 180000, stdio: 'inherit', env: { ...process.env, AUDIO_PROOF_OUT: path.join(out, 'audio') } });
 console.log('smoke ok: ' + JSON.stringify(report) + '; ' + verdict.results.length + ' checks measured; captures in ' + out);

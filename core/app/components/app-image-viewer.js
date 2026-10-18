@@ -42,11 +42,11 @@ import { openAttachment, saveAttachment } from './app-attachment.js';
 //
 // A document opens here too (issue 374): a PDF is drawn page by page by the bundled pdf.js (core/kit/pdf.js) into a
 // view that scrolls through every page and zooms by pinch, by a ctrl or trackpad wheel, by the bar's controls and by
-// the + and - keys; text, code and CSV are shown as text; and audio gets a player. Only the pages near the view are
+// the + and - keys; and text, code and CSV are shown as text. Only the pages near the view are
 // drawn, and a page scrolled far away gives its bitmap back, so a long PDF holds a few pages in memory, not all of
 // them. The bar offers Open in, which hands the file to the device's own apps, and Save. Nothing leaves the device.
 const needsJpeg = (item) => /heic|heif/i.test(String(item && item.mime || ''));
-const DOC_KINDS = new Set(['pdf', 'text', 'audio']);
+const DOC_KINDS = new Set(['pdf', 'text']);
 const isDocumentItem = (item) => Boolean(item && item.document && DOC_KINDS.has(item.kind));
 // How long a zoom rests before the pages it changed are drawn again at their new size; until then the pages already
 // drawn are scaled, so a pinch never waits on pdf.js.
@@ -282,8 +282,7 @@ class AppImageViewer extends KitElement {
     if (el && from) growFrom(el, from, { origin: null });
   }
 
-  // A document's bytes, read once: a PDF is opened by pdf.js and laid out page by page, text is decoded, and audio is
-  // handed to the player. A document the viewer cannot read says so, and Open in still offers it to another app.
+  // A document's bytes, read once: a PDF is opened by pdf.js and laid out page by page, and text is decoded. A document the viewer cannot read says so, and Open in still offers it to another app.
   async loadDocument(item) {
     const current = () => this.items[this.index] && this.items[this.index].id === item.id;
     try {
@@ -291,10 +290,6 @@ class AppImageViewer extends KitElement {
       if (!current()) return;
       if (item.kind === 'text') {
         this.docText = await blob.text();
-      } else if (item.kind === 'audio') {
-        const url = URL.createObjectURL(blob);
-        this.urls.set(item.id, url);
-        this.src = url;
       } else {
         const doc = await openPdf(new Uint8Array(await blob.arrayBuffer()));
         if (!current()) { closePdf(doc); return; }
@@ -631,10 +626,10 @@ class AppImageViewer extends KitElement {
   key(e) {
     if (e.key === 'Tab') {
       // The close control is the dialog's one stop; the page behind it is out of reach while the viewer is open. A
-      // document adds its own: the pages or text, its player, and the bar's controls, Open in and Save among them.
+      // document adds its own: the pages or text, and the bar's controls, Open in and Save among them.
       e.preventDefault();
       if (this.isDocument()) {
-        const stops = [...this.querySelectorAll('.viewer button:not(:disabled), .viewer-doc, .viewer audio')];
+        const stops = [...this.querySelectorAll('.viewer button:not(:disabled), .viewer-doc')];
         const at = stops.indexOf(document.activeElement);
         stops[(at + (e.shiftKey ? -1 : 1) + stops.length) % stops.length]?.focus();
         return;
@@ -664,12 +659,10 @@ class AppImageViewer extends KitElement {
     else if (action.kind === 'pan') this.view = panBy(this.view, action.dx, action.dy, this.box());
   }
 
-  // A document's keys: Escape closes, + and - and 0 zoom a PDF, and the arrows scroll it. A key meant for the player
-  // (an arrow seeking the recording) is the player's.
+  // A document's keys: Escape closes, + and - and 0 zoom a PDF, and the arrows scroll it.
   documentKey(e) {
     const action = zoomKey(e.key);
     if (!action || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (action.kind !== 'close' && e.target && e.target.closest && e.target.closest('audio')) return;
     if (action.kind !== 'close' && action.kind !== 'pan' && this.kind !== 'pdf') return;
     e.preventDefault();
     e.stopPropagation();
@@ -838,7 +831,7 @@ class AppImageViewer extends KitElement {
     growFrom(img, from, { origin: this.layoutCentre(img) }).then(() => { img.style.transition = ''; });
   };
 
-  // A document's surface: the pages, the text, or the player, and what the viewer says while it reads the file or when
+  // A document's surface: the pages or the text, and what the viewer says while it reads the file or when
   // it cannot show it.
   documentView(name) {
     if (this.docState === 'failed') {
@@ -847,10 +840,7 @@ class AppImageViewer extends KitElement {
     if (this.kind === 'pdf') {
       return html`<div class="viewer-doc viewer-pages" data-doc="pdf" tabindex="0" aria-label=${name} aria-busy=${this.docState === 'ready' ? 'false' : 'true'}></div>`;
     }
-    if (this.kind === 'text') {
-      return html`<div class="viewer-doc" data-doc="text" tabindex="0" aria-label=${name} aria-busy=${this.docState === 'ready' ? 'false' : 'true'}><pre class="viewer-text">${this.docText}</pre></div>`;
-    }
-    return html`<div class="viewer-note" data-doc="audio"><span class="icon" data-icon="play" aria-hidden="true"></span><p class="viewer-note-name">${name}</p>${this.src ? html`<audio class="viewer-audio" src=${this.src} controls preload="metadata" aria-label=${name}></audio>` : nothing}</div>`;
+    return html`<div class="viewer-doc" data-doc="text" tabindex="0" aria-label=${name} aria-busy=${this.docState === 'ready' ? 'false' : 'true'}><pre class="viewer-text">${this.docText}</pre></div>`;
   }
 
   // A document's bar: a PDF's page count and zoom, then Open in and Save, each labelled, so a file the viewer shows can
