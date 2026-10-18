@@ -212,16 +212,23 @@ test('each phone\'s video test reads the tree over the empty video before its cl
   }
 });
 
-// The contacts tests judge the contacts app on one reading of the window (issue 446): a second look at a view that has
-// drawn on since the wait ended reads it differently.
-test('each phone\'s contacts test judges the contacts app on one reading of the window', () => {
+// The contacts tests wait on the reading they judge (issue 446): the window in front is read again and again, the whole
+// tree at a time, until it names the person, and the reading the wait ends on is the one asserted. One look at a view
+// that is still drawing, or a whole-name lookup against an editor whose name fields are separate, reads as not the
+// person while the person is on screen.
+test('each phone\'s contacts test waits on the reading it judges, and says what it saw', () => {
   const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
   const naming = JSON.parse(read('core/spec/naming.json'));
   const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/ContactEditorTest.kt');
-  assert.equal(androidTest.match(/findAccessibilityNodeInfosByText/g).length, 1, 'Android reads the person from one root, once per reading');
-  assert.match(androidTest, /assertEquals\("the contacts app names the person: \$reading", true, reading\.namesThePerson\)/, 'and asserts on the reading its wait ended on');
-  assert.doesNotMatch(androidTest, /Thread\.sleep/);
+  assert.match(androidTest, /node\.text\?\.toString\(\), node\.contentDescription\?\.toString\(\)/, 'Android reads every text and content description under one root');
+  assert.match(androidTest, /while \(!\(reading\.packageName != null && reading\.packageName != context\.packageName && reading\.namesThePerson\)\)/, 'and takes a new reading until a window in front names the person');
+  assert.match(androidTest, /assertEquals\("the contacts app names the person: \$reading", true, reading\.namesThePerson\)/, 'asserting on the reading its wait ended on');
+  assert.match(androidTest, /the contacts app never showed the person; the last reading: \$reading/, 'and a wait that runs out says what it saw');
+  assert.doesNotMatch(androidTest, /Thread\.sleep|SystemClock\.sleep/, 'Android waits on states, never a sleep');
   const uiTest = read('ios/' + naming.product + 'UITests/ContactEditorTests.swift');
-  assert.match(uiTest, /try\? app\.snapshot\(\)/, 'iOS counts the names from one snapshot');
+  assert.match(uiTest, /try\? app\.snapshot\(\)/, 'iOS reads the card from one snapshot at a time');
+  assert.ok(uiTest.indexOf('try? app.snapshot()') < uiTest.indexOf('if names.native > 0 { break }'), 'taking the snapshot again until it names the person');
+  assert.match(uiTest, /addingTimeInterval\(cardSeconds\)/, 'bounded, and it says what the last reading held');
   assert.doesNotMatch(uiTest, /staticTexts\.matching\(named\)\.count/, 'never from two queries');
+  assert.doesNotMatch(uiTest, /\bsleep\(/, 'iOS waits on states, never a sleep');
 });

@@ -67,13 +67,56 @@ class ContactEditorTest {
         return result
     }
 
-    /** One reading of the window in front: which app it is and whether it names the person, both taken from the same root. */
-    private data class Reading(val packageName: String?, val namesThePerson: Boolean)
+    /**
+     * One reading of the window in front, taken from one root: which app it is, how its texts name the person, and the
+     * texts themselves so a wait that runs out says what the contacts app was drawing (issue 446).
+     */
+    private data class Reading(
+        val packageName: String?,
+        val fullName: Boolean,
+        val firstName: Boolean,
+        val lastName: Boolean,
+        val texts: List<String>,
+    ) {
+        /**
+         * The window names the person: their card says the whole name, and the editor the system opens for someone it
+         * could not match holds the first and last names in separate fields. Either is the person, a blank one is not.
+         */
+        val namesThePerson: Boolean get() = fullName || (firstName && lastName)
 
-    private fun read(): Reading {
-        val root: AccessibilityNodeInfo = instrumentation.uiAutomation.rootInActiveWindow ?: return Reading(null, false)
-        return Reading(root.packageName?.toString(), root.findAccessibilityNodeInfosByText("Fixture Person").isNotEmpty())
+        override fun toString(): String =
+            "Reading(packageName=$packageName, fullName=$fullName, firstName=$firstName, lastName=$lastName, texts=" +
+                texts.take(12) + ")"
     }
+
+    /** Every text and content description under the window's root in one walk, and how they name the seeded person. */
+    private fun read(): Reading {
+        val root: AccessibilityNodeInfo = instrumentation.uiAutomation.rootInActiveWindow
+            ?: return Reading(null, false, false, false, emptyList())
+        val texts = mutableListOf<String>()
+        var fullName = false
+        var firstName = false
+        var lastName = false
+        val pending = mutableListOf(root)
+        while (pending.isNotEmpty() && texts.size < TEXT_BUDGET) {
+            val node = pending.removeAt(pending.size - 1)
+            for (candidate in listOf(node.text?.toString(), node.contentDescription?.toString())) {
+                val text = candidate?.trim().orEmpty()
+                if (text.isEmpty()) continue
+                texts += text
+                if (text.contains(PERSON, ignoreCase = true)) fullName = true
+                if (text.contains(FIRST_NAME, ignoreCase = true)) firstName = true
+                if (text.contains(LAST_NAME, ignoreCase = true)) lastName = true
+            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(it) }
+        }
+        return Reading(root.packageName?.toString(), fullName, firstName, lastName, texts)
+    }
+
+    /** What the system says is in front, so a wait that runs out says what was on screen rather than only what was not. */
+    private fun inFront(): String = runCatching {
+        shell("dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity'").trim()
+    }.getOrDefault("(the system did not say)")
 
     @Test
     fun editContactOpensTheContactsApp() {
@@ -97,15 +140,18 @@ class ContactEditorTest {
             if (got.has("error")) throw AssertionError("contacts fixture failed: " + got.getString("error"))
             assertTrue("the control is drawn: $got", got.getBoolean("drawn"))
             assertTrue("the bridge opened the contacts app: $got", got.optBoolean("answer"))
-            // The contacts app is in front, and it is showing the seeded person. Issue 446: the contacts app is judged on one
-            // reading of the window, the same reading the wait ended on, never a second look at a view that has drawn on.
+            // The contacts app is in front, and it is showing the seeded person. Issue 446: the window is read again and
+            // again until it names the person, and the reading the wait ends on is the one judged, never a second look at a
+            // view that has drawn on since.
             val automation = instrumentation.uiAutomation
-            val front = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+            val front = System.nanoTime() + TimeUnit.SECONDS.toNanos(FRONT_SECONDS)
             var reading = read()
             while (!(reading.packageName != null && reading.packageName != context.packageName && reading.namesThePerson)) {
                 val left = TimeUnit.NANOSECONDS.toMillis(front - System.nanoTime())
-                if (left <= 0) throw AssertionError("the contacts app never showed the person; the last reading: $reading")
-                try { automation.waitForIdle(WINDOW_SETTLE_MS, left) } catch (busy: java.util.concurrent.TimeoutException) { }
+                if (left <= 0) {
+                    throw AssertionError("the contacts app never showed the person; the last reading: $reading; in front: " + inFront())
+                }
+                automation.waitForIdle(minOf(WINDOW_SETTLE_MS, left))
                 reading = read()
             }
             assertTrue("a contacts app, not this one, is in front: $reading", reading.packageName != context.packageName)
@@ -115,5 +161,10 @@ class ContactEditorTest {
 
     private companion object {
         const val WINDOW_SETTLE_MS = 300L
+        const val FRONT_SECONDS = 90L
+        const val TEXT_BUDGET = 400
+        const val PERSON = "Fixture Person"
+        const val FIRST_NAME = "Fixture"
+        const val LAST_NAME = "Person"
     }
 }

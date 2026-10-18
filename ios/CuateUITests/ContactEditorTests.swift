@@ -43,20 +43,32 @@ final class ContactEditorTests: XCTestCase {
             XCTFail("Native contact card did not appear: " + app.debugDescription + springboard.debugDescription)
             return
         }
-        // Issue 446: the card is judged on one reading of the window. Two queries are two looks at a view that may have
-        // drawn on between them, so the native names and the web header's are both counted from one snapshot.
-        guard let window = try? app.snapshot() else {
-            XCTFail("The window could not be read" + SystemSurface.failureSuffix(app))
-            return
+        // Issue 446: the card is judged on one reading of the window, and the wait ends on the state it judges: the
+        // snapshot that names the person, taken again until it does rather than trusting the first one, since the card
+        // draws on after it arrives. A bound that runs out says what the last reading held.
+        var names: (native: Int, web: Int) = (0, 0)
+        var lastRead = "the window could not be read"
+        let judged = Date().addingTimeInterval(cardSeconds)
+        while true {
+            if let window = try? app.snapshot() {
+                names = personNames(window, inWebView: false)
+                if names.native > 0 { break }
+                lastRead = "the native card named the person \(names.native) times, the web header \(names.web)"
+            }
+            if Date() >= judged { break }
+            _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the card draws on")], timeout: settleSeconds)
         }
-        let names = personNames(window, inWebView: false)
-        XCTAssertGreaterThan(names.native, 0,
-                             "The native card, not only the web header, must name the synthetic person (in the web header: \(names.web))")
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "contact-card"
         shot.lifetime = .keepAlways
         add(shot)
+        XCTAssertGreaterThan(names.native, 0,
+                             "The native card, not only the web header, must name the synthetic person (\(lastRead))" +
+                                SystemSurface.failureSuffix(app))
     }
+
+    private let cardSeconds: TimeInterval = 30
+    private let settleSeconds: TimeInterval = 0.25
 
     /// How many static texts name the synthetic person in one snapshot, outside any web view and inside one.
     private func personNames(_ node: XCUIElementSnapshot, inWebView: Bool) -> (native: Int, web: Int) {
