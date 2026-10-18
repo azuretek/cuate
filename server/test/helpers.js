@@ -11,7 +11,7 @@ import { makeAttachmentId } from '../src/ids.js';
 import { startServer } from '../src/app.js';
 
 // A real server over the fake engine, with a strict logger at debug so an undeclared event fails the test.
-export async function boot({ contacts = null, sending = true, perMinute = 20, sendTimeoutMs = 400, mac = null, restarts = null, webhooks = null, webhookOptions = {}, updatePending = () => false, capabilities = null, features = [], typingIncoming = false, typingOutgoing = true, dbPath = null, readSyncMs = 20000, push = { relay: null }, pushFetch = undefined } = {}) {
+export async function boot({ contacts = null, sending = true, perMinute = 20, sendTimeoutMs = 400, mac = null, restarts = null, webhooks = null, webhookOptions = {}, updatePending = () => false, capabilities = null, features = [], typingIncoming = false, typingOutgoing = true, dbPath = null, readSyncMs = 20000, push = { relay: null }, pushFetch = undefined, authTimeoutMs = undefined } = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'srv-test-'));
   const lines = [];
   const logger = createLogger({ spec: logSpec, app: 'test', run: 'test', sink: (l) => lines.push(l), now: Date.now, level: 'debug', strict: true });
@@ -21,9 +21,9 @@ export async function boot({ contacts = null, sending = true, perMinute = 20, se
   // The database the engine reads, in this run's own directory, so a test can change it and the server watches it.
   const watchedDb = dbPath === true ? path.join(dir, 'chat.db') : dbPath;
   const world = createFakeImsg({ attachmentsRoot: root, capabilities, features });
-  const engine = createEngine({ kind: 'fake', makeTransport: () => world.transport(), log: logger.child('engine'), attachmentId: makeAttachmentId({ secret: 'test-secret', store }), sendTimeoutMs, typingIncoming, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, heard: { has: (id) => store.isPlayed(id) }, renames: world.renames });
+  const engine = createEngine({ kind: 'fake', makeTransport: () => world.transport(), log: logger.child('engine'), attachmentId: makeAttachmentId({ secret: 'test-secret', store }), sendTimeoutMs, typingIncoming, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, heard: { has: (id) => store.isPlayed(id) }, renames: world.renames, sendEffects: world.sendEffects });
   await engine.start();
-  const srv = await startServer({ contacts, config, store, engine, log: logger.child('http'), dataDir: dir, attachmentsRoot: root, dbPath: watchedDb, mac, restarts, webhookOptions, updatePending, readSyncMs, pushFetch });
+  const srv = await startServer({ contacts, config, store, engine, log: logger.child('http'), dataDir: dir, attachmentsRoot: root, dbPath: watchedDb, mac, restarts, webhookOptions, updatePending, readSyncMs, pushFetch, authTimeoutMs });
   const tokens = {
     device: store.createToken('device', 'test device').token,
     tooling: store.createToken('tooling', 'test tool').token,
@@ -39,7 +39,8 @@ export async function boot({ contacts = null, sending = true, perMinute = 20, se
       await srv.close();
       await engine.stop();
       store.close();
-      rmSync(dir, { recursive: true, force: true });
+      // Windows can still hold a file the server or the engine just closed, so the removal retries as Node allows.
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }

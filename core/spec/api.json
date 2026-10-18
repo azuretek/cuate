@@ -447,7 +447,8 @@
       "payloads": "number?",
       "event": "MessageEventKind?",
       "senderName": "string?",
-      "edited": "boolean?"
+      "edited": "boolean?",
+      "sendEffect": "string?"
     },
     "ChangeList": {
       "cursor": "string",
@@ -492,7 +493,8 @@
       "edited": "boolean?",
       "historyCursor": "string?",
       "styles": "TextStyle[]?",
-      "edits": "EditVersion[]?"
+      "edits": "EditVersion[]?",
+      "sendEffect": "string?"
     },
     "EditVersion": {
       "text": "string",
