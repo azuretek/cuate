@@ -908,6 +908,41 @@ async function runSmoke(w) {
     console.log('text effects: ' + JSON.stringify({ checks: fxChecks, playing, settled, reduced }));
   }
 
+  // Bold, italic, underline and strikethrough (issue 447): the fake engine's campsite question carries bold over "book",
+  // underline over "campsite" and italic over "weekend", which the server reads from the store. Each stretch draws with
+  // its own style, the rest plain, and the bubble reads the words as sent.
+  {
+    await smokeStep('text formatting');
+    const fmtBack = await js("document.querySelector('app-root').openChatId");
+    if (String(fmtBack) !== '1') {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"1\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === '1' && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    }
+    await waitFor("Boolean(document.querySelector('.bubble-row[data-id=\"FAKE-0016\"] .fmt'))", 15000).catch(() => {});
+    const fmt = await js(`(() => {
+      const row = document.querySelector('.bubble-row[data-id="FAKE-0016"]');
+      if (!row) return { found: false };
+      row.scrollIntoView({ block: 'center' });
+      const bubble = row.querySelector('.bubble');
+      const plain = Number(getComputedStyle(bubble).fontWeight);
+      const read = (cls) => { const el = row.querySelector('.fmt.' + cls); if (!el) return null; const cs = getComputedStyle(el); return { words: el.textContent, bold: Number(cs.fontWeight) > plain, italic: cs.fontStyle === 'italic', lines: cs.textDecorationLine }; };
+      return { found: true, bubble: bubble.textContent, stretches: row.querySelectorAll('.fmt').length, bold: read('fmt-bold'), underline: read('fmt-underline'), italic: read('fmt-italic') };
+    })()`);
+    await shot('03f-text-format.png');
+    if (fmtBack !== null && String(fmtBack) !== '1') {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(String(fmtBack)) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(String(fmtBack)), 15000).catch(() => {});
+    }
+    const fmtChecks = {
+      drawn: fmt.found && fmt.bubble === 'Did you book the campsite for the weekend?' && fmt.stretches === 3,
+      bold: Boolean(fmt.bold && fmt.bold.words === 'book' && fmt.bold.bold && !fmt.bold.italic),
+      underline: Boolean(fmt.underline && fmt.underline.words === 'campsite' && /underline/.test(fmt.underline.lines) && !fmt.underline.bold),
+      italic: Boolean(fmt.italic && fmt.italic.words === 'weekend' && fmt.italic.italic && !fmt.italic.bold),
+    };
+    report.textFormat = Object.values(fmtChecks).every(Boolean);
+    console.log('text formatting: ' + JSON.stringify({ checks: fmtChecks, fmt }));
+  }
+
   // The message box (issue 139) grows a line at a time with its text and scrolls only past its maximum, with the app's
   // themed bar. One, three and many lines are typed into it; each reading is the field's height and whether it draws a
   // bar, which is the width the bar takes from the field's box. Shift+Enter is pressed as a real key and adds a line,
