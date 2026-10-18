@@ -8,16 +8,20 @@ export const TEXT_EFFECT_IDS = Object.freeze({ 4: 'ripple', 5: 'big', 6: 'bloom'
 export const TEXT_EFFECTS = Object.freeze(Object.values(TEXT_EFFECT_IDS));
 // The effects that move each letter on its own rather than the stretch as one.
 export const LETTER_EFFECTS = Object.freeze(['ripple', 'jitter', 'explode']);
+// The formatting a sender can lay on a stretch (issue 447), by the key the server marks each run with and the model
+// carries each style with. Any number of them can share a stretch, and they compose with an effect.
+export const TEXT_FORMATS = Object.freeze(['bold', 'italic', 'underline', 'strikethrough']);
 
 const INLINE_OBJECT = '\uFFFC';
 
 /**
  * The styles a raw row's runs make, against the text the model carries. The row's text still holds the inline object
  * placeholders the model strips, so each offset is moved back by the placeholders before it, and a stretch that was
- * only placeholders is dropped. An effect the store names by a number we do not know is left out rather than guessed.
+ * only placeholders is dropped. An effect the store names by a number we do not know is left out rather than guessed,
+ * and a stretch left with neither an effect nor a format is dropped.
  * @param {string} rawText the words as the engine read them
- * @param {{ start: number, length: number, effect?: number }[]} runs
- * @returns {{ start: number, length: number, effect?: string }[]}
+ * @param {{ start: number, length: number, effect?: number, bold?: number, italic?: number, underline?: number, strikethrough?: number }[]} runs
+ * @returns {{ start: number, length: number, effect?: string, bold?: true, italic?: true, underline?: true, strikethrough?: true }[]}
  */
 export function stylesFromRuns(rawText, runs) {
   const text = String(rawText || '');
@@ -34,16 +38,24 @@ export function stylesFromRuns(rawText, runs) {
     const start = Math.trunc(Number(r && r.start));
     const length = Math.trunc(Number(r && r.length));
     if (!Number.isFinite(start) || !Number.isFinite(length) || start < 0 || length <= 0 || start + length > text.length) continue;
+    const marks = {};
     const effect = TEXT_EFFECT_IDS[r.effect] || null;
-    if (!effect) continue;
+    if (effect) marks.effect = effect;
+    for (const f of TEXT_FORMATS) if (r[f]) marks[f] = true;
+    if (!Object.keys(marks).length) continue;
     const from = start - removedBefore[start];
     const to = start + length - removedBefore[start + length];
     if (to <= from) continue;
     const prev = out[out.length - 1];
-    if (prev && prev.effect === effect && prev.start + prev.length === from) prev.length += to - from;
-    else out.push({ start: from, length: to - from, effect });
+    if (prev && sameMarks(prev, marks) && prev.start + prev.length === from) prev.length += to - from;
+    else out.push({ start: from, length: to - from, ...marks });
   }
   return out;
+}
+
+// Whether a style carries exactly these marks: the same effect (or none) and the same formats.
+function sameMarks(style, marks) {
+  return (style.effect || null) === (marks.effect || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
 }
 
 // A stretch's letters, one per user-perceived character, so a letter effect moves each as it reads rather than splitting

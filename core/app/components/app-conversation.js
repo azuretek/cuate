@@ -21,7 +21,7 @@ import './app-composer.js';
 import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
 import { messageLinks, styledParts } from '../rules/links.js';
-import { letters, LETTER_EFFECTS } from '../rules/text-styles.js';
+import { letters, LETTER_EFFECTS, TEXT_FORMATS } from '../rules/text-styles.js';
 import { sendEffectLine, sendEffectName, sendEffectKind, INK_EFFECT } from '../rules/send-effects.js';
 import { playBubbleEffect, playScreenEffect } from './send-effects.js';
 import { emojiFallbackParts } from '../rules/emoji.js';
@@ -42,8 +42,13 @@ const drawnText = (text) => emojiFallbackParts(text, canDrawEmoji).map((p) => (p
 const effectText = (p) => (LETTER_EFFECTS.includes(p.effect)
   ? html`<span class="text-effect" data-effect=${p.effect}>${letters(p.text).map((ch) => html`<span class="fx-letter">${drawnText(ch)}</span>`)}</span>`
   : html`<span class="text-effect" data-effect=${p.effect}>${drawnText(p.text)}</span>`);
+// A stretch the sender formatted (issue 447): one span naming every format laid on it, around the effect it shares.
+const formattedText = (p, inner) => {
+  const formats = TEXT_FORMATS.filter((f) => p[f]);
+  return formats.length ? html`<span class="${'fmt ' + formats.map((f) => 'fmt-' + f).join(' ')}">${inner}</span>` : inner;
+};
 const linkedText = (text, open, styles = []) => styledParts(text, styles).map((p) => {
-  const inner = p.effect ? effectText(p) : drawnText(p.text);
+  const inner = formattedText(p, p.effect ? effectText(p) : drawnText(p.text));
   return p.href
     ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${inner}</a>`
     : inner;

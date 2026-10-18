@@ -113,6 +113,7 @@ var engine = (() => {
     TAPBACKS: () => TAPBACKS2,
     TEXT_EFFECTS: () => TEXT_EFFECTS,
     TEXT_EFFECT_IDS: () => TEXT_EFFECT_IDS,
+    TEXT_FORMATS: () => TEXT_FORMATS,
     TEXT_PREVIEW_MAX_BYTES: () => TEXT_PREVIEW_MAX_BYTES,
     TEXT_SCALES: () => TEXT_SCALES,
     THEME_GROUPS: () => THEME_GROUPS,
@@ -2460,6 +2461,7 @@ var engine = (() => {
   var TEXT_EFFECT_IDS = Object.freeze({ 4: "ripple", 5: "big", 6: "bloom", 8: "nod", 9: "shake", 10: "jitter", 11: "small", 12: "explode" });
   var TEXT_EFFECTS = Object.freeze(Object.values(TEXT_EFFECT_IDS));
   var LETTER_EFFECTS = Object.freeze(["ripple", "jitter", "explode"]);
+  var TEXT_FORMATS = Object.freeze(["bold", "italic", "underline", "strikethrough"]);
   var INLINE_OBJECT = "\uFFFC";
   function stylesFromRuns(rawText, runs) {
     const text = String(rawText || "");
@@ -2475,16 +2477,22 @@ var engine = (() => {
       const start = Math.trunc(Number(r && r.start));
       const length = Math.trunc(Number(r && r.length));
       if (!Number.isFinite(start) || !Number.isFinite(length) || start < 0 || length <= 0 || start + length > text.length) continue;
+      const marks = {};
       const effect = TEXT_EFFECT_IDS[r.effect] || null;
-      if (!effect) continue;
+      if (effect) marks.effect = effect;
+      for (const f of TEXT_FORMATS) if (r[f]) marks[f] = true;
+      if (!Object.keys(marks).length) continue;
       const from = start - removedBefore[start];
       const to = start + length - removedBefore[start + length];
       if (to <= from) continue;
       const prev = out[out.length - 1];
-      if (prev && prev.effect === effect && prev.start + prev.length === from) prev.length += to - from;
-      else out.push({ start: from, length: to - from, effect });
+      if (prev && sameMarks(prev, marks) && prev.start + prev.length === from) prev.length += to - from;
+      else out.push({ start: from, length: to - from, ...marks });
     }
     return out;
+  }
+  function sameMarks(style, marks) {
+    return (style.effect || null) === (marks.effect || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
   }
   function letters(text) {
     const s = String(text || "");
@@ -3655,9 +3663,9 @@ var engine = (() => {
       if (p.href) links.push({ start: at, end: at + p.text.length, href: p.href });
       at += p.text.length;
     }
-    const effects = (Array.isArray(styles) ? styles : []).filter((x) => x && TEXT_EFFECTS.includes(x.effect) && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length).map((x) => ({ start: x.start, end: x.start + x.length, effect: x.effect }));
+    const laid = (Array.isArray(styles) ? styles : []).filter((x) => x && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length).map((x) => ({ start: x.start, end: x.start + x.length, effect: TEXT_EFFECTS.includes(x.effect) ? x.effect : null, formats: TEXT_FORMATS.filter((f) => x[f] === true) })).filter((x) => x.effect || x.formats.length);
     const cuts = /* @__PURE__ */ new Set([0, s.length]);
-    for (const r of [...links, ...effects]) {
+    for (const r of [...links, ...laid]) {
       cuts.add(r.start);
       cuts.add(r.end);
     }
@@ -3668,12 +3676,14 @@ var engine = (() => {
       const to = points[i + 1];
       if (to <= from) continue;
       const link = links.find((r) => r.start <= from && to <= r.end);
-      const effect = effects.find((r) => r.start <= from && to <= r.end);
+      const over = laid.filter((r) => r.start <= from && to <= r.end);
+      const effect = over.find((r) => r.effect);
       const part2 = { text: s.slice(from, to) };
       if (link) part2.href = link.href;
       if (effect) part2.effect = effect.effect;
+      for (const f of TEXT_FORMATS) if (over.some((r) => r.formats.includes(f))) part2[f] = true;
       const prev = parts[parts.length - 1];
-      if (prev && prev.href === part2.href && prev.effect === part2.effect) prev.text += part2.text;
+      if (prev && prev.href === part2.href && prev.effect === part2.effect && TEXT_FORMATS.every((f) => prev[f] === part2[f])) prev.text += part2.text;
       else parts.push(part2);
     }
     return parts;

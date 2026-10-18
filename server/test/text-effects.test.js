@@ -163,5 +163,5 @@ test('end to end: the fake engine\'s birthday wishes carry Bloom over the stretc
   assert.deepEqual(m.styles, [{ start: 6, length: 16, effect: 'bloom' }]);
   assert.equal(m.text.slice(6, 22), 'birthday to you!');
   assert.deepEqual(TEXT_RUNS['FAKE-0021'], [{ start: 6, length: 16, effect: 6 }]);
-  assert.equal(page.messages.filter((x) => x.id !== 'FAKE-0021' && x.styles).length, 0, 'and no other message carries one');
+  assert.equal(page.messages.filter((x) => x.id !== 'FAKE-0021' && (x.styles || []).some((s) => s.effect)).length, 0, 'and no other message carries one');
 });

@@ -7,13 +7,20 @@ import { DatabaseSync } from 'node:sqlite';
 import { readAttributedString } from './typedstream.js';
 
 // The attributes read, by the name Messages gives each, and the key each run carries it under.
-export const RICH_ATTRIBUTES = Object.freeze({ __kIMTextEffectAttributeName: 'effect' });
+// Bold, italic, underline and strikethrough (issue 447) are each a number on the stretch they cover, 1 where laid.
+export const RICH_ATTRIBUTES = Object.freeze({
+  __kIMTextEffectAttributeName: 'effect',
+  __kIMTextBoldAttributeName: 'bold',
+  __kIMTextItalicAttributeName: 'italic',
+  __kIMTextUnderlineAttributeName: 'underline',
+  __kIMTextStrikethroughAttributeName: 'strikethrough',
+});
 
 /**
  * One attributedBody as the runs the app draws: the words it holds, and each stretch carrying at least one attribute
  * we read, with those attributes under their own keys. A body that is not an attributed string reads as null.
  * @param {Buffer | Uint8Array} body
- * @returns {{ text: string, runs: { start: number, length: number, effect?: number }[] } | null}
+ * @returns {{ text: string, runs: { start: number, length: number, effect?: number, bold?: number, italic?: number, underline?: number, strikethrough?: number }[] } | null}
  */
 export function richRuns(body) {
   let parsed;

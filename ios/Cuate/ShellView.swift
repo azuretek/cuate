@@ -125,6 +125,12 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The text formatting fixture (issue 447), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--text-format-fixture"),
+           let url = Bundle.main.url(forResource: "text-format-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The send effects fixture (issue 442), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--send-effects-fixture"),
            let url = Bundle.main.url(forResource: "send-effects-fixture", withExtension: "js"),
