@@ -57,7 +57,8 @@
     const el = holders[holders.length - 1];
     if (!el) { problems.push(name + ' has no stretch reading ' + JSON.stringify(words)); continue; }
     const lines = new Set();
-    for (let x = el; x && x !== bubble; x = x.parentElement) for (const l of getComputedStyle(x).textDecorationLine.split(' ')) lines.add(l);
+    // A link draws its own underline, which is the link's and not a format the sender laid, so it is not counted.
+    for (let x = el; x && x !== bubble; x = x.parentElement) if (!x.matches('a.message-link')) for (const l of getComputedStyle(x).textDecorationLine.split(' ')) lines.add(l);
     const cs = getComputedStyle(el);
     const got = {
       bold: Number(cs.fontWeight) > plainWeight,
