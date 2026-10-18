@@ -193,6 +193,7 @@ var engine = (() => {
     contrast: () => contrast,
     contrastRatio: () => contrastRatio,
     controlLayout: () => controlLayout,
+    copyFormat: () => copyFormat,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
     createLogger: () => createLogger,
@@ -3731,14 +3732,31 @@ var engine = (() => {
     "audio/flac",
     "audio/x-flac"
   ]);
+  var VOICE_EXTENSIONS = /* @__PURE__ */ new Set(["caf", "amr", "3gp", "3ga"]);
+  var VOICE_TYPES = /* @__PURE__ */ new Set(["audio/x-caf", "audio/caf", "audio/amr", "audio/3gpp", "audio/3gpp2"]);
   var bareType2 = (mime) => String(mime || "").split(";")[0].trim().toLowerCase();
   var fits2 = (a, max) => !(Number.isFinite(Number(a.bytes)) && Number(a.bytes) > max);
   function playsInPlace(a) {
     if (!isFileAttachment(a)) return false;
     const type = bareType2(a.mime);
     const generic = !type || type === "application/octet-stream";
-    const audio = AUDIO_TYPES.has(type) || generic && AUDIO_EXTENSIONS.has(extensionOf(a.name));
+    const ext = extensionOf(a.name);
+    const audio = AUDIO_TYPES.has(type) || VOICE_TYPES.has(type) || generic && (AUDIO_EXTENSIONS.has(ext) || VOICE_EXTENSIONS.has(ext));
     return audio && fits2(a, AUDIO_INLINE_MAX_BYTES);
+  }
+  function copyFormat(a, canPlayType) {
+    const type = bareType2(a && a.mime);
+    const generic = !type || type === "application/octet-stream";
+    const voice = VOICE_TYPES.has(type) || generic && VOICE_EXTENSIONS.has(extensionOf(a && a.name));
+    if (!voice) return null;
+    const asked = generic ? "audio/x-caf" : type;
+    let answer;
+    try {
+      answer = typeof canPlayType === "function" ? String(canPlayType(asked) || "") : "";
+    } catch {
+      answer = "";
+    }
+    return answer === "probably" ? null : "m4a";
   }
   function clock(seconds) {
     const s = Number.isFinite(Number(seconds)) && Number(seconds) > 0 ? Math.floor(Number(seconds)) : 0;

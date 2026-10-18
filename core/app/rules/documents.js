@@ -3,7 +3,7 @@
 // A document is any attachment that is not a picture or a video (core/app/rules/media.js). Some kinds the app shows
 // itself, in the media viewer: a PDF, drawn page by page by the bundled pdf.js, and text, code and CSV, as text.
 // Pressing one of those opens it in the viewer, which offers Open in and Save beside it. A recording is played in its
-// own message instead (core/app/rules/audio.js, issue 432). Any other kind goes straight to Open in, which hands the file to the device's own apps. Save stays for every
+// own message instead (core/app/rules/audio.js, issue 432), a voice message included (issue 435). Any other kind goes straight to Open in, which hands the file to the device's own apps. Save stays for every
 // file, in the viewer and on the message's menu. Nothing here fetches or opens anything: it only answers what to do.
 import { isMediaAttachment } from './media.js';
 

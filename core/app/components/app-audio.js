@@ -1,7 +1,7 @@
 import { html, nothing } from '../../kit/lit.js';
 import { KitElement } from '../../kit/element.js';
 import { press } from '../../kit/press.js';
-import { clock, progressOf, flatWave, wavePeaks, barsDone, seekAt, seekByKey, isUnplayed, decodePlayed, encodePlayed, PLAYED_KEY, WAVE_BARS, WAVE_DECODE_MAX_BYTES } from '../rules/audio.js';
+import { clock, progressOf, flatWave, wavePeaks, barsDone, seekAt, seekByKey, isUnplayed, decodePlayed, encodePlayed, copyFormat, PLAYED_KEY, WAVE_BARS, WAVE_DECODE_MAX_BYTES } from '../rules/audio.js';
 
 // A recording in a conversation, played where it was sent (issue 432): a play and pause control, the waveform,
 // which fills as it plays and moves to where it is pressed, how far in it is and how long it runs, and a mark on one
@@ -31,6 +31,14 @@ export async function rememberPlayed(id, { bridge = globalThis.window?.bridge } 
 export function forgetPlayed() {
   playedIds = null;
 }
+
+// What this web view says it plays, asked of an audio element of its own (issue 435). A page with no document answers
+// nothing, so a voice message asks for the server's copy.
+let probe = null;
+const canPlayType = (type) => {
+  if (!probe) probe = globalThis.document?.createElement?.('audio') || {};
+  return typeof probe.canPlayType === 'function' ? probe.canPlayType(type) : '';
+};
 
 // One recording plays at a time: starting one pauses whichever was playing.
 let playingNow = null;
@@ -151,7 +159,9 @@ class AppAudio extends KitElement {
     this.request = request;
     const done = (async () => {
       try {
-        const blob = await this.client.attachment(a.id, { signal: request.signal });
+        // A voice message the web view cannot play for certain is asked for as the server's MPEG-4 copy (issue 435).
+        const format = copyFormat(a, canPlayType);
+        const blob = await this.client.attachment(a.id, format ? { signal: request.signal, format } : { signal: request.signal });
         if (request.signal.aborted || this.attachment?.id !== a.id) return null;
         this.src = URL.createObjectURL(blob);
         readWave(blob).then((wave) => { if (wave && this.attachment?.id === a.id) this.wave = wave; });

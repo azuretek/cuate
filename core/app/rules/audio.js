@@ -20,6 +20,11 @@ const AUDIO_TYPES = new Set([
   'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/aac', 'audio/x-aac', 'audio/wav', 'audio/x-wav',
   'audio/wave', 'audio/ogg', 'audio/opus', 'audio/webm', 'audio/flac', 'audio/x-flac',
 ]);
+// A voice message as the Mac records it (issue 435): a Core Audio file, Opus inside on current iPhones and AMR or AAC
+// on older ones, or a bare AMR recording. Chromium has no demuxer for either, so these play from the server's MPEG-4
+// copy unless the web view says it plays the original for certain.
+const VOICE_EXTENSIONS = new Set(['caf', 'amr', '3gp', '3ga']);
+const VOICE_TYPES = new Set(['audio/x-caf', 'audio/caf', 'audio/amr', 'audio/3gpp', 'audio/3gpp2']);
 
 const bareType = (mime) => String(mime || '').split(';')[0].trim().toLowerCase();
 const fits = (a, max) => !(Number.isFinite(Number(a.bytes)) && Number(a.bytes) > max);
@@ -31,8 +36,23 @@ export function playsInPlace(a) {
   if (!isFileAttachment(a)) return false;
   const type = bareType(a.mime);
   const generic = !type || type === 'application/octet-stream';
-  const audio = AUDIO_TYPES.has(type) || (generic && AUDIO_EXTENSIONS.has(extensionOf(a.name)));
+  const ext = extensionOf(a.name);
+  const audio = AUDIO_TYPES.has(type) || VOICE_TYPES.has(type) || (generic && (AUDIO_EXTENSIONS.has(ext) || VOICE_EXTENSIONS.has(ext)));
   return audio && fits(a, AUDIO_INLINE_MAX_BYTES);
+}
+
+// The format to ask the server for: 'm4a', its MPEG-4 copy, for a voice message the web view does not say it plays for
+// certain, or null for the original. canPlayType is the web view's own answer ('probably', 'maybe' or ''); 'maybe' is
+// not enough, since a voice message that does not play is worse than a copy that does.
+export function copyFormat(a, canPlayType) {
+  const type = bareType(a && a.mime);
+  const generic = !type || type === 'application/octet-stream';
+  const voice = VOICE_TYPES.has(type) || (generic && VOICE_EXTENSIONS.has(extensionOf(a && a.name)));
+  if (!voice) return null;
+  const asked = generic ? 'audio/x-caf' : type;
+  let answer;
+  try { answer = typeof canPlayType === 'function' ? String(canPlayType(asked) || '') : ''; } catch { answer = ''; }
+  return answer === 'probably' ? null : 'm4a';
 }
 
 // A time as a person reads it on a player: minutes and seconds, with hours only past the hour. A time not known yet
