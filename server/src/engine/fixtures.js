@@ -48,6 +48,9 @@ export const SCRIPT = [
   // Avery sent words with a text effect on part of them (issue 433): Bloom over "birthday to you!", which the store records
   // on the row's attributed words and imsg's own row never says.
   [1, 40, false, '+15555550100', 'Happy birthday to you!'],
+  // Priya mentioned Jordan in the group (issue 453): the store records the name as a confirmed mention of Jordan's address.
+  // It sits between Priya's cooler and your reply, so the group's newest message is unchanged.
+  [2, 1494, false, 'priya@example.com', 'Jordan, can you grab ice on the way?'],
 ];
 
 // The text effects the store records on a row's words (issue 433), as rich-text.js reads them: a start and a length
@@ -57,6 +60,8 @@ export const SCRIPT = [
 export const TEXT_RUNS = {
   'FAKE-0021': [{ start: 6, length: 16, effect: 6 }],
   'FAKE-0016': [{ start: 8, length: 4, bold: 1 }, { start: 17, length: 8, underline: 1 }, { start: 34, length: 7, italic: 1 }],
+  // A confirmed mention carries the address it stands for (issue 453).
+  'FAKE-0022': [{ start: 0, length: 6, mention: 'jordan@example.com' }],
 };
 
 // The message Avery has not read yet: the newest in the first conversation.

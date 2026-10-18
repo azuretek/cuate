@@ -25,8 +25,8 @@ test('each of the eight effects has its own animation, on the duration token, an
 
 test('the bubble draws its words through the styled pieces, so a link inside an effect still opens (issue 433)', () => {
   const conv = read('core/app/components/app-conversation.js');
-  assert.match(conv, /const linkedText = \(text, open, styles = \[\]\) => styledParts\(text, styles\)/);
-  assert.match(conv, /linkedText\(m\.text, \(e, href\) => this\.openLink\(e, href\), m\.styles\)/, 'the bubble hands the message\'s styles over');
+  assert.match(conv, /const linkedText = \(text, open, styles = \[\], nameOf = \(handle\) => handle\) => styledParts\(text, styles\)/);
+  assert.match(conv, /linkedText\(m\.text, \(e, href\) => this\.openLink\(e, href\), m\.styles, \(handle\) => memberName\(this\.chat, handle\)\)/, 'the bubble hands the message\'s styles over');
 });
 
 test('the text effects proof is a Debug seam, copied into test builds only (issue 433)', () => {
