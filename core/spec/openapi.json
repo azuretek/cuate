@@ -2214,6 +2214,9 @@
           },
           "edited": {
             "type": "boolean"
+          },
+          "sendEffect": {
+            "type": "string"
           }
         },
         "required": [
@@ -2403,6 +2406,9 @@
             "items": {
               "$ref": "#/components/schemas/EditVersion"
             }
+          },
+          "sendEffect": {
+            "type": "string"
           }
         },
         "required": [

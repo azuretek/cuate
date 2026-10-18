@@ -343,6 +343,22 @@ test('the event stream needs a valid token in its first frame', async () => {
   assert.equal(await closed, 4401);
 });
 
+// A device whose first frame is late (a page still busy drawing its first screen on a slow machine) has not had its
+// token refused: the stream is closed with a code the client retries on, so only a token the server refuses signs a
+// device out.
+test('a stream slow to send its first frame is closed to retry, not as a refused token', async () => {
+  const slow = await boot({ authTimeoutMs: 150 });
+  try {
+    const { ws } = await openSocket(slow.base);
+    const closed = new Promise((r) => { ws.onclose = (e) => r(e.code); });
+    const code = await Promise.race([closed, new Promise((r) => setTimeout(() => r('still open'), 2000))]);
+    assert.equal(code, 4408);
+    assert.ok(slow.lines.some((l) => l.event === 'ws.refused' && l.reason === 'auth_timeout'));
+  } finally {
+    await slow.close();
+  }
+});
+
 test('live messages stream, and a reconnect resumes where it left off', async () => {
   const a = await openSocket(s.base);
   a.ws.send(JSON.stringify({ type: 'auth', token: s.tokens.device }));
