@@ -20,7 +20,8 @@ import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
 import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
-import { splitLinks, messageLinks } from '../rules/links.js';
+import { messageLinks, styledParts } from '../rules/links.js';
+import { letters, LETTER_EFFECTS } from '../rules/text-styles.js';
 import { sendEffectLine, sendEffectName, sendEffectKind, INK_EFFECT } from '../rules/send-effects.js';
 import { playBubbleEffect, playScreenEffect } from './send-effects.js';
 import { emojiFallbackParts } from '../rules/emoji.js';
@@ -36,9 +37,17 @@ const linkAt = (target) => (target && target.closest ? target.closest('a.message
 const drawnText = (text) => emojiFallbackParts(text, canDrawEmoji).map((p) => (p.emoji
   ? html`<span class="emoji-fallback" role="img" aria-label=${p.name} title=${p.emoji}>${p.name}</span>`
   : p.text));
-const linkedText = (text, open) => splitLinks(text).map((p) => (p.href
-  ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${p.text}</a>`
-  : drawnText(p.text)));
+// A stretch the sender laid a text effect over (issue 433): marked with the effect it plays, and for a letter effect cut
+// into its letters so each moves on its own.
+const effectText = (p) => (LETTER_EFFECTS.includes(p.effect)
+  ? html`<span class="text-effect" data-effect=${p.effect}>${letters(p.text).map((ch) => html`<span class="fx-letter">${drawnText(ch)}</span>`)}</span>`
+  : html`<span class="text-effect" data-effect=${p.effect}>${drawnText(p.text)}</span>`);
+const linkedText = (text, open, styles = []) => styledParts(text, styles).map((p) => {
+  const inner = p.effect ? effectText(p) : drawnText(p.text);
+  return p.href
+    ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${inner}</a>`
+    : inner;
+});
 
 // How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
 const LONG_PRESS_MS = 500;
@@ -538,7 +547,7 @@ class AppConversation extends KitElement {
     // Invisible Ink (issue 442): the words are drawn under a veil until the bubble is pressed.
     const ink = m.sendEffect === INK_EFFECT;
     const veiled = ink && !this.inkShown.has(m.id);
-    const words = linkedText(m.text, (e, href) => this.openLink(e, href));
+    const words = linkedText(m.text, (e, href) => this.openLink(e, href), m.styles);
     return html`<div class=${row} data-id=${m.id} data-thread=${isReply ? mark.root : nothing} tabindex=${front ? '0' : '-1'} aria-haspopup="true" data-dismiss-keep=${open ? 'pop' : ''} aria-expanded=${open ? 'true' : 'false'} aria-busy=${busy ? 'true' : 'false'} @click=${this.swallowClick} @contextmenu=${(e) => this.openMenu(m, e)} @pointerdown=${(e) => this.pressStart(m, e)} @pointerup=${() => this.pressEnd()} @pointercancel=${() => this.pressEnd()} @pointermove=${(e) => this.pressMove(e)}>
       ${!mine && this.chat.isGroup && it.first ? html`<div class="sender">${(this.chat.members || []).find((member) => handleKey(member.handle) === handleKey(m.sender))?.name || m.sender || ''}</div>` : nothing}
       <div class="bubble-body">

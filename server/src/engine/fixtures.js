@@ -45,7 +45,14 @@ export const SCRIPT = [
   // Priya set the group's background (issue 417): a row with no text and nothing attached, as Messages records it, that
   // the store names a background change and whose picture the engine reports.
   [2, 1450, false, 'priya@example.com', '', 'background'],
+  // Avery sent words with a text effect on part of them (issue 433): Bloom over "birthday to you!", which the store records
+  // on the row's attributed words and imsg's own row never says.
+  [1, 40, false, '+15555550100', 'Happy birthday to you!'],
 ];
+
+// The text effects the store records on a row's words (issue 433), as rich-text.js reads them: a start and a length
+// in UTF-16 code units and Messages' own number for the effect (6 is Bloom).
+export const TEXT_RUNS = { 'FAKE-0021': [{ start: 6, length: 16, effect: 6 }] };
 
 // The effects the store records a message was sent with (issue 442), in its expressive_send_style_id column, which
 // imsg's own rows never say: Jordan sent the plan for Saturday with Confetti.

@@ -450,7 +450,13 @@
       "event": "MessageEventKind?",
       "edited": "boolean?",
       "historyCursor": "string?",
+      "styles": "TextStyle[]?",
       "sendEffect": "string?"
+    },
+    "TextStyle": {
+      "start": "number",
+      "length": "number",
+      "effect": "string?"
     },
     "Attachment": {
       "id": "string",

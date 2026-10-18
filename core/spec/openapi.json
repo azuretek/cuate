@@ -2182,6 +2182,12 @@
           "historyCursor": {
             "type": "string"
           },
+          "styles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TextStyle"
+            }
+          },
           "sendEffect": {
             "type": "string"
           }
@@ -2195,6 +2201,25 @@
           "attachments",
           "payloads",
           "reactions"
+        ],
+        "additionalProperties": false
+      },
+      "TextStyle": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "effect": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "length"
         ],
         "additionalProperties": false
       },

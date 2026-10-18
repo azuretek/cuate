@@ -22,6 +22,7 @@
     "background.failed": { "level": "warn", "msg": "reading a conversation background failed", "fields": { "error": "string" } },
     "edit.failed": { "level": "warn", "msg": "reading which messages were edited failed", "fields": { "error": "string" } },
     "sendeffect.failed": { "level": "warn", "msg": "reading the effect a message was sent with failed", "fields": { "error": "string" } },
+    "richtext.failed": { "level": "warn", "msg": "reading the text effects a message carries failed", "fields": { "error": "string" } },
     "db.watch": { "level": "notice", "msg": "database watch", "fields": { "ok": "boolean", "reason": "string" } },
     "db.changed": { "level": "debug", "msg": "the engine database changed", "fields": { "kind": "string" } },
     "contacts.read": { "level": "debug", "msg": "read the system Contacts store", "fields": { "count": "number", "status": "number", "state": "string", "ms": "number" } },

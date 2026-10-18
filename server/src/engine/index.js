@@ -49,10 +49,13 @@ const omit = (o, keys) => {
 // backgrounds: where the adapter learns which rows are a conversation's background changing and what each chat's
 // background is now (backgrounds.js: the Messages store and `imsg chat-background status`; the fake keeps its own), or
 // null where there is no such source, in which case no row is a background change and no chat has one (issue 417).
+// richText: where the adapter learns the attributes a message's words carry, its text effects (rich-text.js reads the
+// Messages store; the fake keeps its own), or null where there is no such source, in which case every message is drawn
+// as plain words (issue 433).
 // sendEffects: where the adapter learns the bubble or screen effect a message was sent with (send-effects.js reads the
 // Messages store; the fake keeps its own), or null where there is no such source, in which case no message carries one
 // (issue 442).
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, sendEffects = null }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, sendEffects = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -81,6 +84,25 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return rows;
     }
   };
+  // The rows whose words carry text effects are asked of the store in one read, and each it names is marked with its
+  // runs before it is mapped, so the mapping stays the one pure rule (issue 433). The runs are kept only when the words
+  // the store holds are the words the engine read, so an effect can never land on the wrong letters. A store that
+  // cannot be read leaves every row plain, and says so.
+  const markRichText = (rows) => {
+    const worded = richText ? rows.filter((m) => m && m.guid && !m.is_reaction && typeof m.text === 'string' && m.text) : [];
+    if (!worded.length) return rows;
+    try {
+      const found = richText.among(worded.map((m) => String(m.guid)));
+      if (!found.size) return rows;
+      return rows.map((m) => {
+        const rich = m && m.guid ? found.get(String(m.guid)) : null;
+        return rich && rich.text === m.text ? { ...m, text_runs: rich.runs } : m;
+      });
+    } catch (e) {
+      log.emit('richtext.failed', { error: failure(e) });
+      return rows;
+    }
+  };
   // The rows a read holds are asked of the store for the effect each was sent with in one read, and each it names is
   // marked with Messages' identifier before it is mapped, so the mapping stays the one pure rule (issue 442). A store
   // that cannot be read leaves every row plain, and says so.
@@ -97,7 +119,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
   };
   // Every raw row passes the same marks before it is mapped, whichever read it came from.
-  const prepare = (rows) => markSendEffects(markBackgrounds(rows));
+  const prepare = (rows) => markSendEffects(markRichText(markBackgrounds(rows)));
   // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
   // again only when its background has changed since.
   const backdrops = new Map();

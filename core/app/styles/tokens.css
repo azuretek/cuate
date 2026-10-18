@@ -101,6 +101,7 @@
   --motion-spring-ease: linear(0, 0.05, 0.164, 0.305, 0.447, 0.578, 0.69, 0.781, 0.853, 0.906, 0.945, 0.972, 0.99, 1.001, 1.007, 1.009, 1.01, 1.01, 1.009, 1.007, 1.006, 1.004, 1.003, 1.002, 1);
   --motion-min-visible: 900ms;
   --motion-typing: 1200ms;
+  --motion-text-effect: 1400ms;
   --motion-send-bubble: 900ms;
   --motion-send-gentle: 1600ms;
   --motion-send-screen: 2800ms;
