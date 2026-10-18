@@ -20,7 +20,7 @@ Throwaway. This branch never merges; it exists to measure the helper before the 
 | `Info.plist.in`, `helper.entitlements` | The bundle's Info.plist template and its Hardened Runtime entitlements. Exactly two privacy keys. |
 | `build.sh` | Builds a universal binary with SwiftPM and assembles `Cuate Helper.app`; signs it when `SIGN_IDENTITY` is set. |
 | `test.sh` | `swift test`. No grants are changed and no prompt is shown. |
-| `agent.plist.in` | The per-user launchd agent template used for the measurement. |
+| `agent.plist.in` | The per-user launchd agent template. It loads into the Aqua session, because the menu bar item cannot initialize AppKit in a background session. |
 | `client.mjs` | Calls one method over the socket from Node, with optional JSON params. |
 | `control.mjs` | The control: Node spawns the same binary as a plain child and calls it the same way. |
 | `../../.github/workflows/spike-mac-helper.yml` | Tests, signs, notarizes, staples and verifies on a macOS runner. |

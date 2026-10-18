@@ -15,9 +15,10 @@
   <dict>
     <key>CUATE_HELPER_LABEL</key><string>@LABEL@</string>
   </dict>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>ProcessType</key><string>Interactive</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
   <key>StandardErrorPath</key><string>@DATA@/helper.log</string>
   <key>StandardOutPath</key><string>@DATA@/helper.log</string>
 </dict>
