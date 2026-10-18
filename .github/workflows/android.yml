@@ -71,6 +71,9 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
+          # The action's defaults, plus the host video decoder off (issue 443): with it on the guest hands H.264 to the
+          # emulator process, and the video controls test took the whole emulator down about one run in five.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -feature -HardwareDecoder
           working-directory: android
           script: |
             bash scripts/boot-proof.sh
@@ -97,6 +100,7 @@ jobs:
             android/app/build/reports/androidTests
             android/app/build/outputs/androidTest-results
             android/app/build/outputs/connected_android_test_additional_output
+            /tmp/android-runner/emu-crash-*.db
           if-no-files-found: warn
 
   # The publish half: the APK, signed with the Android release keystore.
