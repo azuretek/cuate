@@ -101,13 +101,29 @@ jobs:
       # Issue 443 again: with the host decoder off the emulator still exits under VideoControlsTest about one run in
       # three, leaving no crash dump (the crash record holds only its settings), which a caught crash would have written.
       # A process killed from outside writes none, so the kernel's own log is read for a kill and the memory it saw.
+      # Issue 443: the crash record is kept only when something failed. A green run has nothing to explain, and a
+      # passing job should not carry a crash dump.
       - name: Say why the emulator went away
         if: failure()
         working-directory: .
         run: |
-          free -m
-          sudo dmesg -T | grep -iE 'killed process|out of memory|oom|qemu|segfault|emulator' | tail -40 || true
-          ls -la /tmp/android-runner/ 2>/dev/null || true
+          {
+            date -u +"crash record %Y-%m-%dT%H:%M:%SZ"
+            free -m
+            sudo dmesg -T | grep -iE 'killed process|out of memory|oom|qemu|segfault|emulator' | tail -40 || true
+            ls -la /tmp/android-runner/ 2>/dev/null || true
+            ls -la /tmp/android-runner/emu-crash-*.db 2>/dev/null || true
+          } | tee android/crash.txt
+
+      - name: Keep the crash record
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-crash-record
+          path: |
+            android/crash.txt
+            /tmp/android-runner/emu-crash-*.db
+          if-no-files-found: ignore
 
       - name: Keep the boot proof
         if: always()
@@ -119,7 +135,6 @@ jobs:
             android/app/build/reports/androidTests
             android/app/build/outputs/androidTest-results
             android/app/build/outputs/connected_android_test_additional_output
-            /tmp/android-runner/emu-crash-*.db
           if-no-files-found: warn
 
   # The publish half: the APK, signed with the Android release keystore.

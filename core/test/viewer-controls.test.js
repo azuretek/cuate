@@ -170,3 +170,10 @@ test('a video is laid out clear of every viewer control, and its step controls j
   assert.match(rule('.viewer-bar'), /bottom: var\(--viewer-bar-bottom\);/, 'the bar sits where the band measures it');
   assert.match(rule('.viewer-bar'), /min-height: var\(--viewer-bar-h\);/, 'and is the height the band leaves it');
 });
+
+// Issue 443: a video's element carries the item's poster while its clip loads, so the emulator's host renderer never
+// sees an empty media surface. The player still decodes and plays the real clip, and its controls are unchanged.
+test('a video carries its item poster while the clip loads', () => {
+  assert.match(viewer, /<video class="viewer-image" src=\$\{this\.src\} poster=\$\{this\.poster \|\| nothing\}/, 'the video template draws the poster');
+  assert.match(viewer, /this\.poster = item\.poster \|\| '';/, 'the viewer takes the poster from the item it shows');
+});

@@ -39,6 +39,16 @@
   root.applyTheme();
 
   const shape = window.fixtureVideo === 'landscape' ? 'landscape' : 'portrait';
+  // Issue 443: a video's element carries a poster while its clip loads. The emulator's host renderer takes the whole
+  // process down on an empty media surface, and the poster keeps that surface from ever being empty. Playback and the
+  // player's own controls are untouched: the poster gives way to the first frame.
+  const posterCanvas = document.createElement('canvas');
+  posterCanvas.width = shape === 'landscape' ? 640 : 360;
+  posterCanvas.height = shape === 'landscape' ? 360 : 640;
+  const posterInk = posterCanvas.getContext('2d');
+  posterInk.fillStyle = '#3a6'; posterInk.fillRect(0, 0, posterCanvas.width, posterCanvas.height);
+  posterInk.fillStyle = '#fff'; posterInk.fillRect(20, 20, posterCanvas.width / 2, posterCanvas.height / 2);
+  const poster = posterCanvas.toDataURL('image/png');
   let bytes;
   if (typeof window.fixtureVideoBase64 === 'string' && window.fixtureVideoBase64) {
     bytes = Uint8Array.from(atob(window.fixtureVideoBase64), (c) => c.charCodeAt(0));
@@ -53,7 +63,7 @@
   const { mediaItems } = await import(new URL('rules/media.js', document.baseURI).href);
   await customElements.whenDefined('app-image-viewer');
   const attachments = [1, 2, 3].map((n) => ({ id: 'v' + n, name: 'clip-' + n + '.mp4', mime: 'video/mp4', missing: false }));
-  const items = mediaItems([{ id: 'm1', attachments }]);
+  const items = mediaItems([{ id: 'm1', attachments }]).map((item) => ({ ...item, poster }));
   const el = document.createElement('app-image-viewer');
   el.items = items;
   el.index = 1;
