@@ -200,6 +200,9 @@ final class SystemBarsTests: XCTestCase {
         SystemSurface.requireOurs(app)
         let start = Date()
         let deadline = start.addingTimeInterval(20)
+        // One capture can outlast the window on a slow runner (22.7s measured, issue 471): a hold whose evidence is valid so
+        // far takes its confirming sample up to this bound, while one with no valid evidence still ends at the window.
+        let hardDeadline = start.addingTimeInterval(60)
         var readiness = SystemBarsReadiness()
         var samples = 0
         var last = ["no capture"]
@@ -220,7 +223,7 @@ final class SystemBarsTests: XCTestCase {
             held = readiness.observe(scheme: scheme, problems: last)
             print("bars sample name=\(name) count=\(samples) elapsed=\(Date().timeIntervalSince(start)) valid=\(last.isEmpty) consecutive=\(readiness.consecutiveValid) problems=\(last)")
             if held { break }
-        } while Date() < deadline
+        } while Date() < deadline || (readiness.consecutiveValid > 0 && Date() < hardDeadline)
         if let image {
             let attachment = XCTAttachment(image: image)
             attachment.name = name
