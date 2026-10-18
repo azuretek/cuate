@@ -6,6 +6,10 @@ import XCTest
 // player's controls show, in this shell's own web view. This test finds every player control (play or pause, the
 // scrubber, mute, full screen) and every one of ours (close, previous, next, the bar) in the accessibility tree, keeps a
 // screenshot, and asserts each control is hittable and that none of ours overlaps a player control or another of ours.
+//
+// The page always draws the video before its clip arrives, as it does from a server (issue 446). The fixture holds the
+// clip until this test has read the tree with the empty video in it and pressed the page's release control, so every run
+// takes that order, and the player's controls have to reach the tree after the clip loads. Every wait is for a state.
 final class VideoControlsTests: XCTestCase {
     func testPortraitVideoKeepsEveryControlClear() {
         check("portrait")
@@ -27,8 +31,26 @@ final class VideoControlsTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let page = app.webViews.firstMatch
+        let holding = page.staticTexts.matching(NSPredicate(format: "label == 'vc:holding' OR label BEGINSWITH 'vc:fail'")).firstMatch
+        guard holding.waitForExistence(timeout: 120) else {
+            XCTFail("the video controls fixture never drew the held video" + SystemSurface.failureSuffix(app))
+            return
+        }
+        guard holding.label == "vc:holding" else {
+            XCTFail("the video controls fixture failed: " + holding.label + SystemSurface.failureSuffix(app))
+            return
+        }
+        // The empty video and the release control, read from the tree before the clip is handed over.
+        let release = page.buttons["vc:release"]
+        let viewer = page.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "clip-2.mp4")).firstMatch
+        guard release.waitForExistence(timeout: 30), viewer.waitForExistence(timeout: 30) else {
+            XCTFail("the held video never reached the accessibility tree: " + page.debugDescription + SystemSurface.failureSuffix(app))
+            return
+        }
+        print("video controls (" + shape + ") held, before its clip: " + page.debugDescription)
+        release.tap()
         let marker = page.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'vc:ready' OR label BEGINSWITH 'vc:fail'")).firstMatch
-        guard marker.waitForExistence(timeout: 120) else {
+        guard marker.waitForExistence(timeout: 60) else {
             XCTFail("the video controls fixture never reported" + SystemSurface.failureSuffix(app))
             return
         }

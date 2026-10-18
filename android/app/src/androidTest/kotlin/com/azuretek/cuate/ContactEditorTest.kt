@@ -9,7 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
 import org.junit.After
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -91,18 +91,25 @@ class ContactEditorTest {
             if (got.has("error")) throw AssertionError("contacts fixture failed: " + got.getString("error"))
             assertTrue("the control is drawn: $got", got.getBoolean("drawn"))
             assertTrue("the bridge opened the contacts app: $got", got.optBoolean("answer"))
-            // The contacts app is in front, and it is showing the seeded person.
+            // The contacts app is in front, and it is showing the seeded person. Both are judged on ONE reading of the
+            // window in front: the contacts app keeps drawing as it opens, so a second look at a node already read can
+            // find it changed (issue 446). Between readings the test waits for the next accessibility event, a change.
+            val automation = instrumentation.uiAutomation
             val front = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
-            var window: AccessibilityNodeInfo? = null
-            while (System.nanoTime() < front) {
-                window = instrumentation.uiAutomation.rootInActiveWindow
-                if (window != null && window.packageName != context.packageName && named(window, "Fixture Person")) break
-                window = null
-                Thread.sleep(250)
+            var shown: String? = null
+            try {
+                while (System.nanoTime() < front && shown == null) {
+                    val changed = CountDownLatch(1)
+                    automation.setOnAccessibilityEventListener { changed.countDown() }
+                    val window = automation.rootInActiveWindow
+                    if (window != null && window.packageName != context.packageName && named(window, "Fixture Person")) shown = window.packageName.toString()
+                    else changed.await(2, TimeUnit.SECONDS)
+                }
+            } finally {
+                automation.setOnAccessibilityEventListener(null)
             }
-            val shown = window ?: throw AssertionError("the contacts app never showed the person; in front: " + instrumentation.uiAutomation.rootInActiveWindow?.packageName)
-            assertTrue("a contacts app, not this one, is in front: " + shown.packageName, shown.packageName != context.packageName)
-            assertEquals(true, named(shown, "Fixture Person"))
+            val app = shown ?: throw AssertionError("the contacts app never showed the person; in front: " + automation.rootInActiveWindow?.packageName)
+            assertNotEquals("a contacts app, not this one, is in front", context.packageName, app)
         }
     }
 }

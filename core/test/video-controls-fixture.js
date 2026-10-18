@@ -7,8 +7,13 @@
 // accessibility tree and asserts each is hittable and that no two overlap. This page only sets the scene and reports what
 // it drew, on one marker the test reads:
 //   vc:boot                 the script is running
+//   vc:holding              the viewer is open and its video is drawn, but the clip is held back (see below)
 //   vc:ready <json>         the viewer is open on the paused video, its controls showing, with the page's own boxes
 //   vc:fail <why>           the scene could not be set
+// The clip always arrives after the viewer has drawn its video, as it does from a server, and the test decides when:
+// the attachment is held until the test has read the accessibility tree once and pressed the release control the page
+// draws at its left edge (`vc:release`). So every run takes the order a real one does (an empty video first, then its
+// clip), and a player whose controls never reach the tree once the clip loads fails every run rather than now and then.
 // The clip comes from the shell's own scheme (iOS copies it into test builds) or, where the shell cannot serve a test
 // file (Android keeps fixtures in the test package), as base64 the test hands over first in window.fixtureVideoBase64.
 (async () => {
@@ -48,7 +53,9 @@
     bytes = new Uint8Array(await r.arrayBuffer());
   }
   const clip = new Blob([bytes], { type: 'video/mp4' });
-  const client = { attachment: async () => clip };
+  let release;
+  const released = new Promise((resolve) => { release = resolve; });
+  const client = { attachment: async () => { await released; return clip; } };
 
   const { mediaItems } = await import(new URL('rules/media.js', document.baseURI).href);
   await customElements.whenDefined('app-image-viewer');
@@ -60,6 +67,20 @@
   el.client = client;
   document.body.append(el);
   const video = () => el.querySelector('video.viewer-image');
+  await until(() => video() && video().readyState === 0, 'the viewer to draw its video');
+  // The release control: a button at the left edge, below the status bar and clear of the viewer's own controls and of
+  // either clip's box, that hands the held clip over and goes.
+  const hold = document.createElement('button');
+  hold.type = 'button';
+  hold.textContent = 'vc:release';
+  hold.setAttribute('aria-label', 'vc:release');
+  Object.assign(hold.style, { position: 'fixed', top: '120px', left: '0', width: '40px', height: '40px', zIndex: '10000', opacity: '0.01' });
+  hold.addEventListener('click', () => release(), { once: true });
+  window.videoControlsRelease = () => release();
+  document.body.append(hold);
+  say('vc:holding');
+  await released;
+  hold.remove();
   await until(() => video() && video().readyState >= 2 && video().videoWidth > 0, 'the clip to load');
   await until(() => !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the viewer to arrive');
   // Paused part way in, so the player keeps its controls on screen and the scrubber has somewhere to sit.
