@@ -104,6 +104,7 @@ targets:
             cp "$SRCROOT/../core/test/audio-fixture.m4a" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/audio-fixture.m4a"
             cp "$SRCROOT/../core/test/voice-fixture.caf" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/voice-fixture.caf"
             cp "$SRCROOT/../core/test/voice-fixture.m4a" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/voice-fixture.m4a"
+            cp "$SRCROOT/../core/test/text-effects-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/text-effects-fixture.js"
           fi
         basedOnDependencyAnalysis: false
     settings:

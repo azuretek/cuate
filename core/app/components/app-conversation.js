@@ -20,7 +20,8 @@ import { closeButtonHtml } from './close-button.js';
 import './app-composer.js';
 import { saveAttachment } from './app-attachment.js';
 import './app-link-card.js';
-import { splitLinks, messageLinks } from '../rules/links.js';
+import { messageLinks, styledParts } from '../rules/links.js';
+import { letters, LETTER_EFFECTS } from '../rules/text-styles.js';
 import { emojiFallbackParts } from '../rules/emoji.js';
 import { canDrawEmoji } from '../emoji-support.js';
 import { copyToClipboard } from '../clipboard.js';
@@ -34,9 +35,17 @@ const linkAt = (target) => (target && target.closest ? target.closest('a.message
 const drawnText = (text) => emojiFallbackParts(text, canDrawEmoji).map((p) => (p.emoji
   ? html`<span class="emoji-fallback" role="img" aria-label=${p.name} title=${p.emoji}>${p.name}</span>`
   : p.text));
-const linkedText = (text, open) => splitLinks(text).map((p) => (p.href
-  ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${p.text}</a>`
-  : drawnText(p.text)));
+// A stretch the sender laid a text effect over (issue 433): marked with the effect it plays, and for a letter effect cut
+// into its letters so each moves on its own.
+const effectText = (p) => (LETTER_EFFECTS.includes(p.effect)
+  ? html`<span class="text-effect" data-effect=${p.effect}>${letters(p.text).map((ch) => html`<span class="fx-letter">${drawnText(ch)}</span>`)}</span>`
+  : html`<span class="text-effect" data-effect=${p.effect}>${drawnText(p.text)}</span>`);
+const linkedText = (text, open, styles = []) => styledParts(text, styles).map((p) => {
+  const inner = p.effect ? effectText(p) : drawnText(p.text);
+  return p.href
+    ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${inner}</a>`
+    : inner;
+});
 
 // How long a finger or the mouse button rests on a message before its menu opens. An interaction timing, not a style.
 const LONG_PRESS_MS = 500;
@@ -510,7 +519,7 @@ class AppConversation extends KitElement {
       <div class="bubble-body">
         ${m.attachments.map((a) => html`<app-attachment .attachment=${a} .client=${this.client} .mine=${mine}></app-attachment>`)}
         ${m.link ? html`<app-link-card .link=${m.link} .client=${this.client}></app-link-card>` : nothing}
-        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href))}</div>` : nothing}
+        ${m.text && !(m.link && m.text.trim() === m.link.url) ? html`<div class=${'bubble ' + kind + (m.state ? ' state-' + m.state : '')} @click=${isReply ? () => this.openThread(m) : nothing}>${linkedText(m.text, (e, href) => this.openLink(e, href), m.styles)}</div>` : nothing}
         ${m.payloads ? html`<div class="attachment-file payload-quiet"><span class="attachment-name">Attachment</span></div>` : nothing}
         ${m.reactions.length ? html`<div class="reactions">${summarizeReactions(m.reactions).map((r) => html`<span class=${'reaction' + (r.glyph === ownGlyph ? ' mine' : '')} title=${r.glyph === ownGlyph ? 'Your reaction' : nothing}>${r.glyph}${r.count > 1 ? ' ' + r.count : ''}</span>`)}</div>` : nothing}
         ${open === 'menu' ? this.menu(m) : nothing}
