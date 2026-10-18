@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { applyMessageToChats, chatPreview } from '../app/rules/chats.js';
 
 const defined = {};
 globalThis.HTMLElement = class { addEventListener() {} removeAttribute() {} setAttribute() {} hasAttribute() { return false; } getAttribute() { return null; } dispatchEvent() {} };
@@ -26,8 +27,24 @@ test('a mention draws set apart and names the person it stands for (issue 453)',
   const chat = { id: '2', service: 'iMessage', isGroup: true, participants: ['riley@example.com', '+15555550123', 'jordan@example.com'], members: [{ handle: '+15555550123', name: 'Sam Example', photo: null }, { handle: 'jordan@example.com', name: 'Jordan Example', photo: null }] };
   const host = { messages: [m], chat, sending: true, pop: null, replyingTo: null, reactFor: null, reacting: null, note: null, ownNote: null, editing: null, shownEdits: new Set() };
   const markup = words(conversation.bubble.call(host, { message: m, first: true, last: true }, null, 'list'));
-  assert.match(markup, /<span class="fmt fmt-bold"><span class="mention" title="riley@example.com">Riley<\/span><\/span>/, 'a person Contacts does not know is named by their address');
-  assert.match(markup, /<span class="mention" title="Sam Example">Sam<\/span>/, 'a known person by their contact name, the address matched however it is written');
+  assert.match(markup, /<span class="fmt fmt-bold"><span class="mention" role="img" aria-label="Riley, mention of riley@example\.com" title="riley@example\.com">Riley<\/span><\/span>/, 'a person Contacts does not know is named by their address');
+  assert.match(markup, /<span class="mention" role="img" aria-label="Sam, mention of Sam Example" title="Sam Example">Sam<\/span>/, 'a known person by their contact name, the address matched however it is written');
+});
+
+test('a mention composes with a text effect and a link, and the words stay the words as sent (issue 453)', () => {
+  const text = 'Sam see www.example.com/Riley';
+  const m = { id: 'B', chatId: '2', fromMe: false, sender: 'jordan@example.com', senderName: null, text, sentAt: '2026-01-15T10:05:00.000Z', replyTo: null, attachments: [], reactions: [], payloads: 0, link: null,
+    styles: [{ start: 0, length: 3, mention: '+15555550123', effect: 'bloom', italic: true }, { start: 24, length: 5, mention: 'riley@example.com' }] };
+  const chat = { id: '2', service: 'iMessage', isGroup: true, participants: [], members: [{ handle: '+15555550123', name: 'Sam Example', photo: null }] };
+  const host = { messages: [m], chat, sending: true, pop: null, replyingTo: null, reactFor: null, reacting: null, note: null, ownNote: null, editing: null, shownEdits: new Set() };
+  const markup = words(conversation.bubble.call(host, { message: m, first: true, last: true }, null, 'list'));
+  assert.match(markup, /<span class="fmt fmt-italic"><span class="mention" role="img" aria-label="Sam, mention of Sam Example" title="Sam Example"><span class="text-effect" data-effect=bloom>Sam<\/span><\/span><\/span>/, 'inside its formatting, around the effect it shares words with');
+  assert.match(markup, /<a class="message-link"[^>]*>www\.example\.com\/<\/a><a class="message-link"[^>]*><span class="mention" role="img" aria-label="Riley, mention of riley@example\.com" title="riley@example\.com">Riley<\/span><\/a>/, 'inside its link, so the link still opens');
+  // The chat list previews the message as its words, with no mark of any mention.
+  const chats = [{ id: '2', isGroup: true, participants: [], unread: 0, lastMessageAt: '2026-01-15T10:00:00.000Z', lastMessage: { text: 'Earlier', fromMe: false } }];
+  const { chats: after } = applyMessageToChats(chats, m);
+  assert.equal(chatPreview(after[0]), text);
+  assert.equal(after[0].lastMessage.styles, undefined, 'the preview carries no styles');
 });
 
 test('a mention is drawn from the stylesheet, its weight a token (issue 453)', () => {

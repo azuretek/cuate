@@ -2,8 +2,9 @@ import XCTest
 
 // Issue 453: a mention in a group read as plain words. The fixture (core/test/mention-fixture.js) draws the real
 // conversation in this shell's own web view for a synthetic group whose messages carry mentions, of a member Contacts
-// knows, of someone it does not, inside bold words and two side by side, and reports a verdict read from what the web
-// view computed and the name each mention is titled with.
+// knows, of someone it does not, inside bold words, over an effect, inside a link and two side by side, and reports a
+// verdict read from what the web view computed and the name each mention is given. The test then reads the accessibility
+// tree VoiceOver reads, where each mention must name its person.
 final class MentionTests: XCTestCase {
     func testEveryMentionIsSetApartAndNamesItsPerson() {
         let app = XCUIApplication()
@@ -24,5 +25,10 @@ final class MentionTests: XCTestCase {
         }
         print("mention verdict: " + verdict.label)
         XCTAssertTrue(verdict.label.hasPrefix("mention:pass"), "The mentions did not draw: " + verdict.label + SystemSurface.failureSuffix(app))
+        for label in ["Sam, mention of Sam Example", "Riley, mention of riley@example.com"] {
+            let spoken = app.webViews.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+            XCTAssertTrue(spoken.waitForExistence(timeout: 15), "VoiceOver is not told who the mention names: " + label + SystemSurface.failureSuffix(app))
+            print("mention spoken: " + label + " as " + String(describing: spoken.elementType.rawValue))
+        }
     }
 }
