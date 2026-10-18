@@ -20,6 +20,16 @@ app.setPath('userData', profile);
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const bound = setTimeout(() => { process.stderr.write('message cache proof exceeded its deadline\n'); app.exit(2); }, 300000);
+// Windows holds a profile's files open for a moment after the window that used them is destroyed, so removing it can
+// answer EPERM; the scratch profile is then left in the temp folder, as the window chrome proof does, rather than the
+// cleanup failing a proof that passed.
+function removeProfile() {
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+  } catch (error) {
+    process.stderr.write('left the scratch profile at ' + profile + ' (' + (error && error.code) + ')\n');
+  }
+}
 const RUNS = [['off', 'cold'], ['off', 'warm'], ['on', 'cold'], ['on', 'warm']];
 // Each launch's window is closed before the next opens, and the last window closing would quit the app (and stop the
 // next launch's load) on Linux and Windows; the proof ends the app itself.
@@ -74,12 +84,12 @@ app.whenReady().then(async () => {
   assert.ok(onWarm.bytes < offWarm.bytes / 4, 'a warm open costs a fraction of the bytes it did');
   assert.ok(onWarm.firstVisibleMs < offWarm.firstVisibleMs / 2, 'and draws its first message in a fraction of the time');
   writeFileSync(path.join(output, 'report.json'), JSON.stringify({ platform: process.platform, results }, null, 2));
-  rmSync(profile, { recursive: true, force: true });
+  removeProfile();
   clearTimeout(bound);
   app.exit(0);
 }).catch((error) => {
   process.stderr.write('MESSAGE CACHE PROOF FAILED: ' + error.stack + '\n');
-  rmSync(profile, { recursive: true, force: true });
+  removeProfile();
   clearTimeout(bound);
   app.exit(1);
 });
