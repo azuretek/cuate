@@ -53,6 +53,9 @@ test('a mention is drawn from the stylesheet, its weight a token (issue 453)', (
 
 test('every platform runs the same mention proof (issue 453)', () => {
   assert.match(read('core/test/mention-fixture.js'), /window\.mentionProof = /);
+  // Issue 485: the proof is not given until the drawn conversation is on screen, since a test that reads the tree before
+  // the screen has it judged the connect page instead of the mentions.
+  assert.match(read('core/test/mention-fixture.js'), /const screen = await onScreen\(\)/);
   const shell = read('ios/' + naming.product + '/ShellView.swift');
   assert.match(shell, /#if DEBUG[\s\S]*--mention-fixture[\s\S]*#endif/, 'the iOS fixture is a Debug seam');
   assert.match(read('ios/project.yml'), /CONFIGURATION.*Debug[\s\S]*core\/test\/mention-fixture\.js/, 'copied into test builds only');
