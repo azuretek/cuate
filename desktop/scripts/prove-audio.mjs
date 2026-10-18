@@ -44,6 +44,11 @@ async function press(label) {
   win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...box });
   win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...box });
 }
+// The throwaway profile is removed best effort: on Windows Chromium still holds files in it for a moment after the
+// window is gone, and removing it then answered EPERM, which turned a proof that had passed into an unhandled failure.
+const dropProfile = () => {
+  try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* the OS clears its temporary folder */ }
+};
 const shot = async (name) => writeFileSync(path.join(output, name), (await win.capturePage()).toPNG());
 app.whenReady().then(async () => {
   protocol.handle('app', (request) => {
@@ -92,12 +97,12 @@ app.whenReady().then(async () => {
   const result = { platform: process.platform, ready: ready.scene, playing: playing.scene, paused: paused.scene, voice: voicing.scene, passed: true };
   writeFileSync(path.join(output, 'report.json'), JSON.stringify(result, null, 2));
   console.log('AUDIO PROOF ' + JSON.stringify({ platform: result.platform, playing: first, paused: paused.scene.players[0], voice: spoken }));
-  win.destroy(); rmSync(profile, { recursive: true, force: true });
+  win.destroy(); dropProfile();
   clearTimeout(bound); app.exit(0);
 }).catch(async (error) => {
   console.error('AUDIO PROOF FAILED: ' + error.stack);
   if (win && !win.isDestroyed()) { writeFileSync(path.join(output, 'failure.png'), (await win.capturePage()).toPNG()); win.destroy(); }
-  rmSync(profile, { recursive: true, force: true });
+  dropProfile();
   clearTimeout(bound);
   app.exit(1);
 });
