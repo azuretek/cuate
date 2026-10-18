@@ -89,6 +89,7 @@ var engine = (() => {
     PAGE_MAX_PIXELS: () => PAGE_MAX_PIXELS,
     PDF_PREVIEW_MAX_BYTES: () => PDF_PREVIEW_MAX_BYTES,
     PHOTO_SCAN_ROWS: () => PHOTO_SCAN_ROWS,
+    PICTURE_ITEM_MAX_BYTES: () => PICTURE_ITEM_MAX_BYTES,
     PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PLAYED_KEY: () => PLAYED_KEY,
     PLAYED_MAX: () => PLAYED_MAX,
@@ -2517,6 +2518,7 @@ var engine = (() => {
       const effect = TEXT_EFFECT_IDS[r.effect] || null;
       if (effect) marks.effect = effect;
       for (const f of TEXT_FORMATS) if (r[f]) marks[f] = true;
+      if (typeof r.mention === "string" && r.mention.trim()) marks.mention = r.mention.trim();
       if (!Object.keys(marks).length) continue;
       const from = start - removedBefore[start];
       const to = start + length - removedBefore[start + length];
@@ -2528,7 +2530,7 @@ var engine = (() => {
     return out;
   }
   function sameMarks(style, marks) {
-    return (style.effect || null) === (marks.effect || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
+    return (style.effect || null) === (marks.effect || null) && (style.mention || null) === (marks.mention || null) && TEXT_FORMATS.every((f) => Boolean(style[f]) === Boolean(marks[f]));
   }
   function letters(text) {
     const s = String(text || "");
@@ -3654,6 +3656,7 @@ var engine = (() => {
   // core/app/rules/message-store.js
   var MEDIA_CACHE_BYTES = 48 * 1024 * 1024;
   var MEDIA_ITEM_MAX_BYTES = 1024 * 1024;
+  var PICTURE_ITEM_MAX_BYTES = 4 * 1024 * 1024;
   var CHANGE_PAGES_MAX = 20;
   var holdable = (m) => Boolean(m) && typeof m.id === "string" && !m.id.startsWith("local:") && !m.state;
   var flag = (v, fallback) => typeof v === "boolean" ? v : fallback;
@@ -3751,13 +3754,16 @@ var engine = (() => {
     }
     return out;
   }
-  function holdsMedia(attachment, { part: part2 = null, size: size2 = 0 } = {}) {
-    if (!attachment || !(size2 > 0) || size2 > MEDIA_ITEM_MAX_BYTES) return false;
+  function holdsMedia(attachment, { part: part2 = null, size: size2 = 0, kind = null, type = "" } = {}) {
+    if (!attachment || !(size2 > 0)) return false;
+    if (kind === "font") return size2 <= PICTURE_ITEM_MAX_BYTES;
+    if (kind === "picture") return size2 <= PICTURE_ITEM_MAX_BYTES && /^image\//i.test(String(attachment.mime || type || ""));
+    if (size2 > MEDIA_ITEM_MAX_BYTES) return false;
     if (part2 === "poster") return true;
     if (part2) return false;
     return /^image\//i.test(String(attachment.mime || ""));
   }
-  var mediaKey = (attachment, { part: part2 = null, format = null } = {}) => String(attachment.id) + (part2 ? ":" + part2 : "") + (format ? ":" + format : "");
+  var mediaKey = (attachment, { part: part2 = null, format = null, kind = null } = {}) => (kind === "font" ? "font\0" : "") + String(attachment.id) + (part2 ? ":" + part2 : "") + (format ? ":" + format : "");
   function serverDigest(url) {
     const text = String(url || "").trim().replace(/\/+$/, "").replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, (m) => m.toLowerCase());
     return sha256Hex(text);
@@ -3925,7 +3931,7 @@ var engine = (() => {
       if (p.href) links.push({ start: at, end: at + p.text.length, href: p.href });
       at += p.text.length;
     }
-    const laid = (Array.isArray(styles) ? styles : []).filter((x) => x && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length).map((x) => ({ start: x.start, end: x.start + x.length, effect: TEXT_EFFECTS.includes(x.effect) ? x.effect : null, formats: TEXT_FORMATS.filter((f) => x[f] === true) })).filter((x) => x.effect || x.formats.length);
+    const laid = (Array.isArray(styles) ? styles : []).filter((x) => x && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length).map((x) => ({ start: x.start, end: x.start + x.length, effect: TEXT_EFFECTS.includes(x.effect) ? x.effect : null, formats: TEXT_FORMATS.filter((f) => x[f] === true), mention: typeof x.mention === "string" && x.mention ? x.mention : null })).filter((x) => x.effect || x.formats.length || x.mention);
     const cuts = /* @__PURE__ */ new Set([0, s.length]);
     for (const r of [...links, ...laid]) {
       cuts.add(r.start);
@@ -3943,9 +3949,11 @@ var engine = (() => {
       const part2 = { text: s.slice(from, to) };
       if (link) part2.href = link.href;
       if (effect) part2.effect = effect.effect;
+      const mention = over.find((r) => r.mention);
+      if (mention) part2.mention = mention.mention;
       for (const f of TEXT_FORMATS) if (over.some((r) => r.formats.includes(f))) part2[f] = true;
       const prev = parts[parts.length - 1];
-      if (prev && prev.href === part2.href && prev.effect === part2.effect && TEXT_FORMATS.every((f) => prev[f] === part2[f])) prev.text += part2.text;
+      if (prev && prev.href === part2.href && prev.effect === part2.effect && prev.mention === part2.mention && TEXT_FORMATS.every((f) => prev[f] === part2[f])) prev.text += part2.text;
       else parts.push(part2);
     }
     return parts;

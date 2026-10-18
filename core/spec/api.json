@@ -507,7 +507,8 @@
       "bold": "boolean?",
       "italic": "boolean?",
       "underline": "boolean?",
-      "strikethrough": "boolean?"
+      "strikethrough": "boolean?",
+      "mention": "string?"
     },
     "Attachment": {
       "id": "string",

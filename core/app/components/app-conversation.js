@@ -47,8 +47,19 @@ const formattedText = (p, inner) => {
   const formats = TEXT_FORMATS.filter((f) => p[f]);
   return formats.length ? html`<span class="${'fmt ' + formats.map((f) => 'fmt-' + f).join(' ')}">${inner}</span>` : inner;
 };
-const linkedText = (text, open, styles = []) => styledParts(text, styles).map((p) => {
-  const inner = formattedText(p, p.effect ? effectText(p) : drawnText(p.text));
+// The name a conversation knows a person by: their contact name among the chat's members, or the address itself.
+const memberName = (chat, handle) => ((chat && chat.members) || []).find((member) => handleKey(member.handle) === handleKey(handle))?.name || String(handle || '');
+// A name the sender mentioned (issue 453): set apart, and named by the person it stands for, as the caller knows them,
+// on hover and to a screen reader. It is marked as an image of that name, as an emoji drawn by its name is (issue 392),
+// so a screen reader reads who it is while the words themselves, copied or previewed, stay the words as sent.
+const mentionLabel = (words, name) => words + ', mention of ' + name;
+const mentionText = (p, inner, nameOf) => {
+  if (!p.mention) return inner;
+  const name = nameOf(p.mention);
+  return html`<span class="mention" role="img" aria-label="${mentionLabel(p.text, name)}" title="${name}">${inner}</span>`;
+};
+const linkedText = (text, open, styles = [], nameOf = (handle) => handle) => styledParts(text, styles).map((p) => {
+  const inner = formattedText(p, mentionText(p, p.effect ? effectText(p) : drawnText(p.text), nameOf));
   return p.href
     ? html`<a class="message-link" href=${p.href} data-href=${p.href} rel="noopener noreferrer" @click=${(e) => open(e, p.href)}>${inner}</a>`
     : inner;
@@ -555,7 +566,7 @@ class AppConversation extends KitElement {
     // Invisible Ink (issue 442): the words are drawn under a veil until the bubble is pressed.
     const ink = m.sendEffect === INK_EFFECT;
     const veiled = ink && !this.inkShown.has(m.id);
-    const words = linkedText(m.text, (e, href) => this.openLink(e, href), m.styles);
+    const words = linkedText(m.text, (e, href) => this.openLink(e, href), m.styles, (handle) => memberName(this.chat, handle));
     // What an edited message said before, shown above it oldest first once its Edited control is pressed (issue 437).
     const versions = m.edited ? editVersions(m) : [];
     const showEdits = versions.length > 0 && Boolean(this.shownEdits && this.shownEdits.has(m.id));

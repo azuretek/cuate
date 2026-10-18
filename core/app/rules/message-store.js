@@ -7,6 +7,10 @@ import { mergeMessages, applyEdit, applyReaction } from './messages.js';
 // the item cap is an original rather than a tile's still, and is never held.
 export const MEDIA_CACHE_BYTES = 48 * 1024 * 1024;
 export const MEDIA_ITEM_MAX_BYTES = 1024 * 1024;
+// A conversation's own pictures (its avatar or group photo, a person's face, the backdrop set for it) and a theme's type
+// are drawn on every open, so they are held under the same cap with an item cap of their own: a backdrop is a whole
+// photo rather than a tile's still.
+export const PICTURE_ITEM_MAX_BYTES = 4 * 1024 * 1024;
 // How many pages of changes one catch-up follows before it stops and lets each conversation be read again on open.
 export const CHANGE_PAGES_MAX = 20;
 
@@ -121,13 +125,18 @@ export function mediaEvictions(entries, { cap = MEDIA_CACHE_BYTES, keep = null }
 
 // Which pictures a tile draws are held: a video's poster, and an image (a sticker among them) small enough to be a
 // tile's still. A video's own bytes and a Live Photo's motion are never held, nor is anything over the item cap.
-export function holdsMedia(attachment, { part = null, size = 0 } = {}) {
-  if (!attachment || !(size > 0) || size > MEDIA_ITEM_MAX_BYTES) return false;
+// A conversation's own picture (kind 'picture') is held when it is an image under its own cap, and a theme's font file
+// (kind 'font') under the same.
+export function holdsMedia(attachment, { part = null, size = 0, kind = null, type = '' } = {}) {
+  if (!attachment || !(size > 0)) return false;
+  if (kind === 'font') return size <= PICTURE_ITEM_MAX_BYTES;
+  if (kind === 'picture') return size <= PICTURE_ITEM_MAX_BYTES && /^image\//i.test(String(attachment.mime || type || ''));
+  if (size > MEDIA_ITEM_MAX_BYTES) return false;
   if (part === 'poster') return true;
   if (part) return false;
   return /^image\//i.test(String(attachment.mime || ''));
 }
-export const mediaKey = (attachment, { part = null, format = null } = {}) => String(attachment.id) + (part ? ':' + part : '') + (format ? ':' + format : '');
+export const mediaKey = (attachment, { part = null, format = null, kind = null } = {}) => (kind === 'font' ? 'font\u0000' : '') + String(attachment.id) + (part ? ':' + part : '') + (format ? ':' + format : '');
 
 // Which server a store belongs to, as a one-way digest of its address, so the store never holds the address itself.
 export function serverDigest(url) {
