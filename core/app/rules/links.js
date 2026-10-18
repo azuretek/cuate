@@ -2,7 +2,7 @@
 // reader can open in the browser and copy from the message's menu. Only http and https addresses, and a bare www. one,
 // which opens as https; anything else (a phone number, an email address, a custom scheme) stays text. Punctuation that
 // ends the sentence a link sits in is not part of it, and neither is a closing bracket the link did not open.
-import { TEXT_EFFECTS } from './text-styles.js';
+import { TEXT_EFFECTS, TEXT_FORMATS } from './text-styles.js';
 
 const FIND = /\b(?:https?:\/\/|www\.)[^\s<>"]+/gi;
 const TRAIL = /[.,;:!?'\u2019\u201d*_]+$/;
@@ -57,12 +57,12 @@ export function messageLinks(m) {
 }
 
 /**
- * A message's text cut into the pieces a bubble draws, in order: each piece is a stretch with one link (or none) and
- * one effect (or none), so a link inside an effect, or an effect across part of a link, both draw. Joined, the pieces'
- * text is the message's text exactly.
+ * A message's text cut into the pieces a bubble draws, in order: each piece is a stretch with one link (or none), one
+ * effect (or none) and the formats laid on it (issue 447), so a link inside an effect or bold words, or a style across
+ * part of a link, all draw. Joined, the pieces' text is the message's text exactly.
  * @param {string} text
- * @param {{ start: number, length: number, effect?: string }[]} [styles]
- * @returns {{ text: string, href?: string, effect?: string }[]}
+ * @param {{ start: number, length: number, effect?: string, bold?: boolean, italic?: boolean, underline?: boolean, strikethrough?: boolean }[]} [styles]
+ * @returns {{ text: string, href?: string, effect?: string, bold?: true, italic?: true, underline?: true, strikethrough?: true }[]}
  */
 export function styledParts(text, styles = []) {
   const s = String(text || '');
@@ -72,11 +72,12 @@ export function styledParts(text, styles = []) {
     if (p.href) links.push({ start: at, end: at + p.text.length, href: p.href });
     at += p.text.length;
   }
-  const effects = (Array.isArray(styles) ? styles : [])
-    .filter((x) => x && TEXT_EFFECTS.includes(x.effect) && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length)
-    .map((x) => ({ start: x.start, end: x.start + x.length, effect: x.effect }));
+  const laid = (Array.isArray(styles) ? styles : [])
+    .filter((x) => x && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length)
+    .map((x) => ({ start: x.start, end: x.start + x.length, effect: TEXT_EFFECTS.includes(x.effect) ? x.effect : null, formats: TEXT_FORMATS.filter((f) => x[f] === true) }))
+    .filter((x) => x.effect || x.formats.length);
   const cuts = new Set([0, s.length]);
-  for (const r of [...links, ...effects]) { cuts.add(r.start); cuts.add(r.end); }
+  for (const r of [...links, ...laid]) { cuts.add(r.start); cuts.add(r.end); }
   const points = [...cuts].sort((a, b) => a - b);
   const parts = [];
   for (let i = 0; i < points.length - 1; i += 1) {
@@ -84,12 +85,14 @@ export function styledParts(text, styles = []) {
     const to = points[i + 1];
     if (to <= from) continue;
     const link = links.find((r) => r.start <= from && to <= r.end);
-    const effect = effects.find((r) => r.start <= from && to <= r.end);
+    const over = laid.filter((r) => r.start <= from && to <= r.end);
+    const effect = over.find((r) => r.effect);
     const part = { text: s.slice(from, to) };
     if (link) part.href = link.href;
     if (effect) part.effect = effect.effect;
+    for (const f of TEXT_FORMATS) if (over.some((r) => r.formats.includes(f))) part[f] = true;
     const prev = parts[parts.length - 1];
-    if (prev && prev.href === part.href && prev.effect === part.effect) prev.text += part.text;
+    if (prev && prev.href === part.href && prev.effect === part.effect && TEXT_FORMATS.every((f) => prev[f] === part[f])) prev.text += part.text;
     else parts.push(part);
   }
   return parts;
