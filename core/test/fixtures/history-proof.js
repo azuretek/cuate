@@ -62,17 +62,21 @@ globalThis.historyProof = {
   // restores the person's recorded place after every render and would move a bare scroll back before its
   // scroll event is heard. The press point is read only once the photo has held still for several frames
   // and the point hit-tests to the photo itself, so the click never lands on stale coordinates.
+  // A picture is fetched only once its row is on screen or within a screen of it (issue 425), so the photo's row is
+  // brought into view first and its picture waited for there, rather than found among rows already fetched.
   async photoTarget() {
     const scroll = pane().querySelector('.messages');
-    const photo = () => [...pane().querySelectorAll('app-attachment img')].find((img) => img.closest('.bubble-row')?.dataset.id);
-    await until(() => photo()?.naturalWidth > 0, 'synthetic photo decoded');
-    const row = photo().closest('.bubble-row');
-    const key = row.dataset.id;
+    const isPhoto = (el) => /^image\//.test(String(el.attachment?.mime || ''));
+    const photoRow = () => [...pane().querySelectorAll('.messages > .bubble-row')].find((r) => r.dataset.id && [...r.querySelectorAll('app-attachment')].some(isPhoto));
+    await until(() => photoRow(), 'a synthetic photo row resident');
+    const key = photoRow().dataset.id;
     const place = () => {
       pane().keep.anchor = { key, offset: Math.round(scroll.clientHeight / 3) };
       pane().keep.restore();
     };
     const target = () => [...pane().querySelectorAll('.messages > .bubble-row')].find((r) => r.dataset.id === key)?.querySelector('app-attachment img');
+    place();
+    await until(() => target()?.naturalWidth > 0, 'synthetic photo decoded', () => ({ key, rendered: Boolean(target()), held: mediaState(target()) }));
     const centre = () => { const r = target()?.getBoundingClientRect(); return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null; };
     const view = () => scroll.getBoundingClientRect();
     const hits = (p) => { const hit = p && document.elementFromPoint(p.x, p.y); return Boolean(hit && target() && (hit === target() || target().closest('app-attachment').contains(hit))); };
