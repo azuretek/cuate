@@ -87,6 +87,7 @@ var engine = (() => {
     PAGE_MAX_PIXELS: () => PAGE_MAX_PIXELS,
     PDF_PREVIEW_MAX_BYTES: () => PDF_PREVIEW_MAX_BYTES,
     PHOTO_SCAN_ROWS: () => PHOTO_SCAN_ROWS,
+    PICTURE_ITEM_MAX_BYTES: () => PICTURE_ITEM_MAX_BYTES,
     PLATFORM_CAPABILITIES: () => PLATFORM_CAPABILITIES,
     PLAYED_KEY: () => PLAYED_KEY,
     PLAYED_MAX: () => PLAYED_MAX,
@@ -3564,6 +3565,7 @@ var engine = (() => {
   // core/app/rules/message-store.js
   var MEDIA_CACHE_BYTES = 48 * 1024 * 1024;
   var MEDIA_ITEM_MAX_BYTES = 1024 * 1024;
+  var PICTURE_ITEM_MAX_BYTES = 4 * 1024 * 1024;
   var CHANGE_PAGES_MAX = 20;
   var holdable = (m) => Boolean(m) && typeof m.id === "string" && !m.id.startsWith("local:") && !m.state;
   var flag = (v, fallback) => typeof v === "boolean" ? v : fallback;
@@ -3661,13 +3663,16 @@ var engine = (() => {
     }
     return out;
   }
-  function holdsMedia(attachment, { part: part2 = null, size: size2 = 0 } = {}) {
-    if (!attachment || !(size2 > 0) || size2 > MEDIA_ITEM_MAX_BYTES) return false;
+  function holdsMedia(attachment, { part: part2 = null, size: size2 = 0, kind = null, type = "" } = {}) {
+    if (!attachment || !(size2 > 0)) return false;
+    if (kind === "font") return size2 <= PICTURE_ITEM_MAX_BYTES;
+    if (kind === "picture") return size2 <= PICTURE_ITEM_MAX_BYTES && /^image\//i.test(String(attachment.mime || type || ""));
+    if (size2 > MEDIA_ITEM_MAX_BYTES) return false;
     if (part2 === "poster") return true;
     if (part2) return false;
     return /^image\//i.test(String(attachment.mime || ""));
   }
-  var mediaKey = (attachment, { part: part2 = null, format = null } = {}) => String(attachment.id) + (part2 ? ":" + part2 : "") + (format ? ":" + format : "");
+  var mediaKey = (attachment, { part: part2 = null, format = null, kind = null } = {}) => (kind === "font" ? "font\0" : "") + String(attachment.id) + (part2 ? ":" + part2 : "") + (format ? ":" + format : "");
   function serverDigest(url) {
     const text = String(url || "").trim().replace(/\/+$/, "").replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, (m) => m.toLowerCase());
     return sha256Hex(text);

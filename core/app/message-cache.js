@@ -27,6 +27,7 @@ export async function openMessageCache(url, { idb = globalThis.indexedDB, timers
   const digest = serverDigest(url);
   let cursor = null;
   let chats = [];
+  let settings = null;
   const convos = new Map();
   const uses = new Map();
   try {
@@ -36,9 +37,10 @@ export async function openMessageCache(url, { idb = globalThis.indexedDB, timers
       await store.clear();
       await store.write([{ store: 'meta', put: { key: 'server', digest } }]);
     } else {
-      const [c, list, records, used] = await Promise.all([store.get('meta', 'cursor'), store.get('meta', 'chats'), store.all('convos'), store.all('mediaUse')]);
+      const [c, list, values, records, used] = await Promise.all([store.get('meta', 'cursor'), store.get('meta', 'chats'), store.get('meta', 'settings'), store.all('convos'), store.all('mediaUse')]);
       cursor = c && typeof c.value === 'string' ? c.value : null;
       chats = list && Array.isArray(list.value) ? list.value : [];
+      settings = values && values.value && typeof values.value === 'object' && !Array.isArray(values.value) ? values.value : null;
       for (const r of records) convos.set(String(r.chatId), { record: r, held: null });
       for (const u of used) uses.set(u.key, u);
     }
@@ -59,6 +61,7 @@ export async function openMessageCache(url, { idb = globalThis.indexedDB, timers
   const dirty = new Set();
   let saveTimer = null;
   let pendingChats = null;
+  let pendingSettings = null;
   let lastKept = new Map();
   let closed = false;
 
@@ -97,6 +100,7 @@ export async function openMessageCache(url, { idb = globalThis.indexedDB, timers
     for (const id of dirty) ops.push(...opsFor(id));
     dirty.clear();
     if (pendingChats) { ops.push({ store: 'meta', put: { key: 'chats', value: pendingChats } }); pendingChats = null; }
+    if (pendingSettings) { ops.push({ store: 'meta', put: { key: 'settings', value: pendingSettings } }); pendingSettings = null; }
     if (ops.length && !closed) await store.write(ops);
   }
 
@@ -154,6 +158,15 @@ export async function openMessageCache(url, { idb = globalThis.indexedDB, timers
       pendingChats = chats;
       schedule();
     },
+    // The settings as the server last answered them, so a launch draws its theme, scheme and text size before the server
+    // answers. They are the person's choices, never a credential; null when none are held.
+    get settings() { return settings; },
+    saveSettings(values) {
+      if (!values || typeof values !== 'object' || Array.isArray(values)) return;
+      settings = values;
+      pendingSettings = values;
+      schedule();
+    },
     // One page of GET /api/v1/changes, written with the cursor it ends at in one transaction, so the store never says it
     // is newer than what it holds.
     apply(list) {
@@ -184,6 +197,7 @@ export async function openMessageCache(url, { idb = globalThis.indexedDB, timers
         uses.clear();
         lastKept = new Map();
         chats = [];
+        settings = null;
         cursor = head;
       });
     },
@@ -217,7 +231,7 @@ export async function openMessageCache(url, { idb = globalThis.indexedDB, timers
     // A picture a tile drew, held if it is one the rules hold, and the least recently used let go to stay under the cap.
     keepMedia(attachment, blob, options = {}) {
       const size = blob && Number.isFinite(blob.size) ? blob.size : 0;
-      if (closed || !holdsMedia(attachment, { part: options.part || null, size })) return Promise.resolve(false);
+      if (closed || !holdsMedia(attachment, { part: options.part || null, kind: options.kind || null, type: blob.type || '', size })) return Promise.resolve(false);
       const key = mediaKey(attachment, options);
       return serial(async () => {
         const data = await blob.arrayBuffer();
