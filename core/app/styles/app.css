@@ -203,6 +203,13 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 @keyframes text-explode { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(calc(var(--space-4) * -1), calc(var(--space-4) * -1)) rotate(-30deg); opacity: 0.4; } 60% { transform: translate(calc(var(--space-2) * -1), calc(var(--space-2) * -1)) rotate(-10deg); opacity: 0.8; } }
 @keyframes text-explode-other { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(var(--space-4), var(--space-4)) rotate(30deg); opacity: 0.4; } 60% { transform: translate(var(--space-2), var(--space-2)) rotate(10deg); opacity: 0.8; } }
 @media (prefers-reduced-motion: reduce) { .text-effect[data-effect], .text-effect[data-effect] .fx-letter { animation: none; } }
+/* Bold, italic, underline and strikethrough a sender laid on a stretch (issue 447), each its own class so any number
+   share a stretch; both lines draw where both are laid. */
+.fmt-bold { font-weight: var(--font-weight-bold); }
+.fmt-italic { font-style: italic; }
+.fmt-underline { text-decoration-line: underline; }
+.fmt-strikethrough { text-decoration-line: line-through; }
+.fmt-underline.fmt-strikethrough { text-decoration-line: underline line-through; }
 /* Reactions float at the bubble's top outer corner, the top right of a received message and the top left of a sent
    one, with no background, so adding one never moves a message (issue 182). */
 .reactions { position: absolute; top: 0; right: 0; z-index: 1; display: flex; gap: var(--space-1); transform: translate(50%, -50%); font-size: var(--font-size-sm); line-height: 1; white-space: nowrap; pointer-events: none; }
