@@ -641,7 +641,8 @@
     "MessageEventKind": {
       "kind": "string",
       "photo": "Attachment?",
-      "action": "string?"
+      "action": "string?",
+      "name": "string?"
     },
     "PushRegistration": {
       "token": "string",

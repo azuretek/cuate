@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createEngine } from '../src/engine/index.js';
 import { createLogger } from '../../core/kit/log.js';
 import { logSpec } from '../src/paths.js';
-import { eventText, chatPreview, chatTitle, applyMessageToChats } from '../../core/app/rules/chats.js';
+import { eventText, chatPreview, chatTitle, applyMessageToChats, upsertChat } from '../../core/app/rules/chats.js';
 import { boot, waitFor, openSocket } from './helpers.js';
 import { buildFixtures, SCRIPT } from '../src/engine/fixtures.js';
 
@@ -84,6 +84,8 @@ test('the list preview says the same, and the group takes the name at once (issu
   assert.equal(named.name, 'Lake trip', 'the title follows the rename');
   assert.equal(chatTitle(named), 'Lake trip');
   assert.equal(chatPreview(named), 'Sam Example named the conversation ' + quoted('Lake trip'));
+  // The server then tells every client the chat changed, carrying no preview of its own; the line stays the preview.
+  assert.equal(chatPreview(upsertChat([named], { ...chats[0], name: 'Lake trip', lastMessage: null })[0]), 'Sam Example named the conversation ' + quoted('Lake trip'));
   const removed = applyMessageToChats(chats, { ...m, fromMe: true, sender: null, senderName: null, event: { kind: 'rename', name: '' } }).chats[0];
   assert.equal(removed.name, '', 'a removed name leaves the group to be named by its people');
   assert.equal(chatPreview(removed), 'You removed the name from the conversation');

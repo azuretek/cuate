@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
 import { createSender } from './send.js';
 import { platformOf } from '../../core/app/rules/platform.js';
+import { eventPreview } from '../../core/app/rules/chats.js';
 import { createAttachments } from './attachments.js';
 import { createUploads } from './uploads.js';
 import { createThemeFonts } from './theme-fonts.js';
@@ -158,7 +159,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return Math.min(hi, Math.max(lo, Number(v)));
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
-  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind, ...(m.event.action ? { action: m.event.action } : {}) }, senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}) });
+  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: eventPreview(m.event), senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}) });
   // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
@@ -236,7 +237,11 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     if (m.event && m.event.kind === 'groupPhoto') held.chats[at] = { ...held.chats[at], photo: m.event.photo };
     // A background that changed live is read from the engine and told to every client as the chat changing (issue 417).
     if (m.event && m.event.kind === 'background') refreshBackground(id, m.event.action);
+    // A group renamed live, here or on another phone, takes its name at once and every client is told (issue 439).
+    const renamed = Boolean(m.event && m.event.kind === 'rename' && held.chats[at].isGroup && held.chats[at].name !== m.event.name);
+    if (renamed) held.chats[at] = { ...held.chats[at], name: String(m.event.name || '') };
     const chat = held.chats[at];
+    if (renamed) publish('chat.changed', { ...chat, lastMessage: previews.get(id) || null });
     if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
     // An arriving message from someone else raises the held count by the same rule every client raises its own
     // (applyMessageToChats in core/app/rules/chats.js), so a read on another device before the next read of the list is
