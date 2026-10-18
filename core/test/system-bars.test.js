@@ -161,3 +161,11 @@ test('the scheme switch on iOS survives a lost tap: the marker is pressed until 
   // The switch is the page's own, on Android: no tap to lose there.
   assert.match(read('android/app/src/androidTest/kotlin/' + packagePath + '/SystemBarsTest.kt'), /window\.systemBarsSwitch\('\$then'\)/);
 });
+
+test('a hold whose evidence is valid gets its confirming sample even when one sample outlasts the window (issue 471)', () => {
+  // On a slow runner one capture took 22.7s, past the 20s window, so a valid first sample never got the second it needs.
+  const swift = read('ios/' + naming.product + 'UITests/SystemBarsTests.swift');
+  const hold = swift.slice(swift.indexOf('private func hold('), swift.indexOf('private func problems('));
+  assert.match(hold, /let hardDeadline = start\.addingTimeInterval\(60\)/, 'a hard bound past the window');
+  assert.match(hold, /\} while Date\(\) < deadline \|\| \(readiness\.consecutiveValid > 0 && Date\(\) < hardDeadline\)/, 'valid evidence in progress earns one more sample');
+});
