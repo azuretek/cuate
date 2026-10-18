@@ -91,6 +91,7 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/audio-playing.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/audio-voice.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-effects.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/load-order.json
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/edit-history.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-format.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/mention.png
