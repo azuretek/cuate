@@ -37,6 +37,20 @@ function readHead(a) {
   }
 }
 
+// The changes cursor (issue 441): opaque to a client, and nothing in it but the store's own marks, so it carries no
+// message, chat or address. v1.<rowid>.<edited ms>.<unsent ms>.<unsent row>.<read ms>.<read row>.
+export const CHANGES_PAGE = 200;
+const CURSOR = /^v1\.(\d{1,15})\.(\d{1,15})\.(\d{1,15})\.(\d{1,15})\.(\d{1,15})\.(\d{1,15})$/;
+export function formatChangeCursor({ rowid, edited, unsent, read }) {
+  return ['v1', rowid, edited, unsent[0], unsent[1], read[0], read[1]].map((v) => (typeof v === 'string' ? v : String(Math.max(0, Math.trunc(Number(v) || 0))))).join('.');
+}
+export function parseChangeCursor(text) {
+  const m = CURSOR.exec(String(text));
+  if (!m) return null;
+  const n = m.slice(1).map(Number);
+  return { rowid: n[0], edited: n[1], unsent: [n[2], n[3]], read: [n[4], n[5]] };
+}
+
 const numCode = (e) => (typeof e.code === 'number' ? e.code : null);
 const omit = (o, keys) => {
   const c = { ...o };
@@ -52,10 +66,12 @@ const omit = (o, keys) => {
 // richText: where the adapter learns the attributes a message's words carry, its text effects (rich-text.js reads the
 // Messages store; the fake keeps its own), or null where there is no such source, in which case every message is drawn
 // as plain words (issue 433).
+// changes: where the adapter learns which rows were unsent or read by the other person since a mark (changes.js reads
+// the Messages store; the fake keeps its own), or null, in which case no client can ask what changed (issue 441).
 // voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
 // store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
 // client of ours has played, kept by the server ({ has(attachmentId) }), or null.
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, voices = null, heard = null }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -570,6 +586,53 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     };
   }
 
+  // --- What changed since a cursor (issue 441) ---
+  // A client that keeps its messages asks for what changed after the mark it holds, rather than reading every page
+  // again. Every part of the mark is the Messages store's own, so it survives a server restart and covers the time a
+  // client was closed: new rows (reactions among them) by ROWID through the engine's own sweep, edits by their edit time
+  // (edits.js), and unsends and read receipts by theirs (changes.js). A cursor ahead of the store names another store (a
+  // new Mac, a rebuilt history), so it is answered with reset and the head, and the client starts again.
+  async function changes({ since = null, limit = CHANGES_PAGE, chats = null } = {}) {
+    if (!changeReader) throw Object.assign(new Error('This server cannot say what changed.'), { status: 501, code: 'changes_unavailable' });
+    const head = headMark();
+    const from = since === null ? null : parseChangeCursor(since);
+    if (since !== null && !from) throw Object.assign(new Error('since is not a cursor this server wrote.'), { status: 400, code: 'bad_cursor' });
+    // Only the row mark can say the store is another one: an edit mark can fall back when an edited row is later unsent.
+    if (!from || from.rowid > head.rowid) {
+      return { cursor: formatChangeCursor(head), reset: true, more: false, messages: [], reactions: [], unsent: [], reads: [] };
+    }
+    const want = chats && chats.size ? (id) => chats.has(String(id)) : () => true;
+    const r = await request('messages.after', { since_rowid: from.rowid, limit, attachments: true, include_reactions: true }, timeoutMs, ['attachments', 'include_reactions']);
+    const rows = markBackgrounds(r && Array.isArray(r.messages) ? r.messages : []);
+    const rowid = r && Number.isFinite(r.next_rowid) ? r.next_rowid : from.rowid;
+    const taken = changeReader.unsentAmong(rows.filter((m) => !m.is_reaction).map((m) => String(m.guid)));
+    const messages = markEdited(rows.filter((m) => !m.is_reaction && !taken.has(String(m.guid))).map((m) => toModel(m)).filter((m) => want(m.chatId)));
+    const reactions = rows.filter((m) => m.is_reaction).map(mapReaction).filter((x) => x && want(x.chatId));
+    // A row changed in place that is past the new rows read so far reaches the client later as a new row, in the state
+    // it is in then, so it is not read twice.
+    const edited = edits ? edits.since(from.edited, limit) : { rows: [], cursor: from.edited, more: false };
+    for (const row of edited.rows) {
+      if (row.rowid > rowid || !want(row.chatId) || messages.some((m) => m.id === row.guid)) continue;
+      const m = await editedMessage(row);
+      if (m) messages.push(m);
+    }
+    const unsentPage = changeReader.unsentSince(from.unsent, limit);
+    const readPage = changeReader.readSince(from.read, limit);
+    const more = Boolean(r && r.has_more) || edited.more || unsentPage.more || readPage.more;
+    return {
+      cursor: formatChangeCursor({ rowid, edited: edited.cursor, unsent: unsentPage.cursor, read: readPage.cursor }),
+      more,
+      messages,
+      reactions,
+      unsent: unsentPage.rows.filter((x) => want(x.chatId)).map((x) => ({ id: x.guid, chatId: x.chatId })),
+      reads: readPage.rows.filter((x) => want(x.chatId)).map((x) => ({ id: x.guid, chatId: x.chatId, readAt: x.readAt })),
+    };
+  }
+  function headMark() {
+    const now = changeReader.latest();
+    return { rowid: now.rowid, edited: edits ? edits.latest() : 0, unsent: now.unsent, read: now.read };
+  }
+
   // One imsg call that sends something: a message, a file, a reply or a tapback. Whatever comes back, an outcome the
   // engine cannot vouch for is uncertain, and the sender above never retries it. `unsupported` names the codes that
   // mean the engine cannot do this at all (a method it lacks, or a bridge method with no bridge running), which the
@@ -684,6 +747,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   function stop() {
     stopping = true;
     try { edits?.close?.(); } catch { /* already closed */ }
+    try { changeReader?.close?.(); } catch { /* already closed */ }
     try { voices?.close?.(); } catch { /* already closed */ }
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     const c = current;
@@ -697,6 +761,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     chats,
     messages,
     after,
+    changes,
     read,
     createChat,
     renameGroup,

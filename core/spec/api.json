@@ -39,6 +39,10 @@
     "search": {
       "default": 50,
       "max": 200
+    },
+    "changes": {
+      "default": 200,
+      "max": 500
     }
   },
   "routes": [
@@ -86,6 +90,18 @@
         "limit"
       ],
       "returns": "ChatList"
+    },
+    {
+      "id": "changes",
+      "method": "GET",
+      "path": "/api/v1/changes",
+      "scope": "read",
+      "query": [
+        "since",
+        "limit",
+        "chats"
+      ],
+      "returns": "ChangeList"
     },
     {
       "id": "messages",
@@ -432,6 +448,24 @@
       "event": "MessageEventKind?",
       "senderName": "string?",
       "edited": "boolean?"
+    },
+    "ChangeList": {
+      "cursor": "string",
+      "reset": "boolean?",
+      "more": "boolean",
+      "messages": "Message[]",
+      "reactions": "ReactionEvent[]",
+      "unsent": "Unsent[]",
+      "reads": "ReadReceipt[]"
+    },
+    "Unsent": {
+      "id": "string",
+      "chatId": "string"
+    },
+    "ReadReceipt": {
+      "id": "string",
+      "chatId": "string",
+      "readAt": "string"
     },
     "MessageList": {
       "messages": "Message[]",

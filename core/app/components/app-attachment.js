@@ -45,6 +45,18 @@ export function heldPoster(a) {
   return url;
 }
 const holdPoster = (a, url) => holdMedia(a, url, posterKey(a));
+// The device's store (issue 441), which keeps the pictures tiles draw across launches under its own byte cap, or null.
+// A picture it holds is drawn from it with no server read; one it lacks is fetched and offered to it.
+let mediaStore = null;
+export function useMediaStore(store) { mediaStore = store || null; }
+async function fetchTile(client, a, options, signal) {
+  const kept = mediaStore ? await mediaStore.media(a, options).catch(() => null) : null;
+  if (kept) return kept;
+  if (!client) throw Object.assign(new Error('No server yet.'), { code: 'no_client' });
+  const blob = await client.attachment(a.id, { ...options, signal });
+  if (mediaStore) mediaStore.keepMedia(a, blob, options).catch(() => {});
+  return blob;
+}
 // Where the server has no poster, the video is drawn a tenth of a second in: a media fragment makes the web view seek
 // and paint that frame, where a video that read only its metadata paints nothing at all on iPhone (issue 415).
 export const FIRST_FRAME = '#t=0.1';
@@ -151,6 +163,11 @@ class AppAttachment extends KitElement {
   }
 
   updated(changed) {
+    // A tile drawn from the device's store before the server was reached asks again once it is (issue 441).
+    if (changed.has('client') && this.client && !changed.get('client') && !changed.has('attachment')) {
+      if (!this.src && !this.failed) this.fetchWhenSeen();
+      else if (this.src && !this.poster && mediaKind(this.attachment) === 'video') this.fetchWhenSeen((signal) => this.loadPoster(signal));
+    }
     if (changed.has('attachment') && changed.get('attachment')?.id !== this.attachment?.id) {
       this.ticket?.cancel();
       this.ticket = null;
@@ -173,20 +190,20 @@ class AppAttachment extends KitElement {
   // settles once the video's still has too, so the queue counts the slot until both have landed.
   async load(signal) {
     const a = this.attachment;
-    if (!isMediaAttachment(a) || !this.client) return;
+    if (!isMediaAttachment(a) || (!this.client && !mediaStore)) return;
     const request = new AbortController();
     this.loadRequest?.abort();
     this.loadRequest = request;
     const stop = follow(signal, request);
     const poster = this.poster ? null : this.loadPoster(signal);
     try {
-      const blob = await this.client.attachment(a.id, { format: needsJpeg(a) ? 'jpeg' : undefined, signal: request.signal });
+      const blob = await fetchTile(this.client, a, needsJpeg(a) ? { format: 'jpeg' } : {}, request.signal);
       if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
       const url = heldMedia(a) || URL.createObjectURL(blob);
       holdMedia(a, url);
       if (this.attachment?.id === a.id) this.src = url;
-    } catch {
-      if (!request.signal.aborted && this.attachment?.id === a.id) this.failed = true;
+    } catch (e) {
+      if (!request.signal.aborted && this.attachment?.id === a.id && e?.code !== 'no_client') this.failed = true;
     } finally {
       stop();
       if (this.loadRequest === request) this.loadRequest = null;
@@ -199,13 +216,13 @@ class AppAttachment extends KitElement {
   // a failed video. It lands under the same id match as the video.
   async loadPoster(signal) {
     const a = this.attachment;
-    if (!a || mediaKind(a) !== 'video' || a.sticker || !this.client) return;
+    if (!a || mediaKind(a) !== 'video' || a.sticker || (!this.client && !mediaStore)) return;
     const request = new AbortController();
     this.posterRequest?.abort();
     this.posterRequest = request;
     const stop = follow(signal, request);
     try {
-      const blob = await this.client.attachment(a.id, { part: 'poster', signal: request.signal });
+      const blob = await fetchTile(this.client, a, { part: 'poster' }, request.signal);
       if (request.signal.aborted || !this.isConnected || this.attachment?.id !== a.id) return;
       const url = heldPoster(a) || URL.createObjectURL(blob);
       holdPoster(a, url);

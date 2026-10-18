@@ -77,6 +77,8 @@ export function createApiClient({ baseUrl, token, fetchImpl = globalThis.fetch, 
       finally { timers.clearTimeout(timer); o.signal?.removeEventListener('abort', abort); }
     },
     chats: (o = {}) => call('GET', '/api/v1/chats' + query({ limit: o.limit })),
+    // What changed since a cursor the server wrote (issue 441): new messages, edits, unsends, reactions and read receipts.
+    changes: (o = {}) => call('GET', '/api/v1/changes' + query({ since: o.since, limit: o.limit, chats: o.chats })),
     messages: (chatId, o = {}) => call('GET', `/api/v1/chats/${encodeURIComponent(chatId)}/messages` + query({ limit: o.limit, before: o.before, beforeCursor: o.beforeCursor, afterCursor: o.afterCursor, includeTotal: o.includeTotal })),
     send: (chatId, { text, file, clientKey, replyTo }) => call('POST', `/api/v1/chats/${encodeURIComponent(chatId)}/messages`, { text, ...(file ? { file } : {}), clientKey, ...(replyTo ? { replyTo } : {}) }),
     // `text` is the message being reacted to, carried only so the server can compose the platform's own text
