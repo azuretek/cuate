@@ -112,6 +112,7 @@ targets:
             cp "$SRCROOT/../core/test/send-effects-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/send-effects-fixture.js"
             cp "$SRCROOT/../core/test/mention-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/mention-fixture.js"
             cp "$SRCROOT/../core/test/bubble-colours-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/bubble-colours-fixture.js"
+            cp "$SRCROOT/../core/test/group-members-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/group-members-fixture.js"
           fi
         basedOnDependencyAnalysis: false
     settings:

@@ -2213,6 +2213,74 @@ async function runSmoke(w) {
   await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
   await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
 
+  // A group's people changing (issue 456). The fake engine's group holds Sam adding Riley and Riley leaving, which the
+  // server reads from the store: the conversation draws each as a quiet centred line naming who did it and whom, never
+  // an empty message. A person added or removed here, through a group's details, is the same line from You, and the
+  // details and the list preview follow at once. A change is the group's newest message and moves it to the top of the
+  // list, so the changes are made on a group of the smoke's own, hidden afterwards as the edit step's is, and every later
+  // step finds the list in the order it had.
+  {
+    await smokeStep('group members');
+    const MB_PERSON = 'riley@example.com';
+    const mbOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && Boolean(document.querySelector('.messages'))", 15000);
+    };
+    const mbLine = (text) => js("(() => { const r = [...document.querySelectorAll('.messages .bubble-row.event')].find((x) => x.textContent.trim() === " + JSON.stringify(text) + "); return r ? { id: r.dataset.id, bubble: Boolean(r.querySelector('.bubble')) } : null; })()");
+    const mbSettle = async (expr, ms = 15000) => { try { await waitFor(expr, ms); return true; } catch { return false; } };
+    const mbLined = (text) => "[...document.querySelectorAll('.messages .bubble-row.event')].some((x) => x.textContent.trim() === " + JSON.stringify(text) + ")";
+    const mbListed = (address) => "Boolean(document.querySelector('app-group-info .group-info-person[data-address=\"' + CSS.escape(" + JSON.stringify(address) + ") + '\"]'))";
+    const mbPreview = (id, preview) => "(() => { const r = document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]'); return Boolean(r) && (r.querySelector('.chat-preview') || {}).textContent === " + JSON.stringify(preview) + "; })()";
+    const mbBefore = await js('JSON.stringify(' + rowNames + ')');
+    await mbOpen('2');
+    const mbAdded = await mbLine('Sam Rivera added riley@example.com to the conversation');
+    const mbLeft = await mbLine('riley@example.com left the conversation');
+    const mbEmpty = await js("[...document.querySelectorAll('.messages .bubble-row')].filter((r) => !r.classList.contains('event') && !r.textContent.trim()).length");
+    const mbMade = await (await fetch(srv + '/api/v1/chats', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ addresses: ['jordan@example.com', 'priya@example.com'], name: 'Smoke members group' }) })).json();
+    const mbId = String(mbMade.id || '');
+    await waitFor("Boolean(document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(mbId) + ") + '\"]'))", 10000);
+    await mbOpen(mbId);
+    await js("document.querySelector('.conv-head .conv-info').click()");
+    await waitFor("Boolean(document.querySelector('app-group-info .group-info-add'))");
+    // Added from here: the line from You, the person in the details and the list preview, at once.
+    const MB_ADD = 'You added ' + MB_PERSON + ' to the conversation';
+    await js("(() => { const n = document.querySelector('app-group-info .group-info-add'); n.value = " + JSON.stringify(MB_PERSON) + "; n.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+    await waitFor("Boolean(document.querySelector('app-group-info .group-info-add-button')) && !document.querySelector('app-group-info .group-info-add-button').disabled");
+    await js("document.querySelector('app-group-info .group-info-add-button').click()");
+    const mbAddDrawn = await mbSettle(mbLined(MB_ADD));
+    const mbAddPerson = await mbSettle(mbListed(MB_PERSON), 10000);
+    const mbAddPreview = await mbSettle(mbPreview(mbId, MB_ADD), 10000);
+    const mbMineLine = await mbLine(MB_ADD);
+    await shot('03e-group-members.png');
+    // Removed from here: the same, and the person leaves the details.
+    const MB_REMOVE = 'You removed ' + MB_PERSON + ' from the conversation';
+    await js("document.querySelector('app-group-info .group-info-person[data-address=\"' + CSS.escape(" + JSON.stringify(MB_PERSON) + ") + '\"] .group-info-remove').click()");
+    const mbRemoveDrawn = await mbSettle(mbLined(MB_REMOVE));
+    const mbRemovePerson = await mbSettle('!' + mbListed(MB_PERSON), 10000);
+    const mbRemovePreview = await mbSettle(mbPreview(mbId, MB_REMOVE), 10000);
+    // What the page shows once the removal has settled, so a red check says which part failed and why.
+    const mbRemoved = { drawn: mbRemoveDrawn, person: mbRemovePerson, preview: mbRemovePreview, ...(await js("(() => { const r = document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(mbId) + ") + '\"]'); return { lines: [...document.querySelectorAll('.messages .bubble-row.event')].map((x) => x.textContent.trim()), listed: r ? (r.querySelector('.chat-preview') || {}).textContent : null, problem: (document.querySelector('app-group-info .compose-problem') || {}).textContent || null }; })()")) };
+    await js("document.querySelector('app-group-info .confirm-actions .button.primary').click()");
+    await waitFor("!document.querySelector('app-group-info .group-info-person')");
+    // The smoke's group goes, as the edit step's does, and the list is in the order it had.
+    await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
+    const mbHidden = (await held())['chats.hidden'] || [];
+    const mbReset = await putSettings({ 'chats.hidden': [...new Set([...mbHidden, mbId])] });
+    if (!mbReset.ok) throw new Error('the server refused hiding the members group: ' + mbReset.status);
+    const mbGone = await mbSettle("!document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(mbId) + ") + '\"]') && JSON.stringify(" + rowNames + ") === " + JSON.stringify(mbBefore), 10000);
+    await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
+    await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
+    const mbChecks = {
+      incomingLines: Boolean(mbAdded) && !mbAdded.bubble && Boolean(mbLeft) && !mbLeft.bubble,
+      noEmptyMessage: mbEmpty === 0,
+      addedHere: mbAddDrawn && Boolean(mbMineLine) && !mbMineLine.bubble && mbAddPerson && mbAddPreview,
+      removedHere: mbRemoveDrawn && mbRemovePerson && mbRemovePreview,
+      orderKept: mbGone,
+    };
+    report.groupMembers = Object.values(mbChecks).every(Boolean);
+    console.log('group members: ' + JSON.stringify({ checks: mbChecks, mbAdded, mbLeft, mbEmpty, mbId, mbMineLine, mbBefore, mbRemoved }));
+  }
+
   // The Edit control stays one line (it replaced Add group, which issue 122 held to this): at the smallest window the
   // shell allows and at every text size from 50% to 300%, its label renders as one line, in full. The line count is
   // read from the label's own text boxes and checked against the control's height, so a wrap fails here on whichever
@@ -3041,7 +3109,8 @@ async function runSmoke(w) {
   report.notices = report.noticeFired && report.noticeSuppressed;
 
   // A pressed message notice opens its conversation at its message (issue 331): a notice raised through the bridge for
-  // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
+  // the oldest message of a listed conversation that is not open (a hidden one, such as the group members step's, is
+  // never drawn, so its message can never be in view), pressed through the same handler the system's press calls,
   // leaves that conversation open with that message in view and focused, and never marked (issue 368): no ring on the
   // row or its bubble, and nothing animating it.
   await smokeStep('notice opens');
@@ -3050,7 +3119,7 @@ async function runSmoke(w) {
   // in force (Settings, for the steps that follow) is put back once the press is checked.
   const pressView = await js("document.querySelector('app-root').view");
   const pressList = await js("document.querySelector('app-root').listOpen");
-  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
+  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const hidden = (r.settings && r.settings['chats.hidden']) || []; const other = r.chats.find((c) => c.id !== r.openChatId && !hidden.includes(c.id)); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
   smokeNotices.length = 0;
   let pressSeen = null;
   if (pressTo) {
