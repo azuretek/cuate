@@ -47,3 +47,17 @@ test('the fixture checks every theme and scheme it draws, and the conversation a
   assert.match(conventions, /The other person's bubble wears the theme's accent[^\n]*#459/, 'the convention names the new rule and its issue');
   assert.doesNotMatch(conventions, /notices and received bubbles take a chart-2 tint/, 'and the roles convention no longer gives the received bubble the tint');
 });
+
+// Main gained two things drawn on a bubble after the swap (issue 459): a mention, which was the accent colour on a
+// received bubble and so would vanish into the accent bubble that bubble now is, and a voice note, whose own bubble gave
+// ours the accent. Each follows the bubble it sits in: the mention reads in the bubble's own text colour, held at 4.5:1
+// on each desktop and in each phone's web view, and the voice note reads the same two roles the text bubbles do.
+test('a mention and a voice note follow the bubble they sit in, the accent being the other person\'s (issue 459)', () => {
+  const css = read('core/app/styles/app.css');
+  assert.doesNotMatch(css, /\.mention[^{]*\{[^}]*color:\s*var\(--color-accent\)/, 'no mention is drawn in the accent, which is now the received bubble\'s own fill');
+  assert.match(css, /\.voice-note \{[^}]*background: var\(--role-received\); color: var\(--role-received-fg\);/, 'the other person\'s voice note is the received bubble');
+  assert.match(css, /\.bubble-row\.mine \.voice-note \{ background: var\(--role-sent\); color: var\(--role-sent-fg\); \}/, 'and ours the sent one');
+  assert.match(read('desktop/src/main.js'), /readable: Boolean\(men\.ratio\) && men\.ratio >= 4\.5/, 'the desktop smoke holds the mention it reads at 4.5:1 on its bubble');
+  const fixture = read('core/test/bubble-colours-fixture.js');
+  assert.ok(fixture.includes("'.bubble.them .mention'") && fixture.includes('mention text is'), 'the phones\' fixture measures a received mention against its bubble');
+});
