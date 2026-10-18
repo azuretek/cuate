@@ -200,12 +200,27 @@
     let themedMs = null;
     let photosMs = null;
     let backdropMs = null;
+    // What the server had answered when the scheme was drawn, and when the first message was. A launch's times move
+    // with how busy the device is, but what it had to read before it could draw does not, so this is what says a warm
+    // launch drew from the store (issue 478). The scheme is caught the moment it is written, ahead of any answer.
+    const answered = (pattern) => asked.filter((a) => pattern.test(a.path)).length;
+    let answersBeforeThemed = null;
+    let settingsBeforeThemed = null;
+    const themed = () => {
+      if (themedMs !== null || document.documentElement.dataset.scheme !== 'dark') return;
+      themedMs = performance.now() - t0;
+      answersBeforeThemed = asked.length;
+      settingsBeforeThemed = answered(/\/settings/);
+    };
+    const schemeWatch = new MutationObserver(themed);
+    schemeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-scheme'] });
+    themed();
     const drawn = (el) => { const img = el && el.shadowRoot ? el.shadowRoot.querySelector('img') : el && el.querySelector && el.querySelector('img'); return Boolean(img && img.complete && img.naturalWidth > 0); };
     const watchPictures = async () => {
       const deadline = performance.now() + 60000;
       while (performance.now() < deadline && (themedMs === null || photosMs === null || backdropMs === null)) {
         const now = performance.now() - t0;
-        if (themedMs === null && document.documentElement.dataset.scheme === 'dark') themedMs = now;
+        themed();
         const photos = [...document.querySelectorAll('app-chat-list app-avatar')].filter((el) => el.photo);
         if (photosMs === null && photos.length && photos.every(drawn)) photosMs = now;
         if (backdropMs === null && drawn(document.querySelector('app-backdrop'))) backdropMs = now;
@@ -221,6 +236,7 @@
     const rows = () => [...document.querySelectorAll('app-conversation .bubble-row[data-id]')];
     await until(() => rows().some(visible), 'the first message', 60000);
     const firstVisibleMs = performance.now() - t0;
+    const pagesBeforeFirstVisible = answered(/\/messages/);
     const newest = (RUN === 'warm' ? arrived : c1.at(-1)).id;
     await until(() => rows().some((el) => el.dataset.id === newest && visible(el)), 'the newest message', 60000);
     const newestVisibleMs = performance.now() - t0;
@@ -229,12 +245,13 @@
     // Settled: nothing asked of the server for two seconds, bounded.
     await until(() => pending === 0 && performance.now() - lastActivity > 2000, 'the page to settle', 60000);
     await watching;
+    schemeWatch.disconnect();
     await root.cache?.flush();
     const shownEdit = (root.messages.find((m) => m.id === edited.id) || {}).text === edited.text;
     say('cache:result ' + JSON.stringify({
       mode: MODE, run: RUN, store: Boolean(root.cache), link: { rttMs: RTT_MS, bytesPerSecond: BYTES_PER_SECOND },
       bytes, requests: asked.length, listMs: Math.round(listMs), firstVisibleMs: Math.round(firstVisibleMs), newestVisibleMs: Math.round(newestVisibleMs),
-      themedMs: themedMs === null ? null : Math.round(themedMs), photosMs: photosMs === null ? null : Math.round(photosMs), backdropMs: backdropMs === null ? null : Math.round(backdropMs),
+      themedMs: themedMs === null ? null : Math.round(themedMs), answersBeforeThemed, settingsBeforeThemed, pagesBeforeFirstVisible, photosMs: photosMs === null ? null : Math.round(photosMs), backdropMs: backdropMs === null ? null : Math.round(backdropMs),
       pageReads: asked.filter((a) => /\/messages/.test(a.path)).length, pictureReads: asked.filter((a) => /\/attachments\//.test(a.path)).length,
       photoReads: asked.filter((a) => /\/attachments\/(photo|backdrop)-/.test(a.path)).length,
       changesReads: asked.filter((a) => /\/changes/.test(a.path)).length, dropped, shownEdit: RUN === 'warm' ? shownEdit : null,
