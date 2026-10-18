@@ -55,7 +55,7 @@ app.whenReady().then(async () => {
     return { id, guid: 'SYNTHETIC-' + id, chat_id: 1, created_at: '2026-01-01T00:00:00.000Z', is_from_me: false, sender: 'avery@example.com', text: 'Synthetic history message ' + id,
       attachments: media ? [{ ...photo, original_path: file, filename: file, transfer_name: 'synthetic-' + id, mime_type: moving ? 'video/mp4' : 'image/png', total_bytes: photo.total_bytes }] : [] };
   });
-  server.world.messages.splice(0, server.world.messages.length, ...rows);
+  server.world.replaceMessages(rows);
   const storage = { 'server.url': server.base, 'server.token': server.tokens.device };
   protocol.handle('app', (request) => {
     const url = new URL(request.url);

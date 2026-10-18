@@ -959,7 +959,6 @@ class AppRoot extends KitElement {
     const state = this.historyWindow || initialWindow(this.messages, { hasMore: this.hasMore });
     if (!(direction === 'older' ? state.hasOlder : state.hasNewer)) return false;
     const chatId = this.openChatId;
-    const seq = this.openSeq;
     const edge = direction === 'older' ? this.messages[0] : this.messages.at(-1);
     // Older messages the device's store holds are drawn from it, with no server read (issue 441).
     const held = direction === 'older' ? olderFromHeld(this.cache?.heldNow(chatId), edge.id, HISTORY_PAGE_SIZE) : null;
@@ -972,7 +971,10 @@ class AppRoot extends KitElement {
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: HISTORY_PAGE_SIZE, [direction === 'older' ? 'beforeCursor' : 'afterCursor']: edge.historyCursor });
       this.cache?.keep(chatId, direction === 'older' ? { messages, hasOlder: hasMore } : { messages }, { adjacent: true });
-      if (this.openChatId !== chatId || this.openSeq !== seq) return false;
+      // The page belongs to the conversation, not to the open that asked for it (issue 484): a window shown
+      // again, or a refresh of the same conversation, re-opens it without leaving it, and that must not throw
+      // away a page the person is waiting for. Only leaving the conversation invalidates the answer.
+      if (this.openChatId !== chatId) return false;
       const next = shiftWindow({ ...state, messages: this.messages }, foldFor(messages, this.chats, chatId), { direction, hasMore, heights: detail?.heights });
       this.applyWindow(next);
       return true;

@@ -102,6 +102,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
 
   const lastAt = (chatId) => messages.filter((m) => m.chat_id === chatId && !m.is_reaction).reduce((a, m) => (m.created_at > a ? m.created_at : a), '');
   const withAttachments = (m, on) => (on ? m : { ...m, attachments: [] });
+  // Every read of a row carries its cursor (issue 484): history, changes and the live stream hand the client the
+  // same row shape, so a message learned from any of them can be browsed past and paged around.
+  const historyCursorOf = (m) => m.history_cursor || String(BigInt(Date.parse(m.created_at) - Date.parse('2001-01-01T00:00:00Z')) * 1000000n) + ':' + m.id;
   const add = (fields) => {
     rowid += 1;
     const m = { id: rowid, guid: 'FAKE-' + String(rowid).padStart(4, '0'), created_at: new Date().toISOString(), attachments: [], text: '', sender: '', sender_name: '', ...fields };
@@ -338,6 +341,14 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     typings,
     behavior,
     messages,
+    // A test that builds its own history replaces the fixture's rows here rather than splicing `messages`, so the
+    // change cursor moves with the rows it counts: a client that catches up is never handed rows that were not a
+    // change (issue 484).
+    replaceMessages(rows) {
+      messages.splice(0, messages.length, ...rows);
+      rowid = messages.reduce((max, m) => Math.max(max, Number(m.id) || 0), 0);
+      return messages;
+    },
     requests: [],
     get attempts() { return attempts; },
     // sendStyle: Messages' identifier for the effect the message was sent with, which the store records (issue 442).
@@ -410,7 +421,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'messages.stats':
             return reply(req.id, { total_messages: messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction).length });
           case 'messages.history': {
-            const cursor = (m) => m.history_cursor || String(BigInt(Date.parse(m.created_at) - Date.parse('2001-01-01T00:00:00Z')) * 1000000n) + ':' + m.id;
+            const cursor = historyCursorOf;
             const compare = (a, b) => compareHistory({ historyCursor: a }, { historyCursor: b });
             let ms = messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction);
             if (p.end) ms = ms.filter((m) => m.created_at < p.end);
@@ -437,7 +448,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
               if (out.length >= limit) break;
               next = m.id;
               if (m.is_reaction && !p.include_reactions) continue;
-              out.push(withAttachments(m, p.attachments));
+              out.push({ ...withAttachments(m, p.attachments), history_cursor: historyCursorOf(m) });
             }
             const page = { messages: out, next_rowid: next, has_more: rows.some((m) => m.id > next) };
             if (behavior.afterDelayMs > 0) { setTimeout(() => reply(req.id, page), behavior.afterDelayMs).unref(); return undefined; }
@@ -581,7 +592,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           for (const [id, p] of subs) {
             if (m.is_reaction && !p.include_reactions) continue;
             if (p.chat_id && p.chat_id !== m.chat_id) continue;
-            out({ jsonrpc: '2.0', method: 'message', params: { subscription: id, message: withAttachments(m, p.attachments) } });
+            out({ jsonrpc: '2.0', method: 'message', params: { subscription: id, message: { ...withAttachments(m, p.attachments), history_cursor: historyCursorOf(m) } } });
           }
         },
         write(s) {
