@@ -7,8 +7,13 @@
 // accessibility tree and asserts each is hittable and that no two overlap. This page only sets the scene and reports what
 // it drew, on one marker the test reads:
 //   vc:boot                 the script is running
+//   vc:empty <json>         the viewer is open on the video and its clip is held back, so the page and the accessibility
+//                           tree are built while the video has nothing to play
 //   vc:ready <json>         the viewer is open on the paused video, its controls showing, with the page's own boxes
 //   vc:fail <why>           the scene could not be set
+// The clip is held until the test lets it go (issue 446), so every run takes the real order: the video drawn empty
+// first, with the accessibility tree read over it, then its clip. Android calls window.videoControlsRelease(); iOS
+// presses the vc:release button, which is on the page only while the clip is held.
 // The clip comes from the shell's own scheme (iOS copies it into test builds) or, where the shell cannot serve a test
 // file (Android keeps fixtures in the test package), as base64 the test hands over first in window.fixtureVideoBase64.
 (async () => {
@@ -48,7 +53,16 @@
     bytes = new Uint8Array(await r.arrayBuffer());
   }
   const clip = new Blob([bytes], { type: 'video/mp4' });
-  const client = { attachment: async () => clip };
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const client = { attachment: async () => { await held; return clip; } };
+  const releaseButton = document.createElement('button');
+  releaseButton.type = 'button';
+  releaseButton.setAttribute('aria-label', 'vc:release');
+  releaseButton.textContent = 'vc:release';
+  Object.assign(releaseButton.style, { position: 'fixed', top: '45%', left: '30%', zIndex: '9999' });
+  window.videoControlsRelease = () => { releaseButton.remove(); release(); return true; };
+  releaseButton.addEventListener('click', () => { window.videoControlsRelease(); });
 
   const { mediaItems } = await import(new URL('rules/media.js', document.baseURI).href);
   await customElements.whenDefined('app-image-viewer');
@@ -60,16 +74,18 @@
   el.client = client;
   document.body.append(el);
   const video = () => el.querySelector('video.viewer-image');
+  await until(() => el.querySelector('.viewer') && !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the empty viewer to arrive');
+  document.body.append(releaseButton);
+  say('vc:empty ' + JSON.stringify({ shape, video: Boolean(video()), pending: Boolean(el.querySelector('.viewer-pending')) }));
+  await until(() => !releaseButton.isConnected, 'the test to let the clip go', 120000);
+  say('vc:loading');
   await until(() => video() && video().readyState >= 2 && video().videoWidth > 0, 'the clip to load');
   await until(() => !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the viewer to arrive');
   // Paused part way in, so the player keeps its controls on screen and the scrubber has somewhere to sit.
   const v = video();
   v.pause();
-  if (Math.abs(v.currentTime - 1) > 0.05) {
-    const seeked = new Promise((resolve) => v.addEventListener('seeked', resolve, { once: true }));
-    v.currentTime = 1;
-    await Promise.race([seeked, new Promise((resolve) => setTimeout(resolve, 3000))]);
-  }
+  if (Math.abs(v.currentTime - 1) > 0.05) v.currentTime = 1;
+  await until(() => !v.seeking && Math.abs(v.currentTime - 1) <= 0.05, 'the video to settle at one second');
   await until(() => !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the viewer to settle');
   const box = (node) => {
     if (!node) return null;

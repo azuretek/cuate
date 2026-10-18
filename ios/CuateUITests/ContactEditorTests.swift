@@ -43,12 +43,33 @@ final class ContactEditorTests: XCTestCase {
             XCTFail("Native contact card did not appear: " + app.debugDescription + springboard.debugDescription)
             return
         }
-        let named = NSPredicate(format: "label == 'Fixture Person'")
-        XCTAssertGreaterThan(app.staticTexts.matching(named).count, app.webViews.staticTexts.matching(named).count,
-                             "The native card, not only the web header, must name the synthetic person")
+        // Issue 446: the card is judged on one reading of the window. Two queries are two looks at a view that may have
+        // drawn on between them, so the native names and the web header's are both counted from one snapshot.
+        guard let window = try? app.snapshot() else {
+            XCTFail("The window could not be read" + SystemSurface.failureSuffix(app))
+            return
+        }
+        let names = personNames(window, inWebView: false)
+        XCTAssertGreaterThan(names.native, 0,
+                             "The native card, not only the web header, must name the synthetic person (in the web header: \(names.web))")
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "contact-card"
         shot.lifetime = .keepAlways
         add(shot)
+    }
+
+    /// How many static texts name the synthetic person in one snapshot, outside any web view and inside one.
+    private func personNames(_ node: XCUIElementSnapshot, inWebView: Bool) -> (native: Int, web: Int) {
+        let web = inWebView || node.elementType == .webView
+        var count: (native: Int, web: Int) = (0, 0)
+        if node.elementType == .staticText && node.label == "Fixture Person" {
+            if web { count.web += 1 } else { count.native += 1 }
+        }
+        for child in node.children {
+            let inner = personNames(child, inWebView: web)
+            count.native += inner.native
+            count.web += inner.web
+        }
+        return count
     }
 }

@@ -67,7 +67,13 @@ class ContactEditorTest {
         return result
     }
 
-    private fun named(node: AccessibilityNodeInfo?, text: String): Boolean = node != null && node.findAccessibilityNodeInfosByText(text).isNotEmpty()
+    /** One reading of the window in front: which app it is and whether it names the person, both taken from the same root. */
+    private data class Reading(val packageName: String?, val namesThePerson: Boolean)
+
+    private fun read(): Reading {
+        val root: AccessibilityNodeInfo = instrumentation.uiAutomation.rootInActiveWindow ?: return Reading(null, false)
+        return Reading(root.packageName?.toString(), root.findAccessibilityNodeInfosByText("Fixture Person").isNotEmpty())
+    }
 
     @Test
     fun editContactOpensTheContactsApp() {
@@ -91,18 +97,23 @@ class ContactEditorTest {
             if (got.has("error")) throw AssertionError("contacts fixture failed: " + got.getString("error"))
             assertTrue("the control is drawn: $got", got.getBoolean("drawn"))
             assertTrue("the bridge opened the contacts app: $got", got.optBoolean("answer"))
-            // The contacts app is in front, and it is showing the seeded person.
+            // The contacts app is in front, and it is showing the seeded person. Issue 446: the contacts app is judged on one
+            // reading of the window, the same reading the wait ended on, never a second look at a view that has drawn on.
+            val automation = instrumentation.uiAutomation
             val front = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
-            var window: AccessibilityNodeInfo? = null
-            while (System.nanoTime() < front) {
-                window = instrumentation.uiAutomation.rootInActiveWindow
-                if (window != null && window.packageName != context.packageName && named(window, "Fixture Person")) break
-                window = null
-                Thread.sleep(250)
+            var reading = read()
+            while (!(reading.packageName != null && reading.packageName != context.packageName && reading.namesThePerson)) {
+                val left = TimeUnit.NANOSECONDS.toMillis(front - System.nanoTime())
+                if (left <= 0) throw AssertionError("the contacts app never showed the person; the last reading: $reading")
+                try { automation.waitForIdle(WINDOW_SETTLE_MS, left) } catch (busy: java.util.concurrent.TimeoutException) { }
+                reading = read()
             }
-            val shown = window ?: throw AssertionError("the contacts app never showed the person; in front: " + instrumentation.uiAutomation.rootInActiveWindow?.packageName)
-            assertTrue("a contacts app, not this one, is in front: " + shown.packageName, shown.packageName != context.packageName)
-            assertEquals(true, named(shown, "Fixture Person"))
+            assertTrue("a contacts app, not this one, is in front: $reading", reading.packageName != context.packageName)
+            assertEquals("the contacts app names the person: $reading", true, reading.namesThePerson)
         }
+    }
+
+    private companion object {
+        const val WINDOW_SETTLE_MS = 300L
     }
 }

@@ -170,3 +170,38 @@ test('a video is laid out clear of every viewer control, and its step controls j
   assert.match(rule('.viewer-bar'), /bottom: var\(--viewer-bar-bottom\);/, 'the bar sits where the band measures it');
   assert.match(rule('.viewer-bar'), /min-height: var\(--viewer-bar-h\);/, 'and is the height the band leaves it');
 });
+
+
+
+// Every run takes the real order (issue 446): the fixture holds the clip back while each phone's test reads the
+// accessibility tree over the empty video, and lets it go only when the test says so, so a player whose controls never
+// reach the tree fails every run rather than one in four. Every wait in those tests and the fixture is for a state.
+test('each phone\'s video test reads the tree over the empty video before its clip, and waits only on states', () => {
+  const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  const fixture = read('core/test/video-controls-fixture.js');
+  assert.match(fixture, /attachment: async \(\) => \{ await held; return clip; \}/, 'the fixture holds the clip back');
+  assert.ok(fixture.indexOf("say('vc:empty '") < fixture.indexOf("'the test to let the clip go'") && fixture.indexOf("'the test to let the clip go'") < fixture.indexOf("'the clip to load'"), 'it reports the empty video, waits for the test, then loads the clip');
+  const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/VideoControlsTest.kt');
+  const check = androidTest.slice(androidTest.indexOf('private fun check('));
+  assert.ok(check.indexOf('awaitState(scenario, "vc:empty ")') < check.indexOf('awaitControls(OURS)') && check.indexOf('awaitControls(OURS)') < check.indexOf('window.videoControlsRelease()') && check.indexOf('window.videoControlsRelease()') < check.indexOf('awaitControls(PLAYER + OURS)'), 'Android connects the service and reads the tree over the empty video before it lets the clip go');
+  const uiTest = read('ios/' + naming.product + 'UITests/VideoControlsTests.swift');
+  assert.ok(uiTest.indexOf("'vc:empty'") < uiTest.indexOf('releaseClip(app, page)') && uiTest.includes('page.buttons["vc:release"]'), 'iOS reads the tree over the empty video, then presses the release control');
+  for (const [name, source] of [['the fixture', fixture], ['the Android test', androidTest], ['the iOS test', uiTest]]) {
+    assert.doesNotMatch(source, /Thread\.sleep|setTimeout|\bsleep\(|usleep/, name + ' waits on states, never a sleep');
+  }
+});
+
+// The contacts tests judge the contacts app on one reading of the window (issue 446): a second look at a view that has
+// drawn on since the wait ended reads it differently.
+test('each phone\'s contacts test judges the contacts app on one reading of the window', () => {
+  const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/ContactEditorTest.kt');
+  assert.equal(androidTest.match(/findAccessibilityNodeInfosByText/g).length, 1, 'Android reads the person from one root, once per reading');
+  assert.match(androidTest, /assertEquals\("the contacts app names the person: \$reading", true, reading\.namesThePerson\)/, 'and asserts on the reading its wait ended on');
+  assert.doesNotMatch(androidTest, /Thread\.sleep/);
+  const uiTest = read('ios/' + naming.product + 'UITests/ContactEditorTests.swift');
+  assert.match(uiTest, /try\? app\.snapshot\(\)/, 'iOS counts the names from one snapshot');
+  assert.doesNotMatch(uiTest, /staticTexts\.matching\(named\)\.count/, 'never from two queries');
+});
