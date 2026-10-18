@@ -24,6 +24,10 @@ import { createPush } from './push.js';
 import { configPath, loadConfig, saveConfig } from './config.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
+// How long a new event stream has to send its sign-in frame, and the close code when it does not: not 4401, which tells
+// the client its token was refused and signs it out, but a code it reconnects on.
+const AUTH_TIMEOUT_MS = 5000;
+const AUTH_TIMEOUT_CLOSE = 4408;
 const badRequest = (code, message, status = 400) => Object.assign(new Error(message), { status, code });
 const compile = (routes) => routes.map((r) => {
   const keys = [];
@@ -62,7 +66,7 @@ function readJson(req, max) {
 // The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (Abi, 2026-10-14).
 const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false, authTimeoutMs = AUTH_TIMEOUT_MS }) {
   const routes = compile(apiSpec.routes);
   const previews = new Map();
   const paging = apiSpec.paging;
@@ -490,12 +494,15 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   function onSocket(ws) {
     const c = { ws, authed: false, alive: true, id: null };
     clients.add(c);
+    // A first frame that is late has not been refused: the stream closes with the code the client retries on, so a
+    // page busy drawing its first screen on a slow machine connects again rather than signing its device out. Only a
+    // token the server refuses closes with 4401.
     const timer = setTimeout(() => {
       if (!c.authed) {
         log.emit('ws.refused', { reason: 'auth_timeout' });
-        ws.close(4401, 'unauthorized');
+        ws.close(AUTH_TIMEOUT_CLOSE, 'auth timeout');
       }
-    }, 5000);
+    }, authTimeoutMs);
     ws.on('pong', () => { c.alive = true; });
     ws.on('message', (buf) => {
       if (c.authed) return;

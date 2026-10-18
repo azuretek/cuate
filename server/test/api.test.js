@@ -351,7 +351,7 @@ test('a stream slow to send its first frame is closed to retry, not as a refused
   try {
     const { ws } = await openSocket(slow.base);
     const closed = new Promise((r) => { ws.onclose = (e) => r(e.code); });
-    const code = await Promise.race([closed, new Promise((r) => setTimeout(() => r('still open'), 7000))]);
+    const code = await Promise.race([closed, new Promise((r) => setTimeout(() => r('still open'), 2000))]);
     assert.equal(code, 4408);
     assert.ok(slow.lines.some((l) => l.event === 'ws.refused' && l.reason === 'auth_timeout'));
   } finally {
