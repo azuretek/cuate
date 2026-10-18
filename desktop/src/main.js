@@ -2872,12 +2872,14 @@ async function runSmoke(w) {
   // leaves that conversation open with that message in view and focused, and never marked (issue 368): no ring on the
   // row or its bubble, and nothing animating it.
   await smokeStep('notice opens');
+  // The notice is for a conversation the list shows: a chat an earlier step made and hid is still held by the page, and
+  // its newest row may be an event line rather than a message (issue 439).
   const pressFrom = await js("document.querySelector('app-root').openChatId");
   // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
   // in force (Settings, for the steps that follow) is put back once the press is checked.
   const pressView = await js("document.querySelector('app-root').view");
   const pressList = await js("document.querySelector('app-root').listOpen");
-  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
+  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.visibleChats().find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
   smokeNotices.length = 0;
   let pressSeen = null;
   if (pressTo) {
