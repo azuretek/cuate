@@ -1,0 +1,17 @@
+{
+  "description": "Synthetic edit history (issue 437): three versions of one message's words, each archived on a Mac by Foundation's own NSArchiver from text written here, with the message part attribute over all of it, the shape Messages keeps under message_summary_info's ec key. Oldest first; the last is the words the message carries now. No row of any real store is in this file.",
+  "versions": [
+    {
+      "text": "Running a little late",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKxVSdW5uaW5nIGEgbGl0dGxlIGxhdGWGhAJpSQEVkoSEhAxOU0RpY3Rpb25hcnkAlYQBaQGShJiYHV9fa0lNTWVzc2FnZVBhcnRBdHRyaWJ1dGVOYW1lhpKEhIQITlNOdW1iZXIAhIQHTlNWYWx1ZQCVhAEqhIQBcZ8AhoaG"
+    },
+    {
+      "text": "Running about ten minutes late",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKx5SdW5uaW5nIGFib3V0IHRlbiBtaW51dGVzIGxhdGWGhAJpSQEekoSEhAxOU0RpY3Rpb25hcnkAlYQBaQGShJiYHV9fa0lNTWVzc2FnZVBhcnRBdHRyaWJ1dGVOYW1lhpKEhIQITlNOdW1iZXIAhIQHTlNWYWx1ZQCVhAEqhIQBcZ8AhoaG"
+    },
+    {
+      "text": "Running twenty minutes late, sorry",
+      "base64": "BAtzdHJlYW10eXBlZIHoA4QBQISEhBlOU011dGFibGVBdHRyaWJ1dGVkU3RyaW5nAISEEk5TQXR0cmlidXRlZFN0cmluZwCEhAhOU09iamVjdACFkoSEhA9OU011dGFibGVTdHJpbmcBhIQITlNTdHJpbmcBlYQBKyJSdW5uaW5nIHR3ZW50eSBtaW51dGVzIGxhdGUsIHNvcnJ5hoQCaUkBIpKEhIQMTlNEaWN0aW9uYXJ5AJWEAWkBkoSYmB1fX2tJTU1lc3NhZ2VQYXJ0QXR0cmlidXRlTmFtZYaShISECE5TTnVtYmVyAISEB05TVmFsdWUAlYQBKoSEAXGfAIaGhg=="
+    }
+  ]
+}
