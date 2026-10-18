@@ -63,17 +63,18 @@ function engineSetup(config) {
     const root = path.join(dataDir, 'fake-attachments');
     return import('./engine/fake.js').then(({ createFakeImsg }) => {
       const world = createFakeImsg({ attachmentsRoot: root, liveText: process.env.FAKE_LIVE || config.engine.live || null, liveEdit: process.env.FAKE_LIVE_EDIT || null });
-      return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits, backgrounds: world.backgrounds, renames: world.renames };
+      return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits, backgrounds: world.backgrounds, richText: world.richText, renames: world.renames };
     });
   }
   // Which messages were edited is read from the Messages store the engine reads, read-only (issue 391), and so is
-  // which rows are a conversation's background changing, whose picture the engine names (issue 417), and which are a
-  // group being renamed, with the name it was given (issue 439).
-  return Promise.all([import('./engine/child.js'), import('./engine/edits.js'), import('./engine/backgrounds.js'), import('./engine/renames.js')]).then(([{ childTransport }, { createEditReader }, { createBackgroundReader }, { createRenameReader }]) => ({
+  // which rows are a conversation's background changing, whose picture the engine names (issue 417), and which words
+  // carry text effects (issue 433), and which rows are a group being renamed, with the name it was given (issue 439).
+  return Promise.all([import('./engine/child.js'), import('./engine/edits.js'), import('./engine/backgrounds.js'), import('./engine/rich-text.js'), import('./engine/renames.js')]).then(([{ childTransport }, { createEditReader }, { createBackgroundReader }, { createRichTextReader }, { createRenameReader }]) => ({
     makeTransport: (log) => childTransport({ bin: config.engine.bin, args: ['rpc', ...(config.engine.db ? ['--db', config.engine.db] : [])], log }),
     attachmentsRoot: config.attachmentsRoot || messagesAttachmentsRoot(),
     edits: createEditReader({ dbPath: messagesDatabasePath(config) }),
     backgrounds: createBackgroundReader({ dbPath: messagesDatabasePath(config), bin: config.engine.bin, engineDb: config.engine.db || null }),
+    richText: createRichTextReader({ dbPath: messagesDatabasePath(config) }),
     renames: createRenameReader({ dbPath: messagesDatabasePath(config) }),
   }));
 }

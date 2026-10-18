@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { writePlist } from './bplist.js';
-import { buildFixtures, imsgReaction, CONTACTS } from './fixtures.js';
+import { buildFixtures, imsgReaction, TEXT_RUNS, CONTACTS } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { compareHistory } from '../../../core/app/rules/history.js';
 
@@ -166,6 +166,18 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // The fake's stand-in for rich-text.js, with the same shape: of the rows asked about, the ones whose words the store
+  // records text effects on, each with its words and its runs (issue 433).
+  const richText = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      const found = new Map();
+      for (const m of messages) if (want.has(m.guid) && TEXT_RUNS[m.guid]) found.set(m.guid, { text: m.text, runs: TEXT_RUNS[m.guid].map((r) => ({ ...r })) });
+      return found;
+    },
+    close() {},
+  };
+
   // The fake's stand-in for renames.js, with the same shape: which rows the store records as a group being renamed,
   // each with the name it gave (issue 439).
   const renames = {
@@ -191,6 +203,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     tapbacks,
     edits,
     backgrounds,
+    richText,
     renames,
     // A participant names the group (or removes its name, with '') on their phone (issue 439).
     renameElsewhere(chatId, sender, name) {
