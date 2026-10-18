@@ -216,7 +216,7 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
    edits. */
 .edited-toggle { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
 .edited-toggle:hover, .edited-toggle:focus-visible { color: var(--color-fg); text-decoration: underline; }
-.edit-version { background: none; color: var(--color-fg-muted); border: var(--size-border) solid var(--color-border); font-size: var(--font-size-sm); margin-bottom: var(--space-1); }
+.bubble.edit-version { background: none; color: var(--color-fg-muted); border: var(--size-border) solid var(--color-border); font-size: var(--font-size-sm); margin-bottom: var(--space-1); }
 /* A message's actions (issues 138 and 169). A long press with a finger, a long click with the mouse or a right click
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */
