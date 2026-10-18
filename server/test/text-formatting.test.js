@@ -58,7 +58,7 @@ test('the model carries each stretch\'s styles, and the bubble cuts its words by
   ]);
   // A link inside bold words still opens, and the words joined are the message's words exactly.
   const linked = styledParts('See www.example.com now', [{ start: 0, length: 12, bold: true }]);
-  assert.deepEqual(linked, [{ text: 'See ', bold: true }, { text: 'www.exam', bold: true, href: 'https://www.example.com' }, { text: 'ple.com', href: 'https://www.example.com' }, { text: ' now' }]);
+  assert.deepEqual(linked, [{ text: 'See ', bold: true }, { text: 'www.exam', bold: true, href: 'https://www.example.com/' }, { text: 'ple.com', href: 'https://www.example.com/' }, { text: ' now' }]);
   assert.equal(linked.map((p) => p.text).join(''), 'See www.example.com now');
 });
 

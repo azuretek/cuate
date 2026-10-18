@@ -2209,6 +2209,18 @@
           },
           "effect": {
             "type": "string"
+          },
+          "bold": {
+            "type": "boolean"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "underline": {
+            "type": "boolean"
+          },
+          "strikethrough": {
+            "type": "boolean"
           }
         },
         "required": [

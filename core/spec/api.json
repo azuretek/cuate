@@ -454,7 +454,11 @@
     "TextStyle": {
       "start": "number",
       "length": "number",
-      "effect": "string?"
+      "effect": "string?",
+      "bold": "boolean?",
+      "italic": "boolean?",
+      "underline": "boolean?",
+      "strikethrough": "boolean?"
     },
     "Attachment": {
       "id": "string",
