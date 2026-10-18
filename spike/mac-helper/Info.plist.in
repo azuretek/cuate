@@ -13,7 +13,9 @@
   <key>CuateCommit</key><string>@COMMIT@</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSContactsUsageDescription</key><string>Cuate Helper reads your contacts to show names in Cuate.</string>
-  <key>NSAppleEventsUsageDescription</key><string>Cuate Helper asks Messages to send the messages you write in Cuate.</string>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSContactsUsageDescription</key><string>Cuate Helper reads your contacts so Cuate can show names and photos instead of phone numbers and addresses.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Cuate Helper asks Messages to send the messages and reactions you write in Cuate.</string>
 </dict>
 </plist>
