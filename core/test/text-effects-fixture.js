@@ -57,15 +57,24 @@
     seen[effect] = { moving, letters: el.querySelectorAll('.fx-letter').length, grew: 1 };
     if (!moving && !matchMedia('(prefers-reduced-motion: reduce)').matches) problems.push(effect + ' is not playing');
   }
-  // The big stretch is sampled while it plays: it must grow past its settled size and settle back.
+  // The big stretch is measured at the top of its own animation rather than sampled as it runs (issue 461): on a busy
+  // simulator the frames a sampling loop sees can all fall after the peak. Its animation is held at the point the
+  // keyframes name as the largest, measured, then let finish, so the reading does not depend on the device's pace.
   const big = conv.querySelector('.text-effect[data-effect="big"]');
   const settledWidth = big.offsetWidth;
-  let widest = 0;
-  const sampleUntil = performance.now() + 2500;
-  while (performance.now() < sampleUntil) {
-    widest = Math.max(widest, big.getBoundingClientRect().width);
-    await new Promise(requestAnimationFrame);
+  let widest = settledWidth;
+  const grow = big.getAnimations().find((a) => a.animationName === 'text-big');
+  if (grow) {
+    const duration = Number(grow.effect.getComputedTiming().duration) || 0;
+    grow.pause();
+    grow.currentTime = duration * 0.35;
+    widest = big.getBoundingClientRect().width;
+    grow.finish();
   }
+  await new Promise(requestAnimationFrame);
+  // Every other effect is let finish too, so the check below reads a conversation that has settled.
+  for (const a of [...conv.querySelectorAll('.text-effect, .fx-letter')].flatMap((x) => x.getAnimations())) a.finish();
+  await new Promise(requestAnimationFrame);
   seen.big.grew = Math.round((widest / settledWidth) * 100) / 100;
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches && seen.big.grew < 1.3) problems.push('big grew only ' + seen.big.grew + 'x');
   const still = [...conv.querySelectorAll('.text-effect, .fx-letter')].flatMap((x) => x.getAnimations()).filter((a) => a.playState === 'running').length;
