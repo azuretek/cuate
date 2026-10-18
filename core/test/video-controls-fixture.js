@@ -81,6 +81,19 @@
     await Promise.race([seeked, new Promise((resolve) => setTimeout(resolve, 3000))]);
   }
   await until(() => !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the viewer to settle');
+  // Issue 443: the poster must not stand in for the clip. Draw the frame the player has after the seek and count the
+  // pixels it painted, and report the player's own frame count, so a green test proves the clip decoded behind the poster.
+  const proof = document.createElement('canvas');
+  proof.width = 32;
+  proof.height = 32;
+  const proofInk = proof.getContext('2d');
+  proofInk.drawImage(v, 0, 0, proof.width, proof.height);
+  const proofPixels = proofInk.getImageData(0, 0, proof.width, proof.height).data;
+  let decoded = 0;
+  for (let i = 3; i < proofPixels.length; i += 4) if (proofPixels[i] !== 0) decoded += 1;
+  const quality = typeof v.getVideoPlaybackQuality === 'function' ? v.getVideoPlaybackQuality() : null;
+  const totalFrames = quality ? quality.totalFrames : 0;
+  console.log('vc:frame decoded=' + decoded + ' total=' + totalFrames + ' rs=' + v.readyState + ' w=' + v.videoWidth + ' t=' + v.currentTime.toFixed(2));
   const box = (node) => {
     if (!node) return null;
     const r = node.getBoundingClientRect();
@@ -92,7 +105,7 @@
     next: el.querySelector('.viewer-next'),
     bar: el.querySelector('.viewer-bar'),
   };
-  const report = { shape, viewport: { w: innerWidth, h: innerHeight }, video: box(v), paused: v.paused, t: Math.round(v.currentTime * 100) / 100 };
+  const report = { shape, viewport: { w: innerWidth, h: innerHeight }, video: box(v), paused: v.paused, t: Math.round(v.currentTime * 100) / 100, decoded, totalFrames };
   for (const [name, node] of Object.entries(ours)) report[name] = box(node);
   say('vc:ready ' + JSON.stringify(report));
 })().catch((error) => {

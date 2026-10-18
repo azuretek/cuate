@@ -73,6 +73,14 @@ class VideoControlsTest {
             evaluate(scenario, fixture)
             val scene = awaitScene(scenario)
             println("video controls scene ($shape): $scene")
+            // Issue 443: the poster must not stand in for the clip. The fixture draws the frame the player has after its
+            // seek and counts the pixels, and reports the player's own frame count, so a green test proves the clip
+            // really decoded behind the poster.
+            val decoded = scene.optInt("decoded", 0)
+            val frames = scene.optInt("totalFrames", 0)
+            println("video controls scene ($shape) decoded pixels=$decoded frames=$frames")
+            assertTrue("the video never decoded behind its poster: $decoded painted pixels", decoded > 0)
+            assertTrue("the player reports no decoded frame: $frames", frames > 0)
 
             val found = awaitControls()
             SystemSurface.requireOurs()
