@@ -47,7 +47,8 @@ app.whenReady().then(async () => {
     const win = new BrowserWindow({ show: true, width: 420, height: 860, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
     win.webContents.on('did-fail-load', (_e, code, description, url, main) => process.stderr.write('message cache proof: load failed ' + JSON.stringify({ run, code, description, url, main }) + '\n'));
     win.webContents.on('render-process-gone', (_e, details) => process.stderr.write('message cache proof: renderer gone ' + JSON.stringify({ run, details }) + '\n'));
-    await win.loadURL('app://bundle/core/app/index.html');
+    // Each launch loads its own address, so nothing the last window loaded is taken for this one.
+    await win.loadURL('app://bundle/core/app/index.html?launch=' + run.join('-'));
     let state = '';
     const deadline = Date.now() + 90000;
     while (Date.now() < deadline) {
