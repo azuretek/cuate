@@ -1,4 +1,6 @@
 // Spike for issue #479. Never merges.
+import Contacts
+import CoreServices
 import Darwin
 import Foundation
 import SQLite3
@@ -32,6 +34,37 @@ func chatDbCount() -> [String: Any] {
     return ["ok": true, "rows": Int(sqlite3_column_int64(stmt, 0))]
 }
 
+// Grants tccd mediates, read without prompting. With System Integrity Protection off, file
+// protection is not enforced, so these are the checks that still name a responsible process.
+// AEDeterminePermissionToAutomateTarget: 0 granted, -1743 denied, -1744 would ask, -600 not running.
+func automation(ask: Bool) -> Int {
+    var desc = AEDesc()
+    let bid = "com.apple.MobileSMS"
+    let made = bid.withCString { AECreateDesc(typeApplicationBundleID, $0, Int(strlen($0)), &desc) }
+    guard made == noErr else { return Int(made) }
+    defer { AEDisposeDesc(&desc) }
+    return Int(AEDeterminePermissionToAutomateTarget(&desc, typeWildCard, typeWildCard, ask))
+}
+
+// CNAuthorizationStatus: 0 not determined, 1 restricted, 2 denied, 3 authorized, 4 limited.
+func tccPreflight() -> [String: Any] {
+    ["contacts": CNContactStore.authorizationStatus(for: .contacts).rawValue, "automationMessages": automation(ask: false)]
+}
+
+// Asks for both grants, so macOS shows its prompts. Only called while someone is at the Mac to answer.
+func tccRequest() -> [String: Any] {
+    let done = DispatchSemaphore(value: 0)
+    var granted = false
+    var failure = ""
+    CNContactStore().requestAccess(for: .contacts) { ok, err in
+        granted = ok
+        failure = err.map { String(describing: $0) } ?? ""
+        done.signal()
+    }
+    _ = done.wait(timeout: .now() + 120)
+    return ["contactsGranted": granted, "contactsError": failure, "automationMessages": automation(ask: true)]
+}
+
 func hello() -> [String: Any] {
     ["pid": Int(getpid()), "ppid": Int(getppid()), "version": version, "build": build, "bundleId": bundleId,
      "executable": Bundle.main.executablePath ?? CommandLine.arguments[0]]
@@ -48,6 +81,8 @@ func respond(_ line: Data) -> Data {
     switch req["method"] as? String {
     case "hello": reply["result"] = hello()
     case "chatdb.count": reply["result"] = chatDbCount()
+    case "tcc.preflight": reply["result"] = tccPreflight()
+    case "tcc.request": reply["result"] = tccRequest()
     default: reply["error"] = ["code": -32601, "message": "method not found"]
     }
     return (try? JSONSerialization.data(withJSONObject: reply, options: [.sortedKeys])) ?? Data()

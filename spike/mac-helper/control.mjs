@@ -41,4 +41,5 @@ while (!existsSync(socket)) {
 }
 console.log(JSON.stringify({ nodePid: process.pid, childPid: child.pid, hello: (await call('hello')).result }));
 console.log(JSON.stringify({ count: (await call('chatdb.count')).result }));
+console.log(JSON.stringify({ tcc: (await call('tcc.preflight')).result }));
 setTimeout(() => stop(0), hold);
