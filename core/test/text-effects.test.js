@@ -37,3 +37,12 @@ test('the text effects proof is a Debug seam, copied into test builds only (issu
   for (const part of ['--text-effects-fixture', 'hasPrefix("textfx:pass")', 'Plain words, no effect.']) assert.ok(uiTest.includes(part), 'the UI test reads the verdict: ' + part);
   assert.doesNotMatch(read('core/app/main.js'), /text-effects-fixture/);
 });
+
+test('the same fixture is the Android proof, run by the instrumented tests and kept by the leg (issue 433)', () => {
+  const pkg = 'com/azuretek/' + naming.product.toLowerCase();
+  const uiTest = read('android/app/src/androidTest/kotlin/' + pkg + '/TextEffectsTest.kt');
+  assert.match(uiTest, /PageFixture\.run\(scenario, "text-effects-fixture\.js", "textEffectsProof"\)/, 'the Android test runs the shared fixture');
+  assert.match(uiTest, /proof\.optBoolean\("ok"\)/, 'and fails on its verdict');
+  assert.match(read('.github/workflows/android.yml'), /text-effects\.png/, 'the leg requires the capture');
+  assert.doesNotMatch(read('android/app/src/main/kotlin/' + pkg + '/MainActivity.kt'), /text-effects-fixture|textEffectsProof/);
+});
