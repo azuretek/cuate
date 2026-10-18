@@ -30,7 +30,25 @@ export function scrollRootOf(el, style = globalThis.getComputedStyle) {
   return null;
 }
 
-export function createLoadQueue({ Observer = globalThis.IntersectionObserver, limit = LOAD_LIMIT, near = NEAR_MARGIN, rootOf = scrollRootOf } = {}) {
+// Whether an element shows on screen at this moment, read from the layout as it is now: a box of some size inside the
+// window and inside the scrolled view it sits in, edges touching counted as the observers count them. Null where there
+// is no layout to read or the element draws no box, so the observers' word stands.
+export function showsNow(el, view, win = globalThis) {
+  if (typeof el?.getBoundingClientRect !== 'function' || !(win?.innerHeight > 0)) return null;
+  const b = el.getBoundingClientRect();
+  if (!(b.width > 0 && b.height > 0)) return null;
+  const area = { top: 0, left: 0, bottom: win.innerHeight, right: win.innerWidth > 0 ? win.innerWidth : Infinity };
+  if (typeof view?.getBoundingClientRect === 'function') {
+    const r = view.getBoundingClientRect();
+    area.top = Math.max(area.top, r.top);
+    area.left = Math.max(area.left, r.left);
+    area.bottom = Math.min(area.bottom, r.bottom);
+    area.right = Math.min(area.right, r.right);
+  }
+  return b.bottom >= area.top && b.top <= area.bottom && b.right >= area.left && b.left <= area.right;
+}
+
+export function createLoadQueue({ Observer = globalThis.IntersectionObserver, limit = LOAD_LIMIT, near = NEAR_MARGIN, rootOf = scrollRootOf, shows = showsNow } = {}) {
   const items = new Map();
   // Each scrolled view in use: its observer for what is within a screen of it, how many elements use it, and whether
   // the view itself is on screen.
@@ -53,6 +71,7 @@ export function createLoadQueue({ Observer = globalThis.IntersectionObserver, li
       if (!item) continue;
       if (e.isIntersecting && !item.seen) item.order = seq += 1;
       item.seen = e.isIntersecting;
+      item.doubted = null;
     }
   };
   const nearEntries = (entries) => {
@@ -85,14 +104,22 @@ export function createLoadQueue({ Observer = globalThis.IntersectionObserver, li
     ? (fn) => globalThis.requestAnimationFrame(() => setTimeout(fn, 0))
     : (fn) => setTimeout(fn, 0);
   let laidOut = false;
+  let layouts = 0;
   const afterLayout = () => {
     if (laidOut) return;
     laidOut = true;
     nextFrame(() => {
       laidOut = false;
+      layouts += 1;
       pump();
     });
   };
+  // A row the observers last reported on screen may have been pushed off it since, by a picture landing above it, and
+  // they report that only after the next layout. So a load is started only for a row that shows on screen now; one the
+  // layout says has left is doubted, which makes it unknown until the observers report again: it starts nothing and
+  // holds back what is a screen away. A doubt lasts one layout, so where the observers and the layout keep disagreeing
+  // the observers' word stands rather than holding the queue.
+  const doubts = (item) => (item.doubted ?? layouts) === layouts && shows(item.el, item.root) === false;
 
   function rootFor(view) {
     let root = roots.get(view);
@@ -137,7 +164,18 @@ export function createLoadQueue({ Observer = globalThis.IntersectionObserver, li
   function pump({ onScreenOnly = false } = {}) {
     takeRecords();
     const list = [...items.values()];
-    const plan = planLoads(list.map((item) => ({ item, place: placeOf(item), order: item.order, running: Boolean(item.controller) })), { limit });
+    const doubted = new Set();
+    let plan;
+    for (;;) {
+      plan = planLoads(list.map((item) => ({ item, place: doubted.has(item) ? 'unknown' : placeOf(item), order: item.order, running: Boolean(item.controller) })), { limit });
+      const left = plan.start.filter((load) => load.place === 'seen' && doubts(load.item));
+      if (!left.length) break;
+      for (const { item } of left) {
+        item.doubted ??= layouts;
+        doubted.add(item);
+      }
+    }
+    if (doubted.size) afterLayout();
     for (const { item } of plan.cancel) {
       const c = item.controller;
       item.controller = null;
@@ -154,7 +192,7 @@ export function createLoadQueue({ Observer = globalThis.IntersectionObserver, li
         old.controller?.abort();
         leave(old);
       }
-      const item = { el, task, root: null, seen: null, near: false, order: 0, controller: null };
+      const item = { el, task, root: null, seen: null, near: false, order: 0, controller: null, doubted: null };
       const ticket = {
         cancel() {
           const c = item.controller;
