@@ -2,6 +2,7 @@
 // declares. The server imports it; its fake engine speaks the same JSON, so tests exercise this path end to end.
 import { isPayloadName, firstUrl, linkSite, payloadMedia } from './payload.js';
 import { isPlayableLink } from './link-media.js';
+import { stylesFromRuns } from './text-styles.js';
 
 const TAPBACKS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
 
@@ -193,10 +194,14 @@ export function mapMessage(m, { attachmentId }) {
   if (isBackgroundRow(m)) {
     return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'background', action: m.background_action } };
   }
+  // The text effects laid over the words (issue 433), which the server reads from the store and marks on the row as
+  // text_runs; a message with none carries no styles.
+  const styles = stylesFromRuns(m.text, m.text_runs);
   return {
     ...base,
     ...payloadParts(m, { attachmentId }),
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
+    ...(styles.length ? { styles } : {}),
   };
 }
 

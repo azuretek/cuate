@@ -64,6 +64,8 @@ const doctor = (over = {}) => runDoctor({
   attachmentsRoot: '/tmp/mac-care-attachments',
   platform: 'linux',
   mac: fakeControl(),
+  contactsSettleMs: 50,
+  contactsPollMs: 5,
   ...over,
 });
 
@@ -141,6 +143,45 @@ test('doctor never calls an authorized Contacts store not granted, and names an 
     assert.ok(find(refused.lines, 'warn  the Contacts permission is not granted'), status + '\n' + refused.lines.join('\n'));
     assert.ok(!refused.lines.some((l) => l.includes('returned 0 people')), refused.lines.join('\n'));
   }
+});
+
+// A transport whose engine answers status the way a freshly started one does: its Contacts catalog loads behind the
+// first status, so that answer says unavailable and a later one, once the load has finished, says available.
+const loadingContactsTransport = (answersBeforeLoaded) => {
+  const lines = new Set();
+  let asked = 0;
+  return {
+    asked: () => asked,
+    onLine: (cb) => lines.add(cb),
+    onExit: () => {},
+    write: (s) => {
+      const msg = JSON.parse(s);
+      asked += 1;
+      const result = { version: '1.2.3', database: { ready: true }, contacts: { available: asked > answersBeforeLoaded } };
+      setImmediate(() => { for (const cb of lines) cb(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result })); });
+    },
+    close: async () => {},
+  };
+};
+
+test('doctor waits for a fresh engine to finish loading Contacts before reporting it unavailable (issue 393)', async () => {
+  const engine = loadingContactsTransport(1);
+  const r = await doctor({
+    makeTransport: () => engine,
+    contacts: storeAnswering({ authorized: true, status: 3, contacts: [PERSON] }),
+  });
+  assert.ok(find(r.lines, 'ok    the Contacts permission is granted, so contact names are resolved'), r.lines.join('\n'));
+  assert.ok(!r.lines.some((l) => l.includes('engine reports Contacts unavailable')), r.lines.join('\n'));
+  assert.ok(engine.asked() >= 2, 'the engine was asked again after its first answer');
+});
+
+test('an engine whose Contacts stay unavailable is still reported once the wait is over (issue 393)', async () => {
+  const engine = loadingContactsTransport(Infinity);
+  const r = await doctor({
+    makeTransport: () => engine,
+    contacts: storeAnswering({ authorized: true, status: 3, contacts: [PERSON] }),
+  });
+  assert.ok(find(r.lines, 'warn  the engine reports Contacts unavailable, but macOS reports the Contacts permission granted (state 3)'), r.lines.join('\n'));
 });
 
 test('doctor names the Automation grant that sending needs', async () => {

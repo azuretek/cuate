@@ -44,9 +44,18 @@ export function sortChats(chats, { sort = 'recent', locale } = {}) {
   return order === 'name' ? list.sort(compare) : list.sort((a, b) => compare(b, a));
 }
 
-// What a Contact term reads: the name drawn on the row and the participants.
+// What a Contact term reads: the name drawn on the row, the people's contact names and the participants.
 export function contactSearchText(chat) {
-  return [chatTitle(chat), (chat.participants || []).join(' ')].join(' ').toLowerCase();
+  return [chatTitle(chat), chatPeople(chat).join(' '), (chat.participants || []).join(' ')].join(' ').toLowerCase();
+}
+
+// The people a chat is drawn as: each member by the name the server's Contacts store gave it, or by its address when
+// the store does not know it (issue 393). A chat that reached us with no members (an older server, or one with no
+// Contacts store) reads as its addresses, as before. Reading the addresses alone drew an unnamed group as phone numbers
+// while the server already knew everyone in it.
+function chatPeople(chat) {
+  const members = Array.isArray(chat.members) && chat.members.length ? chat.members.map((m) => (m && (m.name || m.handle)) || '') : chat.participants || [];
+  return members.map((p) => String(p).trim()).filter(Boolean);
 }
 
 // What a Full text term reads: the message text the client holds for the chat, its last message and any history it
@@ -155,7 +164,7 @@ export function listSections(chats, { sort = 'recent', now = 0 } = {}) {
 export function chatTitle(chat) {
   const name = String(chat.name || '').trim();
   if (name && !isMachineName(name, chat)) return name;
-  const people = (chat.participants || []).map((p) => String(p).trim()).filter(Boolean);
+  const people = chatPeople(chat);
   if (people.length === 1) return people[0];
   if (people.length === 2) return people[0] + ' and ' + people[1];
   if (people.length === 3) return people[0] + ', ' + people[1] + ' and 1 other';
