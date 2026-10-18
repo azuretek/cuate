@@ -36,7 +36,9 @@ function page() {
     applyNoticeQuiet() {}, applyUpdateSetting() {}, applyTheme() {}, registerPush() {}, releaseHeldUpdate() {}, launchCheck() {}, noticeServerUpdate() {}, releaseHeldScreen() {}, takeLink() {}, takeNotice() {},
     onEvent() {}, onConnState() {}, closeView() {}, querySelector() { return null; },
   };
-  for (const name of ['start', 'readSettings', 'describe']) host[name] = proto[name];
+  // The device's store (issue 441) is the page's own code too; with no IndexedDB here it opens none, as a web view that
+  // refuses one does.
+  for (const name of ['start', 'readSettings', 'describe', 'openStore', 'catchUp']) host[name] = proto[name];
   return host;
 }
 
