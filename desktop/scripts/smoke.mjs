@@ -198,6 +198,7 @@ const checks = [
   { key: 'noticeIcon', bound: 'true', value: (report) => report.noticeIcon, test: (v) => v === true },
   { key: 'chatsBack', bound: 'true', value: (report) => report.chatsBack, test: (v) => v === true },
   { key: 'headerMenus', bound: 'true', value: (report) => report.headerMenus, test: (v) => v === true },
+  { key: 'groupRename', bound: 'a group renamed is a quiet line naming who did it and the name, never an empty message; one made here is the same line from You, and the list title, the header and the preview follow at once (issue 439)', value: (report) => report && report.groupRename, test: (v) => v === true },
   { key: 'contacts', bound: 'a group lists every member with an avatar and a name, and Edit contact is drawn on a one-to-one chat exactly when the shell has an editor (issue 393)', value: (report) => report && report.contacts, test: (v) => v === true },
   { key: 'carets', bound: 'true', value: (report) => report.carets, test: (v) => v === true },
 ];

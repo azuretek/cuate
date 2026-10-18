@@ -457,6 +457,57 @@ async function runSmoke(w) {
     && served.length === 3 && served.every((m) => m && typeof m.handle === 'string' && typeof m.name === 'string')
     && groupEditor === false && directEditor === expectEditor;
   if (!report.contacts) console.error('contacts: ' + JSON.stringify({ people, served, groupEditor, directEditor, expectEditor }));
+  // A group renamed (issue 439). The fake engine's group holds Sam naming it, which the server reads from the store: the
+  // conversation draws it as a quiet centred line naming who did it, never an empty message. A rename made here, through
+  // the group's details, is the same line from You, and the list row and the header take the new name at once with the
+  // list preview saying the same. The name is then given back, so every later step finds the group as it was.
+  {
+    await smokeStep('group rename');
+    const rnQuote = (n) => '\u201c' + n + '\u201d';
+    const rnBack = await js("document.querySelector('app-root').openChatId");
+    const rnOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    };
+    const rnLine = (text) => js("(() => { const r = [...document.querySelectorAll('.messages .bubble-row.event')].find((x) => x.textContent.trim() === " + JSON.stringify(text) + "); return r ? { id: r.dataset.id, bubble: Boolean(r.querySelector('.bubble')) } : null; })()");
+    const rnRow = () => js("(() => { const r = document.querySelector('.chat-row[data-chat=\"2\"]'); return r ? { title: r.querySelector('.chat-name').textContent, preview: (r.querySelector('.chat-preview') || {}).textContent || '' } : null; })()");
+    const rnSettle = async (expr, ms = 15000) => { try { await waitFor(expr, ms); return true; } catch { return false; } };
+    const rnRename = async (name) => {
+      const want = name ? 'You named the conversation ' + rnQuote(name) : 'You removed the name from the conversation';
+      await js("document.querySelector('.conv-head .conv-info').click()");
+      await waitFor("Boolean(document.querySelector('app-group-info .group-info-name'))");
+      await js("(() => { const n = document.querySelector('app-group-info .group-info-name'); n.value = " + JSON.stringify(name) + "; n.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+      await waitFor("document.querySelector('app-group-info .group-info-rename') && !document.querySelector('app-group-info .group-info-rename').disabled");
+      await js("document.querySelector('app-group-info .group-info-rename').click()");
+      const drawn = await rnSettle("[...document.querySelectorAll('.messages .bubble-row.event')].some((x) => x.textContent.trim() === " + JSON.stringify(want) + ")");
+      await js("document.querySelector('app-group-info .confirm-actions .button.primary').click()");
+      await waitFor("!document.querySelector('app-group-info .group-info-person')");
+      return { want, drawn };
+    };
+    await rnOpen('2');
+    const rnIncoming = await rnLine('Sam Rivera named the conversation ' + rnQuote('Weekend plans'));
+    const rnEmpty = await js("[...document.querySelectorAll('.messages .bubble-row')].filter((r) => !r.classList.contains('event') && !r.textContent.trim()).length");
+    const RN_NAME = 'Smoke renamed group';
+    const rnMine = await rnRename(RN_NAME);
+    const rnListed = await rnSettle("(() => { const r = document.querySelector('.chat-row[data-chat=\"2\"]'); return Boolean(r) && r.querySelector('.chat-name').textContent === " + JSON.stringify(RN_NAME) + " && (r.querySelector('.chat-preview') || {}).textContent === " + JSON.stringify(rnMine.want) + "; })()", 10000);
+    const rnRowAfter = await rnRow();
+    const rnHead = await js("(document.querySelector('.conv-head .chat-name') || {}).textContent || ''");
+    const rnMineLine = await rnLine(rnMine.want);
+    await shot('03e-group-rename.png');
+    const rnRestore = await rnRename('Weekend plans');
+    const rnRestored = await rnSettle("(() => { const r = document.querySelector('.chat-row[data-chat=\"2\"]'); return Boolean(r) && r.querySelector('.chat-name').textContent === 'Weekend plans'; })()", 10000);
+    if (rnBack !== null && String(rnBack) !== '2') await rnOpen(String(rnBack));
+    const rnChecks = {
+      incomingLine: Boolean(rnIncoming) && !rnIncoming.bubble,
+      noEmptyMessage: rnEmpty === 0,
+      mineLine: rnMine.drawn && Boolean(rnMineLine) && !rnMineLine.bubble,
+      listTitleAndPreview: rnListed,
+      header: rnHead === RN_NAME,
+      restored: rnRestore.drawn && rnRestored,
+    };
+    report.groupRename = Object.values(rnChecks).every(Boolean);
+    console.log('group rename: ' + JSON.stringify({ checks: rnChecks, rnIncoming, rnEmpty, rnMine, rnRowAfter, rnHead, rnMineLine, rnRestore }));
+  }
   // Every popover wears the shared caret (issue 217). The guard reads each open panel back from the page: it must carry
   // the popover marks and its --caret-x must be a real offset inside the panel, aimed at the control that opened it.
   const carets = [];
