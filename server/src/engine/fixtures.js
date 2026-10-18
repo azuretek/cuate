@@ -52,7 +52,12 @@ export const SCRIPT = [
 
 // The text effects the store records on a row's words (issue 433), as rich-text.js reads them: a start and a length
 // in UTF-16 code units and Messages' own number for the effect (6 is Bloom).
-export const TEXT_RUNS = { 'FAKE-0021': [{ start: 6, length: 16, effect: 6 }] };
+// Avery's question about the campsite carries formatting (issue 447): bold over "book", underline over "campsite" and
+// italic over "weekend", each 1 where laid, as the store records them.
+export const TEXT_RUNS = {
+  'FAKE-0021': [{ start: 6, length: 16, effect: 6 }],
+  'FAKE-0016': [{ start: 8, length: 4, bold: 1 }, { start: 17, length: 8, underline: 1 }, { start: 34, length: 7, italic: 1 }],
+};
 
 // The message Avery has not read yet: the newest in the first conversation.
 const UNREAD = 'FAKE-0013';

@@ -203,6 +203,13 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 @keyframes text-explode { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(calc(var(--space-4) * -1), calc(var(--space-4) * -1)) rotate(-30deg); opacity: 0.4; } 60% { transform: translate(calc(var(--space-2) * -1), calc(var(--space-2) * -1)) rotate(-10deg); opacity: 0.8; } }
 @keyframes text-explode-other { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(var(--space-4), var(--space-4)) rotate(30deg); opacity: 0.4; } 60% { transform: translate(var(--space-2), var(--space-2)) rotate(10deg); opacity: 0.8; } }
 @media (prefers-reduced-motion: reduce) { .text-effect[data-effect], .text-effect[data-effect] .fx-letter { animation: none; } }
+/* Bold, italic, underline and strikethrough a sender laid on a stretch (issue 447), each its own class so any number
+   share a stretch; both lines draw where both are laid. */
+.fmt-bold { font-weight: var(--font-weight-bold); }
+.fmt-italic { font-style: italic; }
+.fmt-underline { text-decoration-line: underline; }
+.fmt-strikethrough { text-decoration-line: line-through; }
+.fmt-underline.fmt-strikethrough { text-decoration-line: underline line-through; }
 /* Reactions float at the bubble's top outer corner, the top right of a received message and the top left of a sent
    one, with no background, so adding one never moves a message (issue 182). */
 .reactions { position: absolute; top: 0; right: 0; z-index: 1; display: flex; gap: var(--space-1); transform: translate(50%, -50%); font-size: var(--font-size-sm); line-height: 1; white-space: nowrap; pointer-events: none; }
@@ -211,6 +218,12 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 .delivery { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
 /* A message changed after it was sent says so under its bubble, quietly, on its own side (issue 391). */
 .edited-mark { font-size: var(--font-size-xs); color: var(--color-fg-muted); margin: var(--space-1) var(--space-2) 0; }
+/* Under a message with history the mark is a control (issue 437): pressing it shows what the message said before, above
+   it, oldest first, quieter than the message itself (an outline in the muted colour, no fill), and it then reads Hide
+   edits. */
+.edited-toggle { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.edited-toggle:hover, .edited-toggle:focus-visible { color: var(--color-fg); text-decoration: underline; }
+.bubble.edit-version { background: none; color: var(--color-fg-muted); border: var(--size-border) solid var(--color-border); font-size: var(--font-size-sm); margin-bottom: var(--space-1); }
 /* A message's actions (issues 138 and 169). A long press with a finger, a long click with the mouse or a right click
    opens one menu on the message: its time, then Reply in thread (on someone else's message) and React as icons. It
    opens above the message, and below it when the list has no room above. */

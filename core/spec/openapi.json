@@ -2330,6 +2330,12 @@
             "items": {
               "$ref": "#/components/schemas/TextStyle"
             }
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EditVersion"
+            }
           }
         },
         "required": [
@@ -2344,6 +2350,22 @@
         ],
         "additionalProperties": false
       },
+      "EditVersion": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "at"
+        ],
+        "additionalProperties": false
+      },
       "TextStyle": {
         "type": "object",
         "properties": {
@@ -2355,6 +2377,18 @@
           },
           "effect": {
             "type": "string"
+          },
+          "bold": {
+            "type": "boolean"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "underline": {
+            "type": "boolean"
+          },
+          "strikethrough": {
+            "type": "boolean"
           }
         },
         "required": [
