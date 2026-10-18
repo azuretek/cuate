@@ -149,3 +149,15 @@ test('the system bars fixture is a test build seam only', () => {
   assert.match(read('ios/' + naming.product + 'UITests/SystemBarsTests.swift'), /XCUIScreen\.main\.screenshot\(\)/);
   assert.match(read('android/app/src/androidTest/kotlin/' + packagePath + '/SystemBarsTest.kt'), /uiAutomation\.takeScreenshot\(\)/);
 });
+
+test('the scheme switch on iOS survives a lost tap: the marker is pressed until the next scheme reports, and a second press changes nothing (issue 471)', () => {
+  const fixture = read('core/test/system-bars-fixture.js');
+  // The marker switches to the scheme the test did not launch in, so pressing it again repeats the switch rather than undoing it.
+  assert.match(fixture, /marker\.addEventListener\('click', \(\) => \{ window\.systemBarsSwitch\(launched === 'dark' \? 'light' : 'dark'\); \}\)/);
+  const swift = read('ios/' + naming.product + 'UITests/SystemBarsTests.swift');
+  assert.match(swift, /private func switchScheme\(/, 'the switch is its own step');
+  assert.match(swift, /switchScheme\(app, from: first, to: then\)/, 'the test switches through it');
+  assert.doesNotMatch(swift, /marker\.tap\(\)\n\s*XCTAssertTrue\(self\.marker\(app, scheme: then\)/, 'one press with nothing behind it is gone');
+  // The switch is the page's own, on Android: no tap to lose there.
+  assert.match(read('android/app/src/androidTest/kotlin/' + packagePath + '/SystemBarsTest.kt'), /window\.systemBarsSwitch\('\$then'\)/);
+});
