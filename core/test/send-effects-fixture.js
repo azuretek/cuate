@@ -15,6 +15,19 @@
     }
   };
   const frame = () => new Promise(requestAnimationFrame);
+  // Record every motion the page starts, rather than asking what is still running at one instant (issue #491). An
+  // animation that finished before the sample was read is not one that never played: on a busy runner the first
+  // arrival on a cold web view can take longer than its motion before the next frame is reached, which is how "slam
+  // did not play" was reported while the recording showed the next effect playing.
+  const played = [];
+  const nativeAnimate = Element.prototype.animate;
+  if (typeof nativeAnimate === 'function') {
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = nativeAnimate.call(this, keyframes, options);
+      if (animation) played.push({ target: this, id: animation.id });
+      return animation;
+    };
+  }
   const say = (text) => {
     const mark = document.querySelector('[data-sendfx-fixture]') || document.createElement('output');
     mark.setAttribute('data-sendfx-fixture', 'verdict');
@@ -42,7 +55,7 @@
   await frame();
   await frame();
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const running = (els, id) => els.flatMap((el) => el.getAnimations()).filter((a) => a.playState === 'running' && a.id === id).length;
+  const playedOn = (els, id) => played.filter((p) => p.id === id && els.includes(p.target)).length;
   const problems = [];
   const seen = {};
   const layer = conv.querySelector('.screen-effect');
@@ -66,7 +79,7 @@
     const r = row(id);
     const bubble = r && r.querySelector('.bubble');
     if (!bubble) { problems.push(effect + ' drew no bubble'); continue; }
-    const moving = running([bubble], 'send-' + effect);
+    const moving = playedOn([bubble], 'send-' + effect);
     seen[effect] = { moving };
     if (effect !== 'invisible-ink' && !reduced && !moving) problems.push(effect + ' did not play on its bubble');
     if (lineOf(id) !== 'Sent with ' + name) problems.push(effect + ' line reads ' + JSON.stringify(lineOf(id)));
@@ -94,23 +107,23 @@
     const id = 'fixture-' + effect;
     const text = 'Words sent with ' + name;
     await arrive(message(id, minute, text, effect));
-    if (!reduced) await until(() => layer.dataset.effect === effect && running([...layer.querySelectorAll('.fx-piece')], 'send-' + effect) > 0, effect + ' over the conversation', 5000).catch(() => {});
+    if (!reduced) await until(() => layer.dataset.effect === effect && playedOn([...layer.querySelectorAll('.fx-piece')], 'send-' + effect) > 0, effect + ' over the conversation', 5000).catch(() => {});
     const pieces = [...layer.querySelectorAll('.fx-piece')];
-    const moving = running(pieces, 'send-' + effect);
+    const moving = playedOn(pieces, 'send-' + effect);
     seen[effect] = { pieces: pieces.length, moving };
     if (!reduced && (layer.dataset.effect !== effect || !moving)) problems.push(effect + ' did not play over the conversation');
     if (effect === 'echo' && !reduced && !pieces.every((p) => p.textContent === text)) problems.push('echo does not repeat the words');
     if (effect === 'spotlight' && !reduced && !layer.querySelector('.fx-spot')) problems.push('spotlight lights nothing');
     if (lineOf(id) !== 'Sent with ' + name) problems.push(effect + ' line reads ' + JSON.stringify(lineOf(id)));
-    if (running([row(id).querySelector('.bubble')], 'send-' + effect)) problems.push(effect + ' played on its bubble');
+    if (playedOn([row(id).querySelector('.bubble')], 'send-' + effect)) problems.push(effect + ' played on its bubble');
   }
   // Replay plays it again, on a press of the line's own control.
   const replay = row('fixture-history').querySelector('.send-effect-replay');
   if (!replay) problems.push('the history message offers no Replay');
   else if (!reduced) {
     replay.click();
-    await until(() => layer.dataset.effect === 'confetti' && running([...layer.querySelectorAll('.fx-piece')], 'send-confetti') > 0, 'the replay', 5000).catch(() => problems.push('Replay did not play the effect again'));
-    seen.replay = running([...layer.querySelectorAll('.fx-piece')], 'send-confetti');
+    await until(() => layer.dataset.effect === 'confetti' && playedOn([...layer.querySelectorAll('.fx-piece')], 'send-confetti') > 0, 'the replay', 5000).catch(() => problems.push('Replay did not play the effect again'));
+    seen.replay = playedOn([...layer.querySelectorAll('.fx-piece')], 'send-confetti');
   }
   // Once it has played the layer is empty again, and takes no press while it plays.
   if (getComputedStyle(layer).pointerEvents !== 'none') problems.push('the layer over the conversation takes presses');
