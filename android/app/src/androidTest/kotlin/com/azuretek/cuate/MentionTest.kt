@@ -57,7 +57,7 @@ class MentionTest {
             val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
             if (left <= 0) break
             try {
-                automation.waitForIdle(minOf(TREE_SETTLE_MS, left))
+                automation.waitForIdle(minOf(TREE_SETTLE_MS, left), left)
             } catch (timeout: TimeoutException) {
                 // The service was busy for the whole slice; take the next reading rather than waiting longer.
             }
