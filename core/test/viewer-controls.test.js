@@ -172,6 +172,26 @@ test('a video is laid out clear of every viewer control, and its step controls j
 });
 
 
+// A video reaches the page only with its clip (issue 446): drawn before its clip, a video element is an empty player,
+// and Android's web view builds that player's accessibility node as "Unable to play media." with none of its controls,
+// then keeps it once the clip has loaded. Until the clip is here the viewer holds the video's place with a node that
+// names it and is busy, and the video element is made with its clip already set.
+test('a video is drawn only once its clip is here, and its place is held until then', () => {
+  const host = (src) => {
+    const items = [1, 2, 3].map((n) => ({ id: 'v' + n, attachmentId: 'v' + n, kind: 'video', name: 'clip-' + n + '.mp4', mime: 'video/mp4' }));
+    return Object.assign(Object.create(components['app-image-viewer'].prototype), {
+      items, index: 1, kind: 'video', alt: 'clip-2.mp4', src, view: { scale: 1, x: 0, y: 0 }, moving: false, motion: '', playing: false, motionFailed: false, pageError: '',
+    });
+  };
+  const render = components['app-image-viewer'].prototype.render;
+  const waiting = words(render.call(host('')));
+  assert.doesNotMatch(waiting, /<video/, 'no video element is drawn before its clip');
+  assert.match(waiting, /<div class="viewer-pending" role="img" aria-label=clip-2\.mp4 aria-busy="true">/, 'the video\'s place is held by a node that names it and is busy');
+  assert.ok(waiting.includes('aria-label="Close"') && waiting.includes('viewer-prev') && waiting.includes('viewer-next'), 'the viewer\'s own controls are there meanwhile');
+  const loaded = words(render.call(host('blob:clip')));
+  assert.match(loaded, /<video class="viewer-image" src=blob:clip aria-label=clip-2\.mp4 controls /, 'the video element is made with its clip already set');
+  assert.doesNotMatch(loaded, /viewer-pending/, 'and the held place is gone');
+});
 
 // Every run takes the real order (issue 446): the fixture holds the clip back while each phone's test reads the
 // accessibility tree over the empty video, and lets it go only when the test says so, so a player whose controls never
