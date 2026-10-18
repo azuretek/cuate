@@ -69,6 +69,7 @@ var engine = (() => {
     LEVELS: () => LEVELS,
     LINK_BOUNDS: () => LINK_BOUNDS,
     LINK_SITES: () => LINK_SITES,
+    LOAD_LIMIT: () => LOAD_LIMIT,
     MANUAL: () => MANUAL,
     MAX_THEMES: () => MAX_THEMES,
     MEDIA_CACHE_BYTES: () => MEDIA_CACHE_BYTES,
@@ -376,6 +377,7 @@ var engine = (() => {
     pickerSide: () => pickerSide,
     pinch: () => pinch,
     placeFor: () => placeFor,
+    planLoads: () => planLoads,
     platformCapabilities: () => platformCapabilities,
     platformOf: () => platformOf,
     platformReactionUnsupported: () => platformReactionUnsupported,
@@ -948,6 +950,21 @@ var engine = (() => {
       return clamp(scrollTop);
     }
     return clamp(Number.isFinite(anchor.top) ? anchor.top : scrollTop);
+  }
+
+  // core/kit/rules/load-order.js
+  var LOAD_LIMIT = 4;
+  function planLoads(loads, { limit = LOAD_LIMIT } = {}) {
+    const waiting = loads.filter((l) => !l.running);
+    const byOrder = (a, b) => a.order - b.order;
+    const seen = waiting.filter((l) => l.place === "seen").sort(byOrder);
+    const yields = (l) => l.place === "away" || l.place === "near" && seen.length > 0;
+    const cancel = loads.filter((l) => l.running && yields(l));
+    const running = loads.filter((l) => l.running && !yields(l));
+    const busyOnScreen = seen.length > 0 || running.some((l) => l.place === "seen") || waiting.some((l) => l.place === "unknown");
+    const near = busyOnScreen ? [] : waiting.filter((l) => l.place === "near").sort(byOrder);
+    const room = Math.max(0, limit - running.length);
+    return { start: [...seen, ...near].slice(0, room), cancel };
   }
 
   // core/kit/rules/dismiss.js

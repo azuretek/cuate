@@ -39,7 +39,8 @@ export async function boot({ contacts = null, sending = true, perMinute = 20, se
       await srv.close();
       await engine.stop();
       store.close();
-      rmSync(dir, { recursive: true, force: true });
+      // Windows can still hold a file the server or the engine just closed, so the removal retries as Node allows.
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }
