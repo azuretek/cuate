@@ -273,6 +273,69 @@
         }
       }
     },
+    "/api/v1/changes": {
+      "get": {
+        "operationId": "changes",
+        "summary": "GET /api/v1/changes",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "chats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/chats/{chatId}/messages": {
       "get": {
         "operationId": "messages",
@@ -2091,6 +2154,89 @@
           "fromMe",
           "sentAt",
           "attachments"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeList": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "reset": {
+            "type": "boolean"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReactionEvent"
+            }
+          },
+          "unsent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Unsent"
+            }
+          },
+          "reads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadReceipt"
+            }
+          }
+        },
+        "required": [
+          "cursor",
+          "more",
+          "messages",
+          "reactions",
+          "unsent",
+          "reads"
+        ],
+        "additionalProperties": false
+      },
+      "Unsent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chatId"
+        ],
+        "additionalProperties": false
+      },
+      "ReadReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "readAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chatId",
+          "readAt"
         ],
         "additionalProperties": false
       },

@@ -141,6 +141,32 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // Unsends and read receipts as Messages records them (issue 441): the row is stamped in place and nothing is said on the
+  // message stream. The adapter learns of them through `changes`, the fake's stand-in for the store reader in
+  // changes.js, with the same shape and the same [time, row] marks.
+  let lastStamp = 0;
+  const stamp = () => (lastStamp = Math.max(Date.now(), lastStamp + 1));
+  const after = (cursor) => (m, field) => m[field] > cursor[0] || (m[field] === cursor[0] && m.id > cursor[1]);
+  const stampedSince = (field, keep, row) => (cursor = [0, 0], limit = 200) => {
+    const later = after(cursor);
+    const rows = messages.filter((m) => m[field] && keep(m) && later(m, field)).sort((a, b) => a[field] - b[field] || a.id - b.id).slice(0, limit);
+    const last = rows.at(-1);
+    return { rows: rows.map(row), cursor: last ? [last[field], last.id] : cursor, more: rows.length >= limit };
+  };
+  const newest = (field, keep) => messages.filter((m) => m[field] && keep(m)).reduce((a, m) => (m[field] > a[0] || (m[field] === a[0] && m.id > a[1]) ? [m[field], m.id] : a), [0, 0]);
+  const mine = (m) => Boolean(m.is_from_me);
+  const any = () => true;
+  const changes = {
+    latest: () => ({ rowid, unsent: newest('retracted_at', any), read: newest('read_at', mine) }),
+    unsentSince: stampedSince('retracted_at', any, (m) => ({ rowid: m.id, guid: m.guid, chatId: String(m.chat_id) })),
+    readSince: stampedSince('read_at', mine, (m) => ({ rowid: m.id, guid: m.guid, chatId: String(m.chat_id), readAt: new Date(m.read_at).toISOString() })),
+    unsentAmong: (guids) => {
+      const want = new Set((guids || []).map(String));
+      return new Set(messages.filter((m) => m.retracted_at && want.has(m.guid)).map((m) => m.guid));
+    },
+    close() {},
+  };
+
   // The fake's stand-in for backgrounds.js, with the same shape: which rows the store records as a background change,
   // each chat's newest one, and what `imsg chat-background status` answers for a chat.
   const backgrounds = {
@@ -182,8 +208,25 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     sends,
     tapbacks,
     edits,
+    changes,
     backgrounds,
     richText,
+    // A message unsent by its sender (issue 441): the row empties and is stamped, and nothing is said on the stream.
+    unsendElsewhere(guid) {
+      const m = messages.find((x) => x.guid === guid && !x.is_reaction);
+      if (!m) return null;
+      m.text = '';
+      m.attachments = [];
+      m.retracted_at = stamp();
+      return m;
+    },
+    // The other person read one of our messages (issue 441): the row is stamped with when, and nothing is said.
+    readByRecipient(guid) {
+      const m = messages.find((x) => x.guid === guid && x.is_from_me);
+      if (!m) return null;
+      m.read_at = stamp();
+      return m;
+    },
     // A participant sets (or clears) the conversation's background on their phone: Messages writes the row, the
     // rendered picture and the chat's record, and the row streams like any other (issue 417).
     changeBackground(chatId, sender, { clear = false } = {}) {
