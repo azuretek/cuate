@@ -58,6 +58,8 @@ class AppImageViewer extends KitElement {
     // A Live Photo shows its still, and its motion plays over it on the play control: the motion's URL, and whether it is
     // playing or could not be loaded.
     motion: { state: true }, playing: { state: true }, motionFailed: { state: true },
+    // The source a video has loaded a frame of: the player's controls are drawn once the video on screen has (issue 446).
+    loadedVideo: { state: true },
     // The conversation's media, in order, and the one on screen. The page hands them in; the viewer steps between them.
     items: { attribute: false }, index: { attribute: false }, client: { attribute: false },
     history: { attribute: false }, pageError: { state: true },
@@ -266,6 +268,17 @@ class AppImageViewer extends KitElement {
     }
     if (!this.urls.has(item.id) && (item.attachmentId || item.linkUrl) && this.client) this.load(item);
     this.warmNeighbours();
+  }
+
+  // A video's player controls are drawn once it has a frame of its own source, never while it is empty (issue 446). The
+  // video is drawn before its clip arrives, and on Android's web view a video that reached the accessibility tree empty
+  // stayed there as "Unable to play media." with none of the player's controls, even once its clip had loaded. Controls
+  // that arrive with the first frame rebuild the video's node, so a screen reader meets a playable video and each of its
+  // controls; the desktop app and a browser draw the same engine's player, and WebKit takes the same order. Until the
+  // first frame there is nothing to press anyway.
+  videoLoaded(e) {
+    this.loadedVideo = e.target.getAttribute('src') || '';
+    return this.onLoad();
   }
 
   // Whether an item, or the one on screen, is a document rather than a picture or a video.
@@ -881,7 +894,7 @@ class AppImageViewer extends KitElement {
     const hasNav = list.length > 1 || Boolean(this.mediaPages);
     const live = Boolean(list[at] && list[at].live) && this.kind === 'image';
     const media = this.kind === 'video'
-      ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
+      ? html`<video class="viewer-image" src=${this.src} aria-label=${label} ?controls=${Boolean(this.src) && this.loadedVideo === this.src} autoplay muted playsinline @loadeddata=${this.videoLoaded}></video>`
       : live && this.playing && this.motion
         ? html`<video class="viewer-image viewer-motion" src=${this.motion} poster=${this.src} aria-label=${label} muted .muted=${true} playsinline preload="auto" @ended=${() => { this.playing = false; }} @error=${(e) => this.motionRefused(e.target, list[at])}></video>`
         : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
