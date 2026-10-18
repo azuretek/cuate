@@ -172,6 +172,21 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // Voice messages as Messages records them (issue 440): a row with one Core Audio recording, marked a voice message in
+  // the store, and played there once it is played on any of the person's devices, which imsg's row never says. The
+  // adapter learns of it through `voices`, the fake's stand-in for the store reader in voices.js, with the same shape.
+  const voiceRows = new Map();
+  let voiceFault = null;
+  const voices = {
+    among(guids) {
+      if (voiceFault) throw voiceFault;
+      const found = new Map();
+      for (const g of guids || []) if (voiceRows.has(String(g))) found.set(String(g), { ...voiceRows.get(String(g)) });
+      return found;
+    },
+    close() {},
+  };
+
   // The fake's stand-in for rich-text.js, with the same shape: of the rows asked about, the ones whose words the store
   // records text effects on, each with its words and its runs (issue 433).
   const richText = {
@@ -189,6 +204,26 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     tapbacks,
     edits,
     backgrounds,
+    voices,
+    // Someone sends a voice message: a synthetic Core Audio file under the attachments folder, on a row of its own. With
+    // live it streams like any new message; without it, it is only in the history. Answers the message's guid.
+    voiceMessage(chatId, sender, { live = false } = {}) {
+      const chat = chats.find((c) => c.id === chatId);
+      const file = path.join(attachmentsRoot, 'fake', 'voice-' + (rowid + 1) + '.caf');
+      writeFileSync(file, Buffer.concat([Buffer.from('caff'), Buffer.from([0, 1, 0, 0]), Buffer.from('desc'), Buffer.alloc(52)]));
+      const m = add({ chat_id: chatId, is_from_me: false, sender: sender || (chat && chat.participants[0]) || '', text: '', is_read: true, attachments: [{ filename: 'Audio Message.caf', transfer_name: 'Audio Message.caf', uti: 'com.apple.coreaudio-format', mime_type: 'audio/x-caf', total_bytes: 64, is_sticker: false, missing: false, original_path: file }] });
+      voiceRows.set(m.guid, { played: false });
+      if (live) broadcast(m);
+      return m.guid;
+    },
+    // The voice message is played on the person's phone: the store marks its row, and nothing is said on the stream.
+    playElsewhere(guid) {
+      if (voiceRows.has(String(guid))) voiceRows.set(String(guid), { played: true, playedAt: new Date().toISOString() });
+    },
+    // The store cannot be read: every ask fails with this error.
+    breakVoices(error) {
+      voiceFault = error;
+    },
     richText,
     // A participant sets (or clears) the conversation's background on their phone: Messages writes the row, the
     // rendered picture and the chat's record, and the row streams like any other (issue 417).

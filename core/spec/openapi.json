@@ -929,6 +929,53 @@
         ]
       }
     },
+    "/api/v1/attachments/{attachmentId}/played": {
+      "post": {
+        "operationId": "attachment-played",
+        "summary": "POST /api/v1/attachments/:attachmentId/played",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "send",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentPlayed"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/links/media": {
       "get": {
         "operationId": "link-media",
@@ -1702,6 +1749,26 @@
           }
         }
       }
+    },
+    "attachment.played": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/SERVER.md, Hooks).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentPlayed"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2274,6 +2341,12 @@
           },
           "live": {
             "type": "boolean"
+          },
+          "voice": {
+            "type": "boolean"
+          },
+          "played": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2283,6 +2356,22 @@
           "bytes",
           "sticker",
           "missing"
+        ],
+        "additionalProperties": false
+      },
+      "AttachmentPlayed": {
+        "type": "object",
+        "properties": {
+          "attachmentId": {
+            "type": "string"
+          },
+          "played": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "attachmentId",
+          "played"
         ],
         "additionalProperties": false
       },

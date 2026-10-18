@@ -1,18 +1,17 @@
 // Pure: what a document in a conversation does when it is pressed (issue 374).
 //
 // A document is any attachment that is not a picture or a video (core/app/rules/media.js). Some kinds the app shows
-// itself, in the media viewer: a PDF, drawn page by page by the bundled pdf.js; text, code and CSV, as text; and audio
-// a web view can play, in a player. Pressing one of those opens it in the viewer, which offers Open in and Save beside
-// it. Any other kind goes straight to Open in, which hands the file to the device's own apps. Save stays for every
+// itself, in the media viewer: a PDF, drawn page by page by the bundled pdf.js, and text, code and CSV, as text.
+// Pressing one of those opens it in the viewer, which offers Open in and Save beside it. A recording is played in its
+// own message instead (core/app/rules/audio.js, issue 432), a voice message included (issue 435). Any other kind goes straight to Open in, which hands the file to the device's own apps. Save stays for every
 // file, in the viewer and on the message's menu. Nothing here fetches or opens anything: it only answers what to do.
 import { isMediaAttachment } from './media.js';
 
 // The largest file the viewer draws itself. A text file past its bound would be one enormous block to lay out, and a
-// PDF or a recording past its bound would sit in memory whole, so either goes to Open in instead, where the device's
-// own app pages it in.
+// PDF past its bound would sit in memory whole, so either goes to Open in instead, where the device's own app pages it
+// in.
 export const TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
 export const PDF_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
-export const AUDIO_PREVIEW_MAX_BYTES = 100 * 1024 * 1024;
 
 // The text a person reads as text: plain text, Markdown, CSV and tab-separated tables, logs, configuration and code.
 // Rich text and HTML are text underneath, but their source is not what was sent to be read, so they open elsewhere.
@@ -27,14 +26,6 @@ const TEXT_TYPES = new Set([
   'application/x-subrip',
 ]);
 const NOT_TEXT_TYPES = new Set(['text/html', 'text/rtf', 'text/richtext', 'text/enriched']);
-
-// Audio every web view the app runs in plays: MP3, AAC and MPEG-4 audio, WAV, Ogg, Opus, WebM and FLAC. A voice note
-// recorded on a phone is a Core Audio file, which no web view plays, so it opens in the device's own apps instead.
-const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'aac', 'wav', 'oga', 'ogg', 'opus', 'flac']);
-const AUDIO_TYPES = new Set([
-  'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/aac', 'audio/x-aac', 'audio/wav', 'audio/x-wav',
-  'audio/wave', 'audio/ogg', 'audio/opus', 'audio/webm', 'audio/flac', 'audio/x-flac',
-]);
 
 // The lower-cased extension of a file name, without the dot, or '' when it has none.
 export function extensionOf(name) {
@@ -54,7 +45,7 @@ export function isFileAttachment(a) {
   return Boolean(a) && !a.local && !a.missing && !a.sticker && !isMediaAttachment(a);
 }
 
-// What the viewer draws for a document: 'pdf', 'text' or 'audio', or null when the app cannot show it itself. The
+// What the viewer draws for a document: 'pdf' or 'text', or null when the app cannot show it itself. The
 // type the file carries decides first and its extension second, since the Mac often records a document as
 // application/octet-stream under its real name.
 export function previewKind(a) {
@@ -64,7 +55,6 @@ export function previewKind(a) {
   const generic = !type || type === 'application/octet-stream';
   if (NOT_TEXT_TYPES.has(type)) return null;
   if (type === 'application/pdf' || (generic && ext === 'pdf')) return fits(a, PDF_PREVIEW_MAX_BYTES) ? 'pdf' : null;
-  if (AUDIO_TYPES.has(type) || (generic && AUDIO_EXTENSIONS.has(ext))) return fits(a, AUDIO_PREVIEW_MAX_BYTES) ? 'audio' : null;
   const text = type.startsWith('text/') || TEXT_TYPES.has(type) || (generic && TEXT_EXTENSIONS.has(ext));
   if (text) return fits(a, TEXT_PREVIEW_MAX_BYTES) ? 'text' : null;
   return null;
