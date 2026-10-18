@@ -63,6 +63,7 @@ var engine = (() => {
     ICON_TOKENS: () => ICON_TOKENS,
     INSTALL: () => INSTALL,
     KEY_STEP: () => KEY_STEP,
+    LETTER_EFFECTS: () => LETTER_EFFECTS,
     LETTER_OTHER: () => LETTER_OTHER,
     LEVELS: () => LEVELS,
     LINK_BOUNDS: () => LINK_BOUNDS,
@@ -105,6 +106,8 @@ var engine = (() => {
     SWATCH_TOKENS: () => SWATCH_TOKENS,
     SWIPE_MIN_PX: () => SWIPE_MIN_PX,
     TAPBACKS: () => TAPBACKS2,
+    TEXT_EFFECTS: () => TEXT_EFFECTS,
+    TEXT_EFFECT_IDS: () => TEXT_EFFECT_IDS,
     TEXT_PREVIEW_MAX_BYTES: () => TEXT_PREVIEW_MAX_BYTES,
     TEXT_SCALES: () => TEXT_SCALES,
     THEME_GROUPS: () => THEME_GROUPS,
@@ -273,6 +276,7 @@ var engine = (() => {
     isMediaAttachment: () => isMediaAttachment,
     isPayloadName: () => isPayloadName,
     isPlayableLink: () => isPlayableLink,
+    letters: () => letters,
     linkHref: () => linkHref,
     linkMediaKey: () => linkMediaKey,
     linkMediaSite: () => linkMediaSite,
@@ -403,6 +407,8 @@ var engine = (() => {
     stalledNotice: () => stalledNotice,
     stampProblem: () => stampProblem,
     stripInlineObjects: () => stripInlineObjects,
+    styledParts: () => styledParts,
+    stylesFromRuns: () => stylesFromRuns,
     summarizeReactions: () => summarizeReactions,
     swallows: () => swallows,
     swatchVars: () => swatchVars,
@@ -2360,6 +2366,42 @@ var engine = (() => {
     return null;
   }
 
+  // core/app/rules/text-styles.js
+  var TEXT_EFFECT_IDS = Object.freeze({ 4: "ripple", 5: "big", 6: "bloom", 8: "nod", 9: "shake", 10: "jitter", 11: "small", 12: "explode" });
+  var TEXT_EFFECTS = Object.freeze(Object.values(TEXT_EFFECT_IDS));
+  var LETTER_EFFECTS = Object.freeze(["ripple", "jitter", "explode"]);
+  var INLINE_OBJECT = "\uFFFC";
+  function stylesFromRuns(rawText, runs) {
+    const text = String(rawText || "");
+    if (!Array.isArray(runs) || !runs.length || !text) return [];
+    const removedBefore = new Array(text.length + 1);
+    let removed = 0;
+    for (let i = 0; i <= text.length; i += 1) {
+      removedBefore[i] = removed;
+      if (text[i] === INLINE_OBJECT) removed += 1;
+    }
+    const out = [];
+    for (const r of runs) {
+      const start = Math.trunc(Number(r && r.start));
+      const length = Math.trunc(Number(r && r.length));
+      if (!Number.isFinite(start) || !Number.isFinite(length) || start < 0 || length <= 0 || start + length > text.length) continue;
+      const effect = TEXT_EFFECT_IDS[r.effect] || null;
+      if (!effect) continue;
+      const from = start - removedBefore[start];
+      const to = start + length - removedBefore[start + length];
+      if (to <= from) continue;
+      const prev = out[out.length - 1];
+      if (prev && prev.effect === effect && prev.start + prev.length === from) prev.length += to - from;
+      else out.push({ start: from, length: to - from, effect });
+    }
+    return out;
+  }
+  function letters(text) {
+    const s = String(text || "");
+    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") return [...new Intl.Segmenter(void 0, { granularity: "grapheme" }).segment(s)].map((g) => g.segment);
+    return Array.from(s);
+  }
+
   // core/app/rules/engine-imsg.js
   var TAPBACKS = /* @__PURE__ */ new Set(["love", "like", "dislike", "laugh", "emphasis", "question"]);
   var NO_CHAT_ID = "0";
@@ -2421,9 +2463,9 @@ var engine = (() => {
     const fromMe = Boolean(r.is_from_me ?? r.from_me);
     return { type: TAPBACKS.has(type) ? type : "emoji", emoji: r.reaction_emoji || r.emoji || null, fromMe, sender: fromMe ? null : r.sender || null };
   }
-  var INLINE_OBJECT = /\uFFFC/g;
+  var INLINE_OBJECT2 = /\uFFFC/g;
   function stripInlineObjects(text) {
-    return typeof text === "string" ? text.replace(INLINE_OBJECT, "") : "";
+    return typeof text === "string" ? text.replace(INLINE_OBJECT2, "") : "";
   }
   function payloadParts(m, { attachmentId }) {
     const views = (Array.isArray(m.attachments) ? m.attachments : []).map((a) => attachmentView(a, attachmentId));
@@ -2491,10 +2533,12 @@ var engine = (() => {
     if (isBackgroundRow(m)) {
       return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: "background", action: m.background_action } };
     }
+    const styles = stylesFromRuns(m.text, m.text_runs);
     return {
       ...base,
       ...payloadParts(m, { attachmentId }),
-      reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean)
+      reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
+      ...styles.length ? { styles } : {}
     };
   }
   function mapReaction(m) {
@@ -3505,6 +3549,37 @@ var engine = (() => {
     const card = m && m.link && linkHref(m.link.url);
     if (card && !out.includes(card)) out.push(card);
     return out;
+  }
+  function styledParts(text, styles = []) {
+    const s = String(text || "");
+    const links = [];
+    let at = 0;
+    for (const p of splitLinks(s)) {
+      if (p.href) links.push({ start: at, end: at + p.text.length, href: p.href });
+      at += p.text.length;
+    }
+    const effects = (Array.isArray(styles) ? styles : []).filter((x) => x && TEXT_EFFECTS.includes(x.effect) && x.length > 0 && x.start >= 0 && x.start + x.length <= s.length).map((x) => ({ start: x.start, end: x.start + x.length, effect: x.effect }));
+    const cuts = /* @__PURE__ */ new Set([0, s.length]);
+    for (const r of [...links, ...effects]) {
+      cuts.add(r.start);
+      cuts.add(r.end);
+    }
+    const points = [...cuts].sort((a, b) => a - b);
+    const parts = [];
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const from = points[i];
+      const to = points[i + 1];
+      if (to <= from) continue;
+      const link = links.find((r) => r.start <= from && to <= r.end);
+      const effect = effects.find((r) => r.start <= from && to <= r.end);
+      const part2 = { text: s.slice(from, to) };
+      if (link) part2.href = link.href;
+      if (effect) part2.effect = effect.effect;
+      const prev = parts[parts.length - 1];
+      if (prev && prev.href === part2.href && prev.effect === part2.effect) prev.text += part2.text;
+      else parts.push(part2);
+    }
+    return parts;
   }
 
   // core/app/rules/media.js
