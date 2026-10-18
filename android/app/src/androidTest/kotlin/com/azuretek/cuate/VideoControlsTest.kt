@@ -24,6 +24,13 @@ import java.util.concurrent.TimeUnit
 // screenshot, and asserts each control is on screen and answers a press at its own middle (the page's hit test there
 // reaches the player's video for a player control, and the control itself for ours), and that none of ours overlaps a
 // player control or another of ours.
+//
+// The page always draws the video before its clip arrives, as it does from a server, and on the phone's web view a
+// video's node that reached the accessibility tree while it was still empty said "Unable to play media." and held none
+// of the player's controls, even once the clip had loaded (issue 446). So the run is made to take that order every
+// time: the accessibility service is connected before the page draws anything, the fixture holds the clip until this
+// test has read the tree with the empty video in it and pressed the page's release control, and only then do the
+// controls have to arrive. Every wait ends on a state the test reads (the page's marker, the tree), never on a sleep.
 @RunWith(AndroidJUnit4::class)
 class VideoControlsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -59,6 +66,12 @@ class VideoControlsTest {
     fun landscapeVideoKeepsEveryControlClear() = check("landscape")
 
     private fun check(shape: String) {
+        // Connected first, so the web view builds its accessibility tree from the page's first frame and the video's node
+        // is there while the video is empty, whichever test ran before this one.
+        val automation = instrumentation.uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+        }
         val intent = Intent(instrumentation.targetContext, MainActivity::class.java)
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             val booted = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
@@ -71,7 +84,9 @@ class VideoControlsTest {
             evaluate(scenario, "window.fixtureVideo = " + quoted(shape) + "; window.fixtureVideoBase64 = " + quoted(Base64.encodeToString(clip, Base64.NO_WRAP)) + "; true")
             val fixture = instrumentation.context.assets.open("video-controls-fixture.js").bufferedReader().use { it.readText() }
             evaluate(scenario, fixture)
-            val scene = awaitScene(scenario)
+            awaitState(scenario, "vc:holding")
+            releaseTheClip(shape)
+            val scene = JSONObject(awaitState(scenario, "vc:ready "))
             println("video controls scene ($shape): $scene")
 
             val found = awaitControls()
@@ -114,7 +129,8 @@ class VideoControlsTest {
         }
     }
 
-    private fun awaitScene(scenario: ActivityScenario<MainActivity>): JSONObject {
+    /** The fixture's marker once it reads [prefix], with the prefix taken off; a failure the fixture reports fails here. */
+    private fun awaitState(scenario: ActivityScenario<MainActivity>, prefix: String): String {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
         var state = "null"
         do {
@@ -123,26 +139,65 @@ class VideoControlsTest {
             if (state != "null") {
                 val text = JSONObject("{\"s\":$state}").getString("s")
                 if (text.startsWith("vc:fail")) throw AssertionError("the video controls fixture failed: $text")
-                if (text.startsWith("vc:ready ")) return JSONObject(text.removePrefix("vc:ready "))
+                if (text.startsWith(prefix)) return text.removePrefix(prefix)
             }
         } while (System.nanoTime() < deadline)
-        throw AssertionError("the video controls fixture never became ready: $state")
+        throw AssertionError("the video controls fixture never reached '$prefix': $state")
+    }
+
+    /**
+     * Reads the accessibility tree until [settled] says what it holds is enough, or the bound passes. Between reads it
+     * waits for the tree to change (the next accessibility event), so every read follows a change rather than a clock;
+     * the short bound on that wait only covers an event that landed between a read and the listening.
+     */
+    private fun untilTree(seconds: Long, settled: () -> Boolean): Boolean {
+        val automation = instrumentation.uiAutomation
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds)
+        try {
+            do {
+                val changed = CountDownLatch(1)
+                automation.setOnAccessibilityEventListener { changed.countDown() }
+                instrumentation.waitForIdleSync()
+                if (settled()) return true
+                changed.await(CHANGE_BOUND_MS, TimeUnit.MILLISECONDS)
+            } while (System.nanoTime() < deadline)
+            return settled()
+        } finally {
+            automation.setOnAccessibilityEventListener(null)
+        }
+    }
+
+    /**
+     * The clip is held while the viewer shows its empty video. The tree is read until it holds the viewer and the page's
+     * release control, so the empty video has reached it, and the release control is then pressed through the tree.
+     */
+    private fun releaseTheClip(shape: String) {
+        var release: AccessibilityNodeInfo? = null
+        val held = untilTree(30) {
+            var viewer = false
+            release = null
+            instrumentation.uiAutomation.rootInActiveWindow?.let { root ->
+                walk(root) { node ->
+                    val label = (node.contentDescription ?: node.text ?: "").toString().trim()
+                    if (label == "vc:release" && node.isClickable) release = node
+                    if (node.className?.toString() == "android.app.Dialog" && label == "clip-2.mp4") viewer = true
+                }
+            }
+            release != null && viewer
+        }
+        val control = release
+        if (!held || control == null) throw AssertionError("the held video never reached the accessibility tree:\n" + describeTree())
+        println("video controls ($shape) held, before its clip:\n" + describeTree())
+        assertTrue("the release control did not take the press", control.performAction(AccessibilityNodeInfo.ACTION_CLICK))
     }
 
     /** Every control named, read from the accessibility tree once all of them are there or the bound passes. */
     private fun awaitControls(): Map<String, Found> {
-        val automation = instrumentation.uiAutomation
-        automation.serviceInfo = automation.serviceInfo.apply {
-            flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-        }
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
         var found: Map<String, Found> = emptyMap()
-        do {
-            instrumentation.waitForIdleSync()
+        untilTree(30) {
             found = collect()
-            if ((PLAYER + OURS).all { it in found }) return found
-            Thread.sleep(250)
-        } while (System.nanoTime() < deadline)
+            (PLAYER + OURS).all { it in found }
+        }
         return found
     }
 
@@ -236,5 +291,7 @@ class VideoControlsTest {
     private companion object {
         val PLAYER = listOf("play or pause", "scrubber", "mute", "full screen")
         val OURS = listOf("close", "prev", "next", "bar")
+        // How long one wait for the tree's next change may last before it is read again anyway.
+        const val CHANGE_BOUND_MS = 2_000L
     }
 }

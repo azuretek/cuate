@@ -94,6 +94,38 @@ test('a play the viewer ended itself is not a failure', async () => {
   assert.ok(!host.playing && !host.motionFailed, 'the control pressed again, another item or the viewer closing leaves the motion offered');
 });
 
+// A video is drawn before its clip arrives (issue 446). An empty video offers no player controls, and they are drawn
+// with the first frame of the video's own source, which rebuilds the video's accessibility node: on Android's web view
+// a video that reached the tree empty otherwise stayed "Unable to play media." with none of its controls.
+function videoViewer() {
+  const items = [1, 2].map((n) => ({ id: 'v' + n, attachmentId: 'v' + n, kind: 'video', name: 'clip-' + n + '.mp4', mime: 'video/mp4' }));
+  const host = Object.assign(Object.create(components['app-image-viewer'].prototype), {
+    items, index: 0, kind: 'video', alt: 'clip-1.mp4', src: '', view: { scale: 1, x: 0, y: 0 }, moving: false,
+    motion: '', playing: false, motionFailed: false, urls: new Map(), isConnected: true, loads: 0,
+  });
+  host.onLoad = async () => { host.loads += 1; };
+  const drawn = () => words(components['app-image-viewer'].prototype.render.call(host)).match(/<video class="viewer-image"[^>]*>/)[0];
+  const loaded = (src) => host.videoLoaded({ target: { getAttribute: (name) => (name === 'src' ? src : null) } });
+  return { host, drawn, loaded };
+}
+
+test('a video offers the player\'s controls only once it has a frame of its own clip', async () => {
+  const { host, drawn, loaded } = videoViewer();
+  assert.match(drawn(), /\?controls=false/, 'an empty video offers no controls');
+  host.src = 'blob:clip-1';
+  assert.match(drawn(), /\?controls=false/, 'nor does one whose clip has not given a frame yet');
+  await loaded('blob:clip-1');
+  assert.match(drawn(), /\?controls=true/, 'the first frame brings the controls');
+  assert.equal(host.loads, 1, 'and the picture is fitted as before');
+  assert.match(drawn(), /autoplay muted playsinline @loadeddata=/, 'the clip still starts muted on its own');
+  host.src = 'blob:clip-2';
+  assert.match(drawn(), /\?controls=false/, 'another clip is empty again until its own first frame');
+  await loaded('blob:clip-1');
+  assert.match(drawn(), /\?controls=false/, 'a late frame of the clip before does not count for this one');
+  await loaded('blob:clip-2');
+  assert.match(drawn(), /\?controls=true/);
+});
+
 test('the iOS shell lets media play without a gesture, as the Android shell does', () => {
   const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
   const naming = JSON.parse(read('core/spec/naming.json'));
@@ -134,7 +166,12 @@ test('each phone proves a video\'s player controls and the viewer\'s own are all
   const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/VideoControlsTest.kt');
   for (const [name, source] of [['the iOS UI test', uiTest], ['the Android instrumented test', androidTest]]) {
     for (const part of ['portrait', 'landscape', 'play or pause', 'scrubber', 'mute', 'full screen', 'close', 'next', 'bar', 'overlaps']) assert.ok(source.includes(part), name + ' checks ' + part);
+    // The clip is held until the test has read the tree with the empty video in it (issue 446), and no wait is a sleep.
+    for (const part of ['vc:holding', 'vc:release']) assert.ok(source.includes(part), name + ' takes the held order: ' + part);
+    assert.doesNotMatch(source, /Thread\.sleep|\bsleep\(|usleep/, name + ' waits for states, never a clock');
   }
+  const fixture = read('core/test/video-controls-fixture.js');
+  assert.match(fixture, /attachment: async \(\) => \{ await released; return clip; \}/, 'the fixture holds the clip until it is released');
   assert.ok(uiTest.includes('isHittable') && uiTest.includes('.keepAlways'), 'the iOS test asserts each control is hittable and keeps its screenshot');
   assert.ok(androidTest.includes('elementFromPoint') && androidTest.includes('additionalTestOutputDir'), 'the Android test presses each control\'s middle through the page\'s hit test and keeps its screenshot');
   // The player offers mute only for a clip with sound, so each synthetic clip carries a (silent) sound track.
