@@ -35,6 +35,7 @@ export * from './rules/engine-imsg.js';
 export * from './rules/messages.js';
 export * from './rules/history.js';
 export * from './rules/history-window.js';
+export * from './rules/message-store.js';
 export * from './rules/links.js';
 export * from './rules/text-styles.js';
 export * from './rules/media.js';

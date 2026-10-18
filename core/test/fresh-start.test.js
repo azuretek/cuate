@@ -56,7 +56,7 @@ function page({ notice = null } = {}) {
     applyNoticeQuiet() {}, applyUpdateSetting() {}, applyTheme() {}, registerPush() {}, releaseHeldUpdate() {}, launchCheck() {}, noticeServerUpdate() {}, releaseHeldScreen() {},
     onEvent() {}, onConnState() {}, closeView() {}, querySelector() { return null; },
   };
-  for (const name of ['start', 'open', 'readSettings', 'describe', 'takeNotice', 'openMessage', 'revealNotice', 'watchNotice', 'stopNoticeWait', 'takeLink', 'clearTyping', 'resetTyping', 'loadOlder', 'loadHistory', 'applyWindow', 'measureHistory', 'reconcile']) {
+  for (const name of ['start', 'open', 'readSettings', 'describe', 'takeNotice', 'openMessage', 'revealNotice', 'watchNotice', 'stopNoticeWait', 'takeLink', 'clearTyping', 'resetTyping', 'loadOlder', 'loadHistory', 'applyWindow', 'measureHistory', 'reconcile', 'openStore', 'catchUp', 'showChanges', 'storedWindow', 'keepShown']) {
     if (typeof proto[name] === 'function') host[name] = proto[name];
   }
   return host;
