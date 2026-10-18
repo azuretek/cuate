@@ -41,8 +41,7 @@ final class SystemBarsTests: XCTestCase {
         let marker = self.marker(app, scheme: first)
         XCTAssertTrue(marker.waitForExistence(timeout: 30), app.debugDescription)
         hold(app, scheme: first, name: "bars-" + first)
-        marker.tap()
-        XCTAssertTrue(self.marker(app, scheme: then).waitForExistence(timeout: 20), app.debugDescription)
+        switchScheme(app, from: first, to: then)
         hold(app, scheme: then, name: "bars-" + first + "-then-" + then)
         pinchRefused(app, scheme: then)
         keyboardHolds(app, scheme: then, kind: "conversation")
@@ -166,6 +165,30 @@ final class SystemBarsTests: XCTestCase {
         if parts.count == 11 { XCTAssertEqual(Double(parts[3]), 0, "a pinch outside media scrolled the page (\(scheme))") }
     }
 
+
+    /// Presses the scheme marker until the page reports the next scheme. XCTest can tap the marker and the page never see
+    /// a click (issue 471, as with the keys marker in issue 384), which left the page in the first scheme for the rest of
+    /// the test. A press always means the scheme the test did not launch in (core/test/system-bars-fixture.js), so a
+    /// press after one that did arrive changes nothing. Past the deadline it fails with what each press saw.
+    private func switchScheme(_ app: XCUIApplication, from first: String, to then: String) {
+        let next = marker(app, scheme: then)
+        let deadline = Date().addingTimeInterval(30)
+        var presses: [String] = []
+        repeat {
+            if next.exists { return }
+            let current = marker(app, scheme: first)
+            guard current.exists else {
+                presses.append("no \(first) marker")
+                _ = next.waitForExistence(timeout: 2)
+                continue
+            }
+            presses.append("\(current.isHittable ? "hittable" : "not hittable") at \(current.frame)")
+            current.tap()
+            if next.waitForExistence(timeout: 5) { return }
+        } while Date() < deadline
+        XCTFail("The \(first) marker was pressed \(presses.count) times and the page never reported \(then). Each press: "
+            + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
+    }
 
     private func marker(_ app: XCUIApplication, scheme: String) -> XCUIElement {
         app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "bars:" + scheme + ":ready:")).firstMatch
