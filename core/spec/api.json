@@ -707,7 +707,12 @@
     "MessageEventKind": {
       "kind": "string",
       "photo": "Attachment?",
-      "action": "string?"
+      "action": "string?",
+      "person": "EventPerson?"
+    },
+    "EventPerson": {
+      "handle": "string",
+      "name": "string?"
     },
     "PushRegistration": {
       "token": "string",
