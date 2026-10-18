@@ -62,17 +62,35 @@ globalThis.historyProof = {
   // restores the person's recorded place after every render and would move a bare scroll back before its
   // scroll event is heard. The press point is read only once the photo has held still for several frames
   // and the point hit-tests to the photo itself, so the click never lands on stale coordinates.
+  // The photo is chosen from the rows, never from the pictures already drawn: a picture is fetched only while its row
+  // is on screen, so which ones the scrollback left drawn depended on how long each row stayed in view on the runner,
+  // and a walk that left none timed out waiting for a picture nothing would fetch (issue 465). The still photo nearest
+  // the view is brought into view first and its own picture waited for there.
   async photoTarget() {
     const scroll = pane().querySelector('.messages');
-    const photo = () => [...pane().querySelectorAll('app-attachment img')].find((img) => img.closest('.bubble-row')?.dataset.id);
-    await until(() => photo()?.naturalWidth > 0, 'synthetic photo decoded');
-    const row = photo().closest('.bubble-row');
-    const key = row.dataset.id;
+    const rows = () => [...pane().querySelectorAll('.messages > .bubble-row')].filter((r) => r.dataset.id);
+    const isPhoto = (row) => [...row.querySelectorAll('app-attachment')].some((el) => /^image\//.test(String(el.attachment?.mime || '')));
+    const middle = () => { const v = scroll.getBoundingClientRect(); return (v.top + v.bottom) / 2; };
+    const distance = (row) => { const r = row.getBoundingClientRect(); return Math.abs((r.top + r.bottom) / 2 - middle()); };
+    const nearest = () => rows().filter(isPhoto).sort((a, b) => distance(a) - distance(b))[0];
+    await until(() => nearest(), 'a synthetic photo row resident', () => ({ rows: rows().length, first: rows()[0]?.dataset.id ?? null, last: rows().at(-1)?.dataset.id ?? null }));
+    const key = nearest().dataset.id;
+    // Which photos the walk left drawn, kept in the report so every platform shows what the old choice depended on.
+    const drawn = rows().filter((r) => r.querySelector('app-attachment img')).map((r) => r.dataset.id);
     const place = () => {
       pane().keep.anchor = { key, offset: Math.round(scroll.clientHeight / 3) };
       pane().keep.restore();
     };
-    const target = () => [...pane().querySelectorAll('.messages > .bubble-row')].find((r) => r.dataset.id === key)?.querySelector('app-attachment img');
+    const row = () => rows().find((r) => r.dataset.id === key);
+    const target = () => row()?.querySelector('app-attachment img');
+    place();
+    await until(() => target()?.naturalWidth > 0, 'synthetic photo decoded', () => {
+      const tile = row()?.querySelector('app-attachment');
+      const r = row()?.getBoundingClientRect();
+      const v = scroll.getBoundingClientRect();
+      return { key, resident: Boolean(row()), inView: r ? r.bottom > v.top && r.top < v.bottom : false, src: Boolean(tile?.src), failed: Boolean(tile?.failed),
+        img: mediaState(target()), drawn: pane().querySelectorAll('app-attachment img').length, photoRows: rows().filter(isPhoto).length };
+    });
     const centre = () => { const r = target()?.getBoundingClientRect(); return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null; };
     const view = () => scroll.getBoundingClientRect();
     const hits = (p) => { const hit = p && document.elementFromPoint(p.x, p.y); return Boolean(hit && target() && (hit === target() || target().closest('app-attachment').contains(hit))); };
@@ -91,7 +109,7 @@ globalThis.historyProof = {
       still = inside && last && last.x === p.x && last.y === p.y && hits(p) ? still + 1 : 0;
       last = p;
     }
-    return { ...last, key };
+    return { ...last, key, drawn };
   },
   async media() {
     await until(() => viewer()?.items.length, 'viewer opened by real pointer');
