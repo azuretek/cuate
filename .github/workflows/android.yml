@@ -90,6 +90,17 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/video-controls-landscape.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-effects.png
 
+      # Issue 443 again: with the host decoder off the emulator still exits under VideoControlsTest about one run in
+      # three, leaving no crash dump (the crash record holds only its settings), which a caught crash would have written.
+      # A process killed from outside writes none, so the kernel's own log is read for a kill and the memory it saw.
+      - name: Say why the emulator went away
+        if: failure()
+        working-directory: .
+        run: |
+          free -m
+          sudo dmesg -T | grep -iE 'killed process|out of memory|oom|qemu|segfault|emulator' | tail -40 || true
+          ls -la /tmp/android-runner/ 2>/dev/null || true
+
       - name: Keep the boot proof
         if: always()
         uses: actions/upload-artifact@v4
