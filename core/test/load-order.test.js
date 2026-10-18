@@ -223,6 +223,60 @@ test('a load a screen away waits for the page to say what a landed picture moved
   assert.deepEqual(asked(), ['shift-a', 'shift-c', 'shift-d'], 'then the one a screen away');
 });
 
+// A row the observers last reported on screen can be moved off it by a picture landing above it, and they say so only
+// after the next layout. A load that finishes in that gap must not start the row on their old word: the layout says it
+// has left, so it waits with what is a screen away.
+test('a row a landed picture pushed off screen is not started on the observers\' old word (issue 425)', async () => {
+  reset();
+  const rows = [0, 150, 300, 450, 650].map((top, i) => row('pushed-' + i, top, 150));
+  const window = { innerHeight: globalThis.innerHeight, innerWidth: globalThis.innerWidth };
+  globalThis.innerHeight = view.height;
+  globalThis.innerWidth = 1000;
+  for (const el of rows) {
+    el.getBoundingClientRect = () => {
+      const b = onWindow(el);
+      return { top: b.top, bottom: b.bottom, left: 0, right: 400, width: 400, height: b.bottom - b.top };
+    };
+  }
+  try {
+    await settle();
+    assert.deepEqual(asked(), ['pushed-0', 'pushed-1', 'pushed-2', 'pushed-3'], 'four on screen in flight, the fifth waiting its turn');
+    // The fifth row is pushed below the window, a screen away, and in the same task the first picture lands.
+    rows[4].box = { top: 900, bottom: 1050 };
+    for (const o of observers) o.moved();
+    const first = requests.find((x) => x.id === 'pushed-0');
+    first.answered = true;
+    first.resolve(new Blob(['pushed-0']));
+    await settle();
+    assert.ok(!asked().includes('pushed-4'), 'the row the layout says has left the screen is not started while the screen is still loading');
+    await answer('pushed-1');
+    await answer('pushed-2');
+    await answer('pushed-3');
+    assert.ok(asked().includes('pushed-4'), 'it is fetched a screen away once the screen is drawn');
+  } finally {
+    globalThis.innerHeight = window.innerHeight;
+    globalThis.innerWidth = window.innerWidth;
+  }
+});
+
+test('where the layout and the observers keep disagreeing, the observers\' word stands after one layout (issue 425)', async () => {
+  reset();
+  const el = row('disagree-1', 100);
+  const window = { innerHeight: globalThis.innerHeight, innerWidth: globalThis.innerWidth };
+  globalThis.innerHeight = view.height;
+  globalThis.innerWidth = 1000;
+  // A box the layout always places below the window, while the observer reports it on screen.
+  el.getBoundingClientRect = () => ({ top: 5000, bottom: 5300, left: 0, right: 400, width: 400, height: 300 });
+  try {
+    await settle();
+    await settle();
+    assert.deepEqual(asked(), ['disagree-1'], 'the queue is never held by a disagreement: the row is fetched once a layout has passed');
+  } finally {
+    globalThis.innerHeight = window.innerHeight;
+    globalThis.innerWidth = window.innerWidth;
+  }
+});
+
 test('the order itself: on screen first as it came into view, a screen away only when the screen is done, away never (issue 425)', async () => {
   const { planLoads, LOAD_LIMIT } = await import('../kit/rules/load-order.js');
   const ids = (plan) => plan.start.map((l) => l.id);
