@@ -148,8 +148,8 @@ const BACKGROUND_ACTION_NAMES = new Set(Object.values(BACKGROUND_ACTIONS));
 export function isBackgroundRow(m) {
   return Boolean(m) && BACKGROUND_ACTION_NAMES.has(m.background_action);
 }
-// Whether a raw row could be an event only the store names (a background change, a rename): one with no words and
-// nothing attached, so only those are asked of the store.
+// Whether a raw row could be an event only the store names (a background change, a rename, a person joining or leaving
+// a group): one with no words and nothing attached, so only those are asked of the store.
 export function mayBeStoreEventRow(m) {
   return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
 }
@@ -162,6 +162,21 @@ export function mayBeStoreEventRow(m) {
 export const RENAME_ITEM_TYPE = 2;
 export function isRenameRow(m) {
   return Boolean(m) && m.item_type === RENAME_ITEM_TYPE && typeof m.group_title === 'string';
+}
+
+// A person added to a group, removed from it, or leaving it arrives as a row of its own too (issue 456): no text and no
+// attachment, which the engine's read cannot tell from an empty message. Messages records an added or removed person as
+// item type 1, group action 0 for added and 1 for removed, with the person in other_handle (a row of the store's handle
+// table), and someone leaving as item type 3, group action 0, the one who left being the row's sender. The adapter reads
+// which rows those are from the store and marks the raw row with member_action, and member_handle for the person added
+// or removed, before it is mapped (server/src/engine/members.js). It is an event in the conversation, never a message.
+export const MEMBER_ACTIONS = Object.freeze({ '1:0': 'add', '1:1': 'remove', '3:0': 'leave' });
+const MEMBER_ACTION_NAMES = new Set(Object.values(MEMBER_ACTIONS));
+export function memberAction(itemType, groupAction) {
+  return MEMBER_ACTIONS[Number(itemType) + ':' + Number(groupAction)] || null;
+}
+export function isMemberRow(m) {
+  return Boolean(m) && MEMBER_ACTION_NAMES.has(m.member_action);
 }
 
 // The backdrop a chat draws, from what `imsg chat-background status` reports for it (issue 417): the picture Messages
@@ -207,6 +222,12 @@ export function mapMessage(m, { attachmentId }) {
   }
   if (isRenameRow(m)) {
     return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'rename', name: m.group_title.trim() } };
+  }
+  if (isMemberRow(m)) {
+    // The person a change was about: the one added or removed. Someone leaving is the row's own sender, named as
+    // every sender is, so the event carries no one else. The name is the server's to read from Contacts.
+    const handle = m.member_action !== 'leave' && m.member_handle ? String(m.member_handle) : '';
+    return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'member', action: m.member_action, ...(handle ? { person: { handle, name: null } } : {}) } };
   }
   // The text effects laid over the words (issue 433), which the server reads from the store and marks on the row as
   // text_runs; a message with none carries no styles.

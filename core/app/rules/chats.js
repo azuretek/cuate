@@ -187,13 +187,45 @@ export function chatPreview(chat) {
 }
 
 // The words for an event in a conversation (issue 341): who did it, then what changed. A background is the
-// conversation's own (issue 417), set or cleared, and a rename gives the group its name or removes it (issue 439).
+// conversation's own (issue 417), set or cleared; a group's people change when someone is added, removed or leaves
+// (issue 456), each person named by their contact name, or their address when Contacts does not know them; and a rename
+// gives the group its name or removes it (issue 439).
 export function eventText(m) {
   const who = m.fromMe ? 'You' : String(m.senderName || m.sender || 'Someone');
   if (m.event && m.event.kind === 'groupPhoto') return who + ' changed the group photo';
   if (m.event && m.event.kind === 'background') return who + (m.event.action === 'clear' ? ' removed the background' : ' changed the background');
   if (m.event && m.event.kind === 'rename') return m.event.name ? who + ' named the conversation \u201c' + m.event.name + '\u201d' : who + ' removed the name from the conversation';
+  if (m.event && m.event.kind === 'member') {
+    if (m.event.action === 'leave') return who + ' left the conversation';
+    const person = m.event.person ? String(m.event.person.name || m.event.person.handle || '') : '';
+    const whom = person || 'someone';
+    if (m.event.action === 'add') return who + ' added ' + whom + ' to the conversation';
+    if (m.event.action === 'remove') return who + ' removed ' + whom + ' from the conversation';
+  }
   return '';
+}
+
+// What a list preview keeps of an event: its kind, and the action and the person its words need.
+export function eventPreview(e) {
+  const person = e.person && e.person.handle ? { person: { handle: String(e.person.handle), name: e.person.name ? String(e.person.name) : null } } : {};
+  return { kind: e.kind, ...(e.action ? { action: e.action } : {}), ...person, ...(typeof e.name === 'string' ? { name: e.name } : {}) };
+}
+
+// A group's people as they are after a person joined or left it (issue 456), so the list, the header and the group's
+// details follow at once, before the server's reread of the chat arrives. Someone leaving is the message's sender.
+function peopleAfter(c, message) {
+  const e = message.event;
+  if (!c.isGroup || !e || e.kind !== 'member') return {};
+  const handle = e.action === 'leave' ? (message.fromMe ? '' : String(message.sender || '')) : String((e.person && e.person.handle) || '');
+  if (!handle) return {};
+  const participants = Array.isArray(c.participants) ? c.participants : [];
+  const members = Array.isArray(c.members) ? c.members : [];
+  if (e.action === 'add') {
+    if (participants.includes(handle)) return {};
+    const name = (e.person && e.person.name) || handle;
+    return { participants: [...participants, handle], members: [...members, { handle, name, photo: null }] };
+  }
+  return { participants: participants.filter((a) => a !== handle), members: members.filter((x) => x && x.handle !== handle) };
 }
 
 export function initials(name) {
@@ -201,11 +233,6 @@ export function initials(name) {
   if (!words.length) return '?';
   if (/^\d/.test(words[0])) return '#';
   return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase();
-}
-
-// What a list preview keeps of an event: its kind, and the action or name its words need.
-export function eventPreview(e) {
-  return { kind: e.kind, ...(e.action ? { action: e.action } : {}), ...(typeof e.name === 'string' ? { name: e.name } : {}) };
 }
 
 // A live message moves its chat to the top with a new preview; an inbound one in a chat that is not open adds unread.
@@ -224,7 +251,7 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   // A rename is the group's title from now on, on every client at once (issue 439).
   const renamed = message.event && message.event.kind === 'rename' ? { name: String(message.event.name || '') } : {};
   const event = message.event ? eventPreview(message.event) : null;
-  out[i] = { ...c, ...photo, ...backdrop, ...renamed, unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || null } : lastMessage };
+  out[i] = { ...c, ...photo, ...backdrop, ...renamed, ...peopleAfter(c, message), unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || message.sender || null } : lastMessage };
   return { chats: orderChats(out), known: true };
 }
 
@@ -334,8 +361,8 @@ export function groupAddresses(chats = [], ids = []) {
 
 // A chat the server says changed (created, renamed, a member added or removed) replaces the one the list holds, or
 // joins it, and the list keeps its order. A change that carries no preview keeps the one the list already draws: the
-// preview is the newest message's, which the message stream brings, so a rename's own line is not wiped by the chat
-// changing straight after it (issue 439).
+// preview is the newest message's, which the message stream brings, so a rename's own line, or the line a person
+// joining or leaving draws, is not wiped by the chat changing straight after it (issues 439, 456).
 export function upsertChat(chats = [], chat) {
   if (!chat || chat.id == null) return chats;
   const i = chats.findIndex((c) => c.id === chat.id);
