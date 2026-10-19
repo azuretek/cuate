@@ -543,7 +543,7 @@ test('startup recovers an interrupted switch to last known good before opening t
   assert.equal(ready, true);
 });
 
-test('two updater processes cannot stage and switch the same install', async (t) => {
+test('two updater processes cannot stage and switch the same install', { skip: process.platform === 'win32' && 'the installed path runs on macOS only; Windows cannot rename over current' }, async (t) => {
   const s = await installed(t);
   s.gh.add(build(2));
   const module = new URL('../src/updater.js', import.meta.url).href;
