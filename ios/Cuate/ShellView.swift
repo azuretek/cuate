@@ -134,6 +134,12 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The bubble colours fixture (issue 459), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--bubble-colours-fixture"),
+           let url = Bundle.main.url(forResource: "bubble-colours-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The text formatting fixture (issue 447), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--text-format-fixture"),
            let url = Bundle.main.url(forResource: "text-format-fixture", withExtension: "js"),

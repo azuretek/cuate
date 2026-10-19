@@ -137,7 +137,7 @@ const REFUSE = {
 };
 
 // The pairs a theme sets from one tweakcn colour when it names no token of its own for them. Keyed by the tweakcn
-// name, not the token it maps onto, so primary fills the sent bubble and the unread mark as well as the accent.
+// name, not the token it maps onto, so primary fills the received bubble (issue 459) and the unread mark as well as the accent.
 const DERIVE = {
   primary: [['bubble-me'], ['unread']],
   'primary-foreground': [['bubble-me-fg']],
