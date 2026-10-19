@@ -134,7 +134,8 @@ test('a warm launch draws the held theme with the held list, before the server a
     const started = warm.start(URL_, 'fixture-token');
     await until(() => warm.phase === 'ready', 'the list from the store');
     assert.deepEqual(warmThemes, ['dark'], 'the held theme is drawn with the held list');
-    assert.deepEqual(s.asked, ['GET /api/v1/info'], 'before the server has answered anything');
+    // The start's three reads are asked for together (issue 427); none has answered.
+    assert.deepEqual([...s.asked].sort(), ['GET /api/v1/chats', 'GET /api/v1/info', 'GET /api/v1/settings'], 'before the server has answered anything');
     assert.equal(new Uint8Array(await warm.themeFontBytes('font-1')).length, 2048, 'the theme\'s font is drawn from the store');
     assert.equal(s.asked.filter((a) => a.includes('/themes/fonts/')).length, 0, 'and is not read again');
     release();

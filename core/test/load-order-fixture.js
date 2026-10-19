@@ -289,6 +289,9 @@
   // still waiting for its picture.
   const early = photos.filter((r) => !r.shown && r.screenWaiting);
   const avatars = requests.filter((r) => r.kind === 'avatar');
+  // The three reads a start makes (issue 427): together when every one was asked for before any had answered.
+  const startReads = ['/api/v1/info', '/api/v1/chats', '/api/v1/settings'].map((p) => requests.find((r) => r.kind === 'read' && r.id === p));
+  const startTogether = startReads.every(Boolean) && Math.max(...startReads.map((r) => r.asked)) < Math.min(...startReads.map((r) => r.end));
   const proof = {
     link: LINK,
     viewport: [innerWidth, innerHeight],
@@ -308,6 +311,7 @@
     avatarEarly: avatars.filter((r) => !r.shown && r.screenWaiting).length,
     avatarEarlyIds: avatars.filter((r) => !r.shown && r.screenWaiting).map((r) => r.id),
     fling,
+    startTogether,
     reads: requests.filter((r) => r.kind === 'read').map((r) => ({ path: r.id, asked: r.asked, end: r.end })),
   };
   window.loadOrderProof = proof;

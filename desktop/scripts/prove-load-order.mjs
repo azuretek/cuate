@@ -65,6 +65,8 @@ app.whenReady().then(async () => {
   if (proof.offscreenBeforeOnscreen !== 0) problems.push('pictures off screen were asked for while one on screen was still waiting: ' + proof.offscreenBeforeOnscreenIds.join(', '));
   // Issue 426: an avatar is fetched in the same order, so none is asked for off screen while the screen waits.
   if (proof.avatarEarly !== 0) problems.push('avatars off screen were asked for while something on screen was still waiting: ' + (proof.avatarEarlyIds || []).join(', '));
+  // Issue 427: a start asks for its info, its conversations and its settings together.
+  if (proof.startTogether !== true) problems.push('the start read its info, conversations and settings one after another: ' + JSON.stringify(proof.reads));
   if (proof.fling?.allDrawn !== true) problems.push('the pictures where the fling stopped never all drew');
   if (proof.fling?.staleAtStop !== 0) problems.push('fetches for rows flung past were still going when the view stopped: ' + (proof.fling?.staleAtStopIds || []).join(', '));
   if (problems.length) throw new Error(problems.join('; '));

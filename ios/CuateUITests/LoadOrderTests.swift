@@ -42,6 +42,8 @@ final class LoadOrderTests: XCTestCase {
         let avatarEarly = json["avatarEarly"] as? Int ?? -1
         let avatarIds = (json["avatarEarlyIds"] as? [String] ?? []).joined(separator: ", ")
         XCTAssertEqual(avatarEarly, 0, "avatars off screen were asked for while something on screen was still waiting: " + avatarIds)
+        // Issue 427: a start asks for its info, its conversations and its settings together.
+        XCTAssertEqual(json["startTogether"] as? Bool, true, "the start read its info, conversations and settings one after another: " + raw)
         let onScreen = json["onScreen"] as? [String] ?? []
         XCTAssertFalse(onScreen.isEmpty, "no picture was on screen to measure")
         // A fling up through the history: no fetch is still going for a row flung past once the view has stopped.

@@ -63,6 +63,8 @@ class LoadOrderTest {
             assertEquals("pictures off screen were asked for while one on screen was still waiting: $proof", 0, proof.getInt("offscreenBeforeOnscreen"))
             // Issue 426: an avatar is fetched in the same order, so none is asked for off screen while the screen waits.
             assertEquals("avatars off screen were asked for while something on screen was still waiting: $proof", 0, proof.getInt("avatarEarly"))
+            // Issue 427: a start asks for its info, its conversations and its settings together.
+            assertTrue("the start read its info, conversations and settings one after another: $proof", proof.optBoolean("startTogether", false))
             assertTrue("the pictures where the fling stopped never all drew: $proof", proof.getJSONObject("fling").optBoolean("allDrawn", false))
             assertEquals("fetches for rows flung past were still going when the view stopped: $proof", 0, proof.getJSONObject("fling").getInt("staleAtStop"))
         }
