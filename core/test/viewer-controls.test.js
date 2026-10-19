@@ -171,6 +171,12 @@ test('a video is laid out clear of every viewer control, and its step controls j
   assert.match(rule('.viewer-bar'), /min-height: var\(--viewer-bar-h\);/, 'and is the height the band leaves it');
 });
 
+// Issue 443: a video's element carries the item's poster while its clip loads, so the emulator's host renderer never
+// sees an empty media surface. The player still decodes and plays the real clip, and its controls are unchanged.
+test('a video carries its item poster while the clip loads', () => {
+  assert.match(viewer, /<video class="viewer-image" src=\$\{this\.src\} poster=\$\{this\.poster \|\| nothing\}/, 'the video template draws the poster');
+  assert.match(viewer, /this\.poster = item\.poster \|\| '';/, 'the viewer takes the poster from the item it shows');
+});
 
 // A video reaches the page only with its clip (issue 446): drawn before its clip, a video element is an empty player,
 // and Android's web view builds that player's accessibility node as "Unable to play media." with none of its controls,
@@ -189,7 +195,7 @@ test('a video is drawn only once its clip is here, and its place is held until t
   assert.match(waiting, /<div class="viewer-pending" role="img" aria-label=clip-2\.mp4 aria-busy="true">/, 'the video\'s place is held by a node that names it and is busy');
   assert.ok(waiting.includes('aria-label="Close"') && waiting.includes('viewer-prev') && waiting.includes('viewer-next'), 'the viewer\'s own controls are there meanwhile');
   const loaded = words(render.call(host('blob:clip')));
-  assert.match(loaded, /<video class="viewer-image" src=blob:clip aria-label=clip-2\.mp4 controls /, 'the video element is made with its clip already set');
+  assert.match(loaded, /<video class="viewer-image" src=blob:clip( poster=[^ ]*)? aria-label=clip-2\.mp4 controls /, 'the video element is made with its clip already set');
   assert.doesNotMatch(loaded, /viewer-pending/, 'and the held place is gone');
 });
 
