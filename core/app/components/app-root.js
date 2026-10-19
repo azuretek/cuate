@@ -59,6 +59,15 @@ import { notePlayed } from './app-audio.js';
 import './app-slide-confirm.js';
 
 const API_VERSION = 1;
+// The server holds every setting; the page only draws what it holds. A read that fails leaves the schema defaults.
+async function readSettingsFrom(client) {
+  try {
+    const { values } = await client.settings();
+    return values || {};
+  } catch {
+    return {};
+  }
+}
 // What the conversation pane says while nothing is open (issue 373): a fresh start opens nothing, so this is often
 // the first thing seen beside the list.
 const EMPTY_PANE = 'Choose a conversation to read it here.';
@@ -504,18 +513,26 @@ class AppRoot extends KitElement {
     this.storeReady = new Promise((resolve) => { ready = resolve; });
     await this.openStore(url);
     try {
-      const info = await client.info();
+      // The three reads a first paint needs are asked for together (issue 427), so the list costs one round trip rather
+      // than three in a row. None depends on another's answer: the version is checked before anything answered is
+      // used, and the settings are in hand before the event stream opens, so no notice, a message's or an update's, is
+      // decided against defaults the server has already overridden. A settings read that fails leaves the defaults.
+      // The info is awaited first, so a server on another version is refused with that sentence even when its
+      // conversation read, which it may not answer in this version's shape, fails before the info lands.
+      const infoRead = client.info();
+      const chatsRead = client.chats();
+      chatsRead.catch(() => {});
+      const settingsRead = readSettingsFrom(client);
+      const info = await infoRead;
       if (info.apiVersion !== API_VERSION) throw new Error(connectionSentence('version-mismatch'));
-      // What changed since the store's cursor is asked beside the list, so a conversation held and current is never
-      // read again on open.
-      const [{ chats }] = await Promise.all([client.chats(), this.catchUp(client)]);
+      // What changed since the store's cursor is asked beside the list and the settings, so a conversation held and
+      // current is never read again on open.
+      const [{ chats }, values] = await Promise.all([chatsRead, settingsRead, this.catchUp(client)]);
       this.client = client;
       this.info = info;
       this.serverUrl = url;
       this.sending = Boolean(info.sending);
-      // The settings are read before the event stream opens, so no notice, a message's or an update's, is decided
-      // against defaults the server has already overridden.
-      this.settings = await this.readSettings();
+      this.settings = values;
       this.settingsRead = true;
       // The cache paints the favorites row before the server answers; the server's list replaces it once the stream is
       // open, and a change queued while offline is sent then (issue 494).
@@ -730,14 +747,9 @@ class AppRoot extends KitElement {
     writeFavouriteCache(this.favouriteCache).catch(() => {});
   }
 
-  // The server holds every setting; the page only draws what it holds. A read that fails leaves the schema defaults.
-  async readSettings() {
-    try {
-      const { values } = await this.client.settings();
-      return values || {};
-    } catch {
-      return {};
-    }
+  // The settings as the server holds them now (readSettingsFrom above).
+  readSettings() {
+    return readSettingsFrom(this.client);
   }
 
   onConnState(s) {
