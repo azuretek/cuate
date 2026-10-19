@@ -120,6 +120,7 @@ const checks = [
   { key: 'windowBar', bound: 'true', value: (report) => report.windowBar, test: (v) => v === true },
   { key: 'appMenu', bound: 'true', value: (report) => report.appMenu, test: (v) => v === true },
   { key: 'live', bound: 'true', value: (report) => report.live, test: (v) => v === true },
+  { key: 'sendEffects', bound: 'a message sent with an effect is named under it with Replay, plays nothing from the history, plays as it arrives (a bubble effect on its bubble, a screen effect over the conversation), Invisible Ink is veiled in the bubble and the preview until pressed, and nothing plays under reduced motion (issue 442)', value: (report) => report.sendEffects, test: (v) => v === true },
   { key: 'sent', bound: 'true', value: (report) => report.sent, test: (v) => v === true },
   { key: 'edit', bound: 'an edit made on another device and one made here each replace the words live, marked Edited, in the conversation, the list preview and on reload (issue 391)', value: (report) => report.edit, test: (v) => v === true },
   { key: 'editHistory', bound: 'Edited under a message edited here and one edited elsewhere shows the words each replaced above it and reads Hide edits, and folds them away again (issue 437)', value: (report) => report.editHistory, test: (v) => v === true },
@@ -202,6 +203,7 @@ const checks = [
   { key: 'noticeIcon', bound: 'true', value: (report) => report.noticeIcon, test: (v) => v === true },
   { key: 'chatsBack', bound: 'true', value: (report) => report.chatsBack, test: (v) => v === true },
   { key: 'headerMenus', bound: 'true', value: (report) => report.headerMenus, test: (v) => v === true },
+  { key: 'groupMembers', bound: 'a person added to a group, removed or leaving is a quiet line naming who did it and whom, never an empty message; one added or removed here is the same line from You, and the group\'s details and the list preview follow at once (issue 456)', value: (report) => report && report.groupMembers, test: (v) => v === true },
   { key: 'contacts', bound: 'a group lists every member with an avatar and a name, and Edit contact is drawn on a one-to-one chat exactly when the shell has an editor (issue 393)', value: (report) => report && report.contacts, test: (v) => v === true },
   { key: 'carets', bound: 'true', value: (report) => report.carets, test: (v) => v === true },
 ];

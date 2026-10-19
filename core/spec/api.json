@@ -447,7 +447,8 @@
       "payloads": "number?",
       "event": "MessageEventKind?",
       "senderName": "string?",
-      "edited": "boolean?"
+      "edited": "boolean?",
+      "sendEffect": "string?"
     },
     "ChangeList": {
       "cursor": "string",
@@ -492,7 +493,8 @@
       "edited": "boolean?",
       "historyCursor": "string?",
       "styles": "TextStyle[]?",
-      "edits": "EditVersion[]?"
+      "edits": "EditVersion[]?",
+      "sendEffect": "string?"
     },
     "EditVersion": {
       "text": "string",
@@ -705,7 +707,12 @@
     "MessageEventKind": {
       "kind": "string",
       "photo": "Attachment?",
-      "action": "string?"
+      "action": "string?",
+      "person": "EventPerson?"
+    },
+    "EventPerson": {
+      "handle": "string",
+      "name": "string?"
     },
     "PushRegistration": {
       "token": "string",

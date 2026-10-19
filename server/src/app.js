@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
 import { createSender } from './send.js';
 import { platformOf } from '../../core/app/rules/platform.js';
+import { eventPreview } from '../../core/app/rules/chats.js';
 import { createAttachments } from './attachments.js';
 import { createUploads } from './uploads.js';
 import { createThemeFonts } from './theme-fonts.js';
@@ -24,6 +25,10 @@ import { createPush } from './push.js';
 import { configPath, loadConfig, saveConfig } from './config.js';
 
 const TOKEN_PARAMS = ['token', 'access_token', 'auth'];
+// How long a new event stream has to send its sign-in frame, and the close code when it does not: not 4401, which tells
+// the client its token was refused and signs it out, but a code it reconnects on.
+const AUTH_TIMEOUT_MS = 5000;
+const AUTH_TIMEOUT_CLOSE = 4408;
 const badRequest = (code, message, status = 400) => Object.assign(new Error(message), { status, code });
 const compile = (routes) => routes.map((r) => {
   const keys = [];
@@ -62,8 +67,12 @@ function readJson(req, max) {
 // The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (Abi, 2026-10-14).
 const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
 
-export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false }) {
+export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false, authTimeoutMs = AUTH_TIMEOUT_MS }) {
   const routes = compile(apiSpec.routes);
+  // A page served from another origin (the desktop app, a phone's web view) is let through for every method a route
+  // answers, read from the routes themselves: a list kept by hand left DELETE out, so the browser's preflight refused
+  // removing a person from a group, and a phone unregistering its push, before either reached a route (issue 456).
+  const allowMethods = [...new Set([...routes.map((r) => r.method), 'OPTIONS'])].join(', ');
   const previews = new Map();
   const paging = apiSpec.paging;
   const LIST_TTL_MS = 5 * 60 * 1000;
@@ -105,10 +114,16 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   // A phone with the app open shows its own notice, so only phones with no open connection get a push (issue 347).
   const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
   // Every message surface (history, replies, notices and pushes) uses the same Apple name authority.
+  // A person a group event is about (issue 456) is named by the same authority, or by their address.
   const nameMessage = async (message) => {
-    if (!contacts || !message || message.fromMe) return message;
-    const person = await contacts.forHandles([message.sender]).catch(() => null);
-    return { ...message, senderName: person?.name || null };
+    if (!contacts || !message) return message;
+    const about = message.event && message.event.person && message.event.person.handle ? message.event.person : null;
+    const [sender, person] = await Promise.all([
+      message.fromMe ? null : contacts.forHandles([message.sender]).catch(() => null),
+      about ? contacts.forHandles([about.handle]).catch(() => null) : null,
+    ]);
+    const named = message.fromMe ? message : { ...message, senderName: sender?.name || null };
+    return about ? { ...named, event: { ...named.event, person: { ...about, name: person?.name || null } } } : named;
   };
   const sourceMessages = engine.messages.bind(engine);
   // Decorate only messages on the shared engine; copying the engine snapshots its other methods and bypasses
@@ -117,6 +132,15 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     const page = await sourceMessages(...args);
     return { ...page, messages: await Promise.all(page.messages.map(nameMessage)) };
   };
+  // What changed since a client last looked carries the same names, so a client that keeps its messages draws a group's
+  // event with the person's contact name too (issue 456).
+  if (typeof engine.changes === 'function') {
+    const sourceChanges = engine.changes.bind(engine);
+    engine.changes = async (...args) => {
+      const page = await sourceChanges(...args);
+      return Array.isArray(page && page.messages) ? { ...page, messages: await Promise.all(page.messages.map(nameMessage)) } : page;
+    };
+  }
   engine.on(async (name, data) => {
     if (data?.message) data = { ...data, message: await nameMessage(data.message) };
     if (name === 'message.new') { noteMessage(data.message); push.notify(data.message).catch(() => {}); }
@@ -158,7 +182,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     return Math.min(hi, Math.max(lo, Number(v)));
   };
   const chatIdOk = (id) => /^\d{1,12}$/.test(id);
-  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: { kind: m.event.kind, ...(m.event.action ? { action: m.event.action } : {}) }, senderName: m.senderName || null } : {}), ...(m.edited ? { edited: true } : {}) });
+  const preview = (m) => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt, attachments: m.attachments.length, link: m.link || null, payloads: m.payloads || 0, ...(m.event ? { event: eventPreview(m.event), senderName: m.senderName || m.sender || null } : {}), ...(m.edited ? { edited: true } : {}), ...(m.sendEffect ? { sendEffect: m.sendEffect } : {}) });
   // The chat list is held in memory: a live message moves its chat to the top, a message in a chat the list does not
   // hold reads it again, and a list older than LIST_TTL_MS is served while a fresh one is read behind it.
   let held = null;
@@ -194,6 +218,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     }
     return out;
   };
+  // A chat told as changed carries the preview the list draws, so the line a change drew stays its preview (issue 456).
+  const withPreview = (c) => ({ ...c, lastMessage: previews.get(String(c.id)) || null });
   const readChats = (limit) => {
     if (!listing) {
       listing = engine.chats({ limit, photos: true })
@@ -209,7 +235,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
               if (unread < (Number(was.unread) || 0)) publish('chat.read', { chatId: String(c.id), unread });
               // A contact renamed or repictured reaches every client as the chat changing (issue 393).
               // So does a conversation's background changing (issue 417).
-              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id) || (was.background && was.background.id) !== (c.background && c.background.id) || JSON.stringify(was.members) !== JSON.stringify(c.members)) publish('chat.changed', c);
+              if (was.name !== c.name || (was.photo && was.photo.id) !== (c.photo && c.photo.id) || (was.background && was.background.id) !== (c.background && c.background.id) || JSON.stringify(was.members) !== JSON.stringify(c.members)) publish('chat.changed', withPreview(c));
             }
           }
         })
@@ -236,6 +262,9 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     if (m.event && m.event.kind === 'groupPhoto') held.chats[at] = { ...held.chats[at], photo: m.event.photo };
     // A background that changed live is read from the engine and told to every client as the chat changing (issue 417).
     if (m.event && m.event.kind === 'background') refreshBackground(id, m.event.action);
+    // A person added, removed or leaving, here or on another phone, changes the group's people: the list is read again
+    // and every client is told the chat changed, with the line as its preview (issue 456).
+    if (m.event && m.event.kind === 'member') chatChanged((c) => String(c.id) === id).catch(() => {});
     const chat = held.chats[at];
     if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
     // An arriving message from someone else raises the held count by the same rule every client raises its own
@@ -263,7 +292,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     const chat = held.chats[at];
     if ((chat.background && chat.background.id) === (background && background.id) && 'background' in chat) return;
     held.chats[at] = { ...chat, background };
-    publish('chat.changed', held.chats[at]);
+    publish('chat.changed', withPreview(held.chats[at]));
   };
   const noteEdit = (m) => {
     const id = String(m.chatId);
@@ -279,7 +308,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   };
   const chatChanged = async (match) => {
     const chat = (await freshChats()).find(match) || null;
-    if (chat) publish('chat.changed', chat);
+    if (chat) publish('chat.changed', withPreview(chat));
     return chat;
   };
   // A conversation read on one device clears here too: the held list drops its count and every client is told,
@@ -415,7 +444,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     const url = new URL(req.url, 'http://127.0.0.1');
     res.setHeader('access-control-allow-origin', '*');
     res.setHeader('access-control-allow-headers', 'authorization, content-type, traceparent');
-    res.setHeader('access-control-allow-methods', 'GET, POST, PUT, OPTIONS');
+    res.setHeader('access-control-allow-methods', allowMethods);
     res.setHeader('access-control-max-age', '600');
     if (req.method === 'OPTIONS') {
       res.setHeader('access-control-allow-private-network', 'true');
@@ -490,12 +519,15 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   function onSocket(ws) {
     const c = { ws, authed: false, alive: true, id: null };
     clients.add(c);
+    // A first frame that is late has not been refused: the stream closes with the code the client retries on, so a
+    // page busy drawing its first screen on a slow machine connects again rather than signing its device out. Only a
+    // token the server refuses closes with 4401.
     const timer = setTimeout(() => {
       if (!c.authed) {
         log.emit('ws.refused', { reason: 'auth_timeout' });
-        ws.close(4401, 'unauthorized');
+        ws.close(AUTH_TIMEOUT_CLOSE, 'auth timeout');
       }
-    }, 5000);
+    }, authTimeoutMs);
     ws.on('pong', () => { c.alive = true; });
     ws.on('message', (buf) => {
       if (c.authed) return;

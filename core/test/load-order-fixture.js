@@ -134,9 +134,15 @@
       const blob = pictures.get(id);
       // Judged when it is asked for, since a picture that lands changes the layout under every other one: whether the
       // element asking is on screen, and whether something on screen is still waiting for its picture.
-      const tag = kind === 'avatar' ? 'app-avatar' : 'app-attachment';
-      const own = [...document.querySelectorAll(tag)].filter((el) => (kind === 'avatar' ? el.photo : el.attachment)?.id === id);
-      const waitingOn = [...document.querySelectorAll('app-attachment')].filter((el) => !el.src && el.attachment?.id !== id && shown(el)).map((el) => el.attachment.id);
+      // An avatar draws no box of its own (display: contents), so it is judged by the circle it renders.
+      const face = (el) => el.querySelector(':scope > .avatar') || el;
+      const own = kind === 'avatar'
+        ? [...document.querySelectorAll('app-avatar')].filter((el) => el.photo?.id === id).map(face)
+        : [...document.querySelectorAll('app-attachment')].filter((el) => el.attachment?.id === id);
+      const waitingOn = [
+        ...[...document.querySelectorAll('app-attachment')].filter((el) => !el.src && el.attachment?.id !== id && shown(el)).map((el) => el.attachment.id),
+        ...[...document.querySelectorAll('app-avatar')].filter((el) => el.photo && !el.src && el.photo.id !== id && shown(face(el))).map((el) => el.photo.id),
+      ];
       return send({ kind, id, part: u.searchParams.get('part') || '', shown: own.some(shown), screenWaiting: waitingOn.length > 0, waitingOn }, blob ? SIZE[kind] : SIZE.json, blob ? bytes(blob) : missing, signal);
     }
     const log = { kind: 'read', id: path };
@@ -298,6 +304,9 @@
     cancelled: photos.filter((r) => r.aborted != null).length,
     avatarRequests: avatars.length,
     avatarOffscreen: avatars.filter((r) => !r.shown).length,
+    // An avatar asked for while its row was off screen and something on screen was still waiting (issue 426).
+    avatarEarly: avatars.filter((r) => !r.shown && r.screenWaiting).length,
+    avatarEarlyIds: avatars.filter((r) => !r.shown && r.screenWaiting).map((r) => r.id),
     fling,
     reads: requests.filter((r) => r.kind === 'read').map((r) => ({ path: r.id, asked: r.asked, end: r.end })),
   };
