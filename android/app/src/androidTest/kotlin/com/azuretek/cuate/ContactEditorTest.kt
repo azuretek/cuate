@@ -68,8 +68,8 @@ class ContactEditorTest {
     }
 
     /**
-     * One reading of the window in front, taken from one root: which app it is, how its texts name the person, and the
-     * texts themselves so a wait that runs out says what the contacts app was drawing (issue 446).
+     * One reading of one window: which app it is, how its texts name the person, and the texts themselves so a wait that
+     * runs out says what the contacts app was drawing (issue 446).
      */
     private data class Reading(
         val packageName: String?,
@@ -89,10 +89,39 @@ class ContactEditorTest {
                 texts.take(12) + ")"
     }
 
-    /** Every text and content description under the window's root in one walk, and how they name the seeded person. */
-    private fun read(): Reading {
-        val root: AccessibilityNodeInfo = instrumentation.uiAutomation.rootInActiveWindow
-            ?: return Reading(null, false, false, false, emptyList())
+    /**
+     * Every window, read separately (issue 446). Google Contacts greets a fresh install with "Some menu items have
+     * moved" in a window of its own, and while that window is in front the active root holds its notice alone and
+     * never the card behind it, so the card's own window is where the person is named.
+     */
+    private fun readAll(): List<Reading> {
+        val automation = instrumentation.uiAutomation
+        val readings = mutableListOf<Reading>()
+        for (window in automation.windows) {
+            val root = window.root ?: continue
+            readings += read(root)
+        }
+        if (readings.isEmpty()) automation.rootInActiveWindow?.let { readings += read(it) }
+        return readings
+    }
+
+    /** Presses the first-run notice's own close control, wherever the contacts app has drawn it. */
+    private fun dismissFirstRunNotice(): Boolean {
+        val pending = mutableListOf<AccessibilityNodeInfo>()
+        for (window in instrumentation.uiAutomation.windows) window.root?.let { pending += it }
+        while (pending.isNotEmpty()) {
+            val node = pending.removeAt(pending.size - 1)
+            val text = (node.text?.toString() ?: node.contentDescription?.toString() ?: "").trim()
+            if (text.equals("Close Popup Window", ignoreCase = true) && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return true
+            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let { pending += it }
+        }
+        return false
+    }
+
+    /** Every text and content description under one window's root in one walk, and how they name the seeded person. */
+    private fun read(root: AccessibilityNodeInfo): Reading {
         val texts = mutableListOf<String>()
         var fullName = false
         var firstName = false
@@ -140,22 +169,33 @@ class ContactEditorTest {
             if (got.has("error")) throw AssertionError("contacts fixture failed: " + got.getString("error"))
             assertTrue("the control is drawn: $got", got.getBoolean("drawn"))
             assertTrue("the bridge opened the contacts app: $got", got.optBoolean("answer"))
-            // The contacts app is in front, and it is showing the seeded person. Issue 446: the window is read again and
-            // again until it names the person, and the reading the wait ends on is the one judged, never a second look at a
-            // view that has drawn on since.
+            // The contacts app is in front, and it is showing the seeded person. Issue 446: every window the app has
+            // drawn is read again and again until one names the person, and the reading the wait ends on is the one
+            // judged, never a second look at a view that has drawn on since.
             val automation = instrumentation.uiAutomation
             val front = System.nanoTime() + TimeUnit.SECONDS.toNanos(FRONT_SECONDS)
-            var reading = read()
-            while (!(reading.packageName != null && reading.packageName != context.packageName && reading.namesThePerson)) {
+            var readings = readAll()
+            var dismissed = 0
+            fun named() = readings.firstOrNull { it.packageName != context.packageName && it.namesThePerson }
+            while (named() == null) {
                 val left = TimeUnit.NANOSECONDS.toMillis(front - System.nanoTime())
                 if (left <= 0) {
-                    throw AssertionError("the contacts app never showed the person; the last reading: $reading; in front: " + inFront())
+                    throw AssertionError("the contacts app never showed the person; the last readings: $readings; in front: " + inFront())
                 }
+                // The notice sits over the card until its own control is pressed; that is the contacts app's first-run
+                // behaviour, not the card, so close it and read again rather than judging the notice.
+                if (dismissed < 3 && dismissFirstRunNotice()) dismissed++
                 try { automation.waitForIdle(WINDOW_SETTLE_MS, minOf(WINDOW_SETTLE_MS, left)) } catch (busy: java.util.concurrent.TimeoutException) { }
-                reading = read()
+                readings = readAll()
             }
-            assertTrue("a contacts app, not this one, is in front: $reading", reading.packageName != context.packageName)
-            assertEquals("the contacts app names the person: $reading", true, reading.namesThePerson)
+            val shown = named()!!
+            assertTrue("a contacts app, not this one, is in front: $readings", shown.packageName != context.packageName)
+            val active = automation.rootInActiveWindow?.packageName?.toString()
+            assertTrue(
+                "the contacts app showing the person is the window in front: $shown; every window: $readings; in front: " + inFront(),
+                active == shown.packageName,
+            )
+            assertEquals("the contacts app names the person: $shown", true, shown.namesThePerson)
         }
     }
 

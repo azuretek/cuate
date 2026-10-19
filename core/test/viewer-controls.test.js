@@ -212,18 +212,21 @@ test('each phone\'s video test reads the tree over the empty video before its cl
   }
 });
 
-// The contacts tests wait on the reading they judge (issue 446): the window in front is read again and again, the whole
-// tree at a time, until it names the person, and the reading the wait ends on is the one asserted. One look at a view
-// that is still drawing, or a whole-name lookup against an editor whose name fields are separate, reads as not the
-// person while the person is on screen.
+// The contacts tests wait on the reading they judge (issue 446): every window of the contacts app is read again and
+// again, the whole tree at a time, until one names the person, and the reading the wait ends on is the one asserted. One
+// look at a view that is still drawing, or a whole-name lookup against an editor whose name fields are separate, reads as
+// not the person while the person is on screen. Google Contacts also draws its first-run notice in a window of its own,
+// in front of the card, so the active root alone holds the notice and never the person behind it.
 test('each phone\'s contacts test waits on the reading it judges, and says what it saw', () => {
   const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
   const naming = JSON.parse(read('core/spec/naming.json'));
   const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/ContactEditorTest.kt');
   assert.match(androidTest, /node\.text\?\.toString\(\), node\.contentDescription\?\.toString\(\)/, 'Android reads every text and content description under one root');
-  assert.match(androidTest, /while \(!\(reading\.packageName != null && reading\.packageName != context\.packageName && reading\.namesThePerson\)\)/, 'and takes a new reading until a window in front names the person');
-  assert.match(androidTest, /assertEquals\("the contacts app names the person: \$reading", true, reading\.namesThePerson\)/, 'asserting on the reading its wait ended on');
-  assert.match(androidTest, /the contacts app never showed the person; the last reading: \$reading/, 'and a wait that runs out says what it saw');
+  assert.match(androidTest, /for \(window in automation\.windows\) \{/, 'read from every window, not only the one in front');
+  assert.match(androidTest, /while \(named\(\) == null\)/, 'and takes a new reading until one window names the person');
+  assert.match(androidTest, /dismissFirstRunNotice\(\)/, "and closes the contacts app's own first-run notice rather than judging it");
+  assert.match(androidTest, /assertEquals\("the contacts app names the person: \$shown", true, shown\.namesThePerson\)/, 'asserting on the reading its wait ended on');
+  assert.match(androidTest, /the contacts app never showed the person; the last readings: \$readings/, 'and a wait that runs out says what it saw');
   assert.doesNotMatch(androidTest, /Thread\.sleep|SystemClock\.sleep/, 'Android waits on states, never a sleep');
   const uiTest = read('ios/' + naming.product + 'UITests/ContactEditorTests.swift');
   assert.match(uiTest, /let editor = app\.navigationBars\.buttons\["Edit"\]\.firstMatch/, 'iOS reads the card by the native control the tree carries');

@@ -25,10 +25,11 @@
   document.body.append(marker);
   await customElements.whenDefined('app-root');
   const root = document.querySelector('app-root');
-  const until = async (test, what, ms = 20000) => {
+  const until = async (test, what, ms = 20000, onTick) => {
     const deadline = performance.now() + ms;
     while (!test()) {
       if (performance.now() > deadline) throw new Error('timed out waiting for ' + what);
+      if (onTick) onTick();
       await new Promise(requestAnimationFrame);
     }
   };
@@ -81,11 +82,31 @@
   say('vc:loading');
   await until(() => video() && video().readyState >= 2 && video().videoWidth > 0, 'the clip to load');
   await until(() => !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the viewer to arrive');
-  // Paused part way in, so the player keeps its controls on screen and the scrubber has somewhere to sit.
+  // Paused part way in, so the player keeps its controls on screen and the scrubber has somewhere to sit. WebKit can
+  // drop a seek set on an element that has only just loaded, or hold one while the element is paused, so the wait is on
+  // the state it needs, re-issues the seek and lets a held one finish by playing; a wait that runs out says what the
+  // element was actually doing, never just that a second passed (issue 446).
   const v = video();
+  const mediaState = () => JSON.stringify({
+    paused: v.paused, seeking: v.seeking, t: Math.round(v.currentTime * 1000) / 1000,
+    ready: v.readyState, duration: v.duration,
+    buffered: v.buffered.length ? [v.buffered.start(0), v.buffered.end(0)] : [],
+  });
+  const atOneSecond = () => !v.seeking && Math.abs(v.currentTime - 1) <= 0.05;
   v.pause();
-  if (Math.abs(v.currentTime - 1) > 0.05) v.currentTime = 1;
-  await until(() => !v.seeking && Math.abs(v.currentTime - 1) <= 0.05, 'the video to settle at one second');
+  try {
+    await until(atOneSecond, 'the video to settle at one second', 60000, () => {
+      if (v.seeking) {
+        if (v.paused) v.play().catch(() => {});
+      } else {
+        try { v.currentTime = 1; } catch { /* an element without metadata refuses the seek; the next frame tries again */ }
+      }
+    });
+  } catch (error) {
+    throw new Error(error.message + ' (the video was ' + mediaState() + ')', { cause: error });
+  }
+  v.pause();
+  if (!atOneSecond()) throw new Error('the video did not settle at one second (the video was ' + mediaState() + ')');
   await until(() => !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the viewer to settle');
   const box = (node) => {
     if (!node) return null;
