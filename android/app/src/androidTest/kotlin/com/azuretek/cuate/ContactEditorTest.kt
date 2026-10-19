@@ -109,15 +109,20 @@ class ContactEditorTest {
     private fun dismissFirstRunNotice(): Boolean {
         val pending = mutableListOf<AccessibilityNodeInfo>()
         for (window in instrumentation.uiAutomation.windows) window.root?.let { pending += it }
+        var label: AccessibilityNodeInfo? = null
         while (pending.isNotEmpty()) {
             val node = pending.removeAt(pending.size - 1)
             val text = (node.text?.toString() ?: node.contentDescription?.toString() ?: "").trim()
-            if (text.equals("Close Popup Window", ignoreCase = true) && pressNearest(node)) {
-                return true
-            }
+            if (text.contains("Close Popup Window", ignoreCase = true)) { label = node; break }
             for (index in 0 until node.childCount) node.getChild(index)?.let { pending += it }
         }
-        return false
+        // No label at all means no notice is drawn, so nothing is pressed and back is never sent to the contacts app.
+        val found = label ?: return false
+        if (pressNearest(found)) return true
+        // The control itself is drawn by the app, not exposed as pressable. Dismissing the node, then one back press,
+        // is what a person does with this notice, and it is sent only once a label was actually found (issue 446).
+        if (found.performAction(AccessibilityNodeInfo.ACTION_DISMISS)) return true
+        return instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
     }
 
     /**
