@@ -123,6 +123,10 @@ class SettingsPageTest {
             val proof = awaitProof(scenario)
             assertTrue("The way out is the round X: " + proof, proof.getString("back") == "Close settings" && proof.getString("icon") == "x")
             assertTrue("Every tab was walked: " + proof, proof.getString("walked").startsWith("appearance:") && proof.getString("walked").contains("behavior:") && proof.getString("walked").contains("device:"))
+            // The theme section now sits above the icon selector (issue 492), so on a phone the choices are below the
+            // fold and the pixel proof has to bring them on screen before it judges them.
+            evaluate(scenario, "document.querySelector('.app-icon-choice')?.scrollIntoView({ block: 'center' }); 'scrolled'")
+            instrumentation.waitForIdleSync()
             val capture = settledCapture()
             // AGP copies this directory before uninstalling the app and its data.
             val outputDir = java.io.File(requireNotNull(

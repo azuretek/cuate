@@ -563,7 +563,7 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .about-copy { align-self: center; margin-top: var(--space-2); }
 .about-compare { margin: var(--space-2) 0 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); }
 .about-compare.mismatch { color: var(--color-danger); }
-/* The theme import stacks its name, the pasted CSS, the action and what the import refused, one under another. */
+/* The theme import stacks its label, the URL field, the action and what the import answered, one under another. */
 .theme-import { flex-direction: column; align-items: stretch; gap: var(--space-2); }
 /* A row whose control sits under its label rather than beside it: the theme grid and the text size choices. */
 .setting-row-stack { flex-direction: column; align-items: stretch; gap: var(--space-2); }
@@ -612,11 +612,19 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
 .theme-swatch[data-token="bubble-me"] { background: var(--color-bubble-me); }
 .theme-swatch[data-token="bubble-them"] { background: var(--color-bubble-them); }
 .theme-card-name { font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A held theme and its delete control share one cell of the grid (issue 492), so the control sits under its own card
+   rather than beside a neighbour's. The card keeps the cell's height and the delete reads as a quiet danger action. */
+.theme-item { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.theme-item .theme-card { flex: 1 1 auto; }
+.theme-delete { align-self: flex-start; padding: 0 var(--space-1); font-size: var(--font-size-sm); }
+/* The delete gate: the card names what goes, the slide is the only confirmation, and Cancel leaves the list alone. */
+.theme-delete-gate { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); }
+.theme-delete-question { margin: 0; color: var(--color-fg-muted); }
+.theme-delete-question strong { color: var(--color-fg); }
+.theme-delete-gate .text-button { align-self: flex-start; }
 .theme-url { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .theme-url .setting-label { flex-basis: 100%; }
 .theme-url-input { flex: 1 1 auto; }
-.theme-import-text { font-family: var(--font-mono); font-size: var(--font-size-sm); resize: vertical; }
-.theme-import-action { align-self: flex-start; }
 .theme-import-note { margin: 0; font-size: var(--font-size-sm); color: var(--color-fg-muted); overflow-wrap: anywhere; }
 .conv-back { display: none; align-items: center; justify-content: center; background: none; border: 0; color: var(--color-accent); cursor: pointer; font-size: var(--font-size-lg); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
 .conv-back .icon { width: var(--size-back-icon); height: var(--size-back-icon); }

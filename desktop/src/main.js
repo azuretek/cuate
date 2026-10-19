@@ -2927,25 +2927,13 @@ async function runSmoke(w) {
   console.log('overlay icon: ' + JSON.stringify({ smokeBadge, redraws: smokeIcons.length }));
   if (!report.overlayIcon) console.error('overlay icon: no counted badge');
 
-  // Importing a tweakcn theme from the settings page: the pasted export is converted, held by the server and drawn by
-  // the page in the scheme in force (dark, from the step above), the page names what it refused, and Use default
-  // clears it at the server. Values are checked at the server and in what the page resolves, not in the page's copy.
-  const importCss = ':root { --primary: #8a3b12; --font-serif: serif; }\n.dark { --primary: #e0a070; }';
-  await js(`(() => { const s = document.querySelector('app-settings'); const n = s.querySelector('.theme-import-name'); n.value = 'smoke import'; n.dispatchEvent(new Event('input', { bubbles: true })); const t = s.querySelector('.theme-import-text'); t.value = ${JSON.stringify(importCss)}; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  await waitFor("!document.querySelector('app-settings .theme-import-action').disabled");
-  await js("document.querySelector('app-settings .theme-import-action').click()");
-  for (let i = 0; i < 50 && (await held())['appearance.theme']?.name !== 'smoke import'; i += 1) await pause(200);
-  const imported = (await held())['appearance.theme'];
-  report.themeImportHeld = Boolean(imported) && imported.source === 'tweakcn' && imported.name === 'smoke import';
-  await waitFor("getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() === '#e0a070'", 10000);
-  report.themeImportDrawn = true;
-  report.themeImportReported = await js("(() => { const n = document.querySelector('app-settings .theme-import-note'); return Boolean(n) && n.textContent.includes('font-serif'); })()");
-  await waitFor("!document.querySelector('app-settings [data-action=\"theme-default\"]').disabled", 10000);
-  await js("document.querySelector('app-settings [data-action=\"theme-default\"]').click()");
-  for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
-  report.themeImportCleared = (await held())['appearance.theme'] === null;
-  report.themeImport = report.themeImportHeld && report.themeImportDrawn && report.themeImportReported && report.themeImportCleared;
-  if (!report.themeImport) console.error('theme import: ' + JSON.stringify({ imported, held: report.themeImportHeld, reported: report.themeImportReported, cleared: report.themeImportCleared }));
+  // The theme section is above the app icon selector, and a URL is the only import path (issue 492): no paste field
+  // and no local file control remain. The URL import itself is exercised below against a loopback server, so nothing
+  // here reaches a live site.
+  report.themeOrder = await js("(() => { const s = document.querySelector('app-settings'); const t = s.querySelector('.theme-section'); const i = s.querySelector('[data-key=\"appearance.appIcon\"]'); return Boolean(t && i) && (t.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0; })()");
+  report.themeUrlOnly = await js("(() => { const s = document.querySelector('app-settings'); return Boolean(s.querySelector('.theme-url-input')) && s.querySelectorAll('input[type=\"text\"], input[type=\"url\"]').length === 1 && !s.querySelector('textarea') && !s.querySelector('input[type=\"file\"]'); })()");
+  if (!report.themeOrder) console.error('theme order: the theme section is not above the app icon selector');
+  if (!report.themeUrlOnly) console.error('theme import: the page still offers a path other than a URL');
 
   // Importing a theme by URL: the server fetches it, converts it and offers it in the picker without putting it in
   // force; the card shows the theme's own colours; a URL that answers with no theme is refused with the reason and
@@ -3000,6 +2988,23 @@ async function runSmoke(w) {
     report.themeUrlCard = cardAccent === (scheme === 'dark' ? 'rgb(147, 197, 253)' : 'rgb(29, 78, 216)');
     report.themeUrl = report.themeUrlRefused && report.themeUrlHeld && report.themeUrlCard;
     console.log('theme url: ' + JSON.stringify({ badNote, goodNote, scheme, cardAccent, refused: report.themeUrlRefused, held: report.themeUrlHeld, card: report.themeUrlCard }));
+
+    // Deleting a theme asks first, removes it from the picker and from the server, and leaves what is in use alone
+    // (issue 492). Cancel leaves it held; the slide, driven here by the End key, is what deletes it.
+    const deleteSmokeUrl = "document.querySelector('app-settings [data-action=\"theme-delete\"][data-theme-id=\"smoke-url\"]')";
+    const heldHas = async (id) => ((await held())['appearance.themes'] || []).some((t) => t.id === id);
+    await js(deleteSmokeUrl + '.click()');
+    await waitFor("Boolean(document.querySelector('app-settings .theme-delete-gate'))", 10000);
+    report.themeDeleteAsked = await heldHas('smoke-url');
+    await js("document.querySelector('app-settings [data-action=\"theme-delete-cancel\"]').click()");
+    report.themeDeleteCancelled = !(await js("Boolean(document.querySelector('app-settings .theme-delete-gate'))")) && await heldHas('smoke-url');
+    await js(deleteSmokeUrl + '.click()');
+    await waitFor("Boolean(document.querySelector('app-settings .theme-delete-gate'))", 10000);
+    await js("(() => { const t = document.querySelector('app-settings app-slide-confirm .slide-thumb'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })); return true; })()");
+    for (let i = 0; i < 50 && await heldHas('smoke-url'); i += 1) await pause(200);
+    report.themeDelete = report.themeDeleteAsked && report.themeDeleteCancelled && !(await heldHas('smoke-url')) && !(await js("Boolean(document.querySelector('app-settings .theme-item[data-theme-id=\"smoke-url\"]'))"));
+    console.log('theme delete: ' + JSON.stringify({ asked: report.themeDeleteAsked, cancelled: report.themeDeleteCancelled, removed: report.themeDelete }));
+    if (!report.themeDelete) console.error('theme delete: a theme was removed without its gate, or stayed after it');
 
     // A tweakcn theme PAGE URL imports the theme the page shows, its whole design language: put in force from the
     // picker, light and dark each resolve its colours, and both share its type, radius, spacing and shadows (issue
@@ -3087,22 +3092,38 @@ async function runSmoke(w) {
     themeHost.close();
   }
 
-  // The picker lists EVERY held theme and previews each in its own colours (issue 186). Two more themes are pasted
-  // with no name, so both arrive as "Imported theme": with the earlier three that is five held themes, and the two
-  // that share a name must be two cards, not one replacing the other. Each card is read against the server's own list,
-  // in light and dark, before and after leaving Settings and coming back (a fresh page, which drew every card in the
-  // default palette before), at desktop width and at a phone's.
-  const pasteUnnamed = async (light, dark) => {
-    const count = ((await held())['appearance.themes'] || []).length;
-    await waitFor("!document.querySelector('app-settings').busy", 10000);
-    const css = ':root { --primary: ' + light[0] + '; --background: ' + light[1] + '; --card: ' + light[1] + '; } .dark { --primary: ' + dark[0] + '; --background: ' + dark[1] + '; --card: ' + dark[1] + '; }';
-    await js(`(() => { const s = document.querySelector('app-settings'); const n = s.querySelector('.theme-import-name'); n.value = ''; n.dispatchEvent(new Event('input', { bubbles: true })); const t = s.querySelector('.theme-import-text'); t.value = ${JSON.stringify(css)}; t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await waitFor("!document.querySelector('app-settings .theme-import-action').disabled");
-    await js("document.querySelector('app-settings .theme-import-action').click()");
-    for (let i = 0; i < 50 && ((await held())['appearance.themes'] || []).length === count; i += 1) await pause(200);
+  // The picker lists EVERY held theme and previews each in its own colours (issue 186). Four more themes arrive by
+  // URL from a loopback registry, since a URL is the only import path (issue 492), each with its own light and dark
+  // palette: with the one left from the earlier steps that is five held themes, all distinct. Each card is read against the server's own
+  // list, in light and dark, before and after leaving Settings and coming back (a fresh page, which drew every card in
+  // the default palette before), at desktop width and at a phone's.
+  const pickerPalettes = {
+    '/picker-1.json': { title: 'Picker Teal', light: { primary: '#0f766e', background: '#ecfdf5' }, dark: { primary: '#5eead4', background: '#04201c' } },
+    '/picker-2.json': { title: 'Picker Rose', light: { primary: '#9d174d', background: '#fdf2f8' }, dark: { primary: '#f9a8d4', background: '#2a0a18' } },
+    '/picker-3.json': { title: 'Picker Navy', light: { primary: '#1e3a8a', background: '#eff6ff' }, dark: { primary: '#93c5fd', background: '#0b1020' } },
+    '/picker-4.json': { title: 'Picker Amber', light: { primary: '#b45309', background: '#fffbeb' }, dark: { primary: '#fcd34d', background: '#1c1405' } },
   };
-  await pasteUnnamed(['#0f766e', '#ecfdf5'], ['#5eead4', '#04201c']);
-  await pasteUnnamed(['#9d174d', '#fdf2f8'], ['#f9a8d4', '#2a0a18']);
+  const pickerHost = http.createServer((req, res) => {
+    const item = pickerPalettes[req.url];
+    if (item) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ name: req.url.slice(1, -5), title: item.title, cssVars: { light: item.light, dark: item.dark } }));
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('no theme here');
+  });
+  await new Promise((resolve) => pickerHost.listen(0, '127.0.0.1', resolve));
+  const pickerBase = 'http://127.0.0.1:' + pickerHost.address().port;
+  try {
+    for (const name of Object.keys(pickerPalettes)) {
+      const count = ((await held())['appearance.themes'] || []).length;
+      await importUrl(pickerBase + name, 1, 20000);
+      for (let i = 0; i < 50 && ((await held())['appearance.themes'] || []).length === count; i += 1) await pause(200);
+    }
+  } finally {
+    pickerHost.close();
+  }
   const pickerThemes = (await held())['appearance.themes'] || [];
   // What the page draws, read against what the server holds: the cards in order, and each card's background and
   // accent swatches as the page resolves them, next to the theme's own colour resolved the same way.
@@ -3155,6 +3176,25 @@ async function runSmoke(w) {
   }
   report.themePicker = pickerThemes.length >= 5 && new Set(pickerThemes.map((t) => t.id)).size === pickerThemes.length && Object.values(picker).every((p) => p.before && p.after && p.phone);
   console.log('theme picker: ' + JSON.stringify({ held: pickerThemes.map((t) => t.id), picker }));
+
+  // Deleting the theme in use falls back to the default in the same write and says so (issue 492). The card is chosen
+  // first so the delete is aimed at the theme in force; the slide's End key is the confirmation.
+  const doomed = pickerThemes[0];
+  const doomedCard = JSON.stringify('app-settings .theme-card[data-theme-id="' + doomed.id + '"]');
+  const doomedDelete = JSON.stringify('app-settings [data-action="theme-delete"][data-theme-id="' + doomed.id + '"]');
+  await js("document.querySelector(" + doomedCard + ").click()");
+  for (let i = 0; i < 50 && (await held())['appearance.theme']?.id !== doomed.id; i += 1) await pause(200);
+  await waitFor("!document.querySelector('app-settings').busy", 10000);
+  await js("document.querySelector(" + doomedDelete + ").click()");
+  await waitFor("Boolean(document.querySelector('app-settings .theme-delete-gate'))", 10000);
+  const inUseAsked = ((await held())['appearance.themes'] || []).some((t) => t.id === doomed.id);
+  await js("(() => { const t = document.querySelector('app-settings app-slide-confirm .slide-thumb'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })); return true; })()");
+  for (let i = 0; i < 50 && (await held())['appearance.theme'] !== null; i += 1) await pause(200);
+  report.themeDeleteInUse = inUseAsked && (await held())['appearance.theme'] === null
+    && !((await held())['appearance.themes'] || []).some((t) => t.id === doomed.id)
+    && await js("document.querySelector(" + JSON.stringify('app-settings .theme-card[data-theme-id="default"]') + ")?.getAttribute('aria-checked') === 'true'")
+    && await js("Boolean((document.querySelector(" + JSON.stringify('app-settings .theme-note') + ")?.textContent || '').match(/default theme/i))");
+  console.log('theme delete in use: ' + JSON.stringify({ asked: inUseAsked, ok: report.themeDeleteInUse, doomed: doomed.id }));
   await putSettings({ 'appearance.theme': null });
   await waitFor("document.querySelector('app-settings .theme-card[data-theme-id=\"default\"]')?.getAttribute('aria-checked') === 'true'", 10000);
 
@@ -4261,6 +4301,7 @@ async function runSmoke(w) {
     await waitFor("Number(document.querySelector('app-root').settings['appearance.textScale']) === " + percent, 8000);
     await pause(300);
   };
+  const importedTheme = { name: 'Smoke text', source: 'tweakcn', color: { light: { accent: '#8a3b12', bg: '#fff7ed' }, dark: { accent: '#e0a070', bg: '#1c0f05' } } };
   const setTheme = async (value) => {
     await js("document.querySelector('app-root').setSetting({ key: 'appearance.theme', value: " + JSON.stringify(value) + " })");
     await pause(350);
@@ -4271,7 +4312,7 @@ async function runSmoke(w) {
     await setScale(percent);
     const row = {};
     for (const theme of ['default', 'imported']) {
-      await setTheme(theme === 'imported' ? imported : null);
+      await setTheme(theme === 'imported' ? importedTheme : null);
       for (const scheme of ['light', 'dark']) {
         nativeTheme.themeSource = scheme;
         await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
