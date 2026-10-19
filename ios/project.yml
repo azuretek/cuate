@@ -109,8 +109,10 @@ targets:
             cp "$SRCROOT/../core/test/message-cache-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/message-cache-fixture.js"
             cp "$SRCROOT/../core/test/edit-history-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/edit-history-fixture.js"
             cp "$SRCROOT/../core/test/text-format-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/text-format-fixture.js"
+            cp "$SRCROOT/../core/test/group-rename-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/group-rename-fixture.js"
             cp "$SRCROOT/../core/test/send-effects-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/send-effects-fixture.js"
             cp "$SRCROOT/../core/test/mention-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/mention-fixture.js"
+            cp "$SRCROOT/../core/test/bubble-colours-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/bubble-colours-fixture.js"
             cp "$SRCROOT/../core/test/group-members-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/group-members-fixture.js"
           fi
         basedOnDependencyAnalysis: false

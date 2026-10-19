@@ -59,7 +59,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = syntheticPdf(SYNTHETIC_PDF_PAGES);
   writeFileSync(docPath, pdf);
-  const { chats, messages, backgrounds: backgroundEvents, members: memberEvents } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
+  const { chats, messages, backgrounds: backgroundEvents, renames: renameEvents, members: memberEvents } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
   // A conversation background (issue 417), as Messages keeps it: the picture it rendered for the chat, in a property
   // list in the transcript background cache beside the attachments folder, named for the row that set it.
   const backgroundCache = path.join(path.dirname(attachmentsRoot), 'TranscriptBackgroundCache');
@@ -102,6 +102,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
 
   const lastAt = (chatId) => messages.filter((m) => m.chat_id === chatId && !m.is_reaction).reduce((a, m) => (m.created_at > a ? m.created_at : a), '');
   const withAttachments = (m, on) => (on ? m : { ...m, attachments: [] });
+  // Every read of a row carries its cursor (issue 484): history, changes and the live stream hand the client the
+  // same row shape, so a message learned from any of them can be browsed past and paged around.
+  const historyCursorOf = (m) => m.history_cursor || String(BigInt(Date.parse(m.created_at) - Date.parse('2001-01-01T00:00:00Z')) * 1000000n) + ':' + m.id;
   const add = (fields) => {
     rowid += 1;
     const m = { id: rowid, guid: 'FAKE-' + String(rowid).padStart(4, '0'), created_at: new Date().toISOString(), attachments: [], text: '', sender: '', sender_name: '', ...fields };
@@ -225,6 +228,26 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // The fake's stand-in for renames.js, with the same shape: which rows the store records as a group being renamed,
+  // each with the name it gave (issue 439).
+  const renames = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(renameEvents.filter((e) => want.has(e.guid)).map((e) => [e.guid, e.name]));
+    },
+    close() {},
+  };
+  // A group renamed, as Messages records it wherever the rename was made: the chat takes the name, and a row of its
+  // own with no text and nothing attached is written, which streams like any other (issue 439).
+  const renameRow = (chat, fields, name) => {
+    chat.display_name = String(name || '');
+    chat.name = chat.display_name;
+    const m = add({ chat_id: chat.id, text: '', is_read: true, ...fields });
+    renameEvents.push({ guid: m.guid, chatId: String(chat.id), name: chat.display_name });
+    broadcast(m);
+    return m;
+  };
+
   // The fake's stand-in for members.js, with the same shape: which rows the store records as a person added to a group,
   // removed from it or leaving it, each with its action and the person added or removed (issue 456).
   const members = {
@@ -292,6 +315,15 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       voiceFault = error;
     },
     richText,
+    renames,
+    // A participant names the group (or removes its name, with '') on their phone (issue 439).
+    renameElsewhere(chatId, sender, name) {
+      const chat = chats.find((c) => c.id === chatId && c.is_group);
+      if (!chat) return null;
+      const handle = sender || chat.participants[0];
+      const known = CONTACTS.find((c) => c.phones.includes(handle) || c.emails.includes(handle));
+      return renameRow(chat, { is_from_me: false, sender: handle, sender_name: known ? known.displayName : '' }, name);
+    },
     sendEffects,
     // A message unsent by its sender (issue 441): the row empties and is stamped, and nothing is said on the stream.
     unsendElsewhere(guid) {
@@ -338,6 +370,14 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     typings,
     behavior,
     messages,
+    // A test that builds its own history replaces the fixture's rows here rather than splicing `messages`, so the
+    // change cursor moves with the rows it counts: a client that catches up is never handed rows that were not a
+    // change (issue 484).
+    replaceMessages(rows) {
+      messages.splice(0, messages.length, ...rows);
+      rowid = messages.reduce((max, m) => Math.max(max, Number(m.id) || 0), 0);
+      return messages;
+    },
     requests: [],
     get attempts() { return attempts; },
     // sendStyle: Messages' identifier for the effect the message was sent with, which the store records (issue 442).
@@ -410,7 +450,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           case 'messages.stats':
             return reply(req.id, { total_messages: messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction).length });
           case 'messages.history': {
-            const cursor = (m) => m.history_cursor || String(BigInt(Date.parse(m.created_at) - Date.parse('2001-01-01T00:00:00Z')) * 1000000n) + ':' + m.id;
+            const cursor = historyCursorOf;
             const compare = (a, b) => compareHistory({ historyCursor: a }, { historyCursor: b });
             let ms = messages.filter((m) => m.chat_id === p.chat_id && !m.is_reaction);
             if (p.end) ms = ms.filter((m) => m.created_at < p.end);
@@ -437,7 +477,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
               if (out.length >= limit) break;
               next = m.id;
               if (m.is_reaction && !p.include_reactions) continue;
-              out.push(withAttachments(m, p.attachments));
+              out.push({ ...withAttachments(m, p.attachments), history_cursor: historyCursorOf(m) });
             }
             const page = { messages: out, next_rowid: next, has_more: rows.some((m) => m.id > next) };
             if (behavior.afterDelayMs > 0) { setTimeout(() => reply(req.id, page), behavior.afterDelayMs).unref(); return undefined; }
@@ -480,7 +520,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             const chat = chats.find((c) => c.id === p.chat_id);
             if (!chat) return fail(req.id, -32602, 'unknown chat_id');
             if (!chat.is_group) return fail(req.id, -32602, 'not a group chat');
-            if (req.method === 'group.rename') { chat.display_name = String(p.name || ''); chat.name = chat.display_name; }
+            if (req.method === 'group.rename') renameRow(chat, { is_from_me: true }, p.name);
             else if (req.method === 'group.addParticipant') {
               if (!chat.participants.includes(p.address)) {
                 chat.participants = [...chat.participants, String(p.address)];
@@ -581,7 +621,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           for (const [id, p] of subs) {
             if (m.is_reaction && !p.include_reactions) continue;
             if (p.chat_id && p.chat_id !== m.chat_id) continue;
-            out({ jsonrpc: '2.0', method: 'message', params: { subscription: id, message: withAttachments(m, p.attachments) } });
+            out({ jsonrpc: '2.0', method: 'message', params: { subscription: id, message: { ...withAttachments(m, p.attachments), history_cursor: historyCursorOf(m) } } });
           }
         },
         write(s) {

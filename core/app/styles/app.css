@@ -203,10 +203,9 @@ app-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column
 @keyframes text-explode { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(calc(var(--space-4) * -1), calc(var(--space-4) * -1)) rotate(-30deg); opacity: 0.4; } 60% { transform: translate(calc(var(--space-2) * -1), calc(var(--space-2) * -1)) rotate(-10deg); opacity: 0.8; } }
 @keyframes text-explode-other { 0%, 100% { transform: none; opacity: 1; } 30% { transform: translate(var(--space-4), var(--space-4)) rotate(30deg); opacity: 0.4; } 60% { transform: translate(var(--space-2), var(--space-2)) rotate(10deg); opacity: 0.8; } }
 @media (prefers-reduced-motion: reduce) { .text-effect[data-effect], .text-effect[data-effect] .fx-letter { animation: none; } }
-/* A name the sender mentioned (issue 453): bold, set apart from the words around it, and in the accent colour on a
-   received bubble. */
+/* A name the sender mentioned (issue 453): bold, set apart from the words around it, in the bubble's own text colour on
+   either side, since the received bubble is the accent itself (issue 459) and accent words would vanish into it. */
 .mention { font-weight: var(--font-weight-bold); }
-.bubble.them .mention { color: var(--color-accent); }
 /* Bold, italic, underline and strikethrough a sender laid on a stretch (issue 447), each its own class so any number
    share a stretch; both lines draw where both are laid. */
 .fmt-bold { font-weight: var(--font-weight-bold); }
@@ -936,12 +935,13 @@ app-slide-confirm { display: block; }
 .attachment-preview:focus-visible { outline: var(--size-border) solid var(--color-accent); outline-offset: var(--space-1); }
 .attachment-preview .attachment-image { border-radius: 0; }
 app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
-/* A recording plays where it was sent (issue 432): a bubble of the message's own colour holding the play control,
+/* A recording plays where it was sent (issue 432): a bubble of the message's own colour (the bubble roles, so the other
+   person's is the accent, issue 459) holding the play control,
    the waveform, the time it is at and the time it runs, and, on one someone else sent, a dot until it is played. The
    waveform's bars stand at the heights their levels name and are filled up to where playback is. Every value is a
    token. */
-.voice-note { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: var(--radius-pill); background: var(--color-bubble-them); color: var(--color-bubble-them-fg); }
-.bubble-row.mine .voice-note { background: var(--color-bubble-me); color: var(--color-bubble-me-fg); }
+.voice-note { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1); border-radius: var(--radius-pill); background: var(--role-received); color: var(--role-received-fg); }
+.bubble-row.mine .voice-note { background: var(--role-sent); color: var(--role-sent-fg); }
 .voice-play { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--size-message-action); height: var(--size-message-action); padding: 0; border: 0; border-radius: var(--radius-pill); background: var(--color-bg-raised); color: var(--color-fg); box-shadow: var(--shadow-sm); cursor: pointer; }
 .voice-play .icon { --icon-size: calc(var(--size-message-action) / 2); }
 .voice-note[data-playing="false"] .voice-play .icon { margin-left: calc(var(--size-border) * 2); }
