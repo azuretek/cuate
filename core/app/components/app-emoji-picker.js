@@ -280,9 +280,11 @@ class AppEmojiPicker extends KitElement {
       return html`<div class=${'emoji-row ' + edge} aria-label="Frequently used">${frequent.filter((c) => canDrawEmoji(c)).map((c) => this.favouriteCell(c))}</div>`;
     }
     if (id === 'grid') {
-      return list.length
-        ? html`<div class="emoji-grid">${list.map((e) => this.cell(e.char, e.name, e))}</div>`
-        : html`<div class="emoji-empty muted small">No emoji found</div>`;
+      // The grid is always there, so a shell that cannot draw any emoji still presents the panel's own surface rather
+      // than removing it: the empty note goes inside the grid (issue 494 smoke, Linux leg).
+      return html`<div class="emoji-grid">${list.length
+        ? list.map((e) => this.cell(e.char, e.name, e))
+        : html`<div class="emoji-empty muted small">No emoji found</div>`}</div>`;
     }
     if (id === 'search') {
       return html`<input class="emoji-search" type="search" placeholder="Search emoji" aria-label="Search emoji" .value=${this.query} @input=${this.setQuery}>`;
