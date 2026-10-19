@@ -71,9 +71,45 @@
     seen[name] = drawn.map((el) => el.getAttribute('title')).join('|');
   }
   if (conv.querySelector('.bubble-row[data-id="fixture-plain"] .mention')) problems.push('a plain message drew a mention');
+  // Issue 485: the verdict is given only once the conversation is the screen, not merely the document. A fixed layer
+  // that has been appended but not yet laid out and painted is absent from the accessibility tree each phone's test
+  // reads next, so a test could wait on a reading taken before the screen had it. This wait is for that state, bounded,
+  // and the reading it ends on is part of the verdict when it runs out, so every platform judges the same screen.
+  const wantedLabels = ['Sam, mention of Sam Example', 'Riley, mention of riley@example.com'];
+  const onScreen = async (ms = 20000) => {
+    const deadline = performance.now() + ms;
+    const reading = () => {
+      const box = conv.getBoundingClientRect();
+      const mentions = [...conv.querySelectorAll('.mention')];
+      const hit = (el) => {
+        const r = el.getBoundingClientRect();
+        if (!(r.width > 1 && r.height > 1)) return false;
+        if (r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) return false;
+        const x = Math.min(innerWidth - 1, Math.max(1, r.left + r.width / 2));
+        const y = Math.min(innerHeight - 1, Math.max(1, r.top + r.height / 2));
+        const found = document.elementFromPoint(x, y);
+        return Boolean(found) && (found === el || el.contains(found));
+      };
+      const holds = {};
+      for (const label of wantedLabels) holds[label] = mentions.some((el) => el.getAttribute('aria-label') === label && hit(el));
+      return { box: [Math.round(box.width), Math.round(box.height)], mentions: mentions.length, visible: wantedLabels.filter((label) => holds[label]).length, holds };
+    };
+    let last = reading();
+    while (last.box[0] <= 0 || last.box[1] <= 0 || last.visible < wantedLabels.length) {
+      if (performance.now() > deadline) return { ok: false, last };
+      await new Promise(requestAnimationFrame);
+      last = reading();
+    }
+    // Two frames after the state is reached, so the paint every accessibility tree reads has happened.
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    return { ok: true, last: reading() };
+  };
+  const screen = await onScreen();
+  if (!screen.ok) problems.push('the conversation never reached the screen: ' + JSON.stringify(screen.last));
   const detail = Object.entries(seen).map(([k, v]) => k + '=' + v).join(' ');
   say(problems.length ? 'mention:fail ' + problems.join('; ') : 'mention:pass ' + detail);
-  window.mentionProof = { ok: !problems.length, problems, seen };
+  window.mentionProof = { ok: !problems.length, problems, seen, onScreen: screen.last };
 })().catch((error) => {
   const mark = document.createElement('output');
   mark.setAttribute('aria-label', 'mention:fail ' + error.message);

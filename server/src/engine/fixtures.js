@@ -51,7 +51,18 @@ export const SCRIPT = [
   // Priya mentioned Jordan in the group (issue 453): the store records the name as a confirmed mention of Jordan's address.
   // It sits between Priya's cooler and your reply, so the group's newest message is unchanged.
   [2, 1494, false, 'priya@example.com', 'Jordan, can you grab ice on the way?'],
+  // Sam added Riley to the group, and Riley left it (issue 456): rows with no text and nothing attached, as Messages
+  // records them, that the store names a person added (with whom, in other_handle) and someone leaving. Riley is not in
+  // Contacts, so is named by address. Both sit before the group's newest message, so the list's order is unchanged.
+  [2, 1470, false, '+15555550177', '', { member: 'add', person: 'riley@example.com' }],
+  [2, 1466, false, 'riley@example.com', '', { member: 'leave' }],
+  // Sam named the group before anyone wrote in it (issue 439): a row with no text and nothing attached, as Messages
+  // records it, that the store names a rename with the name it gave.
+  [2, 1510, false, '+15555550177', '', 'rename'],
 ];
+
+// The name each rename row in the script gave the group, in the order the rows appear.
+const RENAMED = ['Weekend plans'];
 
 // The text effects the store records on a row's words (issue 433), as rich-text.js reads them: a start and a length
 // in UTF-16 code units and Messages' own number for the effect (6 is Bloom).
@@ -89,7 +100,8 @@ export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes, 
   // more than one media item and the viewer has a neighbour to step to (issue 181); 'doc' is the booking PDF a press
   // saves rather than opens (issue 219).
   const attachmentFor = (kind) => {
-    if (kind === 'background') return [];
+    if (kind === 'background' || kind === 'rename') return [];
+    if (kind === 'background' || (kind && kind.member)) return [];
     if (kind === 'doc') return [{ filename: 'booking.pdf', transfer_name: 'booking.pdf', uti: 'com.adobe.pdf', mime_type: 'application/pdf', total_bytes: docBytes, is_sticker: false, missing: false, original_path: docPath }];
     if (kind) return [
       { filename: 'sunset.png', transfer_name: 'sunset.png', uti: 'public.png', mime_type: 'image/png', total_bytes: imageBytes, is_sticker: false, missing: false, original_path: imagePath },
@@ -130,5 +142,10 @@ export function buildFixtures({ base, imagePath, imageBytes, docPath, docBytes, 
   }
   // The background changes the store records (issue 417), which imsg's own rows never say.
   const backgrounds = SCRIPT.map((line, i) => (line[5] === 'background' ? { guid: messages[i].guid, chatId: String(line[0]), action: 'set' } : null)).filter(Boolean);
-  return { chats, messages, backgrounds };
+  // The people joining and leaving the store records (issue 456), which imsg's own rows never say either.
+  // The renames the store records (issue 439), each with the name it gave.
+  const renameLines = SCRIPT.map((line, i) => [line, i]).filter(([line]) => line[5] === 'rename');
+  const renames = renameLines.map(([line, i], k) => ({ guid: messages[i].guid, chatId: String(line[0]), name: RENAMED[k] || '' }));
+  const members = SCRIPT.map((line, i) => (line[5] && line[5].member ? { guid: messages[i].guid, chatId: String(line[0]), action: line[5].member, handle: line[5].person || null } : null)).filter(Boolean);
+  return { chats, messages, backgrounds, renames, members };
 }
