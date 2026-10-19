@@ -211,7 +211,7 @@ class ContactEditorTest {
                         assertTrue("the contacts app is in front: " + frontNow, true)
                         return
                     }
-                    throw AssertionError("the contacts app never opened; the last readings: $readings; in front: " + frontNow)
+                    throw AssertionError("the contacts app never showed the person; the last readings: $readings; in front: " + frontNow)
                 }
                 // The notice sits over the card until its own control is pressed; that is the contacts app's first-run
                 // behaviour, not the card, so close it and read again rather than judging the notice.
