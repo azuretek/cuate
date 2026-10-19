@@ -201,3 +201,4 @@ jobs:
             ${{ runner.temp }}/packaged-smoke/*.png
             ${{ runner.temp }}/packaged-smoke/report.json
             ${{ runner.temp }}/packaged-smoke/failure.json
+            ${{ runner.temp }}/packaged-smoke/history-window/
