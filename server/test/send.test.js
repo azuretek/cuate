@@ -14,6 +14,7 @@ import { createFakeImsg } from '../src/engine/fake.js';
 import { childTransport } from '../src/engine/child.js';
 import { createSender } from '../src/send.js';
 import { makeAttachmentId } from '../src/ids.js';
+import { waitFor } from './helpers.js';
 
 const quiet = () => createLogger({ spec: logSpec, app: 'test', run: 'test', sink: () => {}, now: Date.now, level: 'debug', strict: true });
 
@@ -32,8 +33,6 @@ function sender({ sending = true, perMinute = 20, sendTimeoutMs = 500, now, log 
     async close() { await engine.stop(); store.close(); rmSync(dir, { recursive: true, force: true }); },
   };
 }
-
-const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 
 test('a send is refused while the switch is off, and never reaches the engine or the store', async (t) => {
   const s = sender({ sending: false });
@@ -132,7 +131,9 @@ test('a send whose engine dies before it answers is uncertain, and is never retr
   await s.start();
   s.world.behavior.send = 'hang';
   const pending = s.send('2', { text: 'Synthetic mid-send death' }, 'key-die-00001');
-  await tick();
+  // The crash has to land on a send the engine already holds. Crashing it before the request arrives rightly answers
+  // 502, so the wait is on the engine having the attempt, never on a clock (issue 480).
+  await waitFor(() => s.world.attempts === 1);
   s.world.crashAll();
   const r = await pending;
   assert.equal(r.http, 202);
@@ -151,10 +152,10 @@ test('closing the engine transport stops the engine and the children it started'
   const t = childTransport({ bin: process.execPath, args: ['--input-type=module', '-e', code], log });
   const pgid = t.pid;
   const alive = () => { try { process.kill(-pgid, 0); return true; } catch { return false; } };
-  await tick(400);
+  await waitFor(() => alive());
   assert.equal(alive(), true, 'the engine group is running before close');
   await t.close();
-  await tick(200);
+  await waitFor(() => !alive());
   assert.equal(alive(), false, 'the engine group, and the child it started, are gone');
 });
 
@@ -223,7 +224,9 @@ test('a file send is refused while the switch is off, and one whose engine dies 
   const one = held.messages.flatMap((m) => m.attachments)[0];
   s.world.behavior.send = 'hang';
   const pending = s.send('1', { file: one.id }, 'key-file-00005');
-  await tick();
+  // On a loaded host 30 ms is not long enough for the send to reach the engine, and a crash before that is a 502 the
+  // server is right to answer. Wait for the attempt itself (issue 480).
+  await waitFor(() => s.world.attempts === 1);
   s.world.crashAll();
   const r = await pending;
   assert.equal(r.http, 202);
@@ -246,13 +249,13 @@ test('a reaction is sent as a standard tapback, shows on the message, and comes 
   assert.deepEqual(added.body, { status: 'sent', targetId: 'FAKE-0013', type: 'love', add: true });
   assert.deepEqual(s.world.tapbacks, [{ chatId: 1, targetId: 'FAKE-0013', kind: 'love', remove: false }], 'the text and emoji forms of a heart are one tapback');
   assert.deepEqual(await ofMe(s, '1', 'FAKE-0013'), [{ type: 'love', emoji: '\u2764\ufe0f', fromMe: true, sender: null }], 'history carries the glyph, as imsg reports it');
-  await tick(80);
+  await waitFor(() => live.length === 1);
   assert.deepEqual(live.map((r) => [r.targetId, r.type, r.add, r.fromMe]), [['FAKE-0013', 'love', true, true]], 'it streams like a received one');
   const removed = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2764\ufe0f', remove: true });
   assert.equal(removed.http, 201);
   assert.equal(removed.body.add, false);
   assert.deepEqual(await ofMe(s, '1', 'FAKE-0013'), []);
-  await tick(80);
+  await waitFor(() => live.length === 2);
   assert.deepEqual(live.map((r) => r.add), [true, false]);
 });
 
@@ -293,7 +296,7 @@ test('a reaction honours the sending switch, and one still in flight is not sent
   await s.start();
   s.world.behavior.send = 'hang';
   const held = s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F602}' });
-  await tick();
+  await waitFor(() => s.world.attempts === 1);
   const copy = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u{1F602}' });
   assert.equal(copy.http, 409);
   assert.equal(copy.error[0], 'in_flight');
@@ -364,7 +367,7 @@ test('while an update holds sends, a reaction is held too, and one going out cou
   s.send.release();
   s.world.behavior.send = 'hang';
   const going = s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2753' });
-  await tick();
+  await waitFor(() => s.world.attempts === 1);
   assert.equal(s.send.inFlight(), 1, 'the updater waits for a reaction going out');
   s.world.crashAll();
   await going;
