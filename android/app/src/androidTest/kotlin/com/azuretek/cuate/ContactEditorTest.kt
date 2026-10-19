@@ -112,10 +112,26 @@ class ContactEditorTest {
         while (pending.isNotEmpty()) {
             val node = pending.removeAt(pending.size - 1)
             val text = (node.text?.toString() ?: node.contentDescription?.toString() ?: "").trim()
-            if (text.equals("Close Popup Window", ignoreCase = true) && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            if (text.equals("Close Popup Window", ignoreCase = true) && pressNearest(node)) {
                 return true
             }
             for (index in 0 until node.childCount) node.getChild(index)?.let { pending += it }
+        }
+        return false
+    }
+
+    /**
+     * Presses the node carrying the label, or the nearest ancestor that can be pressed. Google Contacts draws the
+     * notice's close control as a container with the label as its child, so pressing the label alone does nothing and
+     * the notice stays over the card until the wait runs out (issue 446).
+     */
+    private fun pressNearest(node: AccessibilityNodeInfo): Boolean {
+        var candidate: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (candidate != null && depth < 6) {
+            if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            candidate = candidate.parent
+            depth++
         }
         return false
     }
