@@ -3,8 +3,9 @@ import { KitElement } from '../../kit/element.js';
 import { press, emit } from '../../kit/press.js';
 import { settingsFields, settingsGroups, settingsTabs, settingValue, coerceSetting, optionLabel } from '../rules/settings.js';
 import { appIconChoices } from '../rules/app-icons.js';
-import { importTheme, importSummary, addTheme, themeChoices, swatchVars, SWATCH_TOKENS, textScaleInForce } from '../rules/theme.js';
+import { removeTheme, sameTheme, themeChoices, swatchVars, SWATCH_TOKENS, textScaleInForce } from '../rules/theme.js';
 import './app-sheet.js';
+import './app-slide-confirm.js';
 
 // The one line the page says about itself, under its title.
 const INTRO = 'Choose how this app looks and which notices it raises.';
@@ -34,7 +35,7 @@ class AppSettings extends KitElement {
     info: { attribute: false }, host: { attribute: false }, tab: {},
     // The system's text size this device's shell reported (issue 369), shown on the slider while text follows it.
     systemText: { attribute: false },
-    importText: { state: true }, importName: { state: true }, importNote: { state: true }, importUrl: { state: true },
+    importUrl: { state: true }, themeNote: { state: true }, confirmDelete: { state: true },
   };
 
   constructor() {
@@ -43,10 +44,10 @@ class AppSettings extends KitElement {
     this.serverUrl = '';
     this.busy = false;
     this.problem = '';
-    this.importText = '';
-    this.importName = '';
-    this.importNote = '';
     this.importUrl = '';
+    // What the last delete said, and the theme a delete is waiting on. A delete asks with a slide (issue 492).
+    this.themeNote = '';
+    this.confirmDelete = '';
     // The scheme the app resolved, so each theme card shows the colours that scheme would draw.
     this.scheme = 'light';
     // What the last URL import said; app-root owns the call and sets it. The Import button shows the call in flight,
@@ -230,35 +231,53 @@ class AppSettings extends KitElement {
     return html`<input type="text" class="setting-control" data-key=${field.key} .value=${String(value)} ?disabled=${disabled} @change=${(e) => this.onSelect(e)}>`;
   }
 
-  // A pasted tweakcn export is converted here, added to the themes the server holds and put in force in one write,
-  // so every client draws it from the event stream and offers it in the picker. What the import refused is said on
-  // the page.
-  onImport() {
-    const result = importTheme(this.importText, { name: this.importName.trim() || 'Imported theme' });
-    const summary = importSummary(result);
-    this.importNote = summary.text;
-    if (!summary.ok) return false;
-    const added = addTheme(this.values && this.values['appearance.themes'], result.theme);
-    if (!added.ok) { this.importNote = added.reason; return false; }
-    this.importText = '';
-    return this.fire('settings', { 'appearance.themes': added.themes, 'appearance.theme': added.theme });
-  }
-
   // A theme URL is fetched and converted by the server (POST /api/v1/themes), which adds it to the picker and
-  // answers with what it carried and refused. The page only asks; app-root makes the call and reports back.
+  // answers with what it carried and refused. The page only asks; app-root makes the call and reports back. A URL is
+  // the only way in (issue 492): a local file is never read, and a tweakcn theme page is accepted as a URL too.
   onImportUrl() {
     const url = this.importUrl.trim();
     if (!url) return undefined;
     return this.fire('theme-import', { url });
   }
 
+  // A delete is asked for first: the card's own control opens the gate, and nothing leaves the list until the slide
+  // reaches its end (issue 137's gate, issue 492's delete).
+  askDelete(card) {
+    this.themeNote = '';
+    this.confirmDelete = card.id;
+    return this.updateComplete;
+  }
+
+  cancelDelete() {
+    this.confirmDelete = '';
+  }
+
+  // The slide's confirm event is the only way here. A theme in use falls back to the default palette in the same
+  // write, so the picker and the page never draw a theme the server no longer holds.
+  confirmDeleteTheme() {
+    const id = this.confirmDelete;
+    if (!id) return undefined;
+    const held = this.values && Array.isArray(this.values['appearance.themes']) ? this.values['appearance.themes'] : [];
+    const gone = held.find((t) => t && t.id === id);
+    const current = this.values && this.values['appearance.theme'];
+    const inUse = Boolean(current && (current.id === id || sameTheme(gone, current)));
+    const name = (gone && gone.name) || 'The theme';
+    this.confirmDelete = '';
+    if (inUse) {
+      this.themeNote = 'Deleted ' + name + '. The default theme is now in use.';
+      return this.fire('settings', { 'appearance.themes': removeTheme(held, id), 'appearance.theme': null });
+    }
+    this.themeNote = 'Deleted ' + name + '.';
+    return this.fire('settings', { 'appearance.themes': removeTheme(held, id) });
+  }
+
   pick(card) {
-    this.importNote = '';
+    this.themeNote = '';
     return this.fire('setting', { key: 'appearance.theme', value: card.theme });
   }
 
   onThemeDefault() {
-    this.importNote = '';
+    this.themeNote = '';
     return this.fire('setting', { key: 'appearance.theme', value: null });
   }
 
@@ -288,35 +307,48 @@ class AppSettings extends KitElement {
   }
 
   // The picker: a grid of cards, the default palette first, each showing its own colours, with the one in force marked.
+  // Every held theme also carries its own delete control; the default palette and a theme chosen before the list existed
+  // are not held, so they have none (issue 492).
   picker() {
     const cards = themeChoices(this.values || {});
     return html`<div class="theme-grid" role="radiogroup" aria-label="Theme">
-      ${cards.map((card) => html`<button type="button" class="theme-card" role="radio" aria-checked=${card.selected ? 'true' : 'false'} data-palette="default" data-theme-id=${card.id}
-          data-action=${card.theme ? 'theme-pick' : 'theme-default'} @click=${press(() => (card.theme ? this.pick(card) : this.onThemeDefault()))}>
-        <span class="theme-swatches" aria-hidden="true">${SWATCH_TOKENS.map((t) => html`<span class="theme-swatch" data-token=${t}></span>`)}</span>
-        <span class="theme-card-name">${card.name}</span>
-      </button>`)}
+      ${cards.map((card) => html`<div class="theme-item" data-theme-id=${card.id}>
+        <button type="button" class="theme-card" role="radio" aria-checked=${card.selected ? 'true' : 'false'} data-palette="default" data-theme-id=${card.id}
+            data-action=${card.theme ? 'theme-pick' : 'theme-default'} @click=${press(() => (card.theme ? this.pick(card) : this.onThemeDefault()))}>
+          <span class="theme-swatches" aria-hidden="true">${SWATCH_TOKENS.map((t) => html`<span class="theme-swatch" data-token=${t}></span>`)}</span>
+          <span class="theme-card-name">${card.name}</span>
+        </button>
+        ${card.held ? html`<button type="button" class="text-button danger theme-delete" data-action="theme-delete" data-theme-id=${card.id}
+            aria-label=${'Delete ' + card.name} @click=${press(() => this.askDelete(card))}>Delete</button>` : nothing}
+      </div>`)}
     </div>`;
   }
 
-  // The theme rows belong to the Appearance section and draw inside its surface, so the section holds one subject
-  // rather than two headings for one thing.
+  // The theme section belongs to the Appearance section and draws inside its surface, so the section holds one subject
+  // rather than two headings for one thing. It is drawn before the app icon field (issue 492), and a URL is the only
+  // import path: a tweakcn theme page, its registry link or its CSS are all fetched by the server.
   theme() {
-    return html`<div class="setting-row setting-row-stack"><span class="setting-label">Theme</span>${this.picker()}</div>
+    const removing = themeChoices(this.values || {}).find((c) => c.id === this.confirmDelete);
+    const current = this.values && this.values['appearance.theme'];
+    return html`<div class="theme-section" data-section="theme" role="group" aria-label="Theme">
+      <div class="setting-row setting-row-stack theme-row">
+        <span class="setting-label">Theme</span>
+        ${this.picker()}
+        ${removing ? html`<div class="theme-delete-gate" role="alertdialog" aria-label=${'Delete ' + removing.name}>
+          <p class="theme-delete-question">Delete <strong>${removing.name}</strong> from the picker and from the server?${sameTheme(removing.theme, current) ? ' It is in use, so the default theme will be used instead.' : ''}</p>
+          <app-slide-confirm class="theme-delete-slide" .label=${'Slide to delete ' + removing.name} @confirm=${() => this.confirmDeleteTheme()}></app-slide-confirm>
+          <button type="button" class="text-button" data-action="theme-delete-cancel" @click=${press(() => this.cancelDelete())}>Cancel</button>
+        </div>` : nothing}
+        ${this.themeNote ? html`<p class="theme-import-note theme-note" role="status">${this.themeNote}</p>` : nothing}
+      </div>
       <div class="setting-row theme-import theme-url">
         <span class="setting-label">Import a theme from a URL</span>
-        <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/editor/theme?theme=..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy}
+        <input type="url" class="setting-control theme-url-input" placeholder="https://tweakcn.com/themes/..." aria-label="Theme URL" .value=${this.importUrl} ?disabled=${this.busy}
           @input=${(e) => { this.importUrl = e.currentTarget.value; }} @keydown=${(e) => { if (e.key === 'Enter') this.importUrlPress(e); }}>
         <button class="text-button theme-url-action" data-action="theme-import-url" ?disabled=${!this.importUrl.trim()} @click=${this.importUrlPress}>Import</button>
         ${this.urlNote ? html`<p class="theme-import-note theme-url-note" role="status">${this.urlNote}</p>` : nothing}
       </div>
-      <div class="setting-row theme-import">
-        <span class="setting-label">Or paste a tweakcn theme</span>
-        <input type="text" class="setting-control theme-import-name" placeholder="Theme name" aria-label="Theme name" .value=${this.importName} ?disabled=${this.busy} @input=${(e) => { this.importName = e.currentTarget.value; }}>
-        <textarea class="setting-control theme-import-text" rows="6" placeholder="Paste the theme's CSS" aria-label="Theme CSS" .value=${this.importText} ?disabled=${this.busy} @input=${(e) => { this.importText = e.currentTarget.value; }}></textarea>
-        <button class="text-button theme-import-action" data-action="theme-import" ?disabled=${!this.importText.trim()} @click=${press(() => this.onImport())}>Import</button>
-        ${this.importNote ? html`<p class="theme-import-note" role="status">${this.importNote}</p>` : nothing}
-      </div>`;
+    </div>`;
   }
 
   // A row of radios is not wrapped in a label (a label holds one control); it is a row whose radiogroup is named by the
@@ -343,10 +375,17 @@ class AppSettings extends KitElement {
         <div class="sheet-rows">${s.fields.map((field) => this.row(field))}</div>
       </div>`);
     }
-    return html`<div class="sheet-rows">
-      ${group.fields.map((field) => this.row(field))}
-      ${group.id === 'appearance' ? this.theme() : nothing}
-    </div>`;
+    // The theme section sits immediately above the app icon selector (issue 492), wherever the schema puts the icon
+    // field, so a later change to the schema moves the icon and takes the theme with it rather than leaving the theme
+    // at the bottom of the section.
+    const rows = [];
+    let themePlaced = false;
+    for (const field of group.fields) {
+      if (group.id === 'appearance' && field.type === 'icon' && !themePlaced) { rows.push(this.theme()); themePlaced = true; }
+      rows.push(this.row(field));
+    }
+    if (group.id === 'appearance' && !themePlaced) rows.push(this.theme());
+    return html`<div class="sheet-rows">${rows}</div>`;
   }
 
   // Each section is the panel of its tab. Every panel is drawn and the ones not on show are hidden, so a tab's

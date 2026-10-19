@@ -38,7 +38,7 @@ export function registryUrl(url) {
   return new URL('/r/themes/' + id + '.json', url.origin);
 }
 
-export const NOT_A_THEME = 'That URL is a web page, not a theme. Paste a tweakcn theme page (tweakcn.com/editor/theme?theme=<name>), its registry link (tweakcn.com/r/themes/<name>.json), or the theme\'s CSS.';
+export const NOT_A_THEME = 'That URL is a web page, not a theme. Use a tweakcn theme page (tweakcn.com/themes/<id> or tweakcn.com/editor/theme?theme=<name>), its registry link (tweakcn.com/r/themes/<name>.json), or a URL that answers with the theme\'s CSS.';
 
 // Read the body, stopping at the bound rather than buffering whatever the far end sends.
 async function boundedText(res, max) {
