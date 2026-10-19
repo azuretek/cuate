@@ -1,6 +1,6 @@
 {
   "name": "cuate",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A cross-platform iMessage client and the headless server it talks to on the Mac. One shared core draws every screen; thin shells host it.",
   "private": true,
   "type": "module",
