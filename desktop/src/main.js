@@ -2199,6 +2199,71 @@ async function runSmoke(w) {
   await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
   await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
 
+  // A group renamed (issue 439). The fake engine's group holds Sam naming it, which the server reads from the store: the
+  // conversation draws it as a quiet centred line naming who did it, never an empty message. A rename made here, through
+  // a group's details, is the same line from You, the list row and the header take the new name at once, and the list
+  // preview says the same; removing the name is a line too. A rename is the group's newest message and moves it to the
+  // top of the list, so the renames are made on a group of the smoke's own, hidden afterwards as the edit step's is, and
+  // every later step finds the list in the order it had.
+  {
+    await smokeStep('group rename');
+    const rnQuote = (n) => '\u201c' + n + '\u201d';
+    const rnOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && Boolean(document.querySelector('.messages'))", 15000);
+    };
+    const rnLine = (text) => js("(() => { const r = [...document.querySelectorAll('.messages .bubble-row.event')].find((x) => x.textContent.trim() === " + JSON.stringify(text) + "); return r ? { id: r.dataset.id, bubble: Boolean(r.querySelector('.bubble')) } : null; })()");
+    const rnSettle = async (expr, ms = 15000) => { try { await waitFor(expr, ms); return true; } catch { return false; } };
+    const rnRename = async (name) => {
+      const want = name ? 'You named the conversation ' + rnQuote(name) : 'You removed the name from the conversation';
+      await js("document.querySelector('.conv-head .conv-info').click()");
+      await waitFor("Boolean(document.querySelector('app-group-info .group-info-name'))");
+      await js("(() => { const n = document.querySelector('app-group-info .group-info-name'); n.value = " + JSON.stringify(name) + "; n.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+      await waitFor("Boolean(document.querySelector('app-group-info .group-info-rename')) && !document.querySelector('app-group-info .group-info-rename').disabled");
+      await js("document.querySelector('app-group-info .group-info-rename').click()");
+      const drawn = await rnSettle("[...document.querySelectorAll('.messages .bubble-row.event')].some((x) => x.textContent.trim() === " + JSON.stringify(want) + ")");
+      await js("document.querySelector('app-group-info .confirm-actions .button.primary').click()");
+      await waitFor("!document.querySelector('app-group-info .group-info-person')");
+      return { want, drawn };
+    };
+    const rnRowIs = (id, title, preview) => "(() => { const r = document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]'); return Boolean(r) && " + (title === null ? 'true' : "r.querySelector('.chat-name').textContent === " + JSON.stringify(title)) + " && (r.querySelector('.chat-preview') || {}).textContent === " + JSON.stringify(preview) + "; })()";
+    const rnBefore = await js('JSON.stringify(' + rowNames + ')');
+    await rnOpen('2');
+    const rnIncoming = await rnLine('Sam Rivera named the conversation ' + rnQuote('Weekend plans'));
+    const rnEmpty = await js("[...document.querySelectorAll('.messages .bubble-row')].filter((r) => !r.classList.contains('event') && !r.textContent.trim()).length");
+    const rnMade = await (await fetch(srv + '/api/v1/chats', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ addresses: ['jordan@example.com', 'priya@example.com'], name: 'Smoke rename group' }) })).json();
+    const rnId = String(rnMade.id || '');
+    await waitFor("Boolean(document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(rnId) + ") + '\"]'))", 10000);
+    await rnOpen(rnId);
+    const RN_NAME = 'Smoke renamed group';
+    const rnMine = await rnRename(RN_NAME);
+    const rnListed = await rnSettle(rnRowIs(rnId, RN_NAME, rnMine.want), 10000);
+    const rnHead = await js("(document.querySelector('.conv-head .chat-name') || {}).textContent || ''");
+    const rnMineLine = await rnLine(rnMine.want);
+    await shot('03e-group-rename.png');
+    const rnCleared = await rnRename('');
+    const rnClearedListed = await rnSettle(rnRowIs(rnId, null, rnCleared.want), 10000);
+    // The smoke's group goes, as the edit step's does, and the list is in the order it had.
+    await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
+    const rnHidden = (await held())['chats.hidden'] || [];
+    const rnReset = await putSettings({ 'chats.hidden': [...new Set([...rnHidden, rnId])] });
+    if (!rnReset.ok) throw new Error('the server refused hiding the rename group: ' + rnReset.status);
+    const rnGone = await rnSettle("!document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(rnId) + ") + '\"]') && JSON.stringify(" + rowNames + ") === " + JSON.stringify(rnBefore), 10000);
+    await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
+    await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
+    const rnChecks = {
+      incomingLine: Boolean(rnIncoming) && !rnIncoming.bubble,
+      noEmptyMessage: rnEmpty === 0,
+      mineLine: rnMine.drawn && Boolean(rnMineLine) && !rnMineLine.bubble,
+      listTitleAndPreview: rnListed,
+      header: rnHead === RN_NAME,
+      removedLine: rnCleared.drawn && rnClearedListed,
+      orderKept: rnGone,
+    };
+    report.groupRename = Object.values(rnChecks).every(Boolean);
+    console.log('group rename: ' + JSON.stringify({ checks: rnChecks, rnIncoming, rnEmpty, rnId, rnMine, rnHead, rnMineLine, rnCleared, rnBefore }));
+  }
+
   // A group's people changing (issue 456). The fake engine's group holds Sam adding Riley and Riley leaving, which the
   // server reads from the store: the conversation draws each as a quiet centred line naming who did it and whom, never
   // an empty message. A person added or removed here, through a group's details, is the same line from You, and the
@@ -3083,12 +3148,14 @@ async function runSmoke(w) {
   // leaves that conversation open with that message in view and focused, and never marked (issue 368): no ring on the
   // row or its bubble, and nothing animating it.
   await smokeStep('notice opens');
+  // The notice is for a message in a conversation the list shows: a chat an earlier step made and hid is still held by
+  // the page, and a conversation's rows include event lines, such as a rename, that no notice is raised for (issue 439).
   const pressFrom = await js("document.querySelector('app-root').openChatId");
   // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
   // in force (Settings, for the steps that follow) is put back once the press is checked.
   const pressView = await js("document.querySelector('app-root').view");
   const pressList = await js("document.querySelector('app-root').listOpen");
-  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const hidden = (r.settings && r.settings['chats.hidden']) || []; const other = r.chats.find((c) => c.id !== r.openChatId && !hidden.includes(c.id)); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
+  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const hidden = (r.settings && r.settings['chats.hidden']) || []; const other = r.chats.find((c) => c.id !== r.openChatId && !hidden.includes(c.id)); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); const first = messages.find((m) => !m.event); return first ? { chatId: other.id, messageId: first.id } : null; })()");
   smokeNotices.length = 0;
   let pressSeen = null;
   if (pressTo) {

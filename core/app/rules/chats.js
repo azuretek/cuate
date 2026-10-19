@@ -187,12 +187,14 @@ export function chatPreview(chat) {
 }
 
 // The words for an event in a conversation (issue 341): who did it, then what changed. A background is the
-// conversation's own (issue 417), set or cleared, and a group's people change when someone is added, removed or leaves
-// (issue 456), each person named by their contact name, or their address when Contacts does not know them.
+// conversation's own (issue 417), set or cleared; a group's people change when someone is added, removed or leaves
+// (issue 456), each person named by their contact name, or their address when Contacts does not know them; and a rename
+// gives the group its name or removes it (issue 439).
 export function eventText(m) {
   const who = m.fromMe ? 'You' : String(m.senderName || m.sender || 'Someone');
   if (m.event && m.event.kind === 'groupPhoto') return who + ' changed the group photo';
   if (m.event && m.event.kind === 'background') return who + (m.event.action === 'clear' ? ' removed the background' : ' changed the background');
+  if (m.event && m.event.kind === 'rename') return m.event.name ? who + ' named the conversation \u201c' + m.event.name + '\u201d' : who + ' removed the name from the conversation';
   if (m.event && m.event.kind === 'member') {
     if (m.event.action === 'leave') return who + ' left the conversation';
     const person = m.event.person ? String(m.event.person.name || m.event.person.handle || '') : '';
@@ -206,7 +208,7 @@ export function eventText(m) {
 // What a list preview keeps of an event: its kind, and the action and the person its words need.
 export function eventPreview(e) {
   const person = e.person && e.person.handle ? { person: { handle: String(e.person.handle), name: e.person.name ? String(e.person.name) : null } } : {};
-  return { kind: e.kind, ...(e.action ? { action: e.action } : {}), ...person };
+  return { kind: e.kind, ...(e.action ? { action: e.action } : {}), ...person, ...(typeof e.name === 'string' ? { name: e.name } : {}) };
 }
 
 // A group's people as they are after a person joined or left it (issue 456), so the list, the header and the group's
@@ -246,8 +248,10 @@ export function applyMessageToChats(chats, message, { openChatId = null } = {}) 
   // A background cleared takes the backdrop away at once; a new one arrives from the server as the chat changing,
   // carrying the picture, since only the server can read it (issue 417).
   const backdrop = message.event && message.event.kind === 'background' && message.event.action === 'clear' ? { background: null } : {};
+  // A rename is the group's title from now on, on every client at once (issue 439).
+  const renamed = message.event && message.event.kind === 'rename' ? { name: String(message.event.name || '') } : {};
   const event = message.event ? eventPreview(message.event) : null;
-  out[i] = { ...c, ...photo, ...backdrop, ...peopleAfter(c, message), unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || message.sender || null } : lastMessage };
+  out[i] = { ...c, ...photo, ...backdrop, ...renamed, ...peopleAfter(c, message), unread, lastMessageAt: message.sentAt, lastMessage: event ? { ...lastMessage, event, senderName: message.senderName || message.sender || null } : lastMessage };
   return { chats: orderChats(out), known: true };
 }
 
@@ -357,8 +361,8 @@ export function groupAddresses(chats = [], ids = []) {
 
 // A chat the server says changed (created, renamed, a member added or removed) replaces the one the list holds, or
 // joins it, and the list keeps its order. A change that carries no preview keeps the one the list already draws: the
-// preview is the newest message's, which the message stream brings, so the line a person joining or leaving draws is
-// not wiped by the chat changing straight after it (issue 456).
+// preview is the newest message's, which the message stream brings, so a rename's own line, or the line a person
+// joining or leaving draws, is not wiped by the chat changing straight after it (issues 439, 456).
 export function upsertChat(chats = [], chat) {
   if (!chat || chat.id == null) return chats;
   const i = chats.findIndex((c) => c.id === chat.id);
