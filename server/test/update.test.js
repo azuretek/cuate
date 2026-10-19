@@ -553,6 +553,19 @@ test('two updater processes cannot stage and switch the same install', async (t)
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(() => child.kill('SIGKILL'));
   await new Promise((resolve, reject) => { child.stdout.once('data', resolve); child.once('error', reject); child.once('exit', () => reject(new Error('child exited before lock'))); });
+  // The child's first line says it has started, not that it holds the lock. On Windows the pipe can deliver that line
+  // before the lock exists, and the parent then checked first and was refused where it expected busy. Wait for the
+  // state itself, bounded: acquireUpdateLock answers null exactly while another process holds it.
+  const { acquireUpdateLock } = await import('../src/install.js');
+  const held = Date.now() + 5000;
+  let locked = false;
+  while (Date.now() < held) {
+    const release = acquireUpdateLock(s.L);
+    if (!release) { locked = true; break; }
+    release();
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(locked, true, 'the child holds the update lock');
   assert.equal((await s.updater.check()).state, 'busy');
   assert.equal(currentVersion(s.L), release(1).version);
   const gone = new Promise((r) => child.once('exit', r));
