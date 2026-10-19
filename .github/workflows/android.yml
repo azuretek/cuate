@@ -94,7 +94,12 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/load-order.json
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/edit-history.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-format.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/group-rename.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/send-effects.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/mention.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/bubble-colours-light.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/bubble-colours-dark.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/group-members.png
 
       # Issue 443 again: with the host decoder off the emulator still exits under VideoControlsTest about one run in
       # three, leaving no crash dump (the crash record holds only its settings), which a caught crash would have written.

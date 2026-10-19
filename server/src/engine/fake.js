@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { gradientPng } from './png.js';
 import { writePlist } from './bplist.js';
-import { buildFixtures, imsgReaction, TEXT_RUNS } from './fixtures.js';
+import { buildFixtures, imsgReaction, TEXT_RUNS, SEND_STYLE_ROWS, CONTACTS } from './fixtures.js';
 import { PHOTO_SCAN_ROWS } from '../../../core/app/rules/engine-imsg.js';
 import { compareHistory } from '../../../core/app/rules/history.js';
 
@@ -59,7 +59,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   const docPath = path.join(attachmentsRoot, 'fake', 'booking.pdf');
   const pdf = syntheticPdf(SYNTHETIC_PDF_PAGES);
   writeFileSync(docPath, pdf);
-  const { chats, messages, backgrounds: backgroundEvents } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
+  const { chats, messages, backgrounds: backgroundEvents, renames: renameEvents, members: memberEvents } = buildFixtures({ base, imagePath, imageBytes: png.length, docPath, docBytes: pdf.length, photo2Path, photo2Bytes: photo2.length });
   // A conversation background (issue 417), as Messages keeps it: the picture it rendered for the chat, in a property
   // list in the transcript background cache beside the attachments folder, named for the row that set it.
   const backgroundCache = path.join(path.dirname(attachmentsRoot), 'TranscriptBackgroundCache');
@@ -225,6 +225,54 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // The fake's stand-in for renames.js, with the same shape: which rows the store records as a group being renamed,
+  // each with the name it gave (issue 439).
+  const renames = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(renameEvents.filter((e) => want.has(e.guid)).map((e) => [e.guid, e.name]));
+    },
+    close() {},
+  };
+  // A group renamed, as Messages records it wherever the rename was made: the chat takes the name, and a row of its
+  // own with no text and nothing attached is written, which streams like any other (issue 439).
+  const renameRow = (chat, fields, name) => {
+    chat.display_name = String(name || '');
+    chat.name = chat.display_name;
+    const m = add({ chat_id: chat.id, text: '', is_read: true, ...fields });
+    renameEvents.push({ guid: m.guid, chatId: String(chat.id), name: chat.display_name });
+    broadcast(m);
+    return m;
+  };
+
+  // The fake's stand-in for members.js, with the same shape: which rows the store records as a person added to a group,
+  // removed from it or leaving it, each with its action and the person added or removed (issue 456).
+  const members = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map(memberEvents.filter((e) => want.has(e.guid)).map((e) => [e.guid, { action: e.action, handle: e.handle }]));
+    },
+    close() {},
+  };
+  // A group's people changing, as Messages records it wherever the change was made: the chat's people change, and a row
+  // of its own with no text and nothing attached is written, which streams like any other (issue 456).
+  const memberRow = (chat, fields, action, handle = null) => {
+    const m = add({ chat_id: chat.id, text: '', is_read: true, ...fields });
+    memberEvents.push({ guid: m.guid, chatId: String(chat.id), action, handle: action === 'leave' ? null : handle });
+    broadcast(m);
+    return m;
+  };
+  // The fake's stand-in for send-effects.js, with the same shape: of the rows asked about, the ones the store records an
+  // effect on, each with Messages' identifier for it (issue 442). A message that arrives with one keeps it here too.
+  const sendStyles = new Map(Object.entries(SEND_STYLE_ROWS));
+  const sendEffects = {
+    among(guids) {
+      const want = new Set((guids || []).map(String));
+      return new Map([...sendStyles].filter(([guid]) => want.has(guid)));
+    },
+    close() {},
+  };
+
   const world = {
     sends,
     tapbacks,
@@ -232,6 +280,18 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     changes,
     backgrounds,
     voices,
+    members,
+    // A participant adds someone to the group, removes someone, or leaves it (handle unused), on their phone (issue 456).
+    memberElsewhere(chatId, sender, action, handle = null) {
+      const chat = chats.find((c) => c.id === chatId && c.is_group);
+      if (!chat) return null;
+      const actor = sender || chat.participants[0];
+      if (action === 'add' && !chat.participants.includes(handle)) chat.participants = [...chat.participants, String(handle)];
+      else if (action === 'remove') chat.participants = chat.participants.filter((a) => a !== handle);
+      else if (action === 'leave') chat.participants = chat.participants.filter((a) => a !== actor);
+      const known = CONTACTS.find((c) => c.phones.includes(actor) || c.emails.includes(actor));
+      return memberRow(chat, { is_from_me: false, sender: actor, sender_name: known ? known.displayName : '' }, action, handle);
+    },
     // Someone sends a voice message: a synthetic Core Audio file under the attachments folder, on a row of its own. With
     // live it streams like any new message; without it, it is only in the history. Answers the message's guid.
     voiceMessage(chatId, sender, { live = false } = {}) {
@@ -252,6 +312,16 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
       voiceFault = error;
     },
     richText,
+    renames,
+    // A participant names the group (or removes its name, with '') on their phone (issue 439).
+    renameElsewhere(chatId, sender, name) {
+      const chat = chats.find((c) => c.id === chatId && c.is_group);
+      if (!chat) return null;
+      const handle = sender || chat.participants[0];
+      const known = CONTACTS.find((c) => c.phones.includes(handle) || c.emails.includes(handle));
+      return renameRow(chat, { is_from_me: false, sender: handle, sender_name: known ? known.displayName : '' }, name);
+    },
+    sendEffects,
     // A message unsent by its sender (issue 441): the row empties and is stamped, and nothing is said on the stream.
     unsendElsewhere(guid) {
       const m = messages.find((x) => x.guid === guid && !x.is_reaction);
@@ -299,9 +369,11 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     messages,
     requests: [],
     get attempts() { return attempts; },
-    incoming(chatId, text, sender) {
+    // sendStyle: Messages' identifier for the effect the message was sent with, which the store records (issue 442).
+    incoming(chatId, text, sender, { sendStyle = null } = {}) {
       const chat = chats.find((c) => c.id === chatId);
       const m = add({ chat_id: chatId, is_from_me: false, sender: sender || chat.participants[0], text, is_read: false });
+      if (sendStyle) sendStyles.set(m.guid, String(sendStyle));
       // An unread message raises its conversation's count, as it does in chat.db.
       chat.unread_count = (chat.unread_count || 0) + 1;
       broadcast(m);
@@ -437,9 +509,16 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             const chat = chats.find((c) => c.id === p.chat_id);
             if (!chat) return fail(req.id, -32602, 'unknown chat_id');
             if (!chat.is_group) return fail(req.id, -32602, 'not a group chat');
-            if (req.method === 'group.rename') { chat.display_name = String(p.name || ''); chat.name = chat.display_name; }
-            else if (req.method === 'group.addParticipant') { if (!chat.participants.includes(p.address)) chat.participants = [...chat.participants, String(p.address)]; }
-            else chat.participants = chat.participants.filter((a) => a !== p.address);
+            if (req.method === 'group.rename') renameRow(chat, { is_from_me: true }, p.name);
+            else if (req.method === 'group.addParticipant') {
+              if (!chat.participants.includes(p.address)) {
+                chat.participants = [...chat.participants, String(p.address)];
+                memberRow(chat, { is_from_me: true }, 'add', String(p.address));
+              }
+            } else if (chat.participants.includes(p.address)) {
+              chat.participants = chat.participants.filter((a) => a !== p.address);
+              memberRow(chat, { is_from_me: true }, 'remove', String(p.address));
+            }
             return reply(req.id, { ok: true });
           }
           case 'read': {

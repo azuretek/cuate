@@ -81,10 +81,16 @@ app.whenReady().then(async () => {
   assert.equal(onWarm.pageReads, 0, 'a warm open reads no page of a conversation the store holds');
   assert.equal(onWarm.pictureReads, 0, 'nor any picture a tile drew before');
   assert.ok(offWarm.photoReads > 0 && onWarm.photoReads === 0, 'a conversation\'s photo and backdrop are read on every launch without the store, and on none with it');
-  assert.ok(onWarm.themedMs !== null && onWarm.themedMs < offWarm.themedMs / 2, 'and its scheme is drawn in a fraction of the time');
+  // What a launch had read before it drew says where it drew from, however busy the runner is; the times are only a
+  // loose backstop (issue 478).
+  assert.ok(offWarm.settingsBeforeThemed >= 1, 'without the store the scheme waits on the server\'s settings');
+  assert.ok(onWarm.themedMs !== null && onWarm.answersBeforeThemed === 0, 'and with it the scheme is drawn before the server answers anything');
+  assert.ok(onWarm.themedMs < offWarm.themedMs, 'and sooner');
   assert.equal(onWarm.shownEdit, true, 'and still draws an edit made while it was closed');
   assert.ok(onWarm.bytes < offWarm.bytes / 4, 'a warm open costs a fraction of the bytes it did');
-  assert.ok(onWarm.firstVisibleMs < offWarm.firstVisibleMs / 2, 'and draws its first message in a fraction of the time');
+  assert.ok(offWarm.pagesBeforeFirstVisible >= 1, 'without the store the first message waits on a page read');
+  assert.equal(onWarm.pagesBeforeFirstVisible, 0, 'and with it the first message is drawn from the store');
+  assert.ok(onWarm.firstVisibleMs < offWarm.firstVisibleMs, 'and sooner');
   writeFileSync(path.join(output, 'report.json'), JSON.stringify({ platform: process.platform, results }, null, 2));
   removeProfile();
   clearTimeout(bound);

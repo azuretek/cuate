@@ -60,11 +60,12 @@ async function fetchTile(client, a, options, signal) {
 // A conversation's own picture (its avatar or group photo, a person's face, its backdrop) by the same rule: drawn from
 // the device's store when it holds it, with no server needed yet, else fetched and offered to it.
 export const canFetchPicture = (client) => Boolean(client || mediaStore);
-export async function fetchPicture(client, a) {
+// The load queue's signal, when there is one, ends the read once its picture is scrolled out of reach (issue 426).
+export async function fetchPicture(client, a, signal) {
   const kept = mediaStore ? await mediaStore.media(a, { kind: 'picture' }).catch(() => null) : null;
   if (kept) return kept;
   if (!client) throw Object.assign(new Error('No server yet.'), { code: 'no_client' });
-  const blob = await client.attachment(a.id);
+  const blob = await client.attachment(a.id, signal ? { signal } : undefined);
   if (mediaStore) mediaStore.keepMedia(a, blob, { kind: 'picture' }).catch(() => {});
   return blob;
 }

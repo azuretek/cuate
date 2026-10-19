@@ -3,6 +3,7 @@
 import { isPayloadName, firstUrl, linkSite, payloadMedia } from './payload.js';
 import { isPlayableLink } from './link-media.js';
 import { stylesFromRuns } from './text-styles.js';
+import { sendEffectOf } from './send-effects.js';
 
 const TAPBACKS = new Set(['love', 'like', 'dislike', 'laugh', 'emphasis', 'question']);
 
@@ -147,10 +148,35 @@ const BACKGROUND_ACTION_NAMES = new Set(Object.values(BACKGROUND_ACTIONS));
 export function isBackgroundRow(m) {
   return Boolean(m) && BACKGROUND_ACTION_NAMES.has(m.background_action);
 }
-// Whether a raw row could be a background change: one with no words and nothing attached, so only those are asked of
-// the store.
-export function mayBeBackgroundRow(m) {
+// Whether a raw row could be an event only the store names (a background change, a rename, a person joining or leaving
+// a group): one with no words and nothing attached, so only those are asked of the store.
+export function mayBeStoreEventRow(m) {
   return Boolean(m && m.guid) && !m.is_reaction && !stripInlineObjects(m.text).trim() && !(Array.isArray(m.attachments) && m.attachments.length);
+}
+
+// A group being named, or its name being removed, arrives as a row of its own too (issue 439): no text and no
+// attachment, which the engine's read cannot tell from an empty message. Messages records it as item type 2 with the new
+// name in group_title (empty when the name was removed), and the adapter reads that from the store and marks the raw
+// row with both before it is mapped (server/src/engine/renames.js). It is an event in the conversation and the group's
+// new title, never a message.
+export const RENAME_ITEM_TYPE = 2;
+export function isRenameRow(m) {
+  return Boolean(m) && m.item_type === RENAME_ITEM_TYPE && typeof m.group_title === 'string';
+}
+
+// A person added to a group, removed from it, or leaving it arrives as a row of its own too (issue 456): no text and no
+// attachment, which the engine's read cannot tell from an empty message. Messages records an added or removed person as
+// item type 1, group action 0 for added and 1 for removed, with the person in other_handle (a row of the store's handle
+// table), and someone leaving as item type 3, group action 0, the one who left being the row's sender. The adapter reads
+// which rows those are from the store and marks the raw row with member_action, and member_handle for the person added
+// or removed, before it is mapped (server/src/engine/members.js). It is an event in the conversation, never a message.
+export const MEMBER_ACTIONS = Object.freeze({ '1:0': 'add', '1:1': 'remove', '3:0': 'leave' });
+const MEMBER_ACTION_NAMES = new Set(Object.values(MEMBER_ACTIONS));
+export function memberAction(itemType, groupAction) {
+  return MEMBER_ACTIONS[Number(itemType) + ':' + Number(groupAction)] || null;
+}
+export function isMemberRow(m) {
+  return Boolean(m) && MEMBER_ACTION_NAMES.has(m.member_action);
 }
 
 // The backdrop a chat draws, from what `imsg chat-background status` reports for it (issue 417): the picture Messages
@@ -194,9 +220,21 @@ export function mapMessage(m, { attachmentId }) {
   if (isBackgroundRow(m)) {
     return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'background', action: m.background_action } };
   }
+  if (isRenameRow(m)) {
+    return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'rename', name: m.group_title.trim() } };
+  }
+  if (isMemberRow(m)) {
+    // The person a change was about: the one added or removed. Someone leaving is the row's own sender, named as
+    // every sender is, so the event carries no one else. The name is the server's to read from Contacts.
+    const handle = m.member_action !== 'leave' && m.member_handle ? String(m.member_handle) : '';
+    return { ...base, attachments: [], link: null, payloads: 0, reactions: [], event: { kind: 'member', action: m.member_action, ...(handle ? { person: { handle, name: null } } : {}) } };
+  }
   // The text effects laid over the words (issue 433), which the server reads from the store and marks on the row as
   // text_runs; a message with none carries no styles.
   const styles = stylesFromRuns(m.text, m.text_runs);
+  // The bubble or screen effect the message was sent with (issue 442), which the server reads from the store and marks
+  // on the row as expressive_send_style_id; a message sent with none, or with one this app cannot play, carries none.
+  const sendEffect = sendEffectOf(m.expressive_send_style_id);
   const parts = payloadParts(m, { attachmentId });
   return {
     ...base,
@@ -204,6 +242,7 @@ export function mapMessage(m, { attachmentId }) {
     attachments: m.is_audio_message ? parts.attachments.map((a) => markVoice(a, m)) : parts.attachments,
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
     ...(styles.length ? { styles } : {}),
+    ...(sendEffect ? { sendEffect } : {}),
   };
 }
 
