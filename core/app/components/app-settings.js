@@ -29,6 +29,8 @@ const INTRO = 'Choose how this app looks and which notices it raises.';
 // same component on the desktop and the phones, so every setting the desktop offers is on the phone too; the inventory
 // test (core/test/settings-tabs.test.js) and the smoke's walk through every tab at a phone's width hold that. The tab in
 // force is app-root's, handed down as .tab, so returning from About lands on the tab it was opened from.
+import { dismissable } from '../../kit/dismiss.js';
+
 class AppSettings extends KitElement {
   static properties = {
     values: { attribute: false }, themePicture: { attribute: false }, serverUrl: {}, busy: {}, problem: {}, scheme: {}, urlNote: {},
@@ -40,6 +42,9 @@ class AppSettings extends KitElement {
 
   constructor() {
     super();
+    // The delete gate is a modal panel, so it closes through the kit like every other one (issue 492): Escape and a
+    // press outside run the same cancel the button does.
+    dismissable(this, { name: 'theme-delete', open: () => Boolean(this.confirmDelete), close: () => this.cancelDelete() });
     this.values = {};
     this.serverUrl = '';
     this.busy = false;
@@ -334,7 +339,7 @@ class AppSettings extends KitElement {
       <div class="setting-row setting-row-stack theme-row">
         <span class="setting-label">Theme</span>
         ${this.picker()}
-        ${removing ? html`<div class="theme-delete-gate" data-dismiss=${this.dismiss} role="alertdialog" aria-label=${'Delete ' + removing.name}>
+        ${removing ? html`<div class="theme-delete-gate" data-dismiss="theme-delete" role="alertdialog" aria-label=${'Delete ' + removing.name}>
           <p class="theme-delete-question">Delete <strong>${removing.name}</strong> from the picker and from the server?${sameTheme(removing.theme, current) ? ' It is in use, so the default theme will be used instead.' : ''}</p>
           <app-slide-confirm class="theme-delete-slide" .label=${'Slide to delete ' + removing.name} @confirm=${() => this.confirmDeleteTheme()}></app-slide-confirm>
           <button type="button" class="text-button" data-action="theme-delete-cancel" @click=${press(() => this.cancelDelete())}>Cancel</button>
