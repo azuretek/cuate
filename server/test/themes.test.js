@@ -29,6 +29,7 @@ function network({ fonts = true } = {}) {
     const u = new URL(href);
     if (u.hostname === 'tweakcn.com' && u.pathname === '/r/themes/elegant-luxury.json') return answer(200, elegant, 'application/json');
     if (u.hostname === 'tweakcn.com' && u.pathname === '/r/themes/cm-shared-123.json') return answer(200, elegant, 'application/json');
+    if (u.hostname === 'tweakcn.com' && u.pathname === '/r/themes/cms9p0t6o000104iec3zo2nyc.json') return answer(200, elegant, 'application/json');
     if (u.hostname === 'tweakcn.com') return answer(200, '<!doctype html><html><body>tweakcn</body></html>', 'text/html; charset=utf-8');
     if (u.hostname === 'fonts.googleapis.com') {
       if (!fonts) throw new TypeError('fetch failed');
@@ -115,6 +116,23 @@ test('a shared theme id URL and the registry JSON URL import the same theme as t
     assert.deepEqual(other.theme.shadow, editor.theme.shadow);
   }
   assert.equal(editor.theme.fonts, undefined, 'with no font store, a theme names its type and fetches none');
+});
+
+test('the shared theme page form in issue 492 imports its style, light and dark, from a fixture registry item', async () => {
+  const net = network();
+  const page = 'https://tweakcn.com/themes/cms9p0t6o000104iec3zo2nyc';
+  const out = await importThemeFromUrl({ url: page, held: [], fetchImpl: net.fetchImpl });
+  assert.equal(net.asked[0], 'https://tweakcn.com/r/themes/cms9p0t6o000104iec3zo2nyc.json', 'the page is read from its registry');
+  assert.equal(out.theme.url, page, 'the page URL is what the held theme remembers');
+  assert.equal(out.theme.name, 'Elegant Luxury', 'named as the theme page names it');
+  assert.equal(out.theme.color.light.accent, 'oklch(0.4650 0.1470 24.9381)', 'its light style is imported');
+  assert.equal(out.theme.color.dark.accent, 'oklch(0.5054 0.1905 27.5181)', 'its dark style is imported');
+  assert.equal(out.theme.color.light.bg, 'oklch(0.9779 0.0042 56.3756)');
+  assert.equal(out.theme.color.dark.bg, 'oklch(0.2161 0.0061 56.0434)');
+  // Added to the held list the picker reads, under its own id.
+  const added = out.themes.find((t) => t.id === 'elegant-luxury');
+  assert.ok(added, 'the imported theme is held for the picker');
+  assert.deepEqual(added.color, out.theme.color);
 });
 
 test('a page that is not a theme says what to paste instead, and a font that cannot be fetched never refuses the theme', async () => {
