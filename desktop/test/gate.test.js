@@ -290,7 +290,18 @@ test('splitList reads a comma separated pipeline list', () => {
 // nothing, so the publishing gate has nothing to wait on and naming it would make
 // a publish wait on a version pull request. Every workflow that DOES build a
 // platform is still caught.
-const NOT_A_PIPELINE = new Set(['release-please']);
+// The #479 throwaway spike only uploads a proof artifact on its isolated branch.
+// It cannot run on a product release commit; requiring it there would wait forever.
+const NOT_A_PIPELINE = new Set(['release-please', 'spike-mac-helper']);
+
+test('the helper spike is isolated from product publishing (#479)', () => {
+  const spike = readWorkflow('spike-mac-helper.yml');
+  assert.deepEqual(spike.on, { push: { branches: ['spike/479-mac-helper'] } });
+  assert.deepEqual(spike.permissions, { contents: 'read' });
+  assert.equal(Object.keys(spike.jobs).length, 1);
+  assert.ok(spike.jobs.notarize.steps.some((step) => step.uses?.startsWith('actions/upload-artifact@')));
+  assert.ok(!pipelines().includes('spike-mac-helper'));
+});
 function pipelines() {
   const found = [];
   for (const file of readdirSync(WORKFLOWS).filter((entry) => /\.ya?ml$/.test(entry))) {
