@@ -30,3 +30,23 @@ Throwaway. This branch never merges; it exists to measure the helper before the 
 Both read `Capabilities.current()`, which measures `csrutil status`, `CNContactStore.authorizationStatus` and `AEDeterminePermissionToAutomateTarget` with asking off. When SIP is disabled, `fullDiskAccess` is `notRequired`, because macOS enforces no file permission then. The same object is attached to every JSON-RPC reply and every error, so the menu badge and the client's message cannot disagree.
 
 The tests cannot click a status item. They assert the menu model, every row's action and the setup model, and say so.
+
+## Reproducible Phase 0 proofs
+
+The helper targets macOS 14, matching the existing server minimum in
+[SERVER.md](../../docs/SERVER.md#what-it-needs) and the pinned IMsgRPC library.
+This corrects the spike's inconsistent macOS 13 declaration, not the product's support policy.
+Both Package.swift and the bundle's LSMinimumSystemVersion declare 14.
+
+Package.swift pins the fork tag v0.17.0-cuate.1; Package.resolved records its commit.
+MessageRPC embeds IMsgRPCServer in CuateHelperCore, and MessageRPCTests drives
+in-memory JSON-RPC requests through that helper-owned seam and checks replies and EOF drain.
+The spike's socket methods are not replaced here; production routing remains Phase 1.
+
+DegradationTests uses synthetic empty and populated SQLite stores for the history route.
+A successful zero-row read is valid. Device permission evidence is separate and opt-in:
+
+    CUATE_HELPER_LIVE_HISTORY=1 ./test.sh --filter DegradationTests.testLiveSIPOffHistoryReadWhenExplicitlyRequested
+
+The device test reads only, accepts an empty Messages store, and does not prove signed-update
+grant retention, witnessed setup, or the Node-denied negative control. Those remain open.

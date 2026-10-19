@@ -54,14 +54,33 @@ final class DegradationTests: XCTestCase {
         XCTAssertNotNil(result?["capabilities"])
     }
 
-    func testSIPOffReadsHistoryWithoutAFullDiskAccessGrant() throws {
+    func testSIPOffReadsEmptyAndPopulatedHistoryWithoutAFullDiskAccessGrant() throws {
+        for rows in [0, 3] {
+            let fixture = try HistoryFixture(rows: rows)
+            defer { fixture.remove() }
+            let rpc = responder(sip: .disabled, contacts: 3, automation: 0,
+                                readable: true, databasePath: fixture.path)
+            let response = try reply(rpc, method: "chatdb.count")
+            XCTAssertNil(response["error"])
+            let result = try XCTUnwrap(response["result"] as? [String: Any])
+            XCTAssertEqual(result["ok"] as? Bool, true)
+            XCTAssertEqual(result["rows"] as? Int, rows)
+            XCTAssertNil(result["message"])
+            let capabilities = try XCTUnwrap(result["capabilities"] as? [String: Any])
+            XCTAssertEqual(capabilities["fullDiskAccess"] as? String, "notRequired")
+        }
+    }
+
+    // Opt-in device evidence, not a unit fixture or proof of grant retention.
+    func testLiveSIPOffHistoryReadWhenExplicitlyRequested() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["CUATE_HELPER_LIVE_HISTORY"] == "1",
+                          "Run separately on a device with CUATE_HELPER_LIVE_HISTORY=1.")
         let capabilities = Capabilities.current(version: "test", build: "0")
-        try XCTSkipUnless(capabilities.sip == .disabled,
-                          "This Mac has SIP on; the SIP-off history row is covered by its unit test.")
+        try XCTSkipUnless(capabilities.sip == .disabled, "Requires a SIP-off device.")
         XCTAssertEqual(capabilities.fullDiskAccess, .notRequired)
         XCTAssertNil(capabilities.issue(for: .fullDiskAccess))
         let opened = ChatDatabase().count()
         XCTAssertTrue(opened.ok, opened.message ?? "chat.db did not open")
-        XCTAssertGreaterThan(opened.rows ?? 0, 0)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(opened.rows), 0)
     }
 }
