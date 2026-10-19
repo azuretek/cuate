@@ -334,7 +334,7 @@ class AppSettings extends KitElement {
       <div class="setting-row setting-row-stack theme-row">
         <span class="setting-label">Theme</span>
         ${this.picker()}
-        ${removing ? html`<div class="theme-delete-gate" role="alertdialog" aria-label=${'Delete ' + removing.name}>
+        ${removing ? html`<div class="theme-delete-gate" data-dismiss=${this.dismiss} role="alertdialog" aria-label=${'Delete ' + removing.name}>
           <p class="theme-delete-question">Delete <strong>${removing.name}</strong> from the picker and from the server?${sameTheme(removing.theme, current) ? ' It is in use, so the default theme will be used instead.' : ''}</p>
           <app-slide-confirm class="theme-delete-slide" .label=${'Slide to delete ' + removing.name} @confirm=${() => this.confirmDeleteTheme()}></app-slide-confirm>
           <button type="button" class="text-button" data-action="theme-delete-cancel" @click=${press(() => this.cancelDelete())}>Cancel</button>
