@@ -50,6 +50,8 @@ var engine = (() => {
     EMOJI: () => EMOJI,
     EMOJI_CATEGORIES: () => EMOJI_CATEGORIES,
     EMOJI_TAPBACK_VERSION: () => EMOJI_TAPBACK_VERSION,
+    FAVOURITES_BYTES: () => FAVOURITES_BYTES,
+    FAVOURITES_MAX: () => FAVOURITES_MAX,
     FLICK_MIN: () => FLICK_MIN,
     FLICK_VELOCITY: () => FLICK_VELOCITY,
     FLING: () => FLING,
@@ -154,6 +156,7 @@ var engine = (() => {
     addTerm: () => addTerm,
     addTheme: () => addTheme,
     admitPress: () => admitPress,
+    adoptFavourites: () => adoptFavourites,
     allChecked: () => allChecked,
     anchorFrom: () => anchorFrom,
     apkAvailableBanner: () => apkAvailableBanner,
@@ -168,6 +171,7 @@ var engine = (() => {
     applyChangesToShown: () => applyChangesToShown,
     applyEdit: () => applyEdit,
     applyEditToChats: () => applyEditToChats,
+    applyFavourites: () => applyFavourites,
     applyMessageToChats: () => applyMessageToChats,
     applyReaction: () => applyReaction,
     applyTyping: () => applyTyping,
@@ -243,6 +247,7 @@ var engine = (() => {
     emojiPickerSections: () => emojiPickerSections,
     emptyFilters: () => emptyFilters,
     emptyListText: () => emptyListText,
+    encodeFavouriteCache: () => encodeFavouriteCache,
     encodePlayed: () => encodePlayed,
     engineLabel: () => engineLabel,
     eventPreview: () => eventPreview,
@@ -250,6 +255,9 @@ var engine = (() => {
     extensionOf: () => extensionOf,
     failedBanner: () => failedBanner,
     fallbackPhrase: () => fallbackPhrase,
+    favouriteCache: () => favouriteCache,
+    favouriteList: () => favouriteList,
+    favouriteOps: () => favouriteOps,
     feedVersions: () => feedVersions,
     filePress: () => filePress,
     fillTemplate: () => fillTemplate,
@@ -397,6 +405,7 @@ var engine = (() => {
     progressFor: () => progressFor,
     progressOf: () => progressOf,
     putNotice: () => putNotice,
+    queueFavourite: () => queueFavourite,
     quietCount: () => quietCount,
     quietNotices: () => quietNotices,
     reactionFallbackText: () => reactionFallbackText,
@@ -441,6 +450,7 @@ var engine = (() => {
     settingsFields: () => settingsFields,
     settingsGroups: () => settingsGroups,
     settingsTabs: () => settingsTabs,
+    settleFavourite: () => settleFavourite,
     settlesOpen: () => settlesOpen,
     settlesOpenAt: () => settlesOpenAt,
     sha256Hex: () => sha256Hex,
@@ -636,6 +646,10 @@ var engine = (() => {
       pushUnregister: () => call("DELETE", "/api/v1/push"),
       settings: () => call("GET", "/api/v1/settings"),
       settingsWrite: (values) => call("PUT", "/api/v1/settings", { values }),
+      // The emoji favourites the person has used, one list on the server so every device draws the same row, and a
+      // change to it as one small operation (issue 494).
+      favourites: () => call("GET", "/api/v1/emoji/favourites"),
+      favouritesWrite: (change) => call("POST", "/api/v1/emoji/favourites", change),
       themeImport: ({ url, name }) => call("POST", "/api/v1/themes", name ? { url, name } : { url }),
       // One font file a held theme names, as bytes for the FontFace API.
       async themeFont(id) {
@@ -2013,8 +2027,8 @@ var engine = (() => {
   // core/app/rules/attach.js
   var ATTACH_ACCEPT = "";
   var UNITS = ["B", "KB", "MB", "GB"];
-  function sizeLabel(bytes) {
-    let n = Math.max(0, Number(bytes) || 0);
+  function sizeLabel(bytes2) {
+    let n = Math.max(0, Number(bytes2) || 0);
     let u = 0;
     while (n >= 1024 && u < UNITS.length - 1) {
       n /= 1024;
@@ -2028,16 +2042,16 @@ var engine = (() => {
     return { ok: true };
   }
   var ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  function toBase64(bytes) {
+  function toBase64(bytes2) {
     const out = [];
     let i = 0;
-    for (; i + 2 < bytes.length; i += 3) {
-      const n = bytes[i] << 16 | bytes[i + 1] << 8 | bytes[i + 2];
+    for (; i + 2 < bytes2.length; i += 3) {
+      const n = bytes2[i] << 16 | bytes2[i + 1] << 8 | bytes2[i + 2];
       out.push(ALPHABET[n >> 18 & 63] + ALPHABET[n >> 12 & 63] + ALPHABET[n >> 6 & 63] + ALPHABET[n & 63]);
     }
-    if (i < bytes.length) {
-      const rest = bytes.length - i;
-      const n = bytes[i] << 16 | (rest === 2 ? bytes[i + 1] << 8 : 0);
+    if (i < bytes2.length) {
+      const rest = bytes2.length - i;
+      const n = bytes2[i] << 16 | (rest === 2 ? bytes2[i + 1] << 8 : 0);
       out.push(ALPHABET[n >> 18 & 63] + ALPHABET[n >> 12 & 63] + (rest === 2 ? ALPHABET[n >> 6 & 63] : "=") + "=");
     }
     return out.join("");
@@ -2054,9 +2068,9 @@ var engine = (() => {
   var STALL_MS = 45e3;
   var KB = 1024;
   var MB = KB * KB;
-  function size(bytes) {
-    if (!Number.isFinite(bytes) || bytes <= 0) return null;
-    const mb = bytes / MB;
+  function size(bytes2) {
+    if (!Number.isFinite(bytes2) || bytes2 <= 0) return null;
+    const mb = bytes2 / MB;
     if (mb < 10) return mb.toFixed(1) + " MB";
     if (mb < 1e3) return Math.round(mb) + " MB";
     return (mb / KB).toFixed(2) + " GB";
@@ -3288,6 +3302,72 @@ var engine = (() => {
     return parts;
   }
 
+  // core/app/rules/emoji-favourites.js
+  var FAVOURITES_MAX = 200;
+  var FAVOURITES_BYTES = 8e3;
+  var PENDING_MAX = 200;
+  var bytes = (text) => new TextEncoder().encode(text).length;
+  function favouriteList(value) {
+    const out = [];
+    for (const char of Array.isArray(value) ? value : []) {
+      if (typeof char !== "string" || !isEmoji(char) || out.includes(char)) continue;
+      out.push(char);
+      if (out.length === FAVOURITES_MAX) break;
+    }
+    return out;
+  }
+  function favouriteOps(value) {
+    const out = [];
+    for (const op of Array.isArray(value) ? value : []) {
+      if (!op || typeof op.id !== "string" || !op.id) continue;
+      const add = favouriteList(op.add);
+      const remove = favouriteList(op.remove);
+      if (!add.length && !remove.length) continue;
+      if (out.some((x) => x.id === op.id)) continue;
+      out.push({ id: op.id, add, remove });
+    }
+    return out.slice(-PENDING_MAX);
+  }
+  function favouriteCache(value) {
+    const o = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    return { list: favouriteList(o.list), pending: favouriteOps(o.pending) };
+  }
+  function applyFavourites(list, pending) {
+    let out = favouriteList(list);
+    for (const op of favouriteOps(pending)) {
+      for (const char of op.add) out = favouriteList([char, ...out]);
+      if (op.remove.length) out = out.filter((c) => !op.remove.includes(c));
+    }
+    return out;
+  }
+  function queueFavourite(cache, change = {}, id) {
+    const before = favouriteCache(cache);
+    const op = { id: String(id || ""), add: favouriteList(change.add), remove: favouriteList(change.remove) };
+    if (!op.id || !op.add.length && !op.remove.length) return before;
+    return { list: applyFavourites(before.list, [op]), pending: [...before.pending, op].slice(-PENDING_MAX) };
+  }
+  function settleFavourite(cache, id, serverList) {
+    const before = favouriteCache(cache);
+    const pending = id === null ? before.pending : before.pending.filter((op) => op.id !== id);
+    return { list: applyFavourites(serverList, pending), pending };
+  }
+  function adoptFavourites(cache, serverList) {
+    return settleFavourite(cache, null, serverList);
+  }
+  function encodeFavouriteCache(cache) {
+    let c = favouriteCache(cache);
+    let text = JSON.stringify(c);
+    while (c.pending.length && bytes(text) > FAVOURITES_BYTES) {
+      c = { ...c, pending: c.pending.slice(Math.max(1, Math.ceil(c.pending.length / 10))) };
+      text = JSON.stringify(c);
+    }
+    while (c.list.length && bytes(text) > FAVOURITES_BYTES) {
+      c = { ...c, list: c.list.slice(0, Math.floor(c.list.length * 0.9)) };
+      text = JSON.stringify(c);
+    }
+    return text;
+  }
+
   // core/app/rules/connection.js
   var SENTENCES = {
     connecting: "Connecting to your server\u2026",
@@ -3904,13 +3984,13 @@ var engine = (() => {
     3329325298
   ]);
   function sha256Hex(text) {
-    const bytes = new TextEncoder().encode(String(text));
-    const padded = new Uint8Array(bytes.length + 9 + 63 >> 6 << 6);
-    padded.set(bytes);
-    padded[bytes.length] = 128;
+    const bytes2 = new TextEncoder().encode(String(text));
+    const padded = new Uint8Array(bytes2.length + 9 + 63 >> 6 << 6);
+    padded.set(bytes2);
+    padded[bytes2.length] = 128;
     const view = new DataView(padded.buffer);
-    view.setUint32(padded.length - 8, Math.floor(bytes.length / 536870912));
-    view.setUint32(padded.length - 4, bytes.length * 8 >>> 0);
+    view.setUint32(padded.length - 8, Math.floor(bytes2.length / 536870912));
+    view.setUint32(padded.length - 4, bytes2.length * 8 >>> 0);
     const h = Uint32Array.from([1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]);
     const w = new Uint32Array(64);
     const rotr = (x, n) => x >>> n | x << 32 - n;

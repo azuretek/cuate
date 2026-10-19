@@ -35,6 +35,9 @@ import { windowControlsHtml } from './window-controls.js';
 import { resolveScheme, themeVars, themeFonts, textScaleVars, textScaleInForce, TYPE_SIZE_VARS } from '../rules/theme.js';
 import { ICON_TOKENS, unreadTotal } from '../rules/icon.js';
 import { settingsAfterWrite, settingsAfterRefusal } from '../rules/settings.js';
+import { favouriteCache, applyFavourites, queueFavourite, settleFavourite, adoptFavourites, FAVOURITES_MAX } from '../rules/emoji-favourites.js';
+import { frequentEmoji } from '../rules/emoji.js';
+import { readFavouriteCache, writeFavouriteCache, forgetFavouriteCache, readLegacyFavourites, forgetLegacyFavourites } from '../favourites.js';
 import { CHATS_DEFAULT, CHATS_MIN, clampChatsWidth, chatsWidthFrom, dividerBounds, dividerKey, dragChatsWidth } from '../rules/divider.js';
 import { iconToApply, themeMatch } from '../rules/app-icons.js';
 import { sheetLeaveDeadline } from '../rules/sheet.js';
@@ -116,6 +119,9 @@ class AppRoot extends KitElement {
     // so a plain field would never repaint and the leave would never begin.
     sheetLeaving: { state: true }, aboutLeaving: { state: true }, pendingSheet: { state: true },
     settings: { state: true }, info: { state: true }, serverUrl: { state: true },
+    // The person's emoji favourites, the same list on every device (issue 494). The cache is the copy this device
+    // draws before the server answers and while offline; the list is what the row shows.
+    favourites: { state: true },
     settingsBusy: { state: true }, settingsProblem: { state: true },
     // The scheme applyTheme resolved, handed to the settings page so each theme card shows that scheme's colours.
     scheme: { state: true },
@@ -167,6 +173,8 @@ class AppRoot extends KitElement {
     // A press on the backdrop is a second way back only when it both starts and ends there (rules/sheet.js).
     this.downOnBackdrop = false;
     this.settings = {};
+    this.favourites = [];
+    this.favouriteCache = favouriteCache(null);
     this.info = null;
     this.serverUrl = '';
     this.settingsBusy = false;
@@ -509,6 +517,9 @@ class AppRoot extends KitElement {
       // against defaults the server has already overridden.
       this.settings = await this.readSettings();
       this.settingsRead = true;
+      // The cache paints the favorites row before the server answers; the server's list replaces it once the stream is
+      // open, and a change queued while offline is sent then (issue 494).
+      await this.loadCachedFavourites();
       // A notice's read state is a server setting, so it survives a reload and is read back on every device.
       this.noticeRead = noticeState(this.settings[NOTICE_READ_KEY]);
       this.applyNoticeQuiet();
@@ -519,6 +530,7 @@ class AppRoot extends KitElement {
       ready();
       client.connect();
       this.takeLink();
+      this.syncFavourites().catch(() => {});
       // Signed in, so notifications are asked for now, on every platform, rather than on the first message (issue
       // 327). The system asks only once; after that the shell answers where it stands.
       this.bridge('notify.permission', { request: true }).then((state) => { this.notifyPermission = state; this.registerPush(); }).catch(() => {});
@@ -630,6 +642,94 @@ class AppRoot extends KitElement {
     for (const m of arrived) this.receiveHistoryMessage(m);
   }
 
+  // The emoji favourites (issue 494): the server's list is the value, and this device keeps a cache so the row is
+  // there before the first round trip and while offline. A change is queued in the cache first and sent second, so
+  // one made while offline is never lost, and a queued change stays until the server has answered it.
+  async loadCachedFavourites() {
+    const cache = await readFavouriteCache();
+    this.favouriteCache = cache;
+    this.favourites = applyFavourites(cache.list, cache.pending);
+  }
+
+  async syncFavourites() {
+    if (!this.client) return;
+    let server;
+    try {
+      const answer = await this.client.favourites();
+      server = Array.isArray(answer.favourites) ? answer.favourites : null;
+    } catch {
+      return;
+    }
+    if (!server) return;
+    this.favouriteCache = adoptFavourites(this.favouriteCache, server);
+    this.favourites = this.favouriteCache.list;
+    await writeFavouriteCache(this.favouriteCache);
+    // A list this device kept before the server held it becomes its first change, so nobody loses their row. A
+    // server that already has a list wins, and the old key goes either way: it is read once.
+    if (!server.length && !this.favouriteCache.list.length) await this.migrateFavourites();
+    else await forgetLegacyFavourites();
+    await this.flushFavourites();
+  }
+
+  async migrateFavourites() {
+    const legacy = await readLegacyFavourites();
+    if (!legacy.length) return;
+    // The old list was a use list, newest last: most used first is the row, and the server draws it in the order the
+    // adds arrive, so the top emoji is added last.
+    const ordered = frequentEmoji(legacy, { limit: FAVOURITES_MAX });
+    if (ordered.length) this.queueFavouriteChange({ add: ordered.slice().reverse() });
+    await forgetLegacyFavourites();
+  }
+
+  // Sends the queued changes in the order they were made. A change that cannot be sent stays queued for the next
+  // connection rather than being dropped.
+  async flushFavourites() {
+    while (this.client && this.favouriteCache.pending.length) {
+      const op = this.favouriteCache.pending[0];
+      let list;
+      try {
+        const answer = await this.client.favouritesWrite({ op: op.id, add: op.add, remove: op.remove });
+        list = Array.isArray(answer.favourites) ? answer.favourites : null;
+      } catch {
+        return;
+      }
+      if (!list) return;
+      this.favouriteCache = settleFavourite(this.favouriteCache, op.id, list);
+      this.favourites = this.favouriteCache.list;
+      await writeFavouriteCache(this.favouriteCache);
+    }
+  }
+
+  queueFavouriteChange(change) {
+    const id = newKey();
+    this.favouriteCache = queueFavourite(this.favouriteCache, change, id);
+    this.favourites = this.favouriteCache.list;
+    writeFavouriteCache(this.favouriteCache).catch(() => {});
+    return id;
+  }
+
+  // A pick or a removal is shown at once and sent behind it. The press it came from is a button's own, so the
+  // handler answers whether the change was taken rather than making the button wait.
+  async favouriteEmoji(char) {
+    this.queueFavouriteChange({ add: [char] });
+    await this.flushFavourites();
+    return true;
+  }
+
+  async forgetEmoji(char) {
+    this.queueFavouriteChange({ remove: [char] });
+    await this.flushFavourites();
+    return true;
+  }
+
+  // Another device's change arrives here as the server's whole list; this device's own queued changes still sit on top
+  // of it, so one made offline is drawn until it lands.
+  adoptFavouriteList(list) {
+    this.favouriteCache = adoptFavourites(this.favouriteCache, list);
+    this.favourites = this.favouriteCache.list;
+    writeFavouriteCache(this.favouriteCache).catch(() => {});
+  }
+
   // The server holds every setting; the page only draws what it holds. A read that fails leaves the schema defaults.
   async readSettings() {
     try {
@@ -643,7 +743,11 @@ class AppRoot extends KitElement {
   onConnState(s) {
     this.conn = s;
     if (s === 'unauthorized') this.signOut("The server no longer accepts this device's token. Connect again with a new one.");
-    if (s === 'open' && this.client) this.client.info().then((info) => { this.info = info; this.sending = Boolean(info.sending); this.noticeServerUpdate(info.serverUpdate); }, () => {});
+    if (s === 'open' && this.client) {
+      this.client.info().then((info) => { this.info = info; this.sending = Boolean(info.sending); this.noticeServerUpdate(info.serverUpdate); }, () => {});
+      // The connection returning is when a change made offline goes out, and when the other devices' list arrives.
+      this.syncFavourites().catch(() => {});
+    }
   }
 
   // The press that called this shows it working (core/kit/press.js); a probe the server refuses answers false.
@@ -658,6 +762,8 @@ class AppRoot extends KitElement {
       this.problem = this.describe(e);
       return false;
     }
+    // A different server is a different person's list, so nothing this device cached for the old one is carried over.
+    if (this.serverUrl && this.serverUrl !== base) await this.resetFavourites();
     await this.bridge('storage.set', { key: 'server.url', value: base });
     await this.bridge('storage.set', { key: 'server.token', value: token });
     await this.start(base, token);
@@ -679,6 +785,13 @@ class AppRoot extends KitElement {
     }
   }
 
+  // The list this device cached belongs to the server it came from.
+  async resetFavourites() {
+    await forgetFavouriteCache();
+    this.favourites = [];
+    this.favouriteCache = favouriteCache(null);
+  }
+
   async signOut(reason) {
     // Signing out stops this phone's notifications too; the server also forgets them when the token is revoked.
     if (this.client) this.client.pushUnregister().catch(() => {});
@@ -692,6 +805,7 @@ class AppRoot extends KitElement {
     useMediaStore(null);
     if (cache) await cache.clear().catch(() => {});
     await this.bridge('storage.delete', { key: 'server.token' });
+    await this.resetFavourites();
     this.chats = [];
     this.messages = [];
     this.convos = new Map();
@@ -1058,6 +1172,10 @@ class AppRoot extends KitElement {
       this.sending = Boolean(data.sending);
     } else if (name === 'server.update') {
       this.noticeServerUpdate(data);
+    } else if (name === 'emoji.changed') {
+      // A favourite added or removed on another device is the server's whole list, drawn here with this device's own
+      // queued changes still on top of it.
+      if (Array.isArray(data.favourites)) this.adoptFavouriteList(data.favourites);
     } else if (name === 'settings.changed') {
       // A change made on any device arrives here and the page redraws from it, so it never holds its own copy.
       this.settings = { ...this.settings, ...(data.values || {}) };
@@ -1984,7 +2102,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .host=${this.host} .reveal=${this.revealing} .messages=${this.messages} .historyWindow=${this.historyWindow} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .canEdit=${Boolean(this.info?.engine?.edit)} .note=${this.messageNote} .typing=${this.typing} @open-external=${(e) => this.openExternal(e.detail.url)} @react=${(e) => respond(e, this.react(e.detail))} @edit=${(e) => respond(e, this.edit(e.detail))} @groupinfo=${() => this.openGroupInfo()} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder(e.detail))} @newer=${(e) => respond(e, this.loadHistory('newer', e.detail))} @history-measured=${(e) => this.measureHistory(e.detail)} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .host=${this.host} .reveal=${this.revealing} .messages=${this.messages} .historyWindow=${this.historyWindow} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .canEdit=${Boolean(this.info?.engine?.edit)} .note=${this.messageNote} .typing=${this.typing} .favourites=${this.favourites} @open-external=${(e) => this.openExternal(e.detail.url)} @favourite=${(e) => this.favouriteEmoji(e.detail)} @forget-favourite=${(e) => this.forgetEmoji(e.detail)} @react=${(e) => respond(e, this.react(e.detail))} @edit=${(e) => respond(e, this.edit(e.detail))} @groupinfo=${() => this.openGroupInfo()} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder(e.detail))} @newer=${(e) => respond(e, this.loadHistory('newer', e.detail))} @history-measured=${(e) => this.measureHistory(e.detail)} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<header class="conv-head conv-head--empty">${this.emptyControls()}</header><div class="empty">${EMPTY_PANE}</div>`;
   }
 

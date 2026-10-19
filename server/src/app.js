@@ -16,6 +16,7 @@ import { createThemeFonts } from './theme-fonts.js';
 import { createLinkMedia } from './link-media.js';
 import { createSearch } from './search.js';
 import { createSettings } from './settings.js';
+import { createEmojiFavourites } from './emoji.js';
 import { loadRoutes } from './routes/index.js';
 import { allows as scopeAllows } from './scopes.js';
 import { createExporter } from './export.js';
@@ -373,6 +374,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     uploads: createUploads({ dataDir, store, limits: apiSpec.uploads }),
     search: createSearch({ engine, paging }),
     settings: createSettings({ store }),
+    emoji: createEmojiFavourites({ store }),
     exporter,
     webhooks,
     push,

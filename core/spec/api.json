@@ -251,6 +251,21 @@
       "returns": "Settings"
     },
     {
+      "id": "emoji-favourites",
+      "method": "GET",
+      "path": "/api/v1/emoji/favourites",
+      "scope": "read",
+      "returns": "EmojiFavourites"
+    },
+    {
+      "id": "emoji-favourites-write",
+      "method": "POST",
+      "path": "/api/v1/emoji/favourites",
+      "scope": "settings",
+      "body": "EmojiFavouritesPatch",
+      "returns": "EmojiFavourites"
+    },
+    {
       "id": "push-register",
       "method": "POST",
       "path": "/api/v1/push",
@@ -343,7 +358,8 @@
     "settings.changed": "SettingsEvent",
     "mac.state": "MacEvent",
     "server.update": "ServerUpdate",
-    "attachment.played": "AttachmentPlayed"
+    "attachment.played": "AttachmentPlayed",
+    "emoji.changed": "EmojiEvent"
   },
   "models": {
     "Health": {
@@ -737,6 +753,17 @@
       "items": "MediaItem[]",
       "hasMore": "boolean",
       "nextCursor": "string?"
+    },
+    "EmojiFavourites": {
+      "favourites": "string[]"
+    },
+    "EmojiFavouritesPatch": {
+      "op": "string",
+      "add": "string[]?",
+      "remove": "string[]?"
+    },
+    "EmojiEvent": {
+      "favourites": "string[]"
     }
   }
 }

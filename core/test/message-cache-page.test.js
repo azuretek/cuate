@@ -51,7 +51,7 @@ function page() {
     applyNoticeQuiet() {}, applyUpdateSetting() {}, applyTheme() {}, registerPush() {}, releaseHeldUpdate() {}, launchCheck() {}, noticeServerUpdate() {}, releaseHeldScreen() {},
     onEvent() {}, onConnState() {}, closeView() {}, querySelector() { return null; }, resetTyping() {}, clearTyping() {},
   };
-  for (const name of ['start', 'open', 'readSettings', 'describe', 'takeNotice', 'takeLink', 'loadOlder', 'loadHistory', 'applyWindow', 'measureHistory', 'reconcile', 'openStore', 'catchUp', 'showChanges', 'storedWindow', 'keepShown', 'receiveHistoryMessage', 'signOut', 'stopNoticeWait']) {
+  for (const name of ['loadCachedFavourites', 'syncFavourites', 'flushFavourites', 'migrateFavourites', 'resetFavourites', 'queueFavouriteChange', 'favouriteEmoji', 'forgetEmoji', 'adoptFavouriteList', 'start', 'open', 'readSettings', 'describe', 'takeNotice', 'takeLink', 'loadOlder', 'loadHistory', 'applyWindow', 'measureHistory', 'reconcile', 'openStore', 'catchUp', 'showChanges', 'storedWindow', 'keepShown', 'receiveHistoryMessage', 'signOut', 'stopNoticeWait']) {
     if (typeof proto[name] === 'function') host[name] = proto[name];
   }
   return host;

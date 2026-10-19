@@ -6,7 +6,6 @@ import { aimCarets } from '../../kit/popover.js';
 import { play } from '../../kit/motion.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACCEPT, sizeLabel, stageCheck } from '../rules/attach.js';
-import { loadRecentEmoji, rememberEmoji } from './app-emoji-picker.js';
 
 class AppComposer extends KitElement {
   static properties = {
@@ -17,7 +16,7 @@ class AppComposer extends KitElement {
     // The message being edited ({ id, text }), or null (issue 391): its words fill the field, Send saves the edit, and
     // Escape leaves them as they were.
     editing: { attribute: false },
-    emojiOpen: { state: true }, frequent: { state: true }, staged: { state: true }, stageProblem: { state: true },
+    emojiOpen: { state: true }, favourites: { attribute: false }, staged: { state: true }, stageProblem: { state: true },
     // A phone: its own keyboard carries emoji, so the composer's emoji tool is the desktop's (the panel is still the
     // one a reaction opens, and that path opens it itself).
     phone: {},
@@ -34,7 +33,7 @@ class AppComposer extends KitElement {
     this.reactFor = null;
     this.editing = null;
     this.emojiOpen = false;
-    this.frequent = [];
+    this.favourites = [];
     this.staged = null;
     this.stageProblem = '';
     this.preview = '';
@@ -44,11 +43,6 @@ class AppComposer extends KitElement {
     // The emoji panel closes on a press outside it and on Escape, through the kit's one behaviour (core/kit/dismiss.js).
     // The attach control opens the system's own picker and keeps no panel of ours, so there is none to register.
     dismissable(this, { name: 'emoji', open: () => this.emojiOpen, close: () => this.closeEmoji() });
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.loadFrequent();
   }
 
   disconnectedCallback() {
@@ -74,14 +68,15 @@ class AppComposer extends KitElement {
     return this.querySelector('textarea');
   }
 
-  async loadFrequent() {
-    this.frequent = await loadRecentEmoji();
+  // A pick is a favourite: the page owns the list, which the server holds, so the pager queues it and draws it. The
+  // composer only says which character was used.
+  remember(char) {
+    this.dispatchEvent(new CustomEvent('favourite', { bubbles: true, composed: true, detail: char }));
   }
 
-  async remember(char) {
-    const before = this.frequent;
-    this.frequent = [...before, char].slice(-200);
-    await rememberEmoji(before, char);
+  // A long press or a right click on a recent emoji asks for it to leave the list, on every device.
+  forget(char) {
+    this.dispatchEvent(new CustomEvent('forget-favourite', { bubbles: true, composed: true, detail: char }));
   }
 
   // React on a message opens this composer's own emoji panel, the one used for typing, to choose the reaction.
@@ -338,7 +333,7 @@ class AppComposer extends KitElement {
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.onInput} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}><span class="icon" data-icon="arrow-up" aria-hidden="true"></span></button>
     </form>
-    ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .frequent=${this.frequent} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)}></app-emoji-picker>` : nothing}`;
+    ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .favourites=${this.favourites} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)} @forget=${(e) => this.forget(e.detail)}></app-emoji-picker>` : nothing}`;
   }
 }
 

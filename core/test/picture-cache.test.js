@@ -99,7 +99,7 @@ function page(themes) {
     applyNoticeQuiet() {}, applyUpdateSetting() {}, registerPush() {}, releaseHeldUpdate() {}, launchCheck() {}, noticeServerUpdate() {}, releaseHeldScreen() {},
     onEvent() {}, onConnState() {}, closeView() {}, querySelector() { return null; }, takeNotice() {}, takeLink() {}, stopNoticeWait() {}, resetTyping() {}, clearTyping() {},
   };
-  for (const name of ['start', 'readSettings', 'describe', 'openStore', 'catchUp', 'showChanges', 'keepShown', 'signOut', 'themeFontBytes']) {
+  for (const name of ['loadCachedFavourites', 'syncFavourites', 'flushFavourites', 'migrateFavourites', 'resetFavourites', 'queueFavouriteChange', 'favouriteEmoji', 'forgetEmoji', 'adoptFavouriteList', 'start', 'readSettings', 'describe', 'openStore', 'catchUp', 'showChanges', 'keepShown', 'signOut', 'themeFontBytes']) {
     if (typeof proto[name] === 'function') host[name] = proto[name];
   }
   return host;
