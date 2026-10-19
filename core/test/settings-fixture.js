@@ -68,6 +68,37 @@
   await until(() => [...page().querySelectorAll('.app-icon-choice img')].every((i) => i.complete && i.naturalWidth > 0), 'the app icon choices');
   await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
+  // Issue 492: the theme section sits above the icon selector, a URL is the only import path, and a held theme can be
+  // deleted only behind the slide gate, falling back to the default when it was in use. The fixture has no server, so
+  // the delete is read from the write the page raises, which is the same event app-root hands the server.
+  const themeSection = page().querySelector('.theme-section');
+  const iconField = page().querySelector('[data-key="appearance.appIcon"]');
+  if (!themeSection || !iconField) throw new Error('the theme section or the app icon selector is missing');
+  if (!(themeSection.compareDocumentPosition(iconField) & Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error('the theme section is not above the app icon selector');
+  if (!page().querySelector('.theme-url-input')) throw new Error('the theme URL field is missing');
+  if (page().querySelector('.theme-import-text') || page().querySelector('.theme-import-name') || page().querySelector('input[type="file"]')) throw new Error('a theme import path other than a URL remains');
+  const fixtureTheme = { id: 'settings-fixture-theme', name: 'Settings fixture', source: 'tweakcn', color: { light: { bg: '#123456', accent: '#654321' }, dark: { bg: '#0a0a0a', accent: '#abcdef' } } };
+  root.settings = { ...root.settings, 'appearance.themes': [fixtureTheme], 'appearance.theme': fixtureTheme };
+  await root.updateComplete;
+  await page().updateComplete;
+  const themeItem = page().querySelector('.theme-item[data-theme-id="settings-fixture-theme"]');
+  if (!themeItem) throw new Error('the held theme has no card');
+  const writes = [];
+  page().addEventListener('settings', (event) => writes.push(event.detail));
+  themeItem.querySelector('[data-action="theme-delete"]').click();
+  await until(() => page().querySelector('.theme-delete-gate'), 'the delete gate');
+  if (writes.length) throw new Error('a theme was deleted before its gate');
+  page().querySelector('[data-action="theme-delete-cancel"]').click();
+  await until(() => !page().querySelector('.theme-delete-gate'), 'the gate to close');
+  if (writes.length) throw new Error('cancelling deleted the theme');
+  themeItem.querySelector('[data-action="theme-delete"]').click();
+  await until(() => page().querySelector('.theme-delete-gate'), 'the delete gate again');
+  page().querySelector('app-slide-confirm').dispatchEvent(new CustomEvent('confirm'));
+  await until(() => writes.length === 1, 'the delete to be written');
+  const write = writes[0];
+  if (write['appearance.theme'] !== null) throw new Error('deleting the theme in use did not fall back to the default');
+  if ((write['appearance.themes'] || []).length !== 0) throw new Error('the deleted theme is still held');
+  if (!/default theme/.test(page().themeNote)) throw new Error('the page did not say the default theme is in use');
   const marker = document.createElement('output');
   marker.setAttribute('aria-label', 'settings:pass');
   marker.textContent = 'settings:pass';
