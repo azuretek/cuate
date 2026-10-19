@@ -719,6 +719,15 @@ async function runSmoke(w) {
     report.sendOnce = double.press === 'pending' && double.busy === 'true' && double.kept === text && bubblesSent === 1 && serverHeld === 1;
     console.log('send once: ' + JSON.stringify({ double, bubblesSent, serverHeld }));
     report.sent = true;
+    // The bubbles from both sides in each scheme (issue 459): the other person's in the theme's accent, ours the quiet
+    // tint. The choice contrast check measures them; these are the pictures.
+    for (const scheme of ['light', 'dark']) {
+      nativeTheme.themeSource = scheme;
+      await pause(400);
+      await shot('02c-bubbles-' + scheme + '.png');
+    }
+    nativeTheme.themeSource = 'light';
+    await pause(300);
   }
   // Edits (issue 391). The live message's sender edits it on their phone once we have answered it (the fake engine's
   // FAKE_LIVE_EDIT): the new words replace the old in the open conversation, live, marked Edited, and a reload keeps
@@ -788,6 +797,100 @@ async function runSmoke(w) {
   }
   await pause(300);
   await shot('03-after-send.png');
+
+  // Bubble and screen effects (issue 442). The fake engine's group holds Jordan's plan for Saturday sent with Confetti,
+  // which the server reads from the store. Opening the group names it under the message and plays nothing (the history
+  // is a place, not news); Replay plays it over the conversation, a layer that takes no press. Each message that arrives
+  // through the page's own event handler, the path the server's message.new takes, plays as it lands: Slam on its
+  // bubble, Love over the conversation, and Invisible Ink veils its words, in the list preview too, until pressed.
+  // Under reduced motion nothing plays and nothing is offered to replay, and the line still names the effect.
+  {
+    await smokeStep('send effects');
+    const sfxCdp = (method, params) => { if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); return wc.debugger.sendCommand(method, params); };
+    const sfxMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
+    const sfxBack = await js("document.querySelector('app-root').openChatId");
+    const sfxOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && document.querySelectorAll('.bubble-row').length > 0", 15000);
+    };
+    const sfxLayer = () => js(`(() => {
+      const layer = document.querySelector('.screen-effect');
+      const pieces = layer ? [...layer.querySelectorAll('.fx-piece')] : [];
+      return { effect: layer ? layer.dataset.effect || null : null, pieces: pieces.length, running: pieces.flatMap((p) => p.getAnimations()).filter((a) => a.playState === 'running' && a.id === 'send-' + (layer.dataset.effect || '')).length, pointer: layer ? getComputedStyle(layer).pointerEvents : null };
+    })()`);
+    const sfxRow = (id) => js(`(() => {
+      const r = document.querySelector('.messages .bubble-row[data-id=' + JSON.stringify(${JSON.stringify(id)}) + ']');
+      if (!r) return { found: false };
+      r.scrollIntoView({ block: 'center' });
+      const b = r.querySelector('.bubble');
+      const replay = r.querySelector('.send-effect-replay');
+      const words = b && b.querySelector('.ink-words');
+      return { found: true, line: (r.querySelector('.send-effect-name') || {}).textContent || '', replay: Boolean(replay), replayShown: Boolean(replay && replay.offsetParent), running: b ? b.getAnimations().filter((a) => a.playState === 'running' && String(a.id).startsWith('send-')).length : 0, ink: b ? b.dataset.ink || null : null, filter: words ? getComputedStyle(words).filter : null, text: b ? b.textContent.trim() : '' };
+    })()`);
+    const sfxArrive = (id, sendEffect, text) => js(`(() => {
+      const r = document.querySelector('app-root');
+      r.onEvent({ name: 'message.new', data: { message: { id: ${JSON.stringify(id)}, chatId: '2', fromMe: false, sender: 'jordan@example.com', senderName: 'Jordan Lee', text: ${JSON.stringify(text)}, sentAt: new Date().toISOString(), replyTo: null, read: false, attachments: [], link: null, payloads: 0, reactions: [], sendEffect: ${JSON.stringify(sendEffect)} } } });
+      return true;
+    })()`);
+    const sfxQuiet = () => waitFor("!document.querySelector('.screen-effect .fx-piece')", 15000).catch(() => {});
+    await sfxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    await sfxOpen('1');
+    await sfxOpen('2');
+    await pause(400);
+    const history = await sfxRow('FAKE-0007');
+    const opened = await sfxLayer();
+    await js("document.querySelector('.messages .bubble-row[data-id=\"FAKE-0007\"] .send-effect-replay').click()");
+    await waitFor("document.querySelector('.screen-effect')?.dataset.effect === 'confetti' && document.querySelectorAll('.screen-effect .fx-piece').length > 0", 5000).catch(() => {});
+    await pause(500);
+    const replayed = await sfxLayer();
+    await shot('03e-send-effect-confetti.png');
+    await sfxQuiet();
+    await sfxArrive('SMOKE-FX-SLAM', 'slam', 'Slammed in by the smoke');
+    await waitFor("Boolean(document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-SLAM\"] .bubble'))", 5000).catch(() => {});
+    const slam = await sfxRow('SMOKE-FX-SLAM');
+    const slamLayer = await sfxLayer();
+    await sfxArrive('SMOKE-FX-LOVE', 'love', 'Sent with love by the smoke');
+    await waitFor("document.querySelector('.screen-effect')?.dataset.effect === 'love'", 5000).catch(() => {});
+    await pause(300);
+    const love = await sfxLayer();
+    await shot('03f-send-effect-love.png');
+    await sfxQuiet();
+    await sfxArrive('SMOKE-FX-INK', 'invisible-ink', 'A secret from the smoke');
+    await waitFor("Boolean(document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-INK\"] .bubble'))", 5000).catch(() => {});
+    const veiled = await sfxRow('SMOKE-FX-INK');
+    const preview = await js("(() => { const p = document.querySelector('.chat-row[data-chat=\"2\"] .chat-preview'); return p ? p.textContent : ''; })()");
+    await shot('03g-send-effect-ink.png');
+    await js("document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-INK\"] .bubble').click()");
+    await pause(200);
+    const shown = await sfxRow('SMOKE-FX-INK');
+    await sfxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await pause(200);
+    await js("document.querySelector('.messages .bubble-row[data-id=\"FAKE-0007\"] .send-effect-replay').click()");
+    await pause(300);
+    const reducedLayer = await sfxLayer();
+    const reducedLine = await sfxRow('FAKE-0007');
+    await sfxArrive('SMOKE-FX-GENTLE', 'gentle', 'Gently from the smoke');
+    await waitFor("Boolean(document.querySelector('.messages .bubble-row[data-id=\"SMOKE-FX-GENTLE\"] .bubble'))", 5000).catch(() => {});
+    const gentle = await sfxRow('SMOKE-FX-GENTLE');
+    await sfxCdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: sfxMotionWas }] });
+    // The arrivals were the page's own; reading the server again puts back what it holds, for the steps after this one.
+    await js("document.querySelector('app-root').reload()");
+    await pause(800);
+    if (sfxBack !== null && String(sfxBack) !== '2') await sfxOpen(String(sfxBack));
+    const sfxChecks = {
+      named: history.found && history.line === 'Sent with Confetti' && history.replay && history.replayShown,
+      historyStill: opened.pieces === 0,
+      replays: replayed.effect === 'confetti' && replayed.running > 0 && replayed.pointer === 'none',
+      bubbleArrives: slam.found && slam.running > 0 && slam.line === 'Sent with Slam' && slamLayer.pieces === 0,
+      screenArrives: love.effect === 'love' && love.running > 0,
+      inkVeiled: veiled.ink === 'veiled' && Boolean(veiled.filter) && veiled.filter !== 'none' && veiled.line === 'Sent with Invisible Ink',
+      inkPreview: preview.includes('Sent with Invisible Ink') && !preview.includes('A secret from the smoke'),
+      inkPressed: shown.ink === 'shown' && shown.text === 'A secret from the smoke',
+      reducedStill: reducedLayer.pieces === 0 && reducedLine.line === 'Sent with Confetti' && !reducedLine.replayShown && gentle.found && gentle.running === 0 && gentle.line === 'Sent with Gentle',
+    };
+    report.sendEffects = Object.values(sfxChecks).every(Boolean);
+    console.log('send effects: ' + JSON.stringify({ checks: sfxChecks, history, opened, replayed, slam, slamLayer, love, veiled, preview, shown, reducedLayer, reducedLine, gentle }));
+  }
 
   // The other person typing (issue 390): an incoming bubble of three dots at the foot of the conversation, under the
   // newest message, gone when typing stops. The event goes through the page's own event handler, the path the server's
@@ -953,6 +1056,8 @@ async function runSmoke(w) {
     await waitFor("String(document.querySelector('app-root').openChatId) === '2' && document.querySelectorAll('.bubble-row').length > 0", 15000);
     await waitFor("Boolean(document.querySelector('.bubble-row[data-id=\"FAKE-0022\"] .mention'))", 15000).catch(() => {});
     const men = await js(`(() => {
+      const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1; const g = cv.getContext('2d', { willReadFrequently: true });
+      const rgbOf = (c) => { g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3).map((n) => n / 255); };
       const row = document.querySelector('.bubble-row[data-id="FAKE-0022"]');
       if (!row) return { found: false };
       row.scrollIntoView({ block: 'center' });
@@ -960,8 +1065,10 @@ async function runSmoke(w) {
       const el = row.querySelector('.mention');
       const chat = document.querySelector('app-root').chats.find((c) => c.id === '2');
       const known = ((chat && chat.members) || []).find((m) => m.handle === 'jordan@example.com');
-      return { found: true, bubble: bubble.textContent, mentions: row.querySelectorAll('.mention').length, words: el && el.textContent, title: el && el.getAttribute('title'), label: el && el.getAttribute('aria-label'), expected: (known && known.name) || 'jordan@example.com', apart: Boolean(el) && Number(getComputedStyle(el).fontWeight) > Number(getComputedStyle(bubble).fontWeight) };
+      return { found: true, bubble: bubble.textContent, mentions: row.querySelectorAll('.mention').length, words: el && el.textContent, title: el && el.getAttribute('title'), label: el && el.getAttribute('aria-label'), expected: (known && known.name) || 'jordan@example.com', apart: Boolean(el) && Number(getComputedStyle(el).fontWeight) > Number(getComputedStyle(bubble).fontWeight), fg: el && rgbOf(getComputedStyle(el).color), bg: rgbOf(getComputedStyle(bubble).backgroundColor) };
     })()`);
+    // The mention reads on its bubble (issue 459): the received bubble is the accent, so the name keeps its text colour.
+    men.ratio = men.fg && men.bg ? Math.round(contrastRatio(men.fg, men.bg) * 100) / 100 : 0;
     // What Chromium hands a screen reader: the mention's node in the accessibility tree, by its role and computed name.
     const menSpoken = await (async () => {
       try {
@@ -983,6 +1090,7 @@ async function runSmoke(w) {
       named: Boolean(men.title) && men.title === men.expected,
       spoken: men.label === 'Jordan, mention of ' + men.expected && menSpoken.some((n) => (n.role === 'image' || n.role === 'img') && n.name === men.label),
       apart: Boolean(men.apart),
+      readable: Boolean(men.ratio) && men.ratio >= 4.5,
     };
     report.mention = Object.values(menChecks).every(Boolean);
     console.log('mention: ' + JSON.stringify({ checks: menChecks, men, spoken: menSpoken }));
@@ -2105,6 +2213,139 @@ async function runSmoke(w) {
   await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
   await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
 
+  // A group renamed (issue 439). The fake engine's group holds Sam naming it, which the server reads from the store: the
+  // conversation draws it as a quiet centred line naming who did it, never an empty message. A rename made here, through
+  // a group's details, is the same line from You, the list row and the header take the new name at once, and the list
+  // preview says the same; removing the name is a line too. A rename is the group's newest message and moves it to the
+  // top of the list, so the renames are made on a group of the smoke's own, hidden afterwards as the edit step's is, and
+  // every later step finds the list in the order it had.
+  {
+    await smokeStep('group rename');
+    const rnQuote = (n) => '\u201c' + n + '\u201d';
+    const rnOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && Boolean(document.querySelector('.messages'))", 15000);
+    };
+    const rnLine = (text) => js("(() => { const r = [...document.querySelectorAll('.messages .bubble-row.event')].find((x) => x.textContent.trim() === " + JSON.stringify(text) + "); return r ? { id: r.dataset.id, bubble: Boolean(r.querySelector('.bubble')) } : null; })()");
+    const rnSettle = async (expr, ms = 15000) => { try { await waitFor(expr, ms); return true; } catch { return false; } };
+    const rnRename = async (name) => {
+      const want = name ? 'You named the conversation ' + rnQuote(name) : 'You removed the name from the conversation';
+      await js("document.querySelector('.conv-head .conv-info').click()");
+      await waitFor("Boolean(document.querySelector('app-group-info .group-info-name'))");
+      await js("(() => { const n = document.querySelector('app-group-info .group-info-name'); n.value = " + JSON.stringify(name) + "; n.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+      await waitFor("Boolean(document.querySelector('app-group-info .group-info-rename')) && !document.querySelector('app-group-info .group-info-rename').disabled");
+      await js("document.querySelector('app-group-info .group-info-rename').click()");
+      const drawn = await rnSettle("[...document.querySelectorAll('.messages .bubble-row.event')].some((x) => x.textContent.trim() === " + JSON.stringify(want) + ")");
+      await js("document.querySelector('app-group-info .confirm-actions .button.primary').click()");
+      await waitFor("!document.querySelector('app-group-info .group-info-person')");
+      return { want, drawn };
+    };
+    const rnRowIs = (id, title, preview) => "(() => { const r = document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]'); return Boolean(r) && " + (title === null ? 'true' : "r.querySelector('.chat-name').textContent === " + JSON.stringify(title)) + " && (r.querySelector('.chat-preview') || {}).textContent === " + JSON.stringify(preview) + "; })()";
+    const rnBefore = await js('JSON.stringify(' + rowNames + ')');
+    await rnOpen('2');
+    const rnIncoming = await rnLine('Sam Rivera named the conversation ' + rnQuote('Weekend plans'));
+    const rnEmpty = await js("[...document.querySelectorAll('.messages .bubble-row')].filter((r) => !r.classList.contains('event') && !r.textContent.trim()).length");
+    const rnMade = await (await fetch(srv + '/api/v1/chats', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ addresses: ['jordan@example.com', 'priya@example.com'], name: 'Smoke rename group' }) })).json();
+    const rnId = String(rnMade.id || '');
+    await waitFor("Boolean(document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(rnId) + ") + '\"]'))", 10000);
+    await rnOpen(rnId);
+    const RN_NAME = 'Smoke renamed group';
+    const rnMine = await rnRename(RN_NAME);
+    const rnListed = await rnSettle(rnRowIs(rnId, RN_NAME, rnMine.want), 10000);
+    const rnHead = await js("(document.querySelector('.conv-head .chat-name') || {}).textContent || ''");
+    const rnMineLine = await rnLine(rnMine.want);
+    await shot('03e-group-rename.png');
+    const rnCleared = await rnRename('');
+    const rnClearedListed = await rnSettle(rnRowIs(rnId, null, rnCleared.want), 10000);
+    // The smoke's group goes, as the edit step's does, and the list is in the order it had.
+    await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
+    const rnHidden = (await held())['chats.hidden'] || [];
+    const rnReset = await putSettings({ 'chats.hidden': [...new Set([...rnHidden, rnId])] });
+    if (!rnReset.ok) throw new Error('the server refused hiding the rename group: ' + rnReset.status);
+    const rnGone = await rnSettle("!document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(rnId) + ") + '\"]') && JSON.stringify(" + rowNames + ") === " + JSON.stringify(rnBefore), 10000);
+    await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
+    await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
+    const rnChecks = {
+      incomingLine: Boolean(rnIncoming) && !rnIncoming.bubble,
+      noEmptyMessage: rnEmpty === 0,
+      mineLine: rnMine.drawn && Boolean(rnMineLine) && !rnMineLine.bubble,
+      listTitleAndPreview: rnListed,
+      header: rnHead === RN_NAME,
+      removedLine: rnCleared.drawn && rnClearedListed,
+      orderKept: rnGone,
+    };
+    report.groupRename = Object.values(rnChecks).every(Boolean);
+    console.log('group rename: ' + JSON.stringify({ checks: rnChecks, rnIncoming, rnEmpty, rnId, rnMine, rnHead, rnMineLine, rnCleared, rnBefore }));
+  }
+
+  // A group's people changing (issue 456). The fake engine's group holds Sam adding Riley and Riley leaving, which the
+  // server reads from the store: the conversation draws each as a quiet centred line naming who did it and whom, never
+  // an empty message. A person added or removed here, through a group's details, is the same line from You, and the
+  // details and the list preview follow at once. A change is the group's newest message and moves it to the top of the
+  // list, so the changes are made on a group of the smoke's own, hidden afterwards as the edit step's is, and every later
+  // step finds the list in the order it had.
+  {
+    await smokeStep('group members');
+    const MB_PERSON = 'riley@example.com';
+    const mbOpen = async (id) => {
+      await js("(() => { document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]').click(); return true; })()");
+      await waitFor("String(document.querySelector('app-root').openChatId) === " + JSON.stringify(id) + " && Boolean(document.querySelector('.messages'))", 15000);
+    };
+    const mbLine = (text) => js("(() => { const r = [...document.querySelectorAll('.messages .bubble-row.event')].find((x) => x.textContent.trim() === " + JSON.stringify(text) + "); return r ? { id: r.dataset.id, bubble: Boolean(r.querySelector('.bubble')) } : null; })()");
+    const mbSettle = async (expr, ms = 15000) => { try { await waitFor(expr, ms); return true; } catch { return false; } };
+    const mbLined = (text) => "[...document.querySelectorAll('.messages .bubble-row.event')].some((x) => x.textContent.trim() === " + JSON.stringify(text) + ")";
+    const mbListed = (address) => "Boolean(document.querySelector('app-group-info .group-info-person[data-address=\"' + CSS.escape(" + JSON.stringify(address) + ") + '\"]'))";
+    const mbPreview = (id, preview) => "(() => { const r = document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(id) + ") + '\"]'); return Boolean(r) && (r.querySelector('.chat-preview') || {}).textContent === " + JSON.stringify(preview) + "; })()";
+    const mbBefore = await js('JSON.stringify(' + rowNames + ')');
+    await mbOpen('2');
+    const mbAdded = await mbLine('Sam Rivera added riley@example.com to the conversation');
+    const mbLeft = await mbLine('riley@example.com left the conversation');
+    const mbEmpty = await js("[...document.querySelectorAll('.messages .bubble-row')].filter((r) => !r.classList.contains('event') && !r.textContent.trim()).length");
+    const mbMade = await (await fetch(srv + '/api/v1/chats', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ addresses: ['jordan@example.com', 'priya@example.com'], name: 'Smoke members group' }) })).json();
+    const mbId = String(mbMade.id || '');
+    await waitFor("Boolean(document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(mbId) + ") + '\"]'))", 10000);
+    await mbOpen(mbId);
+    await js("document.querySelector('.conv-head .conv-info').click()");
+    await waitFor("Boolean(document.querySelector('app-group-info .group-info-add'))");
+    // Added from here: the line from You, the person in the details and the list preview, at once.
+    const MB_ADD = 'You added ' + MB_PERSON + ' to the conversation';
+    await js("(() => { const n = document.querySelector('app-group-info .group-info-add'); n.value = " + JSON.stringify(MB_PERSON) + "; n.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
+    await waitFor("Boolean(document.querySelector('app-group-info .group-info-add-button')) && !document.querySelector('app-group-info .group-info-add-button').disabled");
+    await js("document.querySelector('app-group-info .group-info-add-button').click()");
+    const mbAddDrawn = await mbSettle(mbLined(MB_ADD));
+    const mbAddPerson = await mbSettle(mbListed(MB_PERSON), 10000);
+    const mbAddPreview = await mbSettle(mbPreview(mbId, MB_ADD), 10000);
+    const mbMineLine = await mbLine(MB_ADD);
+    await shot('03e-group-members.png');
+    // Removed from here: the same, and the person leaves the details.
+    const MB_REMOVE = 'You removed ' + MB_PERSON + ' from the conversation';
+    await js("document.querySelector('app-group-info .group-info-person[data-address=\"' + CSS.escape(" + JSON.stringify(MB_PERSON) + ") + '\"] .group-info-remove').click()");
+    const mbRemoveDrawn = await mbSettle(mbLined(MB_REMOVE));
+    const mbRemovePerson = await mbSettle('!' + mbListed(MB_PERSON), 10000);
+    const mbRemovePreview = await mbSettle(mbPreview(mbId, MB_REMOVE), 10000);
+    // What the page shows once the removal has settled, so a red check says which part failed and why.
+    const mbRemoved = { drawn: mbRemoveDrawn, person: mbRemovePerson, preview: mbRemovePreview, ...(await js("(() => { const r = document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(mbId) + ") + '\"]'); return { lines: [...document.querySelectorAll('.messages .bubble-row.event')].map((x) => x.textContent.trim()), listed: r ? (r.querySelector('.chat-preview') || {}).textContent : null, problem: (document.querySelector('app-group-info .compose-problem') || {}).textContent || null }; })()")) };
+    await js("document.querySelector('app-group-info .confirm-actions .button.primary').click()");
+    await waitFor("!document.querySelector('app-group-info .group-info-person')");
+    // The smoke's group goes, as the edit step's does, and the list is in the order it had.
+    await waitFor("document.querySelector('app-root').settingsBusy === false", 10000);
+    const mbHidden = (await held())['chats.hidden'] || [];
+    const mbReset = await putSettings({ 'chats.hidden': [...new Set([...mbHidden, mbId])] });
+    if (!mbReset.ok) throw new Error('the server refused hiding the members group: ' + mbReset.status);
+    const mbGone = await mbSettle("!document.querySelector('.chat-row[data-chat=\"' + CSS.escape(" + JSON.stringify(mbId) + ") + '\"]') && JSON.stringify(" + rowNames + ") === " + JSON.stringify(mbBefore), 10000);
+    await js("(() => { const root = document.querySelector('app-root'); const id = document.querySelector('.chat-row')?.dataset.chat; if (id) { root.open(id); root.listOpen = true; } return id; })()");
+    await waitFor("document.querySelectorAll('.messages .bubble-row').length > 2", 10000);
+    const mbChecks = {
+      incomingLines: Boolean(mbAdded) && !mbAdded.bubble && Boolean(mbLeft) && !mbLeft.bubble,
+      noEmptyMessage: mbEmpty === 0,
+      addedHere: mbAddDrawn && Boolean(mbMineLine) && !mbMineLine.bubble && mbAddPerson && mbAddPreview,
+      removedHere: mbRemoveDrawn && mbRemovePerson && mbRemovePreview,
+      orderKept: mbGone,
+    };
+    report.groupMembers = Object.values(mbChecks).every(Boolean);
+    console.log('group members: ' + JSON.stringify({ checks: mbChecks, mbAdded, mbLeft, mbEmpty, mbId, mbMineLine, mbBefore, mbRemoved }));
+  }
+
   // The Edit control stays one line (it replaced Add group, which issue 122 held to this): at the smallest window the
   // shell allows and at every text size from 50% to 300%, its label renders as one line, in full. The line count is
   // read from the label's own text boxes and checked against the control's height, so a wrap fails here on whichever
@@ -2791,14 +3032,31 @@ async function runSmoke(w) {
         out.push({ what: 'switch ' + l.textContent.trim(), on, under: on ? Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 2 : true, fg: rgb(getComputedStyle(l).color), bg: rgb(on ? fill : track) });
       }
       const sv = s.querySelector('.scale-value'); const srows = sv && sv.closest('.sheet-rows'); if (sv) out.push({ what: 'text size', on: false, under: true, fg: rgb(getComputedStyle(sv).color), bg: rgb(getComputedStyle(srows || sv).backgroundColor) });
-      return out;
+      // Both bubbles of the open conversation (issue 459): each keeps its text, and the received one is the accent bubble
+      // the theme resolves, read from the token itself on a probe, against the page it sits on.
+      const bubble = (sel) => [...document.querySelectorAll('.messages ' + sel)].find((b) => !/\\bstate-/.test(b.className));
+      const them = bubble('.bubble.them'); const me = bubble('.bubble.me');
+      if (them) out.push({ what: 'received bubble', on: false, under: true, fg: rgb(getComputedStyle(them).color), bg: rgb(getComputedStyle(them).backgroundColor) });
+      if (me) out.push({ what: 'sent bubble', on: false, under: true, fg: rgb(getComputedStyle(me).color), bg: rgb(getComputedStyle(me).backgroundColor) });
+      const probe = document.createElement('div'); probe.style.cssText = 'position:fixed;width:0;height:0;background:var(--color-bubble-me);color:var(--color-bubble-me-fg)'; document.body.append(probe);
+      const accent = { bg: rgb(getComputedStyle(probe).backgroundColor), fg: rgb(getComputedStyle(probe).color) };
+      probe.style.background = 'var(--role-page)'; const page = rgb(getComputedStyle(probe).backgroundColor); probe.remove();
+      return { pairs: out, accent, page };
     })()`;
     const contrastIn = async (label) => {
       await pause(400);
-      const pairs = await js(choicePairs);
+      const { pairs, accent, page } = await js(choicePairs);
       const rows = pairs.map((p) => ({ what: p.what, on: p.on, under: p.under, ratio: Math.round(contrastRatio(p.fg, p.bg) * 100) / 100 }));
-      const ok = rows.length >= 4 && rows.filter((r) => r.on).length === 1 && rows.every((r) => r.under && r.ratio >= 4.5);
-      console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, rows }));
+      const near = (a, b) => Boolean(a && b) && a.every((v, i) => Math.abs(v - b[i]) <= 2 / 255);
+      const received = pairs.find((p) => p.what === 'received bubble');
+      const sent = pairs.find((p) => p.what === 'sent bubble');
+      const bubbles = {
+        receivedIsAccent: Boolean(received) && near(received.bg, accent.bg) && near(received.fg, accent.fg),
+        sentIsQuiet: Boolean(sent) && !near(sent.bg, accent.bg),
+        receivedStandsOut: Boolean(received && sent) && contrastRatio(received.bg, page) > contrastRatio(sent.bg, page),
+      };
+      const ok = rows.length >= 6 && rows.filter((r) => r.on).length === 1 && rows.every((r) => r.under && r.ratio >= 4.5) && Object.values(bubbles).every(Boolean);
+      console.log('choice contrast ' + label + ': ' + JSON.stringify({ ok, bubbles, rows }));
       return ok;
     };
     const drawn = {};
@@ -2916,16 +3174,19 @@ async function runSmoke(w) {
   report.notices = report.noticeFired && report.noticeSuppressed;
 
   // A pressed message notice opens its conversation at its message (issue 331): a notice raised through the bridge for
-  // the oldest message of a conversation that is not open, pressed through the same handler the system's press calls,
+  // the oldest message of a listed conversation that is not open (a hidden one, such as the group members step's, is
+  // never drawn, so its message can never be in view), pressed through the same handler the system's press calls,
   // leaves that conversation open with that message in view and focused, and never marked (issue 368): no ring on the
   // row or its bubble, and nothing animating it.
   await smokeStep('notice opens');
+  // The notice is for a message in a conversation the list shows: a chat an earlier step made and hid is still held by
+  // the page, and a conversation's rows include event lines, such as a rename, that no notice is raised for (issue 439).
   const pressFrom = await js("document.querySelector('app-root').openChatId");
   // The press closes whatever sheet is up, as it should; the steps after this one expect the page as it was, so the view
   // in force (Settings, for the steps that follow) is put back once the press is checked.
   const pressView = await js("document.querySelector('app-root').view");
   const pressList = await js("document.querySelector('app-root').listOpen");
-  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const other = r.chats.find((c) => c.id !== r.openChatId); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); return messages.length ? { chatId: other.id, messageId: messages[0].id } : null; })()");
+  const pressTo = await js("(async () => { const r = document.querySelector('app-root'); const hidden = (r.settings && r.settings['chats.hidden']) || []; const other = r.chats.find((c) => c.id !== r.openChatId && !hidden.includes(c.id)); if (!other) return null; const { messages } = await r.client.messages(other.id, { limit: 50 }); const first = messages.find((m) => !m.event); return first ? { chatId: other.id, messageId: first.id } : null; })()");
   smokeNotices.length = 0;
   let pressSeen = null;
   if (pressTo) {

@@ -280,7 +280,7 @@ test('a tweakcn theme is imported, and every name it cannot carry is refused out
   assert.equal(theme.source, 'tweakcn');
   assert.equal(theme.color.light.bg, 'oklch(1 0 0)');
   assert.equal(theme.color.light.accent, 'oklch(0.205 0 0)', 'primary is the accent');
-  assert.equal(theme.color.light['bubble-me'], 'oklch(0.205 0 0)', 'a sent bubble follows the accent');
+  assert.equal(theme.color.light['bubble-me'], 'oklch(0.205 0 0)', 'the accent bubble, the other person\'s since issue 459, follows the accent');
   assert.equal(theme.color.light.selection, 'oklch(0.97 0 0)', 'the tweakcn accent is the selection highlight');
   assert.equal(theme.color.dark.bg, 'oklch(0.145 0 0)', 'the .dark block fills dark');
   assert.equal(theme.radius.md, '0.625rem');

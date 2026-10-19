@@ -649,6 +649,20 @@ test('docs/CONVENTIONS.md names a source for every rule, and every test and smok
   assert.match(read('.github/PULL_REQUEST_TEMPLATE.md'), /[Cc]onventions/, 'the PR template asks which conventions a UI change follows or changes');
 });
 
+// Every change behaves the same on every platform (issue 445): the conventions say so, and the pull request template
+// asks every pull request for the platforms its change reaches and what proved each one, naming every platform.
+test('every pull request is asked to prove every platform its change reaches', () => {
+  const rule = read('docs/CONVENTIONS.md').split('\n').find((l) => l.startsWith('- **Every change behaves the same on every platform**'));
+  assert.ok(rule, 'docs/CONVENTIONS.md states the rule');
+  const item = read('.github/PULL_REQUEST_TEMPLATE.md').split('\n').find((l) => l.startsWith('- [ ] Every platform behaves the same'));
+  assert.ok(item, 'the pull request template carries the checklist item');
+  for (const platform of ['iOS', 'Android', 'macOS', 'Windows', 'Linux', 'the web']) {
+    assert.ok(rule.includes(platform), 'the rule names ' + platform);
+    assert.ok(item.includes(platform), 'the checklist item names ' + platform);
+  }
+  assert.match(item, /open issue/, 'a platform a change cannot reach yet is named with its issue, not left out');
+});
+
 // The composer's controls sit on the field's last line (docs/CONVENTIONS.md): lifted by half the difference between the
 // field's one-line height and the control size, with that height worked out from the field's own type, so it holds at
 // every text size.
@@ -673,8 +687,9 @@ test('no component overrides a DOM method the renderer calls', () => {
   }
 });
 
-// Abi, 2026-10-12: every message we send wears the theme's colour whatever the platform. The lock is in the message's
-// menu beside the time, and the Apple-devices mark is beside the conversation's name.
+// 2026-10-12: what we send is one colour whatever the platform (since issue 459 the quiet bubble, the other person's
+// wearing the accent). The lock is in the message's menu beside the time, and the Apple-devices mark is beside the
+// conversation's name.
 test('one colour for what we send, a lock in the menu and a mark by the name', () => {
   const src = read('core/app/components/app-conversation.js');
   const css = read('core/app/styles/app.css');

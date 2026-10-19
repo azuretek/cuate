@@ -146,8 +146,8 @@ export function platformThreadUnsupported() {
   };
 }
 
-// Who is on the other end, and whether what we send is end-to-end encrypted (Abi, 2026-10-12 and 2026-10-14). Every
-// message we send keeps the theme's own colour whatever the platform; the difference is told quietly instead: an icon
+// Who is on the other end, and whether what we send is end-to-end encrypted (2026-10-12 and 2026-10-14). Every message
+// we send is one colour whatever the platform (the quiet bubble since issue 459); the difference is told instead: an icon
 // beside the name for a conversation on Apple devices, which explains itself on hover, a plain explanation on the name
 // otherwise, and a small lock beside the time in a message's menu. A platform the app does not know says nothing.
 export function serviceNote(chat) {
