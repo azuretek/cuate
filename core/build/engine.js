@@ -3633,9 +3633,19 @@ var engine = (() => {
     const text = Array.from(body).length > max ? Array.from(body).slice(0, max - 1).join("") + "\u2026" : body;
     return { id: parent.id, found: true, who, text };
   }
-  function mergeMessages(existing, incoming) {
+  function mergeMessages(existing, incoming, { authoritative = false } = {}) {
     const map = new Map(existing.map((m) => [m.id, m]));
-    for (const m of incoming) map.set(m.id, { ...map.get(m.id), ...m });
+    for (const m of incoming) {
+      const merged = { ...map.get(m.id), ...m };
+      if (authoritative) {
+        if (m.edited) merged.edited = true;
+        else {
+          delete merged.edited;
+          delete merged.edits;
+        }
+      }
+      map.set(m.id, merged);
+    }
     return [...map.values()].sort((a, b) => compareHistory(a, b) || String(a.id).localeCompare(String(b.id)));
   }
   function groupMessages(messages, { gapMs = 36e5, runMs = 3e5 } = {}) {
@@ -3730,14 +3740,14 @@ var engine = (() => {
   var holdable = (m) => Boolean(m) && typeof m.id === "string" && !m.id.startsWith("local:") && !m.state;
   var flag = (v, fallback) => typeof v === "boolean" ? v : fallback;
   var count = (a, b) => Math.max(Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0) || void 0;
-  var fresh = (incoming, page) => ({ messages: mergeMessages([], page), hasOlder: flag(incoming.hasOlder, true), current: flag(incoming.current, false), totalCount: count(incoming.totalCount) });
+  var fresh = (incoming, page) => ({ messages: mergeMessages([], page, { authoritative: true }), hasOlder: flag(incoming.hasOlder, true), current: flag(incoming.current, false), totalCount: count(incoming.totalCount) });
   function mergeHeld(held, incoming, { adjacent = false } = {}) {
     const page = (incoming.messages || []).filter(holdable);
     if (!held || !held.messages.length) return fresh(incoming, page);
     if (!page.length) return { ...held, hasOlder: flag(incoming.hasOlder, held.hasOlder), current: flag(incoming.current, held.current), totalCount: count(held.totalCount, incoming.totalCount) };
     const ids = new Set(held.messages.map((m) => m.id));
     const overlaps = page.some((m) => ids.has(m.id));
-    const messages = mergeMessages(held.messages, page);
+    const messages = mergeMessages(held.messages, page, { authoritative: true });
     const at = (id) => messages.findIndex((m) => m.id === id);
     const heldFirst = held.messages[0].id;
     const heldLast = held.messages[held.messages.length - 1].id;
@@ -3759,7 +3769,7 @@ var engine = (() => {
     const have = new Map(messages.map((m) => [m.id, m]));
     const take = (list.messages || []).filter((m) => String(m.chatId) === id && holdable(m) && (have.has(m.id) || held.current));
     if (take.length) {
-      messages = mergeMessages(messages, take.map((m) => have.has(m.id) ? { ...m, reactions: have.get(m.id).reactions || m.reactions } : m));
+      messages = mergeMessages(messages, take.map((m) => have.has(m.id) ? { ...m, reactions: have.get(m.id).reactions || m.reactions } : m), { authoritative: true });
       changed = true;
     }
     const gone = new Set((list.unsent || []).filter((u) => String(u.chatId) === id).map((u) => u.id));
@@ -3781,6 +3791,16 @@ var engine = (() => {
     }
     return { held: changed ? { ...held, messages } : held, changed };
   }
+  function clearEdit(messages, id) {
+    const i = messages.findIndex((m) => m.id === id);
+    if (i < 0 || !messages[i].edited && !messages[i].edits) return messages;
+    const out = messages.slice();
+    const clean = { ...messages[i] };
+    delete clean.edited;
+    delete clean.edits;
+    out[i] = clean;
+    return out;
+  }
   function applyReads(messages, list, id) {
     let out = messages;
     for (const r of (list.reads || []).filter((x) => String(x.chatId) === id)) {
@@ -3797,8 +3817,12 @@ var engine = (() => {
     const have = new Set(messages.map((m) => m.id));
     const arrived = [];
     for (const m of (list.messages || []).filter((x) => String(x.chatId) === id)) {
-      if (have.has(m.id)) out = applyEdit(out, m);
-      else arrived.push(m);
+      if (!have.has(m.id)) {
+        arrived.push(m);
+        continue;
+      }
+      if (m.edited) out = applyEdit(out, m);
+      else out = clearEdit(out, m.id);
     }
     const gone = new Set((list.unsent || []).filter((u) => String(u.chatId) === id).map((u) => u.id));
     if (gone.size) out = out.filter((m) => !gone.has(m.id));

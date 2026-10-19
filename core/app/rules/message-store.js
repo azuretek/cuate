@@ -19,7 +19,7 @@ export const holdable = (m) => Boolean(m) && typeof m.id === 'string' && !m.id.s
 
 const flag = (v, fallback) => (typeof v === 'boolean' ? v : fallback);
 const count = (a, b) => Math.max(Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0) || undefined;
-const fresh = (incoming, page) => ({ messages: mergeMessages([], page), hasOlder: flag(incoming.hasOlder, true), current: flag(incoming.current, false), totalCount: count(incoming.totalCount) });
+const fresh = (incoming, page) => ({ messages: mergeMessages([], page, { authoritative: true }), hasOlder: flag(incoming.hasOlder, true), current: flag(incoming.current, false), totalCount: count(incoming.totalCount) });
 
 // A conversation held on the device: its messages, oldest first, as one contiguous run; whether the server has older
 // ones than the oldest held (hasOlder); and whether the newest held is the newest the conversation has as of the store's
@@ -31,7 +31,7 @@ export function mergeHeld(held, incoming, { adjacent = false } = {}) {
   if (!page.length) return { ...held, hasOlder: flag(incoming.hasOlder, held.hasOlder), current: flag(incoming.current, held.current), totalCount: count(held.totalCount, incoming.totalCount) };
   const ids = new Set(held.messages.map((m) => m.id));
   const overlaps = page.some((m) => ids.has(m.id));
-  const messages = mergeMessages(held.messages, page);
+  const messages = mergeMessages(held.messages, page, { authoritative: true });
   const at = (id) => messages.findIndex((m) => m.id === id);
   const heldFirst = held.messages[0].id;
   const heldLast = held.messages[held.messages.length - 1].id;
@@ -57,7 +57,7 @@ export function applyChangeList(held, list, chatId) {
   const have = new Map(messages.map((m) => [m.id, m]));
   const take = (list.messages || []).filter((m) => String(m.chatId) === id && holdable(m) && (have.has(m.id) || held.current));
   if (take.length) {
-    messages = mergeMessages(messages, take.map((m) => (have.has(m.id) ? { ...m, reactions: have.get(m.id).reactions || m.reactions } : m)));
+    messages = mergeMessages(messages, take.map((m) => (have.has(m.id) ? { ...m, reactions: have.get(m.id).reactions || m.reactions } : m)), { authoritative: true });
     changed = true;
   }
   const gone = new Set((list.unsent || []).filter((u) => String(u.chatId) === id).map((u) => u.id));
@@ -69,6 +69,19 @@ export function applyChangeList(held, list, chatId) {
   const read = applyReads(messages, list, id);
   if (read !== messages) { messages = read; changed = true; }
   return { held: changed ? { ...held, messages } : held, changed };
+}
+
+// A message the server lists without the edit mark was not edited, so a mark a cached copy carried is taken off
+// rather than left to show (issue 498).
+function clearEdit(messages, id) {
+  const i = messages.findIndex((m) => m.id === id);
+  if (i < 0 || (!messages[i].edited && !messages[i].edits)) return messages;
+  const out = messages.slice();
+  const clean = { ...messages[i] };
+  delete clean.edited;
+  delete clean.edits;
+  out[i] = clean;
+  return out;
 }
 
 function applyReads(messages, list, id) {
@@ -91,8 +104,12 @@ export function applyChangesToShown(messages, list, chatId) {
   const have = new Set(messages.map((m) => m.id));
   const arrived = [];
   for (const m of (list.messages || []).filter((x) => String(x.chatId) === id)) {
-    if (have.has(m.id)) out = applyEdit(out, m);
-    else arrived.push(m);
+    if (!have.has(m.id)) { arrived.push(m); continue; }
+    // The server lists a row here because it is new or because it was edited. Only the edited one changes what is
+    // drawn: a new row already on screen arrived live, and the server's silence on editing corrects any mark a cached
+    // copy carried (issue 498).
+    if (m.edited) out = applyEdit(out, m);
+    else out = clearEdit(out, m.id);
   }
   const gone = new Set((list.unsent || []).filter((u) => String(u.chatId) === id).map((u) => u.id));
   if (gone.size) out = out.filter((m) => !gone.has(m.id));

@@ -208,9 +208,18 @@ export function replyQuote(messages, m, { max = 80 } = {}) {
   return { id: parent.id, found: true, who, text };
 }
 
-export function mergeMessages(existing, incoming) {
+export function mergeMessages(existing, incoming, { authoritative = false } = {}) {
   const map = new Map(existing.map((m) => [m.id, m]));
-  for (const m of incoming) map.set(m.id, { ...map.get(m.id), ...m });
+  for (const m of incoming) {
+    const merged = { ...map.get(m.id), ...m };
+    // The server sends the edit mark only on a message it knows was edited, so a message it lists without one was
+    // not edited: a mark a cached copy carried must not outlive the server's answer (issue 498).
+    if (authoritative) {
+      if (m.edited) merged.edited = true;
+      else { delete merged.edited; delete merged.edits; }
+    }
+    map.set(m.id, merged);
+  }
   return [...map.values()].sort((a, b) => compareHistory(a, b) || String(a.id).localeCompare(String(b.id)));
 }
 

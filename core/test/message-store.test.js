@@ -72,10 +72,29 @@ test('changes land on what is held: an edit keeps its reactions, a new message j
 });
 
 test('the conversation on screen takes the same changes, and hands new messages back for its window to place', () => {
-  const { messages, arrived } = applyChangesToShown([msg(1), msg(2)], { messages: [{ ...msg(2), text: 'Synthetic edited' }, msg(3)], unsent: [{ id: 'm001', chatId: '1' }] }, '1');
+  const { messages, arrived } = applyChangesToShown([msg(1), msg(2)], { messages: [{ ...msg(2), text: 'Synthetic edited', edited: true }, msg(3)], unsent: [{ id: 'm001', chatId: '1' }] }, '1');
   assert.deepEqual(ids(messages), ['m002']);
   assert.equal(messages[0].text, 'Synthetic edited');
   assert.deepEqual(ids(arrived), ['m003']);
+});
+
+test('one edited message in a changes list leaves every neighbour unmarked, and a cached mark is corrected (issue 498)', () => {
+  const stale = { ...msg(1), edited: true, edits: [{ text: 'Synthetic old', at: '2026-01-01T00:00:00.000Z' }] };
+  const { messages, arrived } = applyChangesToShown([stale, msg(2), msg(3)], {
+    messages: [msg(1), { ...msg(2), text: 'Synthetic edited', edited: true }, msg(3)],
+    unsent: [], reactions: [], reads: [],
+  }, '1');
+  assert.deepEqual(messages.map((m) => Boolean(m.edited)), [false, true, false], 'only the one the server marks');
+  assert.equal(messages[0].edits, undefined, 'a mark the server never set goes with its history');
+  assert.equal(messages[1].text, 'Synthetic edited');
+  assert.deepEqual(ids(arrived), [], 'the newer rows were already on screen');
+});
+
+test('a page replaces a cached edit mark on every message it does not name (issue 498)', () => {
+  const held = mergeHeld(null, { messages: [{ ...msg(1), edited: true }, msg(2)], hasOlder: false, current: true });
+  const next = mergeHeld(held, { messages: [msg(1), { ...msg(2), text: 'Synthetic edited', edited: true }], hasOlder: false, current: true });
+  assert.deepEqual(next.messages.map((m) => Boolean(m.edited)), [false, true], 'a page names exactly the edited rows');
+  assert.equal(next.messages[0].edits, undefined, 'and clears the history a false mark carried');
 });
 
 test('held pictures go least recently used first until the rest fit under the cap, never the one just written', () => {
