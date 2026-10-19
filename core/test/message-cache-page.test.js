@@ -97,7 +97,8 @@ test('a launch over a populated store draws from it before the server answers, a
     assert.deepEqual(warm.chats.map((c) => c.id), ['1'], 'the conversation list is drawn from the store');
     const opened = warm.open('1');
     await until(() => warm.messages.length > 0, 'the conversation from the store');
-    assert.deepEqual(s.asked, ['GET /api/v1/info'], 'and so is the conversation, before the server has answered anything');
+    // The start's three reads are asked for together (issue 427); none has answered.
+    assert.deepEqual([...s.asked].sort(), ['GET /api/v1/chats', 'GET /api/v1/info', 'GET /api/v1/settings'], 'and so is the conversation, before the server has answered anything');
     assert.equal(warm.messages.at(-1).id, 'm-6');
     release();
     await started;
