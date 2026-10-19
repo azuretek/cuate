@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { tokensCss, accentColorset } from '../kit/rules/tokens.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const SKIP = new Set(['node_modules', '.git', 'out', 'dist', 'vendor']);
+const SKIP = new Set(['node_modules', '.git', '.build', 'out', 'dist', 'vendor']);
 const walk = (dir) => readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
   if (SKIP.has(e.name)) return [];
   const rel = dir === '.' ? e.name : dir + '/' + e.name;

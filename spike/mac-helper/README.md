@@ -48,5 +48,5 @@ A successful zero-row read is valid. Device permission evidence is separate and 
 
     CUATE_HELPER_LIVE_HISTORY=1 ./test.sh --filter DegradationTests.testLiveSIPOffHistoryReadWhenExplicitlyRequested
 
-The device test reads only, accepts an empty Messages store, and does not prove signed-update
+The device test reads only, accepts an empty device history store, and does not prove signed-update
 grant retention, witnessed setup, or the Node-denied negative control. Those remain open.
