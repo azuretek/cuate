@@ -6,6 +6,10 @@ import { aimCarets } from '../../kit/popover.js';
 import { play } from '../../kit/motion.js';
 import { insertEmoji, deleteGrapheme, isEmoji } from '../rules/emoji.js';
 import { ATTACH_ACCEPT, sizeLabel, stageCheck } from '../rules/attach.js';
+// The panel's tag does nothing until its module runs: this import is what defines app-emoji-picker, and the composer
+// is the only screen that draws it. A named import from the panel used to carry it; the favourites moved to the page,
+// so the side-effect import has to stand on its own (issue 494 smoke: the panel stayed an unknown element).
+import './app-emoji-picker.js';
 
 class AppComposer extends KitElement {
   static properties = {
