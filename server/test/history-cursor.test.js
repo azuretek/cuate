@@ -30,6 +30,29 @@ test('history cursors cross tied timestamp pages in both directions without gaps
   assert.deepEqual(newer.messages.map((m) => m.id), Array.from({ length: 7 }, (_, i) => 'SYNTHETIC-' + (i + 2)));
 });
 
+test('the changes lane hands over rows with the same history cursor as a history page', async (t) => {
+  const server = await boot();
+  t.after(() => server.close());
+  const client = createApiClient({ baseUrl: server.base, token: server.tokens.device });
+  const rows = Array.from({ length: 137 }, (_, index) => ({
+    id: index + 1, guid: 'SYNTHETIC-' + (index + 1), chat_id: 1, created_at: '2026-01-01T00:00:00.000Z',
+    text: 'Synthetic tied message', is_from_me: false, sender: 'avery@example.com', attachments: [],
+  }));
+  server.world.replaceMessages(rows);
+  const head = await client.changes();
+  // Replacing the rows moves the change cursor with them, so a catch-up is handed nothing that was never a change.
+  const caught = await client.changes({ since: head.cursor });
+  assert.deepEqual(caught.messages, []);
+  // A row that really arrives carries the cursor a history page uses, so a message learned from this lane can be
+  // browsed past rather than stopping the conversation at the newest page it reached.
+  const fresh = server.world.incoming(1, 'Synthetic arrival');
+  const next = await client.changes({ since: head.cursor });
+  const one = next.messages.find((m) => m.id === fresh.guid);
+  assert.ok(one, 'the new message arrives as a change');
+  assert.equal(typeof one.historyCursor, 'string');
+  assert.deepEqual(validate(one, 'Message', apiSpec.models), []);
+});
+
 test('media paging continues through empty pages and never relies on loaded UI messages', async (t) => {
   const server = await boot();
   t.after(() => server.close());

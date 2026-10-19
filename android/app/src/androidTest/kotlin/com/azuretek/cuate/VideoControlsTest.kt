@@ -24,6 +24,12 @@ import java.util.concurrent.TimeUnit
 // screenshot, and asserts each control is on screen and answers a press at its own middle (the page's hit test there
 // reaches the player's video for a player control, and the control itself for ours), and that none of ours overlaps a
 // player control or another of ours.
+//
+// Issue 446: a video whose accessibility node was built while it was still empty kept that node once its clip had
+// loaded, "Unable to play media." holding none of the player's controls. It was a race, since the accessibility service
+// connects when a test first asks for it, so this test takes the real order every run: the fixture holds the clip back,
+// the test connects the service and reads the tree over the empty video, and only then lets the clip go. A player whose
+// controls never reach the tree then fails every run rather than one in four. Every wait here is for a state.
 @RunWith(AndroidJUnit4::class)
 class VideoControlsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -71,10 +77,18 @@ class VideoControlsTest {
             evaluate(scenario, "window.fixtureVideo = " + quoted(shape) + "; window.fixtureVideoBase64 = " + quoted(Base64.encodeToString(clip, Base64.NO_WRAP)) + "; true")
             val fixture = instrumentation.context.assets.open("video-controls-fixture.js").bufferedReader().use { it.readText() }
             evaluate(scenario, fixture)
-            val scene = awaitScene(scenario)
+            val empty = awaitState(scenario, "vc:empty ")
+            println("video controls empty scene ($shape): $empty")
+            // The tree is built over the viewer while its video has nothing to play: the viewer's own controls are in it.
+            val before = awaitControls(OURS)
+            val missing = OURS.filter { it !in before }
+            println("video controls ($shape) accessibility tree over the empty video:\n" + describeTree())
+            assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + SystemSurface.failureSuffix(), missing.isEmpty())
+            assertTrue("the fixture did not let the clip go", evaluate(scenario, "window.videoControlsRelease()") == "true")
+            val scene = awaitState(scenario, "vc:ready ")
             println("video controls scene ($shape): $scene")
 
-            val found = awaitControls()
+            val found = awaitControls(PLAYER + OURS)
             SystemSurface.requireOurs()
             keepScreenshot("video-controls-$shape.png")
 
@@ -114,7 +128,8 @@ class VideoControlsTest {
         }
     }
 
-    private fun awaitScene(scenario: ActivityScenario<MainActivity>): JSONObject {
+    /** The fixture's report once its marker reaches the state named by its prefix; a failure it reports ends the test. */
+    private fun awaitState(scenario: ActivityScenario<MainActivity>, prefix: String): JSONObject {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
         var state = "null"
         do {
@@ -123,14 +138,18 @@ class VideoControlsTest {
             if (state != "null") {
                 val text = JSONObject("{\"s\":$state}").getString("s")
                 if (text.startsWith("vc:fail")) throw AssertionError("the video controls fixture failed: $text")
-                if (text.startsWith("vc:ready ")) return JSONObject(text.removePrefix("vc:ready "))
+                if (text.startsWith(prefix)) return JSONObject(text.removePrefix(prefix))
             }
         } while (System.nanoTime() < deadline)
-        throw AssertionError("the video controls fixture never became ready: $state")
+        throw AssertionError("the video controls fixture never reached $prefix: $state")
     }
 
-    /** Every control named, read from the accessibility tree once all of them are there or the bound passes. */
-    private fun awaitControls(): Map<String, Found> {
+    /**
+     * The controls named, read from the accessibility tree once all of them are there or the bound passes. The first call
+     * connects the accessibility service. Between readings it waits for the service's own events to settle, a state of
+     * the tree, never a fixed time.
+     */
+    private fun awaitControls(names: List<String>): Map<String, Found> {
         val automation = instrumentation.uiAutomation
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
@@ -140,8 +159,10 @@ class VideoControlsTest {
         do {
             instrumentation.waitForIdleSync()
             found = collect()
-            if ((PLAYER + OURS).all { it in found }) return found
-            Thread.sleep(250)
+            if (names.all { it in found }) return found
+            val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (left <= 0) break
+            try { automation.waitForIdle(TREE_SETTLE_MS, left) } catch (busy: java.util.concurrent.TimeoutException) { continue }
         } while (System.nanoTime() < deadline)
         return found
     }
@@ -236,5 +257,6 @@ class VideoControlsTest {
     private companion object {
         val PLAYER = listOf("play or pause", "scrubber", "mute", "full screen")
         val OURS = listOf("close", "prev", "next", "bar")
+        const val TREE_SETTLE_MS = 300L
     }
 }

@@ -6,6 +6,11 @@ import XCTest
 // player's controls show, in this shell's own web view. This test finds every player control (play or pause, the
 // scrubber, mute, full screen) and every one of ours (close, previous, next, the bar) in the accessibility tree, keeps a
 // screenshot, and asserts each control is hittable and that none of ours overlaps a player control or another of ours.
+//
+// Issue 446: a video whose accessibility node was built while it was still empty kept that node once its clip had
+// loaded, with none of the player's controls. The fixture holds the clip back, so every run takes the real order: this
+// test reads the tree over the viewer while its video is empty, then presses the fixture's release control until the
+// clip is on its way, and only then looks for the player's controls. Every wait here is for a state.
 final class VideoControlsTests: XCTestCase {
     func testPortraitVideoKeepsEveryControlClear() {
         check("portrait")
@@ -27,6 +32,23 @@ final class VideoControlsTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let page = app.webViews.firstMatch
+        let empty = page.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'vc:empty' OR label BEGINSWITH 'vc:fail'")).firstMatch
+        guard empty.waitForExistence(timeout: 120) else {
+            XCTFail("the video controls fixture never drew the empty video" + SystemSurface.failureSuffix(app))
+            return
+        }
+        print("video controls empty scene (" + shape + "): " + empty.label)
+        guard empty.label.hasPrefix("vc:empty") else {
+            XCTFail("the video controls fixture failed: " + empty.label + SystemSurface.failureSuffix(app))
+            return
+        }
+        // The tree is read over the viewer while its video has nothing to play: the viewer's own close control is in it.
+        guard page.buttons["Close"].waitForExistence(timeout: 30) else {
+            XCTFail("the viewer was not in the accessibility tree before its clip" + SystemSurface.failureSuffix(app))
+            return
+        }
+        print("video controls (" + shape + ") accessibility tree over the empty video:\n" + app.debugDescription)
+        releaseClip(app, page)
         let marker = page.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'vc:ready' OR label BEGINSWITH 'vc:fail'")).firstMatch
         guard marker.waitForExistence(timeout: 120) else {
             XCTFail("the video controls fixture never reported" + SystemSurface.failureSuffix(app))
@@ -109,6 +131,28 @@ final class VideoControlsTests: XCTestCase {
             print(app.debugDescription)
         }
         XCTAssertTrue(problems.isEmpty, "the " + shape + " video's controls are not all clear: " + problems.joined(separator: "; ") + SystemSurface.failureSuffix(app))
+    }
+
+    /// Presses the fixture's release control until the page says the clip is on its way. XCTest can tap a control and the
+    /// page never see a click (issues 384 and 471), so the step waits on the state it needs rather than on one tap; the
+    /// control leaves the page once it has been pressed, so a later press can never reach anything else.
+    private func releaseClip(_ app: XCUIApplication, _ page: XCUIElement) {
+        let released = page.staticTexts.matching(NSPredicate(format: "label == 'vc:loading' OR label BEGINSWITH 'vc:ready' OR label BEGINSWITH 'vc:fail'")).firstMatch
+        let control = page.buttons["vc:release"]
+        let deadline = Date().addingTimeInterval(30)
+        var presses: [String] = []
+        repeat {
+            if released.exists { return }
+            guard control.exists else {
+                presses.append("no release control")
+                _ = released.waitForExistence(timeout: 2)
+                continue
+            }
+            presses.append((control.isHittable ? "hittable" : "not hittable") + " at " + String(describing: control.frame))
+            control.tap()
+            if released.waitForExistence(timeout: 5) { return }
+        } while Date() < deadline
+        XCTFail("The release control was pressed \(presses.count) times and the clip was never let go. Each press: " + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
     }
 
     /// The video's box on screen, from the page's report (`"video":{"x":..,"y":..,"w":..,"h":..}` beside the viewport, in
