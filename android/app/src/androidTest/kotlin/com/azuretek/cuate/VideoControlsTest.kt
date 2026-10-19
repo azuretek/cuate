@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.graphics.Rect
 import android.util.Base64
+import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.WebView
@@ -30,6 +31,12 @@ import java.util.concurrent.TimeUnit
 // connects when a test first asks for it, so this test takes the real order every run: the fixture holds the clip back,
 // the test connects the service and reads the tree over the empty video, and only then lets the clip go. A player whose
 // controls never reach the tree then fails every run rather than one in four. Every wait here is for a state.
+//
+// Issue 443: the emulator's accessibility read is a state of its own, not a window on the page. The active root and
+// every window the automation can see can all come back without the web view's controls while the app still shows them,
+// and no further read of that snapshot finds them. If the controls are still absent after the first stretch, the web
+// view is asked to rebuild its tree once and the wait continues, so a stale snapshot cannot fail a green app. Every
+// assertion below is unchanged: the same controls must be in the tree and the viewer must be reachable before its clip.
 @RunWith(AndroidJUnit4::class)
 class VideoControlsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -80,7 +87,7 @@ class VideoControlsTest {
             val empty = awaitState(scenario, "vc:empty ")
             println("video controls empty scene ($shape): $empty")
             // The tree is built over the viewer while its video has nothing to play: the viewer's own controls are in it.
-            val before = awaitControls(OURS)
+            val before = awaitControls(scenario, OURS)
             val missing = OURS.filter { it !in before }
             println("video controls ($shape) accessibility tree over the empty video:\n" + describeTree())
             assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + SystemSurface.failureSuffix(), missing.isEmpty())
@@ -95,7 +102,7 @@ class VideoControlsTest {
             println("video controls scene ($shape) decoded pixels=$decoded frames=$frames")
             assertTrue("the video never decoded behind its poster: $decoded painted pixels", decoded > 0)
 
-            val found = awaitControls(PLAYER + OURS)
+            val found = awaitControls(scenario, PLAYER + OURS)
             SystemSurface.requireOurs()
             keepScreenshot("video-controls-$shape.png")
 
@@ -154,24 +161,53 @@ class VideoControlsTest {
     /**
      * The controls named, read from the accessibility tree once all of them are there or the bound passes. The first call
      * connects the accessibility service. Between readings it waits for the service's own events to settle, a state of
-     * the tree, never a fixed time.
+     * the tree, never a fixed time. Once the first stretch passes without them, the web view is asked to rebuild its tree
+     * and the wait continues within the same bound (issue 443).
      */
-    private fun awaitControls(names: List<String>): Map<String, Found> {
+    private fun awaitControls(scenario: ActivityScenario<MainActivity>, names: List<String>): Map<String, Found> {
         val automation = instrumentation.uiAutomation
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+        val started = System.nanoTime()
+        val deadline = started + TimeUnit.SECONDS.toNanos(CONTROLS_SECONDS)
+        val rebuildAt = started + TimeUnit.SECONDS.toNanos(REBUILD_AFTER_SECONDS)
+        var rebuilt = false
         var found: Map<String, Found> = emptyMap()
         do {
             instrumentation.waitForIdleSync()
             found = collect()
             if (names.all { it in found }) return found
-            val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            val now = System.nanoTime()
+            if (!rebuilt && now >= rebuildAt) {
+                rebuilt = true
+                rebuildTree(scenario)
+                instrumentation.waitForIdleSync()
+                found = collect()
+                if (names.all { it in found }) return found
+                continue
+            }
+            val left = TimeUnit.NANOSECONDS.toMillis(deadline - now)
             if (left <= 0) break
             try { automation.waitForIdle(TREE_SETTLE_MS, left) } catch (busy: java.util.concurrent.TimeoutException) { continue }
         } while (System.nanoTime() < deadline)
         return found
+    }
+
+    /**
+     * Asks the web view to rebuild the tree behind its accessibility node. Toggling importance throws away the node
+     * the automation had been handed and the next read asks the renderer for the page as it is now, which is what a
+     * stale snapshot is missing. One rebuild per wait.
+     */
+    private fun rebuildTree(scenario: ActivityScenario<MainActivity>) {
+        scenario.onActivity { activity ->
+            webView(activity.findViewById(android.R.id.content))?.let { view ->
+                view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                view.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+                view.invalidate()
+            }
+        }
     }
 
     // Every window the automation can see, not only the active root: under the emulator the active root intermittently
@@ -280,5 +316,7 @@ class VideoControlsTest {
         val PLAYER = listOf("play or pause", "scrubber", "mute", "full screen")
         val OURS = listOf("close", "prev", "next", "bar")
         const val TREE_SETTLE_MS = 300L
+        const val CONTROLS_SECONDS = 30L
+        const val REBUILD_AFTER_SECONDS = 15L
     }
 }
