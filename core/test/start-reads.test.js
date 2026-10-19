@@ -38,7 +38,9 @@ function page() {
   };
   // The device's store (issue 441) is the page's own code too; with no IndexedDB here it opens none, as a web view that
   // refuses one does.
-  for (const name of ['start', 'readSettings', 'describe', 'openStore', 'catchUp']) host[name] = proto[name];
+  // The favourites cache is read inside start before the list is drawn (issue 494), so the stand-in page carries those
+  // two methods as well; with no storage here the cache reads empty and the sync has no client to answer it.
+  for (const name of ['start', 'loadCachedFavourites', 'syncFavourites', 'readSettings', 'describe', 'openStore', 'catchUp']) host[name] = proto[name];
   return host;
 }
 

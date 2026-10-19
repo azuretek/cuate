@@ -1232,6 +1232,88 @@
         }
       }
     },
+    "/api/v1/emoji/favourites": {
+      "get": {
+        "operationId": "emoji-favourites",
+        "summary": "GET /api/v1/emoji/favourites",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmojiFavourites"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "emoji-favourites-write",
+        "summary": "POST /api/v1/emoji/favourites",
+        "tags": [
+          "api"
+        ],
+        "x-scope": "settings",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmojiFavourites"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmojiFavouritesPatch"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/push": {
       "post": {
         "operationId": "push-register",
@@ -1822,6 +1904,26 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AttachmentPlayed"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The receiver accepted the event."
+          }
+        }
+      }
+    },
+    "emoji.changed": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "description": "The event data. A hook delivers it encrypted, as the jwe field of a signed envelope (docs/SERVER.md, Hooks).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmojiEvent"
               }
             }
           }
@@ -3356,6 +3458,60 @@
         "required": [
           "items",
           "hasMore"
+        ],
+        "additionalProperties": false
+      },
+      "EmojiFavourites": {
+        "type": "object",
+        "properties": {
+          "favourites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "favourites"
+        ],
+        "additionalProperties": false
+      },
+      "EmojiFavouritesPatch": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string"
+          },
+          "add": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "additionalProperties": false
+      },
+      "EmojiEvent": {
+        "type": "object",
+        "properties": {
+          "favourites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "favourites"
         ],
         "additionalProperties": false
       }

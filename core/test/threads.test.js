@@ -133,7 +133,7 @@ test('the thread view lists exactly the original and its replies, with time sepa
   assert.match(head, /aria-label="Back to chats"/, 'the header keeps its way back, the shared chats icon');
   assert.match(head, /data-icon="messages-square"/, 'the way back is the shared chats icon, never a close control');
   assert.ok(page.includes('Avery Quinn'), 'the contact header stays');
-  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: 'SYN-0002' }, frequent: [], preview: '', disabled: false, placeholder: 'Reply' };
+  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: 'SYN-0002' }, favourites: [], preview: '', disabled: false, placeholder: 'Reply' };
   const markup = words(composer.render.call(c));
   assert.ok(!markup.includes('Replying in thread') && !markup.includes('composer-thread'), 'the composer carries no indicator row');
   assert.equal(conversation.composerPlaceholder.call(h), 'Reply');

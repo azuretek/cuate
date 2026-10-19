@@ -104,6 +104,8 @@ class AppConversation extends KitElement {
     // Whether the engine can edit a message (issue 391), handed down from the page, and the message being edited
     // ({ id, text }) while its words are in the composer.
     canEdit: {}, editing: { state: true },
+    // The person's emoji favourites, the same list on every device (issue 494), handed down to the composer's panel.
+    favourites: { attribute: false },
     // The messages sent with Invisible Ink whose words have been pressed into view (issue 442); every other one is veiled.
     inkShown: { state: true },
     // The edited messages whose earlier versions are shown above them (issue 437), by id.
@@ -639,7 +641,7 @@ class AppConversation extends KitElement {
         <div class="screen-effect" aria-hidden="true"></div>
         ${thread ? this.threadView() : nothing}
       </div>
-      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} .editing=${this.editing} @send=${(e) => respond(e, this.onSend(e.detail))} @edit-cancel=${() => this.cancelEdit()} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} .editing=${this.editing} .favourites=${this.favourites} @send=${(e) => respond(e, this.onSend(e.detail))} @edit-cancel=${() => this.cancelEdit()} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 

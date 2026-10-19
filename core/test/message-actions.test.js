@@ -134,7 +134,7 @@ test('React opens the composer\'s own emoji panel, and the emoji picked there is
   assert.equal(h.pop, null, 'the menu closes');
   assert.equal(h.reactFor, m.id);
   // The composer opens its panel for the reaction, the one it draws for typing.
-  const c = { emojiOpen: false, reactFor: m.id, staged: null, stageProblem: '', replyTo: null, frequent: [], preview: '', disabled: false, placeholder: '' };
+  const c = { emojiOpen: false, reactFor: m.id, staged: null, stageProblem: '', replyTo: null, favourites: [], preview: '', disabled: false, placeholder: '' };
   composer.willUpdate.call(c, new Map([['reactFor', null]]));
   assert.equal(c.emojiOpen, true);
   const markup = words(composer.render.call(c));
@@ -142,12 +142,12 @@ test('React opens the composer\'s own emoji panel, and the emoji picked there is
   // A pick in that panel is the reaction, not text in the field.
   const sent = [];
   let inserted = false;
-  const p = { ...c, frequent: [], remember: (ch) => { p.frequent = [...p.frequent, ch]; }, insert: () => { inserted = true; }, dispatchEvent: (ev) => sent.push([ev.type, ev.detail]) };
+  const p = { ...c, favourites: [], remember: (ch) => { p.favourites = [...p.favourites, ch]; }, insert: () => { inserted = true; }, dispatchEvent: (ev) => sent.push([ev.type, ev.detail]) };
   composer.pickEmoji.call(p, '\u{1F44D}');
   assert.deepEqual(sent, [['react-pick', '\u{1F44D}']]);
   assert.equal(inserted, false);
   assert.equal(p.emojiOpen, false, 'the panel closes once the reaction is chosen');
-  assert.deepEqual(p.frequent, ['\u{1F44D}'], 'the reaction counts as recently used, in the same list');
+  assert.deepEqual(p.favourites, ['\u{1F44D}'], 'the reaction counts as a favourite, in the one list');
   // The conversation sends it as the reaction on the message.
   const fired = [];
   const r = host({ messages: [m], reactFor: m.id, querySelector: () => null, querySelectorAll: () => [], fire: (name, detail) => { fired.push([name, detail]); return undefined; } });
@@ -195,7 +195,7 @@ test('an open thread is its own conversation over the rest, which is blurred and
   assert.ok(page.includes('class="thread-view"'));
   const closed = words(conversation.render.call({ ...h, replyingTo: null }));
   assert.ok(!closed.includes('thread-view') && !/messages behind/.test(closed), 'closed, the conversation is whole again');
-  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: root.id }, frequent: [], preview: '', disabled: false, placeholder: 'Reply' };
+  const c = { emojiOpen: false, attachOpen: false, reactFor: null, staged: null, stageProblem: '', replyTo: { id: root.id }, favourites: [], preview: '', disabled: false, placeholder: 'Reply' };
   const markup = words(composer.render.call(c));
   assert.ok(!markup.includes('Replying in thread') && !markup.includes('composer-thread'), 'no indicator row: the field reads Reply (issue 195)');
   assert.ok(!markup.includes('Unique root body') && !markup.includes('composer-reply'), 'no quote banner');

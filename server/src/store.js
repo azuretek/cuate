@@ -47,6 +47,8 @@ create table if not exists attachments (id text primary key, path text not null,
 create table if not exists settings (key text primary key, value text not null, updated_at text not null);
 create table if not exists push_devices (token_id text primary key, platform text not null, push_token text not null, ticket text not null, seal_key text not null, created_at text not null);
 create table if not exists played (id text primary key, at text not null);
+create table if not exists emoji_favourites (person text not null, char text not null, uses integer not null, last_used integer not null, primary key (person, char));
+create table if not exists emoji_ops (person text not null, op text not null, at text not null, primary key (person, op));
 `;
 const hash = (t) => createHash('sha256').update(t).digest('hex');
 
@@ -126,6 +128,38 @@ export function openStore(file, { now = () => new Date().toISOString() } = {}) {
     },
     listPushDevices() {
       return q('select p.token_id as tokenId, p.platform, p.push_token as pushToken, p.ticket, p.seal_key as sealKey from push_devices p join tokens t on t.id = p.token_id where t.revoked_at is null').all();
+    },
+    // Emoji favourites, keyed to the person so the same list answers every device (issue 494). Each character keeps
+    // its own use count and a sequence for its last use, so an add on one device never rewrites another device's
+    // characters, and the order is decided here rather than by whichever device wrote last.
+    getEmojiFavourites(person, limit = 200) {
+      return q('select char, uses, last_used as lastUsed from emoji_favourites where person = ? order by uses desc, last_used desc, char asc limit ?').all(String(person), limit);
+    },
+    // Applies one operation: add characters (each moving to the front) or remove characters. An operation id already
+    // applied for this person is a retry, so it returns the same list instead of counting twice.
+    applyEmojiFavourites(person, { op, add = [], remove = [], limit = 200 }) {
+      const p = String(person);
+      const seen = q('insert into emoji_ops (person, op, at) values (?, ?, ?) on conflict(person, op) do nothing').run(p, String(op), now());
+      if (seen.changes === 0) return this.getEmojiFavourites(p, limit);
+      let last = q('select coalesce(max(last_used), 0) as n from emoji_favourites where person = ?').get(p).n;
+      const up = q('insert into emoji_favourites (person, char, uses, last_used) values (?, ?, 1, ?) on conflict(person, char) do update set uses = uses + 1, last_used = excluded.last_used');
+      const gone = q('delete from emoji_favourites where person = ? and char = ?');
+      db.exec('begin immediate');
+      try {
+        for (const char of add) up.run(p, char, ++last);
+        for (const char of remove) gone.run(p, char);
+        // The row is one line of at most 200 emoji, so the least used and oldest beyond that leave rather than growing
+        // the store for ever.
+        q('delete from emoji_favourites where person = ? and char not in (select char from emoji_favourites where person = ? order by uses desc, last_used desc, char asc limit ?)').run(p, p, limit);
+        // Keep a bounded history of applied operations: enough for a retry of anything a client still holds, never
+        // a second table that grows for ever.
+        q('delete from emoji_ops where person = ? and rowid not in (select rowid from emoji_ops where person = ? order by rowid desc limit 512)').run(p, p);
+        db.exec('commit');
+      } catch (e) {
+        db.exec('rollback');
+        throw e;
+      }
+      return this.getEmojiFavourites(p, limit);
     },
     close() {
       db.close();

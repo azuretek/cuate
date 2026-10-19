@@ -1,7 +1,7 @@
 // Guards that hold the framework's rules: they fail the build rather than rely on anyone remembering.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,6 +54,27 @@ test('every custom element is defined in core, named app- or kit-', () => {
   const names = walk('core/app/components').map((f) => /customElements\.define\('([^']+)'/.exec(read(f))?.[1]).filter(Boolean);
   assert.ok(names.length > 0);
   assert.ok(names.every((n) => n.startsWith('app-') || n.startsWith('kit-')), names.join(', '));
+});
+
+test('every component that defines a custom element is imported by the page', () => {
+  // A tag in a template does nothing on its own: the module's import is what runs customElements.define, so a
+  // component whose last named import is taken away stays an unknown element in the page, with no children at all.
+  // The emoji panel was exactly that, and the desktop smoke saw it as a panel that never opened (issue 494).
+  const seen = new Set();
+  const queue = ['core/app/main.js'];
+  while (queue.length) {
+    const f = queue.pop();
+    if (seen.has(f)) continue;
+    seen.add(f);
+    for (const spec of importsOf(read(f))) {
+      if (!spec.startsWith('.')) continue;
+      const target = path.posix.normalize(path.posix.join(path.posix.dirname(f), spec));
+      if (!seen.has(target) && existsSync(path.join(ROOT, target))) queue.push(target);
+    }
+  }
+  const components = walk('core/app/components').filter((f) => /customElements\.define\(/.test(read(f)));
+  assert.ok(components.length > 5, 'the guard found the components: ' + components.length);
+  for (const f of components) assert.ok(seen.has(f), f + ' defines a custom element that no import reaches from the page');
 });
 
 test('component CSS carries no literal colours or lengths', () => {

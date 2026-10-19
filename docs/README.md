@@ -7,6 +7,7 @@ Shared documentation for Cuate. One product with several shells, so anything tru
 | [ANDROID.md](ANDROID.md) | The Android shell hosts core's own page in a WebView, evaluates the rules a shell needs with no page on screen in an embedded JavaScript engine, keeps |
 | [APP-NOTICES.md](APP-NOTICES.md) | App update, download and progress events use floating cards. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | - `pnpm install`, then `pnpm run hooks:install` once, so lint runs before each commit and the tests before each push. |
+| [CLIENT-DATA.md](CLIENT-DATA.md) | Every value a client keeps on the device, and whether the server owns it or it is deliberately local. |
 | [CONVENTIONS.md](CONVENTIONS.md) | Every design decision Cuate has made that still holds, written as a rule with its reason, where it came from and what holds it. |
 | [DESIGN.md](DESIGN.md) | Cuate has two halves: a headless server on a Mac that already runs Messages, and a client that runs on every platform from one shared core. |
 | [FEATURES.md](FEATURES.md) | What works today, and the test that proves each. |
