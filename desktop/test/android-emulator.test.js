@@ -22,9 +22,15 @@ test('the Android emulator decodes video in the guest, not in its own process', 
   }
 });
 
-test('the boot proof keeps the crash record of an emulator that exits', () => {
+// Issue 443: the crash record is kept only when the leg fails, so a green run carries nothing it has to explain.
+test('the crash record of an emulator that exits is kept only when the job fails', () => {
   const keep = steps.find((step) => step.name === 'Keep the boot proof');
   assert.ok(keep, 'the boot proof is not kept');
   assert.equal(keep.if, 'always()');
-  assert.match(String(keep.with?.path ?? ''), /emu-crash/, 'the emulator crash record is not kept with the boot proof');
+  assert.doesNotMatch(String(keep.with?.path ?? ''), /emu-crash/, 'a green run carries a crash record');
+  const crash = steps.find((step) => step.name === 'Keep the crash record');
+  assert.ok(crash, 'the crash record is not kept');
+  assert.equal(crash.if, 'failure()');
+  assert.match(String(crash.with?.path ?? ''), /emu-crash/, 'the emulator crash record is not kept');
+  assert.match(String(crash.with?.path ?? ''), /crash\.txt/, 'the crash record does not name its cause');
 });
