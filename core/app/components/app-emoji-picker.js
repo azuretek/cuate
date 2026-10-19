@@ -6,68 +6,26 @@ import { aimCarets } from '../../kit/popover.js';
 import { dismissable } from '../../kit/dismiss.js';
 import { growFrom } from '../../kit/motion.js';
 import { EMOJI_CATEGORIES } from '../rules/emoji-data.js';
-import { emojiInCategory, searchEmoji, frequentEmoji, emojiPickerSections, pickerSide, isEmoji, panelEmoji, toneChoices, chooseTone, cleanTones } from '../rules/emoji.js';
+import { emojiInCategory, searchEmoji, emojiPickerSections, pickerSide, panelEmoji, toneChoices, chooseTone, cleanTones } from '../rules/emoji.js';
+import { favouriteList } from '../rules/emoji-favourites.js';
 import { canDrawEmoji } from '../emoji-support.js';
 
-// The recently used list is the shell's storage, shared by every place the picker opens (the composer, and a
-// message's reaction), so an emoji used in one is recent in the other, and it outlives a restart. Every shell stores
-// text only (core/spec/host-bridge.json): the list was handed over as an array, which the desktop's keychain encryption
-// threw on, iOS refused and Android kept as a string the load then discarded, so it never outlived the app. It goes
-// as JSON now, trimmed from its oldest end to fit the smallest shell's limit (iOS, 8 KB), and a value that is not a
-// JSON list, such as one from before, reads as empty. A plain browser keeps it for the page, and a missing bridge or a
-// rejected read leaves the list empty rather than failing.
-const FREQUENT_KEY = 'emoji.frequent';
-const FREQUENT_MAX = 200;
-const FREQUENT_BYTES = 8000;
-
-export function encodeFrequent(list) {
-  let kept = list.slice(-FREQUENT_MAX);
-  let text = JSON.stringify(kept);
-  while (kept.length && new TextEncoder().encode(text).length > FREQUENT_BYTES) {
-    kept = kept.slice(Math.max(1, Math.ceil(kept.length / 10)));
-    text = JSON.stringify(kept);
-  }
-  return text;
-}
-
-export function decodeFrequent(text) {
-  if (typeof text !== 'string') return [];
-  try {
-    const list = JSON.parse(text);
-    return Array.isArray(list) ? list.filter((c) => typeof c === 'string' && isEmoji(c)) : [];
-  } catch {
-    return [];
-  }
-}
-
-export async function loadRecentEmoji() {
-  try {
-    return decodeFrequent(await window.bridge?.call('storage.get', { key: FREQUENT_KEY }));
-  } catch {
-    return [];
-  }
-}
-
-export async function rememberEmoji(list, char) {
-  const next = [...list, char].slice(-FREQUENT_MAX);
-  try {
-    await window.bridge?.call('storage.set', { key: FREQUENT_KEY, value: encodeFrequent(next) });
-  } catch {
-    /* page only */
-  }
-  return next;
-}
+// The favourites row belongs to the person, not to the device: the page reads the list from the server, keeps the
+// cache that makes it readable before the first round trip and while offline, and hands the list down here. A pick is
+// sent back through the composer, and a long press or a right click on a recent emoji asks for it to leave the list.
 
 // The tone chosen for each emoji (issue 392) is the shell's storage too, under its own key, as a JSON object from the
 // yellow emoji to the toned sequence last chosen for it, so the choice holds in every panel and after a restart. A
 // value that is not such an object, or names a tone of some other emoji, reads as no choice.
 const TONES_KEY = 'emoji.tones';
+// The smallest shell's storage is iOS's 8 KB (core/spec/host-bridge.json), the same bound the favourites cache uses.
+const TONES_BYTES = 8000;
 
 // Trimmed from its oldest choice to fit the smallest shell's limit, as the recently used list is.
 export function encodeTones(chosen) {
   let kept = Object.entries(cleanTones(chosen));
   let text = JSON.stringify(Object.fromEntries(kept));
-  while (kept.length && new TextEncoder().encode(text).length > FREQUENT_BYTES) {
+  while (kept.length && new TextEncoder().encode(text).length > TONES_BYTES) {
     kept = kept.slice(Math.max(1, Math.ceil(kept.length / 10)));
     text = JSON.stringify(Object.fromEntries(kept));
   }
@@ -108,16 +66,16 @@ const LONG_PRESS_MS = 500;
 const PRESS_SLOP = 10;
 
 // The emoji panel: the grid, a search field, the categories and a recently used row. It owns nothing but what it is
-// told: it takes the frequent list as a property and hands every pick back as an event, so the composer stays the one
-// place that knows how a character reaches the message.
+// told: it takes the person's favourites as a property and hands every pick back as an event, so the composer stays
+// the one place that knows how a character reaches the message.
 class AppEmojiPicker extends KitElement {
   // `dismiss` is the name its host registered the panel under with the kit's dismiss behaviour (core/kit/dismiss.js),
   // drawn on the panel's root so a press inside it is inside that host's panel.
-  static properties = { frequent: { attribute: false }, dismiss: {}, query: { state: true }, category: { state: true }, side: { state: true }, tones: { state: true }, toneFor: { state: true } };
+  static properties = { favourites: { attribute: false }, dismiss: {}, query: { state: true }, category: { state: true }, side: { state: true }, tones: { state: true }, toneFor: { state: true } };
 
   constructor() {
     super();
-    this.frequent = [];
+    this.favourites = [];
     this.dismiss = '';
     this.query = '';
     this.category = EMOJI_CATEGORIES[0].id;
@@ -231,6 +189,38 @@ class AppEmojiPicker extends KitElement {
     return this.pick(char);
   }
 
+  // A recent emoji is a favourite: a press picks it, a rest or a right click asks for it to be removed. The rest is
+  // the same hold that opens an emoji's tones in the grid, and the release that ends it is not also a pick.
+  forget(char) {
+    this.dispatchEvent(new CustomEvent('forget', { detail: char }));
+  }
+
+  favouriteHoldStart(e, char) {
+    if (e.button !== undefined && e.button !== 0) return;
+    this.holdCancel();
+    const cell = e.currentTarget;
+    const at = { x: e.clientX, y: e.clientY };
+    const timer = setTimeout(() => {
+      this.hold = null;
+      this.held = cell;
+      this.forget(char);
+    }, LONG_PRESS_MS);
+    this.hold = { timer, at };
+  }
+
+  favouriteContext(e, char) {
+    e.preventDefault();
+    this.holdCancel();
+    this.forget(char);
+  }
+
+  favouriteCell(char) {
+    return html`<button type="button" class="emoji-cell favourite" title=${char + ' (hold to remove)'} aria-label=${char} data-favourite=${char}
+      @pointerdown=${(e) => this.favouriteHoldStart(e, char)} @pointermove=${(e) => this.holdMove(e)} @pointerup=${() => this.holdCancel()} @pointercancel=${() => this.holdCancel()} @pointerleave=${() => this.holdCancel()}
+      @contextmenu=${(e) => this.favouriteContext(e, char)}
+      @click=${press((e) => this.pressCell(e, char), { repeat: true })}>${char}</button>`;
+  }
+
   cell(char, name, slot = null) {
     const label = name || char;
     if (!slot || !slot.toned) {
@@ -287,12 +277,14 @@ class AppEmojiPicker extends KitElement {
   section(id, frequent, list, searching) {
     if (id === 'recents') {
       const edge = this.side === 'below' ? 'at-top' : 'at-bottom';
-      return html`<div class=${'emoji-row ' + edge} aria-label="Frequently used">${frequent.filter((c) => canDrawEmoji(c)).map((c) => this.cell(c))}</div>`;
+      return html`<div class=${'emoji-row ' + edge} aria-label="Frequently used">${frequent.filter((c) => canDrawEmoji(c)).map((c) => this.favouriteCell(c))}</div>`;
     }
     if (id === 'grid') {
-      return list.length
-        ? html`<div class="emoji-grid">${list.map((e) => this.cell(e.char, e.name, e))}</div>`
-        : html`<div class="emoji-empty muted small">No emoji found</div>`;
+      // The grid is always there, so a shell that cannot draw any emoji still presents the panel's own surface rather
+      // than removing it: the empty note goes inside the grid (issue 494 smoke, Linux leg).
+      return html`<div class="emoji-grid">${list.length
+        ? list.map((e) => this.cell(e.char, e.name, e))
+        : html`<div class="emoji-empty muted small">No emoji found</div>`}</div>`;
     }
     if (id === 'search') {
       return html`<input class="emoji-search" type="search" placeholder="Search emoji" aria-label="Search emoji" .value=${this.query} @input=${this.setQuery}>`;
@@ -307,7 +299,8 @@ class AppEmojiPicker extends KitElement {
   // narrowing them never moves the thing the reader is pointing at, and the order the eye reads is the order the
   // keyboard walks. The panel keeps one height, so the composer below never shifts.
   render() {
-    const frequent = frequentEmoji(this.frequent);
+    // The server decides the order: most used first, then most recent. The row draws it as given.
+    const frequent = favouriteList(this.favourites);
     const searching = Boolean(this.query.trim());
     const list = this.results();
     const sections = emojiPickerSections({ side: this.side, recents: frequent.length > 0 });
