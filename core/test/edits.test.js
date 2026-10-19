@@ -71,6 +71,20 @@ test('an edited message replaces its words in the conversation, keeps its reacti
   assert.ok(!words(conversation.bubble.call(host, { message: list[1], first: true, last: true }, null, 'list')).includes('edited-mark'), 'an unedited message carries no mark');
 });
 
+test('a catch-up after messages arrived live marks only the message the server says was edited (issue 498)', () => {
+  const page = new AppRoot();
+  page.openChatId = '1';
+  page.messages = [msg({ id: 'A' }), msg({ id: 'B' }), msg({ id: 'C' })];
+  page.chats = [{ id: '1', name: 'Synthetic', unread: 0, lastMessageAt: sentAt, lastMessage: null }];
+  page.convos = new Map();
+  page.showChanges({
+    messages: [msg({ id: 'A' }), msg({ id: 'B', text: 'Synthetic edited', edited: true }), msg({ id: 'C' })],
+    reactions: [], unsent: [], reads: [],
+  });
+  assert.deepEqual(page.messages.map((m) => Boolean(m.edited)), [false, true, false], 'one edit leaves every neighbour unmarked');
+  assert.equal(page.messages[1].text, 'Synthetic edited');
+});
+
 test('an edit changes the chat list preview only when it is the message the preview shows', () => {
   const chats = [{ id: '1', name: 'Synthetic', unread: 0, lastMessageAt: sentAt, lastMessage: { text: 'Synthetic first words', fromMe: true, sentAt, attachments: 0, link: null, payloads: 0 } }, { id: '2', name: 'Other', unread: 0, lastMessage: null }];
   const out = applyEditToChats(chats, msg({ text: 'Synthetic second words' }));

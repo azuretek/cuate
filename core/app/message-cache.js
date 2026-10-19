@@ -10,7 +10,9 @@ import { openDeviceStore } from '../kit/device-store.js';
 import { mergeHeld, applyChangeList, holdable, mediaEvictions, holdsMedia, mediaKey, serverDigest } from './rules/message-store.js';
 
 export const STORE_NAME = 'message-store';
-const STORE_VERSION = 1;
+// Version 2 starts the store again: a build before issue 498 could hold an edit mark the server never set, and the
+// store has no way to tell such a mark from a real one. Every conversation is read from the server again.
+const STORE_VERSION = 2;
 const STORES = { meta: 'key', convos: 'chatId', messages: 'key', media: 'key', mediaUse: 'key' };
 // How long the store waits for a burst of renders to settle before it writes what they changed.
 const SAVE_MS = 400;

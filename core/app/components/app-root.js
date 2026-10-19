@@ -812,9 +812,9 @@ class AppRoot extends KitElement {
         const fresh = new Map(messages.map((m) => [m.id, m]));
         this.applyWindow({ ...cached.historyWindow, messages: cached.messages.map((m) => fresh.get(m.id) || m) });
       } else if (cached?.historyWindow && !cached.historyWindow.afterCount) {
-        this.applyWindow(shiftWindow(cached.historyWindow, foldFor(mergeMessages(arrived, messages), this.chats, chatId), { direction: 'newer', hasMore: false, heights: pane?.historyMeasurements().heights }));
+        this.applyWindow(shiftWindow(cached.historyWindow, foldFor(mergeMessages(arrived, messages, { authoritative: true }), this.chats, chatId), { direction: 'newer', hasMore: false, heights: pane?.historyMeasurements().heights }));
       } else {
-        this.applyWindow(initialWindow(foldFor(mergeMessages(arrived, messages), this.chats, chatId), { totalCount, hasMore, estimate: pane?.historyMeasurements().estimate || 1 }));
+        this.applyWindow(initialWindow(foldFor(mergeMessages(arrived, messages, { authoritative: true }), this.chats, chatId), { totalCount, hasMore, estimate: pane?.historyMeasurements().estimate || 1 }));
       }
       this.problem = '';
       if (show) this.listOpen = false;
