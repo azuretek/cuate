@@ -87,6 +87,10 @@
   const video = () => el.querySelector('video.viewer-image');
   await until(() => el.querySelector('.viewer') && !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the empty viewer to arrive');
   document.body.append(releaseButton);
+  // The accessibility tree follows the paint, not the DOM (issue 495): two frames past the settled viewer, so the phone's
+  // read over the empty video can already find the viewer and its own controls, however loaded the runner is.
+  await new Promise(requestAnimationFrame);
+  await new Promise(requestAnimationFrame);
   say('vc:empty ' + JSON.stringify({ shape, video: Boolean(video()), pending: Boolean(el.querySelector('.viewer-pending')) }));
   await until(() => !releaseButton.isConnected, 'the test to let the clip go', 120000);
   say('vc:loading');
