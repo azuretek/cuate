@@ -48,9 +48,15 @@ final class MessageCacheTests: XCTestCase {
         XCTAssertGreaterThan(number("off-warm", "photoReads"), 0, "without the store a conversation's photo and backdrop are read on every launch")
         XCTAssertEqual(number("on-warm", "photoReads"), 0, "and with it on none")
         XCTAssertGreaterThanOrEqual(number("on-warm", "themedMs"), 0, "a warm open draws its scheme")
-        XCTAssertLessThan(number("on-warm", "themedMs"), number("off-warm", "themedMs") / 2, "and its scheme is drawn in a fraction of the time")
+        // What a launch had read before it drew says where it drew from, however busy the simulator is; the times are
+        // only a loose backstop (issue 478).
+        XCTAssertGreaterThanOrEqual(number("off-warm", "settingsBeforeThemed"), 1, "without the store the scheme waits on the server's settings")
+        XCTAssertEqual(number("on-warm", "answersBeforeThemed"), 0, "and with it the scheme is drawn before the server answers anything")
+        XCTAssertLessThan(number("on-warm", "themedMs"), number("off-warm", "themedMs"), "and sooner")
         XCTAssertEqual(results["on-warm"]?["shownEdit"] as? Bool, true, "and still draws an edit made while it was closed")
         XCTAssertLessThan(number("on-warm", "bytes"), number("off-warm", "bytes") / 4, "a warm open costs a fraction of the bytes it did")
-        XCTAssertLessThan(number("on-warm", "firstVisibleMs"), number("off-warm", "firstVisibleMs") / 2, "and draws its first message in a fraction of the time")
+        XCTAssertGreaterThanOrEqual(number("off-warm", "pagesBeforeFirstVisible"), 1, "without the store the first message waits on a page read")
+        XCTAssertEqual(number("on-warm", "pagesBeforeFirstVisible"), 0, "and with it the first message is drawn from the store")
+        XCTAssertLessThan(number("on-warm", "firstVisibleMs"), number("off-warm", "firstVisibleMs"), "and sooner")
     }
 }
