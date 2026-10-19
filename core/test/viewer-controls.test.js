@@ -170,3 +170,69 @@ test('a video is laid out clear of every viewer control, and its step controls j
   assert.match(rule('.viewer-bar'), /bottom: var\(--viewer-bar-bottom\);/, 'the bar sits where the band measures it');
   assert.match(rule('.viewer-bar'), /min-height: var\(--viewer-bar-h\);/, 'and is the height the band leaves it');
 });
+
+
+// A video reaches the page only with its clip (issue 446): drawn before its clip, a video element is an empty player,
+// and Android's web view builds that player's accessibility node as "Unable to play media." with none of its controls,
+// then keeps it once the clip has loaded. Until the clip is here the viewer holds the video's place with a node that
+// names it and is busy, and the video element is made with its clip already set.
+test('a video is drawn only once its clip is here, and its place is held until then', () => {
+  const host = (src) => {
+    const items = [1, 2, 3].map((n) => ({ id: 'v' + n, attachmentId: 'v' + n, kind: 'video', name: 'clip-' + n + '.mp4', mime: 'video/mp4' }));
+    return Object.assign(Object.create(components['app-image-viewer'].prototype), {
+      items, index: 1, kind: 'video', alt: 'clip-2.mp4', src, view: { scale: 1, x: 0, y: 0 }, moving: false, motion: '', playing: false, motionFailed: false, pageError: '',
+    });
+  };
+  const render = components['app-image-viewer'].prototype.render;
+  const waiting = words(render.call(host('')));
+  assert.doesNotMatch(waiting, /<video/, 'no video element is drawn before its clip');
+  assert.match(waiting, /<div class="viewer-pending" role="img" aria-label=clip-2\.mp4 aria-busy="true">/, 'the video\'s place is held by a node that names it and is busy');
+  assert.ok(waiting.includes('aria-label="Close"') && waiting.includes('viewer-prev') && waiting.includes('viewer-next'), 'the viewer\'s own controls are there meanwhile');
+  const loaded = words(render.call(host('blob:clip')));
+  assert.match(loaded, /<video class="viewer-image" src=blob:clip aria-label=clip-2\.mp4 controls /, 'the video element is made with its clip already set');
+  assert.doesNotMatch(loaded, /viewer-pending/, 'and the held place is gone');
+});
+
+// Every run takes the real order (issue 446): the fixture holds the clip back while each phone's test reads the
+// accessibility tree over the empty video, and lets it go only when the test says so, so a player whose controls never
+// reach the tree fails every run rather than one in four. Every wait in those tests and the fixture is for a state.
+test('each phone\'s video test reads the tree over the empty video before its clip, and waits only on states', () => {
+  const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  const fixture = read('core/test/video-controls-fixture.js');
+  assert.match(fixture, /attachment: async \(\) => \{ await held; return clip; \}/, 'the fixture holds the clip back');
+  assert.ok(fixture.indexOf("say('vc:empty '") < fixture.indexOf("'the test to let the clip go'") && fixture.indexOf("'the test to let the clip go'") < fixture.indexOf("'the clip to load'"), 'it reports the empty video, waits for the test, then loads the clip');
+  const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/VideoControlsTest.kt');
+  const check = androidTest.slice(androidTest.indexOf('private fun check('));
+  assert.ok(check.indexOf('awaitState(scenario, "vc:empty ")') < check.indexOf('awaitControls(OURS)') && check.indexOf('awaitControls(OURS)') < check.indexOf('window.videoControlsRelease()') && check.indexOf('window.videoControlsRelease()') < check.indexOf('awaitControls(PLAYER + OURS)'), 'Android connects the service and reads the tree over the empty video before it lets the clip go');
+  const uiTest = read('ios/' + naming.product + 'UITests/VideoControlsTests.swift');
+  assert.ok(uiTest.indexOf("'vc:empty'") < uiTest.indexOf('releaseClip(app, page)') && uiTest.includes('page.buttons["vc:release"]'), 'iOS reads the tree over the empty video, then presses the release control');
+  for (const [name, source] of [['the fixture', fixture], ['the Android test', androidTest], ['the iOS test', uiTest]]) {
+    assert.doesNotMatch(source, /Thread\.sleep|setTimeout|\bsleep\(|usleep/, name + ' waits on states, never a sleep');
+  }
+});
+
+// The contacts tests wait on the reading they judge (issue 446): every window of the contacts app is read again and
+// again, the whole tree at a time, until one names the person, and the reading the wait ends on is the one asserted. One
+// look at a view that is still drawing, or a whole-name lookup against an editor whose name fields are separate, reads as
+// not the person while the person is on screen. Google Contacts also draws its first-run notice in a window of its own,
+// in front of the card, so the active root alone holds the notice and never the person behind it.
+test('each phone\'s contacts test waits on the reading it judges, and says what it saw', () => {
+  const read = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+  const naming = JSON.parse(read('core/spec/naming.json'));
+  const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/ContactEditorTest.kt');
+  assert.match(androidTest, /node\.text\?\.toString\(\), node\.contentDescription\?\.toString\(\)/, 'Android reads every text and content description under one root');
+  assert.match(androidTest, /for \(window in automation\.windows\) \{/, 'read from every window, not only the one in front');
+  assert.match(androidTest, /while \(named\(\) == null\)/, 'and takes a new reading until one window names the person');
+  assert.match(androidTest, /dismissFirstRunNotice\(\)/, "and closes the contacts app's own first-run notice rather than judging it");
+  assert.match(androidTest, /assertEquals\("the contacts app names the person: \$shown", true, shown\.namesThePerson\)/, 'asserting on the reading its wait ended on');
+  assert.match(androidTest, /the contacts app never showed the person; the last readings: \$readings/, 'and a wait that runs out says what it saw');
+  assert.doesNotMatch(androidTest, /Thread\.sleep|SystemClock\.sleep/, 'Android waits on states, never a sleep');
+  const uiTest = read('ios/' + naming.product + 'UITests/ContactEditorTests.swift');
+  assert.match(uiTest, /let editor = app\.navigationBars\.buttons\["Edit"\]\.firstMatch/, 'iOS reads the card by the native control the tree carries');
+  assert.match(uiTest, /while !\(editor\.exists && editor\.isHittable\) && Date\(\) < judged/, 'and waits on that state, bounded');
+  assert.match(uiTest, /addingTimeInterval\(cardSeconds\)/, 'bounded, and it says what the last reading held');
+  assert.match(uiTest, /the tree held/, 'and a failure says what the tree carried');
+  assert.doesNotMatch(uiTest, /staticTexts\.matching\(named\)\.count/, 'never from two queries');
+  assert.doesNotMatch(uiTest, /\bsleep\(/, 'iOS waits on states, never a sleep');
+});

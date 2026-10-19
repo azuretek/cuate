@@ -870,8 +870,14 @@ class AppImageViewer extends KitElement {
     const label = this.alt || (this.kind === 'video' ? 'Video' : 'Image');
     const hasNav = list.length > 1 || Boolean(this.mediaPages);
     const live = Boolean(list[at] && list[at].live) && this.kind === 'image';
+    // A video reaches the page only with its clip (issue 446). A video element drawn before its clip has arrived is an
+    // empty player, and Android's web view builds its accessibility node from that, "Unable to play media." holding none
+    // of the player's controls, and keeps the node once the clip has loaded. Until the clip is here the viewer holds the
+    // video's place with a node that names it and says it is still coming, and the video element is made with its clip.
     const media = this.kind === 'video'
-      ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
+      ? this.src
+        ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
+        : html`<div class="viewer-pending" role="img" aria-label=${label} aria-busy="true"></div>`
       : live && this.playing && this.motion
         ? html`<video class="viewer-image viewer-motion" src=${this.motion} poster=${this.src} aria-label=${label} muted .muted=${true} playsinline preload="auto" @ended=${() => { this.playing = false; }} @error=${(e) => this.motionRefused(e.target, list[at])}></video>`
         : html`<img class="viewer-image" src=${this.src} alt=${label} draggable="false" @load=${this.onLoad}>`;
