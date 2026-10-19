@@ -554,8 +554,9 @@ class AppConversation extends KitElement {
     const mark = where === 'list' ? marksOf(this.messages).get(m.id) || null : null;
     const isReply = Boolean(mark && mark.root);
     const row = ['bubble-row', mine ? 'mine' : 'theirs', it.first ? 'first' : '', it.last ? 'last' : '', targeted || (this.editing && this.editing.id === m.id) ? 'targeted' : '', isReply ? 'thread-reply' : '', this.revealedId === m.id ? 'revealed' : ''].filter(Boolean).join(' ');
-    // Every message we send wears the theme's own colour, whatever the platform (Abi, 2026-10-12): who is on the other
-    // end is told by serviceNote, never by a second bubble colour.
+    // The other person's message wears the theme's accent bubble and ours the quiet tint (issue 459, which reverses the
+    // 2026-10-12 choice that gave ours the accent). What we send is still one colour whatever the platform: who is on the
+    // other end is told by serviceNote, never by a second bubble colour.
     const kind = mine ? 'me' : 'them';
     const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
     const own = myReaction(m);

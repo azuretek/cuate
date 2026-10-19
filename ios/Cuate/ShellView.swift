@@ -134,9 +134,21 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The bubble colours fixture (issue 459), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--bubble-colours-fixture"),
+           let url = Bundle.main.url(forResource: "bubble-colours-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The text formatting fixture (issue 447), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--text-format-fixture"),
            let url = Bundle.main.url(forResource: "text-format-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        // The group rename fixture (issue 439), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--group-rename-fixture"),
+           let url = Bundle.main.url(forResource: "group-rename-fixture", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
@@ -149,6 +161,12 @@ struct ShellWebView: UIViewRepresentable {
         // The mention fixture (issue 453), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--mention-fixture"),
            let url = Bundle.main.url(forResource: "mention-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        // The group members fixture (issue 456), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--group-members-fixture"),
+           let url = Bundle.main.url(forResource: "group-members-fixture", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
