@@ -54,7 +54,7 @@ const REDRAW_MS = 150;
 
 class AppImageViewer extends KitElement {
   static properties = {
-    src: {}, alt: {}, kind: {}, view: { state: true }, moving: { state: true },
+    src: {}, alt: {}, poster: {}, kind: {}, view: { state: true }, moving: { state: true },
     // A Live Photo shows its still, and its motion plays over it on the play control: the motion's URL, and whether it is
     // playing or could not be loaded.
     motion: { state: true }, playing: { state: true }, motionFailed: { state: true },
@@ -71,6 +71,7 @@ class AppImageViewer extends KitElement {
     super();
     this.src = '';
     this.alt = '';
+    this.poster = '';
     this.kind = 'image';
     this.items = [];
     this.index = 0;
@@ -255,6 +256,9 @@ class AppImageViewer extends KitElement {
     this.kind = item.kind || 'image';
     this.alt = item.alt || item.name || '';
     this.src = this.urls.get(item.id) || item.src || '';
+    // A video's poster, when the item has one: drawn while the clip loads, so the element never shows an empty media
+    // surface. The emulator's host renderer crashes on that empty surface (issue 443).
+    this.poster = item.poster || '';
     this.pruneMedia();
     this.closeDocument();
     this.docState = this.isDocument(item) ? 'loading' : '';
@@ -876,7 +880,7 @@ class AppImageViewer extends KitElement {
     // video's place with a node that names it and says it is still coming, and the video element is made with its clip.
     const media = this.kind === 'video'
       ? this.src
-        ? html`<video class="viewer-image" src=${this.src} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
+        ? html`<video class="viewer-image" src=${this.src} poster=${this.poster || nothing} aria-label=${label} controls autoplay muted playsinline @loadeddata=${this.onLoad}></video>`
         : html`<div class="viewer-pending" role="img" aria-label=${label} aria-busy="true"></div>`
       : live && this.playing && this.motion
         ? html`<video class="viewer-image viewer-motion" src=${this.motion} poster=${this.src} aria-label=${label} muted .muted=${true} playsinline preload="auto" @ended=${() => { this.playing = false; }} @error=${(e) => this.motionRefused(e.target, list[at])}></video>`

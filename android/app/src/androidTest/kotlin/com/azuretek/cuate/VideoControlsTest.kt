@@ -87,6 +87,13 @@ class VideoControlsTest {
             assertTrue("the fixture did not let the clip go", evaluate(scenario, "window.videoControlsRelease()") == "true")
             val scene = awaitState(scenario, "vc:ready ")
             println("video controls scene ($shape): $scene")
+            // Issue 443: the poster must not stand in for the clip. The fixture draws the frame the player has after its
+            // seek and counts the pixels, and reports the player's own frame count, so a green test proves the clip
+            // really decoded behind the poster.
+            val decoded = scene.optInt("decoded", 0)
+            val frames = scene.optInt("totalFrames", 0)
+            println("video controls scene ($shape) decoded pixels=$decoded frames=$frames")
+            assertTrue("the video never decoded behind its poster: $decoded painted pixels", decoded > 0)
 
             val found = awaitControls(PLAYER + OURS)
             SystemSurface.requireOurs()
@@ -152,7 +159,7 @@ class VideoControlsTest {
     private fun awaitControls(names: List<String>): Map<String, Found> {
         val automation = instrumentation.uiAutomation
         automation.serviceInfo = automation.serviceInfo.apply {
-            flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
         var found: Map<String, Found> = emptyMap()
@@ -167,10 +174,25 @@ class VideoControlsTest {
         return found
     }
 
+    // Every window the automation can see, not only the active root: under the emulator the active root intermittently
+    // comes back without the WebView's controls, while the app window is still there (issue 443).
+    private fun roots(): List<AccessibilityNodeInfo> {
+        val roots = mutableListOf<AccessibilityNodeInfo>()
+        instrumentation.uiAutomation.rootInActiveWindow?.let { roots.add(it) }
+        try {
+            for (window in instrumentation.uiAutomation.windows) {
+                val root = window.root ?: continue
+                if (roots.none { it.windowId == root.windowId }) roots.add(root)
+            }
+        } catch (_: Exception) {
+            // The automation can drop between windows; the active root is still collected above.
+        }
+        return roots
+    }
+
     private fun collect(): Map<String, Found> {
-        val root = instrumentation.uiAutomation.rootInActiveWindow ?: return emptyMap()
         val found = mutableMapOf<String, Found>()
-        walk(root) { node ->
+        for (root in roots()) walk(root) { node ->
             val label = (node.contentDescription ?: node.text ?: "").toString().trim()
             val lower = label.lowercase()
             val name = when {
