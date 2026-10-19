@@ -207,6 +207,7 @@ test('each phone\'s video test reads the tree over the empty video before its cl
   const naming = JSON.parse(read('core/spec/naming.json'));
   const fixture = read('core/test/video-controls-fixture.js');
   assert.match(fixture, /attachment: async \(\) => \{ await held; return clip; \}/, 'the fixture holds the clip back');
+  assert.match(fixture, /await new Promise\(requestAnimationFrame\);\s*await new Promise\(requestAnimationFrame\);\s*say\('vc:empty '/, 'the fixture waits two frames for the paint before it reports the empty video');
   assert.ok(fixture.indexOf("say('vc:empty '") < fixture.indexOf("'the test to let the clip go'") && fixture.indexOf("'the test to let the clip go'") < fixture.indexOf("'the clip to load'"), 'it reports the empty video, waits for the test, then loads the clip');
   const androidTest = read('android/app/src/androidTest/kotlin/' + naming.ids.android.replaceAll('.', '/') + '/VideoControlsTest.kt');
   const check = androidTest.slice(androidTest.indexOf('private fun check('));
