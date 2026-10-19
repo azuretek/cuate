@@ -262,10 +262,14 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     if (m.event && m.event.kind === 'groupPhoto') held.chats[at] = { ...held.chats[at], photo: m.event.photo };
     // A background that changed live is read from the engine and told to every client as the chat changing (issue 417).
     if (m.event && m.event.kind === 'background') refreshBackground(id, m.event.action);
+    // A group renamed live, here or on another phone, takes its name at once and every client is told (issue 439).
+    const renamed = Boolean(m.event && m.event.kind === 'rename' && held.chats[at].isGroup && held.chats[at].name !== m.event.name);
+    if (renamed) held.chats[at] = { ...held.chats[at], name: String(m.event.name || '') };
     // A person added, removed or leaving, here or on another phone, changes the group's people: the list is read again
     // and every client is told the chat changed, with the line as its preview (issue 456).
     if (m.event && m.event.kind === 'member') chatChanged((c) => String(c.id) === id).catch(() => {});
     const chat = held.chats[at];
+    if (renamed) publish('chat.changed', { ...chat, lastMessage: previews.get(id) || null });
     if (chat.lastMessageAt && chat.lastMessageAt > m.sentAt) return;
     // An arriving message from someone else raises the held count by the same rule every client raises its own
     // (applyMessageToChats in core/app/rules/chats.js), so a read on another device before the next read of the list is
