@@ -1,6 +1,6 @@
 const console = require('node:console');
 const process = require('node:process');
-const { nativeRPC } = globalThis;
+const { nativeRPC, nativeCancel } = globalThis;
 const assert = require('node:assert/strict');
 const {existsSync, mkdtempSync, rmSync} = require('node:fs');
 const {DatabaseSync} = require('node:sqlite');
@@ -11,6 +11,12 @@ const path = require('node:path');
   const {createRpc} = await import(pathToFileURL(path.join(process.argv[2],'server/src/engine/rpc.js')).href);
   const db = path.join(tmpdir(), 'synthetic-native-' + process.pid + '.db');
   assert.equal(existsSync(db), false);
+  assert.throws(() => nativeRPC('bad', '{}', db), /invalid rpc arguments/);
+  const cancelled = nativeRPC(199,JSON.stringify({jsonrpc:'2.0',id:199,method:'synthetic.unknown'}),db);
+  assert.throws(() => nativeRPC(199,'{}',db), /duplicate native id/);
+  assert.equal(nativeCancel(199),true);
+  await assert.rejects(cancelled,/native_cancelled/);
+  assert.equal(nativeCancel(199),false);
   const replies = await Promise.all(Array.from({length:16}, (_, i) => nativeRPC(200+i, JSON.stringify({jsonrpc:'2.0',id:i,method:'synthetic.unknown'}), db)));
   replies.forEach((raw,i) => { const reply = JSON.parse(raw); assert.equal(reply.pid,process.pid); const [line] = reply.lines; const value=JSON.parse(line); assert.equal(value.id,i); assert.equal(value.error.code,-32601); });
   assert.equal(existsSync(db),false);
@@ -41,7 +47,7 @@ INSERT INTO chat_message_join VALUES (1,1);`);
       write(line) {
         nativeRPC(nativeId++,line,fixture).then(raw => {
           const reply=JSON.parse(raw); assert.equal(reply.pid,process.pid);
-          for (const value of reply.lines) { console.log('SYNTHETIC_RPC_DIAGNOSTIC',value); for (const cb of handlers) cb(value); }
+          for (const value of reply.lines) for (const cb of handlers) cb(value);
         });
       },
     },timeoutMs:3000});
