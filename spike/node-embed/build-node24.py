@@ -3,6 +3,8 @@ import argparse
 from pathlib import Path
 import subprocess
 import ast
+import os
+import signal
 p=argparse.ArgumentParser()
 p.add_argument('--source',type=Path,required=True)
 p.add_argument('--libuv-prefix',type=Path,required=True)
@@ -21,7 +23,21 @@ try:
         assert config['node_shared']=='true' and config['node_shared_libuv']=='true'
     else:
         subprocess.run(['./configure','--shared','--shared-libuv','--shared-libuv-includes='+str(uv/'include'),'--shared-libuv-libpath='+str(uv/'lib')],cwd=root,check=True,timeout=60)
-    subprocess.run(['make','-j'+str(a.jobs)],cwd=root,check=True,timeout=a.deadline)
+    child=subprocess.Popen(['make','-j'+str(a.jobs)],cwd=root,start_new_session=True)
+    try:
+        code=child.wait(timeout=a.deadline)
+        if code: raise subprocess.CalledProcessError(code,child.args)
+    except subprocess.TimeoutExpired:
+        snapshot=subprocess.check_output(['ps','-axo','pid=,ppid='],text=True,timeout=5)
+        rows=[tuple(map(int,line.split())) for line in snapshot.splitlines()]
+        owned={child.pid};changed=True
+        while changed:
+            count=len(owned);owned.update(pid for pid,parent in rows if parent in owned);changed=len(owned)!=count
+        for pid in sorted(owned,reverse=True):
+            try: os.kill(pid,signal.SIGTERM)
+            except ProcessLookupError: pass
+        child.wait(timeout=10)
+        raise
     a.state.write_text('done')
 except Exception as error:
     a.state.write_text('failed: '+str(error))
