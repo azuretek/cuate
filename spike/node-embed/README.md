@@ -31,6 +31,6 @@ The default LoadEnvironment entry point is deliberate. A custom require bootstra
 
 ## Limits and next step
 
-CFRunLoop is not a witnessed AppKit setup/menu. No Messages/Contacts library or permissions are exercised. No Developer ID/hardened-runtime/notarization, shipped dependency manifest/license review, updater migration, macOS minimum/CPU matrix or long soak is proven. Cancellation here rejects a synthetic result; it is not proof that a real Messages write can be cancelled safely. Direct V8 bindings must remain isolated behind the native interface and revalidated per Node major.
+CFRunLoop is not a witnessed AppKit setup/menu. No platform messaging or address-book library or permissions are exercised. No Developer ID/hardened-runtime/notarization, shipped dependency manifest/license review, updater migration, macOS minimum/CPU matrix or long soak is proven. Cancellation here rejects a synthetic result; it is not proof that a real messaging write can be cancelled safely. Direct V8 bindings must remain isolated behind the native interface and revalidated per Node major.
 
 Next: make the native host interface explicit and injectable, consume pinned imsg libraries in-process, exercise richer shutdown/forced-error cases and a supported 24-series shared build; then run the full platform/release gates and all twenty #479 acceptance obligations. No helper socket or second service is reintroduced.
