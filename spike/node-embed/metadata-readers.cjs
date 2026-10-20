@@ -18,5 +18,5 @@ module.exports = function metadataReaders(session) {
     },
     close() {},
   });
-  return {voices:reader('voices'),renames:reader('renames'),sendEffects:reader('sendEffects'),close(){closed=true;}};
+  return {voices:reader('voices'),renames:reader('renames'),sendEffects:reader('sendEffects'),members:reader('members'),close(){closed=true;}};
 };

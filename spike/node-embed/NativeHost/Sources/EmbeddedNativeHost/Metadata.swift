@@ -6,7 +6,7 @@ import SQLite3
 public enum MetadataFailure: String, Error { case invalid, unavailable, schema, query, limit }
 public enum MetadataReader {
     public static func read(database: String, kind: String, guids: [String]) throws -> [[Any]] {
-        guard ["voices", "renames", "sendEffects"].contains(kind), guids.count <= 128,
+        guard ["voices", "renames", "sendEffects", "members"].contains(kind), guids.count <= 128,
               guids.allSatisfy({ !$0.utf8.contains(0) && $0.utf8.count <= 512 }) else { throw MetadataFailure.invalid }
         let ids = Array(Set(guids.filter { !$0.isEmpty })).sorted()
         if ids.isEmpty { return [] }
@@ -34,7 +34,7 @@ public enum MetadataReader {
             }
             func text(_ s: OpaquePointer, _ n: Int32) -> String {
                 guard let p = sqlite3_column_text(s, n) else { return "" }
-                return String(cString: p)
+                return String(decoding: UnsafeBufferPointer(start: p, count: Int(sqlite3_column_bytes(s, n))), as: UTF8.self)
             }
             let schema = try statement("SELECT name FROM pragma_table_info('message')")
             var columns = Set<String>(); var code = sqlite3_step(schema)
@@ -51,6 +51,17 @@ public enum MetadataReader {
             case "renames":
                 guard columns.contains("item_type"), columns.contains("group_title") else { return [] }
                 select = "guid, group_title FROM message WHERE item_type = 2"
+            case "members":
+                guard columns.contains("item_type"), columns.contains("group_action_type") else { return [] }
+                let handles = try statement("SELECT name FROM pragma_table_info('handle')")
+                var hasHandle = false; code = sqlite3_step(handles)
+                while code == SQLITE_ROW { if text(handles, 0) == "id" { hasHandle = true }; code = sqlite3_step(handles) }
+                sqlite3_finalize(handles)
+                guard code == SQLITE_DONE else { throw MetadataFailure.schema }
+                let other = columns.contains("other_handle") && hasHandle
+                let handle = other ? "h.id" : "NULL"
+                let join = other ? " LEFT JOIN handle h ON h.ROWID = m.other_handle" : ""
+                select = "m.guid, m.item_type, m.group_action_type, \(handle) FROM message m\(join) WHERE ((m.item_type = 1 AND m.group_action_type = 0) OR (m.item_type = 1 AND m.group_action_type = 1) OR (m.item_type = 3 AND m.group_action_type = 0))"
             default:
                 guard columns.contains("expressive_send_style_id") else { return [] }
                 select = "guid, expressive_send_style_id FROM message WHERE COALESCE(expressive_send_style_id, '') != ''"
@@ -74,6 +85,13 @@ public enum MetadataReader {
                         value["playedAt"] = formatter.string(from: Date(timeIntervalSince1970: 978307200 + ms / 1000))
                     }
                     rows.append([guid, value])
+                } else if kind == "members" {
+                    let item = sqlite3_column_int64(query, 1), action = sqlite3_column_int64(query, 2)
+                    let name = item == 3 && action == 0 ? "leave" : item == 1 && action == 0 ? "add" : "remove"
+                    // JS String.trim whitespace set, including BOM but excluding NEL.
+                    let spaces = CharacterSet(charactersIn: "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D} \u{00A0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+                    let handle = sqlite3_column_type(query, 3) == SQLITE_TEXT ? text(query, 3).trimmingCharacters(in: spaces) : ""
+                    rows.append([guid, ["action": name, "handle": name != "leave" && !handle.isEmpty ? handle as Any : NSNull()]])
                 } else { rows.append([guid, text(query, 1)]) }
                 code = sqlite3_step(query)
             }

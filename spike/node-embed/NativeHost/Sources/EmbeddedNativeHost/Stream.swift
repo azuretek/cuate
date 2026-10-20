@@ -42,12 +42,16 @@ public final class NativeSession: @unchecked Sendable {
         task = nil
         return overflow ? 3 : (cancelled || failed) ? 1 : 0
     }
+    private func admitStart() throws {
+        lock.lock(); defer { lock.unlock() }
+        if cancelled { throw CancellationError() }
+    }
     public func start(engine: any NativeEngine, emit: @escaping @Sendable (String) -> Bool, end: @escaping @Sendable (Int32) -> Void) {
         lock.lock(); defer { lock.unlock() }
         precondition(!started); started = true
         task = Task { [self] in
             var failed = false
-            do { try await engine.run(lines: lines, emit: { [self] line in
+            do { try admitStart(); try Task.checkCancellation(); try await engine.run(lines: lines, emit: { [self] line in
                 if !emit(line) { outputFailed() }
             }) } catch { failed = true }
             let code = terminal(failed)

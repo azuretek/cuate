@@ -5,6 +5,11 @@ private struct Echo: NativeEngine {
         for try await line in lines { try Task.checkCancellation(); emit(line) }
     }
 }
+private struct MustNotStart: NativeEngine {
+    func run(lines: AsyncThrowingStream<String, Error>, emit: @escaping @Sendable (String) -> Void) async throws {
+        XCTFail("cancelled-before-start engine entered"); emit("unexpected")
+    }
+}
 final class StreamTests: XCTestCase {
     func testBoundedAdmissionAndEOFDrain() async {
         let s=NativeSession(capacity:2)
@@ -29,6 +34,12 @@ final class StreamTests: XCTestCase {
         await fulfillment(of:[terminal],timeout:3); XCTAssertEqual(s.write("late"),2)
     }
 
+    func testCancelledEngineNeverStarts() async {
+        let s = NativeSession(); XCTAssertTrue(s.close(cancel: true))
+        let terminal = expectation(description: "engine not entered"); terminal.assertForOverFulfill = true
+        s.start(engine: MustNotStart(), emit: { _ in XCTFail("unexpected delivery"); return true }, end: { code in XCTAssertEqual(code, 1); terminal.fulfill() })
+        await fulfillment(of: [terminal], timeout: 3)
+    }
     func testCancelBeforeStartHasNoDelivery() async {
         let s=NativeSession(); XCTAssertEqual(s.write("accepted"),0); XCTAssertTrue(s.close(cancel:true))
         let terminal=expectation(description:"prestart cancel")
