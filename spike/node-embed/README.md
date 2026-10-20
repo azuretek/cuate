@@ -11,7 +11,8 @@ Measured candidate: Node 26.7.0, ABI 147. The repository declares node >=22.13 a
 On an approved quiet Apple build host with Xcode and an existing Node shared-library prefix:
 
 ~~~sh
-python3 spike/node-embed/build.py --node-prefix "$NODE_PREFIX" --output "$SCRATCH/package"
+swift test --package-path spike/node-embed/NativeHost --disable-automatic-resolution --jobs 2
+python3 spike/node-embed/build.py --node-prefix "$NODE_PREFIX" --native-library spike/node-embed/NativeHost/.build/debug/libEmbeddedNativeHost.dylib --output "$SCRATCH/package"
 cp -R "$SCRATCH/package" "$SCRATCH/relocated"
 python3 spike/node-embed/check.py --package "$SCRATCH/relocated" --repo "$PWD" --logs "$SCRATCH/results"
 ~~~
@@ -31,6 +32,14 @@ The default LoadEnvironment entry point is deliberate. A custom require bootstra
 
 ## Limits and next step
 
-CFRunLoop is not a witnessed AppKit setup/menu. No platform messaging or address-book library or permissions are exercised. No Developer ID/hardened-runtime/notarization, shipped dependency manifest/license review, updater migration, macOS minimum/CPU matrix or long soak is proven. Cancellation here rejects a synthetic result; it is not proof that a real messaging write can be cancelled safely. Direct V8 bindings must remain isolated behind the native interface and revalidated per Node major.
+CFRunLoop is not a witnessed AppKit setup/menu. The pinned native libraries are linked and exercised against synthetic data only; no live platform database, write, address-book lookup or permission is exercised. No Developer ID/hardened-runtime/notarization, shipped dependency manifest/license review, updater migration, macOS minimum/CPU matrix or long soak is proven. Cancellation here rejects a synthetic result; it is not proof that a real messaging write can be cancelled safely. Direct V8 bindings must remain isolated behind the native interface and revalidated per Node major.
 
-Next: make the native host interface explicit and injectable, consume pinned imsg libraries in-process, exercise richer shutdown/forced-error cases and a supported 24-series shared build; then run the full platform/release gates and all twenty #479 acceptance obligations. No helper socket or second service is reintroduced.
+Next: expand native read/event/API adapter parity and validate a supported 24-series shared build; then run the full platform/release gates and all twenty #479 acceptance obligations. No helper socket or second service is reintroduced.
+
+## Native host and forced failures
+
+NativeHost pins imsg 0.17.0-cuate.1 at revision 4aa95deb46ddbd92419b3b47717d9bf8acbca3d3, with the transitive lockfile committed. NativeEngine is injectable; LibraryEngine calls IMsgRPCServer.run(lines:) directly, receiving RPCWriter lines in memory. A finite-batch C entry point copies request strings before asynchronous work and sends one terminal callback only after the engine drains. The C++ bridge copies that callback before its C string expires and resolves on the owning isolate through uv_async. No imsg command, stdin pipe, helper process or socket is involved.
+
+Five Swift tests cover fake drain/source failure and actual-library dispatch, source failure and cancellation. library.cjs asserts 16 concurrent unknown-method replies, then creates a synthetic SQLite database and reads one message through the actual pinned core/RPC libraries. The returned native PID must equal the JS/Swift PID. These are read/dispatch proofs, not safe real-write proofs. The current C adapter is finite-batch only: long-lived subscriptions, event forwarding and full server-engine integration remain open. Cancelling a JS promise does not claim cancellation of a native write.
+
+The original default process exit handler terminated before returning to Swift when an uncaught JS error had a pending native callback. Forced runtime throw, load-time throw and explicit process.exit(7) now stop JS admission, preserve their exit status, drain outstanding terminal callbacks without resolving abandoned promises, close uv handles, and return to Swift. A five-second native-drain failsafe exits70 with FORCED_NATIVE_DRAIN_TIMEOUT rather than hang indefinitely. The checker expects nonzero statuses1/7/1 for these intentional failures and requires FORCED_NATIVE_DRAIN_PASS, main-loop ticks and bundled-loader assertions; an error is not counted as a normal successful exit.

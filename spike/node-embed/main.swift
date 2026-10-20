@@ -32,7 +32,7 @@ let worker = Thread {
 worker.start()
 CFRunLoopRun()
 timer.invalidate()
-let isProbe = CommandLine.arguments.count > 1 && ["probe.cjs", "suite.cjs"].contains(URL(fileURLWithPath: CommandLine.arguments[1]).lastPathComponent)
+let isProbe = CommandLine.arguments.count > 1 && ["probe.cjs", "suite.cjs", "library.cjs", "forced.cjs", "exit.cjs", "load-error.cjs"].contains(URL(fileURLWithPath: CommandLine.arguments[1]).lastPathComponent)
 if isProbe { precondition(ticks > 0) }
 embed_dispose()
 for arg in args { free(arg) }

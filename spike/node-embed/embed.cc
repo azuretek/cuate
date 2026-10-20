@@ -10,7 +10,7 @@
 using namespace v8;
 static decltype(node::InitializeOncePerProcess(std::vector<std::string>{})) init;
 static std::unique_ptr<node::MultiIsolatePlatform> platform;
-struct Reply { int32_t id, pid, main_thread; };
+struct Reply { int32_t id, pid, main_thread; std::string payload; int error = 0; bool rpc = false; };
 struct Pending { Global<Promise::Resolver> resolver; bool cancelled = false; };
 struct Runtime {
   Isolate* isolate;
@@ -48,7 +48,11 @@ static void deliver(uv_async_t* handle) {
       Local<Object> value = Object::New(isolate);
       value->Set(context, String::NewFromUtf8Literal(isolate,"pid"), Integer::New(isolate,reply.pid)).Check();
       value->Set(context, String::NewFromUtf8Literal(isolate,"mainThread"), Boolean::New(isolate,reply.main_thread)).Check();
-      found->second.resolver.Get(isolate)->Resolve(context,value).Check();
+      if (reply.rpc) {
+        auto payload = String::NewFromUtf8(isolate, reply.payload.c_str()).ToLocalChecked();
+        if (reply.error) found->second.resolver.Get(isolate)->Reject(context, Exception::Error(payload)).Check();
+        else found->second.resolver.Get(isolate)->Resolve(context, payload).Check();
+      } else found->second.resolver.Get(isolate)->Resolve(context,value).Check();
     }
     found->second.resolver.Reset(); state->pending.erase(found);
   }
@@ -57,6 +61,23 @@ static void deliver(uv_async_t* handle) {
 extern "C" void native_complete(int32_t id, int32_t pid, int32_t main_thread) {
   { std::lock_guard<std::mutex> lock(runtime->mutex); runtime->replies.push_back({id,pid,main_thread}); }
   uv_async_send(&runtime->async);
+}
+extern "C" void native_rpc_complete(int32_t id, const char* payload, int32_t error) {
+  { std::lock_guard<std::mutex> lock(runtime->mutex); runtime->replies.push_back({id,0,0,payload ? payload : "",error,true}); }
+  uv_async_send(&runtime->async);
+}
+static void rpc_request(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate(); auto context = isolate->GetCurrentContext();
+  if (info.Length() != 3 || !info[0]->IsInt32() || !info[1]->IsString() || !info[2]->IsString()) {
+    isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate,"invalid rpc arguments"))); return;
+  }
+  int id = info[0].As<Int32>()->Value();
+  if (runtime->pending.count(id)) { isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate,"duplicate native id"))); return; }
+  auto resolver = Promise::Resolver::New(context).ToLocalChecked(); runtime->pending[id].resolver.Reset(isolate,resolver);
+  uv_ref(reinterpret_cast<uv_handle_t*>(&runtime->async));
+  String::Utf8Value request(isolate,info[1]), database(isolate,info[2]);
+  host_rpc(id,*request,*database,native_rpc_complete);
+  info.GetReturnValue().Set(resolver->GetPromise());
 }
 static void request(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate(); Local<Context> context = isolate->GetCurrentContext();
@@ -95,9 +116,22 @@ extern "C" int embed_run(void) {
     uv_unref(reinterpret_cast<uv_handle_t*>(&state.async));
     context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeAsync"),Function::New(context,request).ToLocalChecked()).Check();
     context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeCancel"),Function::New(context,cancel).ToLocalChecked()).Check();
+    context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeRPC"),Function::New(context,rpc_request).ToLocalChecked()).Check();
+    int requested_exit = -1;
+    node::SetProcessExitHandler(setup->env(), [&](node::Environment* env, int code) { requested_exit = code; node::Stop(env); });
     auto loaded = node::LoadEnvironment(setup->env(), node::StartExecutionCallback{});
     result=loaded.IsEmpty()?1:node::SpinEventLoop(setup->env()).FromMaybe(1);
-    if (!state.pending.empty()) { fprintf(stderr,"native pending at shutdown\n"); result=1; }
+    if (requested_exit >= 0) result = requested_exit;
+    if (!state.pending.empty()) {
+      for (auto& entry : state.pending) { entry.second.cancelled = true; entry.second.resolver.Reset(); }
+      // Stop JS admission but keep native state and uv_async alive until every terminal callback.
+      uv_timer_t deadline; uv_timer_init(setup->event_loop(), &deadline);
+      uv_timer_start(&deadline, [](uv_timer_t*) { fprintf(stderr,"FORCED_NATIVE_DRAIN_TIMEOUT\n"); std::_Exit(70); }, 5000, 0);
+      while (!state.pending.empty()) uv_run(setup->event_loop(),UV_RUN_ONCE);
+      uv_timer_stop(&deadline); uv_close(reinterpret_cast<uv_handle_t*>(&deadline),nullptr);
+      uv_run(setup->event_loop(),UV_RUN_NOWAIT);
+      fprintf(stderr,"FORCED_NATIVE_DRAIN_PASS\n");
+    }
     uv_close(reinterpret_cast<uv_handle_t*>(&state.async),nullptr);
     node::Stop(setup->env());
     uv_run(setup->event_loop(),UV_RUN_NOWAIT);
