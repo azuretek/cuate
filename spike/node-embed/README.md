@@ -11,8 +11,8 @@ Measured candidate: Node 26.7.0, ABI 147. The repository declares node >=22.13 a
 On an approved quiet Apple build host with Xcode and an existing Node shared-library prefix:
 
 ~~~sh
-swift test --package-path spike/node-embed/NativeHost --disable-automatic-resolution --jobs 2
-python3 spike/node-embed/build.py --node-prefix "$NODE_PREFIX" --native-library spike/node-embed/NativeHost/.build/debug/libEmbeddedNativeHost.dylib --output "$SCRATCH/package"
+swift test --package-path spike/node-embed/NativeHost --scratch-path spike/node-embed/NativeHost/out --disable-automatic-resolution --jobs 2
+python3 spike/node-embed/build.py --node-prefix "$NODE_PREFIX" --native-library spike/node-embed/NativeHost/out/debug/libEmbeddedNativeHost.dylib --output "$SCRATCH/package"
 cp -R "$SCRATCH/package" "$SCRATCH/relocated"
 python3 spike/node-embed/check.py --package "$SCRATCH/relocated" --repo "$PWD" --logs "$SCRATCH/results"
 ~~~

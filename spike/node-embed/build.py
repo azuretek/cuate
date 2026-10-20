@@ -55,7 +55,7 @@ if len(nodes) != 1:
     raise RuntimeError('expected one versioned libnode')
 node = nodes[0]
 imsg_revision = '4aa95deb46ddbd92419b3b47717d9bf8acbca3d3'
-checkout = source / 'NativeHost/.build/checkouts/imsg'
+checkout = source / 'NativeHost/out/checkouts/imsg'
 if run('git', '-C', checkout, 'rev-parse', 'HEAD').strip() != imsg_revision:
     raise RuntimeError('native checkout does not match pinned imsg revision')
 uv = next(dep for dep in dependencies(node) if 'libuv.' in dep)
