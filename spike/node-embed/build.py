@@ -75,7 +75,7 @@ for target in [*seen.values(), host]:
     for dep in dependencies(target):
         if not dep.startswith(('/usr/lib/', '/System/', '@rpath/', '@loader_path/', '@executable_path/')):
             raise RuntimeError('ambient dependency: ' + dep)
-for name in ['probe.cjs', 'suite.cjs', 'library.cjs', 'forced.cjs', 'exit.cjs', 'load-error.cjs']:
+for name in ['probe.cjs', 'suite.cjs', 'library.cjs', 'forced.cjs', 'exit.cjs', 'load-error.cjs', 'stream.cjs', 'stream-transport.cjs', 'stream-exit.cjs']:
     shutil.copy2(source / name, output / name)
 header = (prefix / 'include/node/node_version.h').read_text()
 version = '.'.join(re.search(r'#define NODE_' + part + r'_VERSION\s+(\d+)', header).group(1) for part in ['MAJOR', 'MINOR', 'PATCH'])

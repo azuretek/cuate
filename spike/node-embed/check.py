@@ -27,9 +27,9 @@ assert manifest['imsgRevision'] == '4aa95deb46ddbd92419b3b47717d9bf8acbca3d3'
 results = []
 with tempfile.TemporaryDirectory(prefix='embed-home-') as home:
     env = {'HOME': home, 'PATH': '/usr/bin:/bin', 'DYLD_PRINT_LIBRARIES': '1'}
-    files = ['probe', 'library', 'forced', 'exit', 'load-error', 'api', 'service', 'update', 'backup', 'artifact', 'fixtures']
+    files = ['probe', 'library', 'forced', 'exit', 'load-error', 'stream', 'stream-exit', 'api', 'service', 'update', 'backup', 'artifact', 'fixtures']
     for name in files:
-        command = [str(package / 'EmbeddedHost'), str(package / (name + '.cjs' if name in ['probe','library','forced','exit','load-error'] else 'suite.cjs')), str(repo if name in ['probe','library','forced','exit','load-error'] else repo / 'server/test' / (name + '.test.js'))]
+        command = [str(package / 'EmbeddedHost'), str(package / (name + '.cjs' if name in ['probe','library','forced','exit','load-error','stream','stream-exit'] else 'suite.cjs')), str(repo if name in ['probe','library','forced','exit','load-error','stream','stream-exit'] else repo / 'server/test' / (name + '.test.js'))]
         try:
             result = subprocess.run(command, cwd=repo, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
             text = result.stdout
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='embed-home-') as home:
             code = 124
         (args.logs / (name + '.log')).write_text(text)
         ticks = re.search(r'SWIFT_MAIN_LOOP_TICKS=(\d+) PID=(\d+) RETURN=(\d+)', text)
-        expected = 7 if name == 'exit' else 1 if name in ['forced','load-error'] else 0
+        expected = 7 if name in ['exit','stream-exit'] else 1 if name in ['forced','load-error'] else 0
         assert ticks and int(ticks[1]) > 0 and int(ticks[3]) == expected, name + ' main loop/return failure'
         assert code == expected, name + ' exit ' + str(code)
         loaded = [line for line in text.splitlines() if line.startswith('dyld[') and re.search(r'\.dylib$',line)]
@@ -54,7 +54,11 @@ with tempfile.TemporaryDirectory(prefix='embed-home-') as home:
             assert 'PINNED_LIBRARY_16_REPLIES_SAME_PID_PASS PID=' + ticks[2] in text
             assert 'PINNED_CORE_SYNTHETIC_HISTORY_PASS PID=' + ticks[2] in text
             assert 'UNCHANGED_JS_RPC_NATIVE_READ_ERRORS_PASS PID=' + ticks[2] in text
-        elif name in ['forced','exit','load-error']:
+            assert 'PINNED_LIBRARY_SYNTHETIC_WATCH_UNSUBSCRIBE_PASS PID=' + ticks[2] in text
+        elif name == 'stream':
+            assert 'NATIVE_STREAM_SERVER_AUTH_WS_STATE_DRAIN_PASS PID=' + ticks[2] in text
+            assert 'NATIVE_STREAM_BACKPRESSURE_CANCEL_LIBRARY_PASS PID=' + ticks[2] in text
+        elif name in ['forced','exit','load-error','stream-exit']:
             assert 'FORCED_NATIVE_DRAIN_PASS' in text
             assert 'LATE_NATIVE_COMPLETION' not in text
         else:

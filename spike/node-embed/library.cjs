@@ -1,3 +1,4 @@
+const { setTimeout, clearTimeout } = require('node:timers');
 const console = require('node:console');
 const process = require('node:process');
 const { nativeRPC, nativeCancel } = globalThis;
@@ -55,6 +56,33 @@ INSERT INTO chat_message_join VALUES (1,1);`);
     assert.equal(history.messages[0].text,'synthetic-library-read');
     await assert.rejects(rpc.request('synthetic.unknown',{}),{code:-32601});
     await assert.rejects(rpc.request('messages.history',{chat_id:0}),{code:-32602});
+    const transport = require('./stream-transport.cjs')({database:fixture});
+    const streaming=createRpc({transport,timeoutMs:3000});
+    const found=new Map(), waiting=new Map();
+    streaming.onNotification((method,params)=>{
+      if(method!=='message')return;
+      const id=Number(params.message.id);found.set(id,params.message);waiting.get(id)?.(params.message);
+    });
+    const observe=id=>found.has(id)?Promise.resolve(found.get(id)):new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{waiting.delete(id);reject(new Error('native watch deadline '+id));},5000);
+      waiting.set(id,value=>{clearTimeout(timer);waiting.delete(id);resolve(value);});
+    });
+    try {
+      const seed=new DatabaseSync(fixture);
+      try { seed.exec("INSERT INTO message VALUES (2,NULL,'synthetic-watch-seed','synthetic@example.invalid',2000000000,1,'synthetic');INSERT INTO chat_message_join VALUES (1,2);"); } finally {seed.close();}
+      // Pinned watcher defines zero as live-from-head, not replay-from-row-zero.
+      const subscription=await streaming.request('watch.subscribe',{since_rowid:1,debounce_ms:10});
+      assert.ok(subscription.subscription>0);
+      const first=await observe(2); assert.equal(first.text,'synthetic-watch-seed');
+      const writer=new DatabaseSync(fixture);
+      try {
+        writer.exec("INSERT INTO message VALUES (3,NULL,'synthetic-watch-update','synthetic@example.invalid',2000000000,1,'synthetic');INSERT INTO chat_message_join VALUES (1,3);");
+      } finally {writer.close();}
+      const second=await observe(3); assert.equal(second.text,'synthetic-watch-update');
+      assert.equal((await streaming.request('watch.unsubscribe',{subscription:subscription.subscription})).ok,true);
+      assert.equal(found.size,2);
+      console.log('PINNED_LIBRARY_SYNTHETIC_WATCH_UNSUBSCRIBE_PASS PID='+process.pid);
+    } finally {await transport.close(true);}
     console.log('UNCHANGED_JS_RPC_NATIVE_READ_ERRORS_PASS PID='+process.pid);
     console.log('PINNED_CORE_SYNTHETIC_HISTORY_PASS PID='+process.pid);
   } finally { rmSync(fixtureDir,{recursive:true}); }
