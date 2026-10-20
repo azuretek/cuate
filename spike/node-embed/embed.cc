@@ -57,6 +57,7 @@ static void deliver(uv_async_t* handle) {
     found->second.resolver.Reset(); state->pending.erase(found);
   }
   if (state->pending.empty()) uv_unref(reinterpret_cast<uv_handle_t*>(&state->async));
+  isolate->PerformMicrotaskCheckpoint();
 }
 extern "C" void native_complete(int32_t id, int32_t pid, int32_t main_thread) {
   std::lock_guard<std::mutex> lock(runtime->mutex);

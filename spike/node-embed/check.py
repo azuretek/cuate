@@ -52,6 +52,7 @@ with tempfile.TemporaryDirectory(prefix='embed-home-') as home:
         elif name == 'library':
             assert 'PINNED_LIBRARY_16_REPLIES_SAME_PID_PASS PID=' + ticks[2] in text
             assert 'PINNED_CORE_SYNTHETIC_HISTORY_PASS PID=' + ticks[2] in text
+            assert 'UNCHANGED_JS_RPC_NATIVE_READ_ERRORS_PASS PID=' + ticks[2] in text
         elif name in ['forced','exit','load-error']:
             assert 'FORCED_NATIVE_DRAIN_PASS' in text
             assert 'LATE_NATIVE_COMPLETION' not in text

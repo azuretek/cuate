@@ -7,6 +7,8 @@ const {DatabaseSync} = require('node:sqlite');
 const {tmpdir} = require('node:os');
 const path = require('node:path');
 (async () => {
+  const {pathToFileURL} = require('node:url');
+  const {createRpc} = await import(pathToFileURL(path.join(process.argv[2],'server/src/engine/rpc.js')).href);
   const db = path.join(tmpdir(), 'synthetic-native-' + process.pid + '.db');
   assert.equal(existsSync(db), false);
   const replies = await Promise.all(Array.from({length:16}, (_, i) => nativeRPC(200+i, JSON.stringify({jsonrpc:'2.0',id:i,method:'synthetic.unknown'}), db)));
@@ -33,6 +35,21 @@ INSERT INTO chat_message_join VALUES (1,1);`);
     assert.equal(value.error,undefined,JSON.stringify(value));
     assert.equal(value.result.messages.length,1);
     assert.equal(value.result.messages[0].text,'synthetic-library-read');
+    const handlers = new Set(); let nativeId=400;
+    const rpc = createRpc({transport:{
+      onLine(cb) { handlers.add(cb); }, onExit() {},
+      write(line) {
+        nativeRPC(nativeId++,line,fixture).then(raw => {
+          const reply=JSON.parse(raw); assert.equal(reply.pid,process.pid);
+          for (const value of reply.lines) { console.log('SYNTHETIC_RPC_DIAGNOSTIC',value); for (const cb of handlers) cb(value); }
+        });
+      },
+    },timeoutMs:3000});
+    const history = await rpc.request('messages.history',{chat_id:1,limit:5});
+    assert.equal(history.messages[0].text,'synthetic-library-read');
+    await assert.rejects(rpc.request('synthetic.unknown',{}),{code:-32601});
+    await assert.rejects(rpc.request('messages.history',{chat_id:0}),{code:-32602});
+    console.log('UNCHANGED_JS_RPC_NATIVE_READ_ERRORS_PASS PID='+process.pid);
     console.log('PINNED_CORE_SYNTHETIC_HISTORY_PASS PID='+process.pid);
   } finally { rmSync(fixtureDir,{recursive:true}); }
   console.log('PINNED_LIBRARY_16_REPLIES_SAME_PID_PASS PID='+process.pid);
