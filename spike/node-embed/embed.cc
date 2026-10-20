@@ -12,7 +12,7 @@ static decltype(node::InitializeOncePerProcess(std::vector<std::string>{})) init
 static std::unique_ptr<node::MultiIsolatePlatform> platform;
 struct Reply { int32_t id, pid, main_thread; std::string payload; int error = 0; bool rpc = false; };
 struct Pending { Global<Promise::Resolver> resolver; bool cancelled = false; };
-struct Stream { Global<Function> line, end; bool abandoned = false; bool callback_failed = false; };
+struct Stream { std::string database; bool fixture = false; bool closing = false; Global<Function> line, end; bool abandoned = false; bool callback_failed = false; };
 struct StreamReply { int32_t id, code; std::string line; };
 struct Runtime {
   Isolate* isolate;
@@ -54,6 +54,7 @@ static void stream_open(const FunctionCallbackInfo<Value>& info) {
   auto& stream=runtime->streams[id]; stream.line.Reset(isolate,info[3].As<Function>()); stream.end.Reset(isolate,info[4].As<Function>());
   String::Utf8Value database(isolate,info[1]);
   if (std::char_traits<char>::length(*database)!=static_cast<size_t>(database.length())) { runtime->streams.erase(id); info.GetReturnValue().Set(false); return; }
+  stream.database = *database; stream.fixture = info[2]->BooleanValue(isolate);
   if (!host_stream_open(id,*database,info[2]->BooleanValue(isolate),stream_complete)) { runtime->streams.erase(id); info.GetReturnValue().Set(false); return; }
   uv_ref(reinterpret_cast<uv_handle_t*>(&runtime->async)); info.GetReturnValue().Set(true);
 }
@@ -66,8 +67,28 @@ static void stream_write(const FunctionCallbackInfo<Value>& info) {
 static void stream_close(const FunctionCallbackInfo<Value>& info) {
   if (info.Length()!=2 || !info[0]->IsInt32() || !info[1]->IsBoolean()) { info.GetReturnValue().Set(false); return; }
   int id=info[0].As<Int32>()->Value();
+  if (runtime->streams.count(id)) runtime->streams[id].closing = true;
   info.GetReturnValue().Set(runtime->streams.count(id) && host_stream_close(id,info[1]->BooleanValue(info.GetIsolate())) != 0);
 }
+static void metadata_read(const FunctionCallbackInfo<Value>& info) {
+  auto* isolate = info.GetIsolate();
+  if (info.Length()!=3 || !info[0]->IsInt32() || !info[1]->IsString() || !info[2]->IsString()) {
+    isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate,"metadata.invalid"))); return;
+  }
+  auto found=runtime->streams.find(info[0].As<Int32>()->Value());
+  if (found==runtime->streams.end() || found->second.fixture || found->second.closing) {
+    isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate,"metadata.closed"))); return;
+  }
+  String::Utf8Value kind(isolate,info[1]), request(isolate,info[2]);
+  if (kind.length()>32 || request.length()>65536 || std::char_traits<char>::length(*kind)!=static_cast<size_t>(kind.length()) || std::char_traits<char>::length(*request)!=static_cast<size_t>(request.length())) {
+    isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate,"metadata.invalid"))); return;
+  }
+  char* result=host_metadata(found->second.database.c_str(),*kind,*request);
+  if (!result) { isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate,"metadata.failed"))); return; }
+  auto value=String::NewFromUtf8(isolate,result).ToLocalChecked(); host_metadata_free(result);
+  info.GetReturnValue().Set(value);
+}
+
 static void deliver(uv_async_t* handle) {
   auto* state = static_cast<Runtime*>(handle->data);
   Isolate* isolate = state->isolate;
@@ -168,6 +189,7 @@ extern "C" int embed_run(void) {
     uv_unref(reinterpret_cast<uv_handle_t*>(&state.async));
     context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeAsync"),Function::New(context,request).ToLocalChecked()).Check();
     context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeCancel"),Function::New(context,cancel).ToLocalChecked()).Check();
+    context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeMetadataRead"),Function::New(context,metadata_read).ToLocalChecked()).Check();
     context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeRPC"),Function::New(context,rpc_request).ToLocalChecked()).Check();
     context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeStreamOpen"),Function::New(context,stream_open).ToLocalChecked()).Check();
     context->Global()->Set(context,String::NewFromUtf8Literal(isolate,"nativeStreamWrite"),Function::New(context,stream_write).ToLocalChecked()).Check();

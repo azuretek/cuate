@@ -27,9 +27,9 @@ assert manifest['imsgRevision'] == '4aa95deb46ddbd92419b3b47717d9bf8acbca3d3'
 results = []
 with tempfile.TemporaryDirectory(prefix='embed-home-') as home:
     env = {'HOME': home, 'PATH': '/usr/bin:/bin', 'DYLD_PRINT_LIBRARIES': '1'}
-    files = ['probe', 'library', 'forced', 'exit', 'load-error', 'stream', 'stream-exit', 'api', 'service', 'update', 'backup', 'artifact', 'fixtures']
+    files = ['probe', 'library', 'forced', 'exit', 'load-error', 'stream', 'stream-exit', 'metadata', 'api', 'service', 'update', 'backup', 'artifact', 'fixtures']
     for name in files:
-        command = [str(package / 'EmbeddedHost'), str(package / (name + '.cjs' if name in ['probe','library','forced','exit','load-error','stream','stream-exit'] else 'suite.cjs')), str(repo if name in ['probe','library','forced','exit','load-error','stream','stream-exit'] else repo / 'server/test' / (name + '.test.js'))]
+        command = [str(package / 'EmbeddedHost'), str(package / (name + '.cjs' if name in ['probe','library','forced','exit','load-error','stream','stream-exit','metadata'] else 'suite.cjs')), str(repo if name in ['probe','library','forced','exit','load-error','stream','stream-exit','metadata'] else repo / 'server/test' / (name + '.test.js'))]
         try:
             result = subprocess.run(command, cwd=repo, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
             text = result.stdout
@@ -55,6 +55,8 @@ with tempfile.TemporaryDirectory(prefix='embed-home-') as home:
             assert 'PINNED_CORE_SYNTHETIC_HISTORY_PASS PID=' + ticks[2] in text
             assert 'UNCHANGED_JS_RPC_NATIVE_READ_ERRORS_PASS PID=' + ticks[2] in text
             assert 'PINNED_LIBRARY_SYNTHETIC_WATCH_UNSUBSCRIBE_PASS PID=' + ticks[2] in text
+        elif name == 'metadata':
+            assert 'NATIVE_METADATA_DIFFERENTIAL_READONLY_CONSUMERS_PASS PID=' + ticks[2] in text
         elif name == 'stream':
             assert 'NATIVE_STREAM_SERVER_AUTH_WS_STATE_DRAIN_PASS PID=' + ticks[2] in text
             assert 'NATIVE_STREAM_BACKPRESSURE_CANCEL_LIBRARY_PASS PID=' + ticks[2] in text
