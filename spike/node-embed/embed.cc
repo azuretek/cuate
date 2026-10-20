@@ -59,11 +59,13 @@ static void deliver(uv_async_t* handle) {
   if (state->pending.empty()) uv_unref(reinterpret_cast<uv_handle_t*>(&state->async));
 }
 extern "C" void native_complete(int32_t id, int32_t pid, int32_t main_thread) {
-  { std::lock_guard<std::mutex> lock(runtime->mutex); runtime->replies.push_back({id,pid,main_thread}); }
+  std::lock_guard<std::mutex> lock(runtime->mutex);
+  runtime->replies.push_back({id,pid,main_thread});
   uv_async_send(&runtime->async);
 }
 extern "C" void native_rpc_complete(int32_t id, const char* payload, int32_t error) {
-  { std::lock_guard<std::mutex> lock(runtime->mutex); runtime->replies.push_back({id,0,0,payload ? payload : "",error,true}); }
+  std::lock_guard<std::mutex> lock(runtime->mutex);
+  runtime->replies.push_back({id,0,0,payload ? payload : "",error,true});
   uv_async_send(&runtime->async);
 }
 static void rpc_request(const FunctionCallbackInfo<Value>& info) {
