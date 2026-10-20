@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from dylib_paths import executable_dependency
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--node-prefix', type=Path, required=True)
@@ -65,7 +66,7 @@ run('xcrun', 'swiftc', source / 'main.swift', output / 'embed.o', '-import-objc-
 for dep in dependencies(host):
     if dep.startswith(('/usr/lib/', '/System/', '@rpath/libswift')):
         continue
-    resolved = args.native_library.resolve() if Path(dep).name == args.native_library.name else dep
+    resolved = executable_dependency(dep, node, args.native_library.resolve())
     child = stage(resolved)
     run('install_name_tool', '-change', dep, '@executable_path/lib/' + child.name, host)
 for target in [*seen.values(), host]:
