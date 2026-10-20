@@ -45,6 +45,7 @@ with tempfile.TemporaryDirectory(prefix='embed-home-') as home:
         assert not any('/opt/homebrew/' in line for line in loaded), name + ' ambient runtime'
         assert any(str(package / 'lib/libnode') in line for line in loaded), name + ' missing bundled libnode'
         if name == 'probe':
+            assert 'RUNTIME_NODE_VERSION=' + manifest['node'] + ' ABI=' in text
             assert 'NATIVE_ASYNC_CANCEL_AFFINITY_WORKER_ESM_SQLITE_HTTP_WS_PASS PID=' + ticks[2] in text
             assert 'GRACEFUL_NATIVE_DRAIN_PENDING PID=' + ticks[2] in text
             assert 'SIGNAL_NATIVE_DRAIN_PASS PID=' + ticks[2] in text

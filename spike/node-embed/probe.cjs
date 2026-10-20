@@ -1,5 +1,6 @@
 // Synthetic, headless probe. Production server modules are imported unchanged.
 const process = require('node:process');
+const console = require('node:console');
 const { setTimeout, clearTimeout } = require('node:timers');
 delete process.env.DYLD_PRINT_LIBRARIES;
 const { nativeAsync, nativeCancel } = globalThis;
@@ -9,6 +10,7 @@ const { nativeAsync, nativeCancel } = globalThis;
   const path = require('node:path');
   const { DatabaseSync } = require('node:sqlite');
   const { Worker } = require('node:worker_threads');
+  console.log('RUNTIME_NODE_VERSION=' + process.versions.node + ' ABI=' + process.versions.modules);
   const pid = Number(process.env.SWIFT_MAIN_PID);
   assert.equal(process.pid, pid);
   const db = new DatabaseSync(':memory:');
