@@ -77,6 +77,11 @@ private struct SyntheticEngine: NativeEngine {
             case "status": response["result"] = ["version":"synthetic-native", "database":["ready":true], "methods":["watch.subscribe"]]
             case "watch.subscribe": subscribed = true; response["result"] = ["subscription":1]
             case "watch.unsubscribe": subscribed = false; response["result"] = ["ok":true]
+            case "messages.after":
+                let since = params["since_rowid"] as? Int ?? 0, limit = params["limit"] as? Int ?? 200
+                let eligible = messages.filter { ($0["id"] as? Int ?? 0) > since }.sorted { ($0["id"] as? Int ?? 0) < ($1["id"] as? Int ?? 0) }
+                let page = Array(eligible.prefix(max(0, limit)))
+                response["result"] = ["messages":page, "next_rowid":page.last?["id"] ?? since, "has_more":eligible.count > page.count]
             case "messages.history": response["result"] = ["messages":messages]
             case "chats.list": response["result"] = ["chats":[]]
             case "send":

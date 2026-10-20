@@ -104,7 +104,15 @@ public enum MetadataReader {
 public func hostMetadata(_ database: UnsafePointer<CChar>, _ kind: UnsafePointer<CChar>, _ request: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>? {
     let value: [String: Any]
     do {
-        guard let data = String(cString: request).data(using: .utf8), let ids = try JSONSerialization.jsonObject(with: data) as? [String] else { throw MetadataFailure.invalid }
+        guard let data = String(cString: request).data(using: .utf8) else { throw MetadataFailure.invalid }
+        let input = try JSONSerialization.jsonObject(with: data)
+        if String(cString: kind) == "changes" {
+            guard let object = input as? [String: Any] else { throw MetadataFailure.invalid }
+            let output: [String: Any] = ["pid": ProcessInfo.processInfo.processIdentifier, "value": try ChangeReader.read(database: String(cString: database), request: object)]
+            guard let bytes = try? JSONSerialization.data(withJSONObject: output), bytes.count <= 65536, let result = String(data: bytes, encoding: .utf8) else { return strdup("{\"error\":\"limit\"}") }
+            return strdup(result)
+        }
+        guard let ids = input as? [String] else { throw MetadataFailure.invalid }
         value = ["pid": ProcessInfo.processInfo.processIdentifier, "rows": try MetadataReader.read(database: String(cString: database), kind: String(cString: kind), guids: ids)]
     } catch { value = ["error": (error as? MetadataFailure)?.rawValue ?? "invalid"] }
     guard let data = try? JSONSerialization.data(withJSONObject: value), data.count <= 65536, let result = String(data: data, encoding: .utf8) else { return strdup("{\"error\":\"limit\"}") }

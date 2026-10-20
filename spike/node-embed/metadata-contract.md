@@ -18,7 +18,7 @@ metadata.cjs compares all four readers to the unchanged product readers using sy
 - voices.js, renames.js, send-effects.js: this native read-only port and injected JS adapters; no production wiring change.
 - edits.js: SQLite plus binary plist and attributed-string decoding remain to port; scan/latest and edit history must stay equivalent.
 - rich-text.js: attributed-string decoding, text identity checks and runs remain to port.
-- changes.js: read/unsent cursors and sweep semantics remain to port.
+- changes.js: bounded session-native latest/read/unsent/among reader and unchanged-engine differential proof; see change-contract.md for cursor semantics, replay/restart, resource refusals and remaining production cutover.
 - members.js: this native read-only port and injected JS adapter; add/remove/leave actions, optional handle schemas and JS-compatible string/type handling. History and live event consumers are exercised; no production wiring change.
 - backgrounds.js: row metadata plus imsg status subprocess and cache path lookup remain to port.
 - contacts.js: Contacts framework/JXA reads and changes are another owner; no files changed here.

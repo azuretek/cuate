@@ -54,3 +54,7 @@ This is not a live database or a product backend replacement. Production main.js
 ## Supplemental native metadata
 
 metadata-contract.md maps every production native dependency to its current evidence and remaining port. The voices, rename and send-effect readers now have a bounded Swift read-only implementation injected through the unchanged synchronous among() seam, tied to an admitted library session. metadata.cjs compares their results with the unchanged product readers and asserts downstream model consumption; no production setup or reader is replaced yet. These experiments preserve Node 24 as a supported engineering candidate, not a product runtime selection.
+
+## Supplemental change cursors
+
+change-contract.md declares the session-bound native read/unsent cursor port and its explicit experiment-only safety refusals. changes.cjs compares it to the unchanged product reader and unchanged engine consumers, including replay/restart, offline synthetic updates, tie boundaries and malformed/unavailable stores. Production wiring, API behavior and runtime selection are unchanged.
