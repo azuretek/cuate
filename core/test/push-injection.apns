@@ -1,0 +1,11 @@
+{
+  "aps": {
+    "alert": {
+      "title": "Synthetic remote sender",
+      "body": "Injected synthetic remote notice"
+    },
+    "sound": "default"
+  },
+  "chatId": "fixture-late",
+  "messageId": "m-late"
+}
