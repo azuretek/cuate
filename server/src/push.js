@@ -44,7 +44,10 @@ export function seal(key, payload) {
 // Which messages earn a notification: someone else's, a real message rather than a membership or name change.
 const notifies = (m) => m && !m.fromMe && !m.event;
 
-export function createPush({ store, config, log, fetchImpl = globalThis.fetch, isConnected = () => false, settings = () => ({}) }) {
+export function createPush({ store, config, log, fetchImpl = globalThis.fetch, settings = () => ({}) }) {
+  // Claim before awaiting the relay, so duplicate engine events racing each other cannot send twice. Bounded to
+  // recent messages; a server restart does not replay engine events as new arrivals.
+  const delivered = new Map();
   const relay = () => (config.push && config.push.relay) || null;
   async function call(route, body) {
     const ctrl = new AbortController();
@@ -83,14 +86,18 @@ export function createPush({ store, config, log, fetchImpl = globalThis.fetch, i
       return store.deletePushDevice(tokenId);
     },
 
-    // Every phone not already showing the app gets the notification. A phone the relay reports gone is forgotten.
+    // A socket can outlive a backgrounded page. Registered phones always use push, never socket presence as proof
+    // of presentation. The page suppresses its local twin after registering. A gone phone is forgotten.
     async notify(m, badge = null) {
       if (!relay() || !notifies(m)) return 0;
       if (settings()['notifications.newMessage'] === false) return 0;
       const payload = notice(m);
       let sent = 0;
       for (const d of store.listPushDevices()) {
-        if (isConnected(d.tokenId)) continue;
+        const delivery = JSON.stringify([d.tokenId, payload.chatId, payload.messageId]);
+        if (delivered.has(delivery)) continue;
+        delivered.set(delivery, true);
+        if (delivered.size > 4096) delivered.delete(delivered.keys().next().value);
         const body = { token: d.pushToken, ticket: d.ticket, sealed: seal(d.sealKey, payload) };
         if (Number.isInteger(badge)) body.badge = badge;
         try {

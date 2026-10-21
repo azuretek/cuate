@@ -204,6 +204,7 @@ class AppRoot extends KitElement {
     this.noticeReadSent = [];
     this.pending = new Map();
     this.client = null;
+    this.pushRegistered = false;
     this.drag = null;
     // The divider drag in flight ({ pointerId, startX, baseWidth, shown, moved }), while the pointer is down on the
     // seam. baseWidth and startX are fixed for the whole drag, so every step reads the pointer's own travel.
@@ -506,6 +507,7 @@ class AppRoot extends KitElement {
     this.phase = 'loading';
     this.problem = '';
     if (this.client) this.client.close();
+    this.pushRegistered = false;
     const client = createApiClient({ baseUrl: url, token, onEvent: (e) => this.onEvent(e), onState: (s) => this.onConnState(s) });
     // The store on the device (issue 441) paints the conversation list it holds at once, before any server read
     // answers, and opening a conversation it holds draws that at once too. One opened for another server starts empty.
@@ -790,9 +792,12 @@ class AppRoot extends KitElement {
     try {
       const reg = await this.bridge('push.token', {});
       if (!reg || this.client !== client) return false;
+      // Select the remote owner before registration can begin delivering. On refusal local notices remain active.
+      this.pushRegistered = true;
       await client.pushRegister(reg);
-      return true;
+      return this.client === client;
     } catch {
+      if (this.client === client) this.pushRegistered = false;
       return false;
     }
   }
@@ -809,6 +814,7 @@ class AppRoot extends KitElement {
     if (this.client) this.client.pushUnregister().catch(() => {});
     if (this.client) this.client.close();
     this.client = null;
+    this.pushRegistered = false;
     // Everything the device holds for this server goes with the token (issue 441).
     const cache = this.cache;
     this.cache = null;
@@ -1152,7 +1158,7 @@ class AppRoot extends KitElement {
       if (r.known) this.chats = r.chats;
       else this.reload();
       if (m.chatId === this.openChatId) this.receiveHistoryMessage(m);
-      if (!m.fromMe && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
+      if (!this.pushRegistered && !m.fromMe && !m.event && (document.hidden || m.chatId !== this.openChatId) && noticeEnabled(this.settings, 'newMessage')) {
         const chat = this.chats.find((c) => c.id === m.chatId);
         const title = chat ? chatTitle(chat) : m.senderName || m.sender || 'New message';
         this.bridge('notify', { ...messageNotice(title, m), ...messageTarget(m) }).catch(() => {});
