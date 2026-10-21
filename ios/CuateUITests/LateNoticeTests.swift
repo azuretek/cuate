@@ -6,6 +6,19 @@ import XCTest
 // the press. The proof is the fixture's: the conversation the press opened brought that late message into view.
 final class LateNoticeTests: XCTestCase {
     func testPressedNoticeRevealsALateMessage() {
+        checkNotice(body: "Late fixture message")
+    }
+
+    // The hosted runner injects this payload with simctl before this focused test. It models the already-opened
+    // notification content the service extension hands the app, not APNs delivery or service-extension execution.
+    func testInjectedNoticeRevealsALateMessage() throws {
+        guard ProcessInfo.processInfo.environment["CUATE_INJECTED_NOTICE_PROBE"] == "1" else {
+            throw XCTSkip("Run the hosted injected-notice probe after simctl push")
+        }
+        checkNotice(body: "Injected synthetic remote notice")
+    }
+
+    private func checkNotice(body: String) {
         let app = XCUIApplication()
         app.launchArguments = ["--late-notice-fixture"]
         XCUIDevice.shared.startInPortrait()
@@ -50,7 +63,7 @@ final class LateNoticeTests: XCTestCase {
             XCTFail("The app did not leave for the home screen: " + springboard.debugDescription)
             return
         }
-        let notice = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Late fixture message")).firstMatch
+        let notice = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", body)).firstMatch
         // A banner is drawn for a few seconds and a slow host can miss it, so a notice not seen as a banner is pressed
         // where the system keeps it, in Notification Center, which is the same notice and the same press. The wait for
         // the banner allows for a busy simulator, whose snapshots alone can take tens of seconds.

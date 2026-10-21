@@ -195,6 +195,8 @@ targets:
     platform: iOS
     sources:
       - path: CuateTests
+      # Compile the unmodified extension decoder into the test bundle; no second implementation.
+      - path: CuateNotify/NotificationService.swift
       - path: TestSupport
     dependencies:
       - target: Cuate

@@ -146,6 +146,7 @@ jobs:
       # Build for testing once, so the app and the test bundle are one product
       # and the test step below runs exactly what compiled.
       - name: Build for the simulator
+        id: simulator-build
         run: |
           set -eo pipefail
           xcodebuild \
@@ -179,6 +180,36 @@ jobs:
             -resultBundlePath proof/rotation.xcresult \
             test-without-building
 
+      # These are focused acceptance probes, not substitutes for the unchanged full suite above. The injected
+      # payload models content after service-extension decryption: simctl does not prove APNs or extension execution.
+      - name: Prove injected remote notification presentation and tap routing
+        if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' }}
+        timeout-minutes: 25
+        run: |
+          set -eo pipefail
+          APP_ID="$(/usr/libexec/PlistBuddy -c Print:CFBundleIdentifier build/Build/Products/Debug-iphonesimulator/Cuate.app/Info.plist)"
+          xcrun simctl push "$SIMULATOR_UDID" "$APP_ID" ../core/test/push-injection.apns
+          TEST_RUNNER_CUATE_INJECTED_NOTICE_PROBE=1 node scripts/test-with-diagnostics.mjs xcodebuild \
+            -project Cuate.xcodeproj -scheme Cuate \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO -resultBundlePath proof/push-injected.xcresult \
+            -only-testing:CuateUITests/LateNoticeTests/testInjectedNoticeRevealsALateMessage test-without-building
+
+      # Refusal persists across launches. Erase only this job's disposable simulator, after all other tests,
+      # so the permission dialog is real and denial cannot poison the ordinary suite's notification proofs.
+      - name: Prove denied notification permission on clean simulator state
+        if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' }}
+        timeout-minutes: 25
+        run: |
+          set -eo pipefail
+          xcrun simctl shutdown "$SIMULATOR_UDID"
+          xcrun simctl erase "$SIMULATOR_UDID"
+          TEST_RUNNER_CUATE_FRESH_PERMISSION_PROBE=1 node scripts/test-with-diagnostics.mjs xcodebuild \
+            -project Cuate.xcodeproj -scheme Cuate \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO -resultBundlePath proof/push-denied.xcresult \
+            -only-testing:CuateUITests/PushPresentationTests/testDeniedPermissionDoesNotPresent test-without-building
+
       # The XCTest captures (the rotation proof and the About page, issue 171) as PNG files beside the result bundle, so
       # the artifact can be read without Xcode. Evidence, not a gate: a failed export never fails the leg.
       - name: Export the test captures
@@ -190,6 +221,11 @@ jobs:
             xcrun xcresulttool export attachments --path proof/rotation.xcresult --output-path proof/captures || echo "the captures could not be exported"
             ls -l proof/captures || true
           fi
+          for probe in push-injected push-denied; do
+            if [ -d "proof/$probe.xcresult" ]; then
+              xcrun xcresulttool export attachments --path "proof/$probe.xcresult" --output-path "proof/$probe-captures" || echo "the $probe captures could not be exported"
+            fi
+          done
 
       - name: Keep the boot proof
         if: always()
