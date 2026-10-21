@@ -112,8 +112,8 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
   };
   // Our typing reaches the other person through the engine unless the switch is off (issue 319).
   const typing = createTyping({ publish, log: log.child('typing'), outbound: config.typing && config.typing.outgoing === false ? null : (chatId, on) => engine.typing?.(chatId, on) });
-  // A phone with the app open shows its own notice, so only phones with no open connection get a push (issue 347).
-  const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, isConnected: (id) => [...clients].some((c) => c.authed && c.id === id && c.ws.readyState === 1), settings: () => store.getAllSettings() });
+  // Socket presence does not establish foreground presentation: a background phone must still get its push.
+  const push = createPush({ store, config, log: log.child('push'), fetchImpl: pushFetch, settings: () => store.getAllSettings() });
   // Every message surface (history, replies, notices and pushes) uses the same Apple name authority.
   // A person a group event is about (issue 456) is named by the same authority, or by their address.
   const nameMessage = async (message) => {

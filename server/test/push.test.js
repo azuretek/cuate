@@ -125,16 +125,16 @@ test('with the relay switched off a phone is told so, and a bad registration is 
   }
 });
 
-test('no push for our own messages, for an event row, or to a phone that has the app open', async () => {
+test('no push for our own messages or an event row, and every registered phone receives incoming messages', async () => {
   const relay = fakeRelay();
   const devices = [{ tokenId: 'open', platform: 'ios', pushToken: PUSH_TOKEN, ticket: 't', sealKey: key() }, { tokenId: 'closed', platform: 'android', pushToken: PUSH_TOKEN, ticket: 't', sealKey: key() }];
   const store = { listPushDevices: () => devices, deletePushDevice: () => true };
   const log = { emit: () => {} };
-  const push = createPush({ store, config: { push: { relay: RELAY } }, log, fetchImpl: relay.fetchImpl, isConnected: (id) => id === 'open' });
+  const push = createPush({ store, config: { push: { relay: RELAY } }, log, fetchImpl: relay.fetchImpl });
   assert.equal(await push.notify({ id: 'a', chatId: 1, fromMe: true, text: 'mine', attachments: [] }), 0);
   assert.equal(await push.notify({ id: 'b', chatId: 1, fromMe: false, text: '', event: { kind: 'rename' }, attachments: [] }), 0);
-  assert.equal(await push.notify({ id: 'c', chatId: 1, fromMe: false, text: 'theirs', attachments: [] }), 1, 'only the phone with no open connection');
-  assert.equal(relay.sends().length, 1);
+  assert.equal(await push.notify({ id: 'c', chatId: 1, fromMe: false, text: 'theirs', attachments: [] }), 2, 'both registered phones, regardless of socket presence');
+  assert.equal(relay.sends().length, 2);
 });
 
 test('a notification carries the sender, a bounded text and where a tap goes, and fits the relay', () => {

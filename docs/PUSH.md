@@ -18,11 +18,14 @@ The relay is a function in our Firebase project. It reaches Firebase as the proj
 ## What the server does
 
 - A phone registers with `POST /api/v1/push` (its push token, `ios` or `android`, and a 32-byte key it made) and stops with `DELETE /api/v1/push`. One registration per signed-in device; revoking the device's token stops its notifications at once.
-- For each new message from someone else, every registered phone with no open connection to the server gets one notification: the sender, up to 600 characters of the text (or that an attachment was sent) and the conversation, sealed with AES-256-GCM under that phone's key. A phone with the app open shows its own notice instead.
+- For each new message from someone else, every registered phone gets one notification, even while its socket remains connected: the sender, up to 600 characters of the text (or that an attachment was sent) and the conversation, sealed with AES-256-GCM under that phone's key. After registration the phone uses that remote notice rather than raising a second local notice from its socket. iOS explicitly presents foreground notices too; desktops and phones without push retain local notices. Socket presence is not evidence that a backgrounded app can present anything.
 - The **New messages** switch in Settings turns these off too.
 - A phone the relay reports gone is forgotten.
 
 ## Limits
+
+- Notifications still depend on OS permission, Focus, network connectivity and the platform delivery service. An open socket never guarantees presentation.
+- Recent duplicate engine events are claimed once per device and message before relay I/O. The bounded in-memory claim retains the most recent 4096 deliveries, including uncertain relay outcomes, without automatically retrying them.
 
 - A server can send only to phones it registered through the relay.
 - Each phone can receive at most 30 notifications a minute, and each address can register at most 10 phones a minute.
