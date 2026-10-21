@@ -48,7 +48,7 @@ xcodebuild test -project Cuate.xcodeproj -scheme Cuate \
 
 ## Notification presentation probe
 
-Debug builds accept `--push-presentation-fixture` to raise one synthetic notification through the real bridge while the app is foregrounded. No server, account or Firebase token is used. PushPresentationTests checks foreground presentation and refusal after denying permission; run each on a fresh simulator so permission state is independent. LateNoticeTests covers background presentation and tap routing. These exercise the OS and app, not APNs or Firebase delivery. Simulator injection cannot prove a release token, network delivery or delivery under Focus.
+Debug builds accept `--push-presentation-fixture` to raise one synthetic notification through the real bridge while the app is foregrounded. No server, account or Firebase token is used. PushPresentationTests checks foreground presentation and refusal after denying permission; run each on a fresh simulator so permission state is independent. The denial probe is opt-in with `TEST_RUNNER_CUATE_FRESH_PERMISSION_PROBE=1` and `-only-testing:CuateUITests/PushPresentationTests/testDeniedPermissionDoesNotPresent`; otherwise it skips, since denying permission in the ordinary suite would poison later notification tests. LateNoticeTests covers background presentation and tap routing. These exercise the OS and app, not APNs or Firebase delivery. Simulator injection cannot prove a release token, network delivery or delivery under Focus.
 
 ## Default messaging app
 
