@@ -6,7 +6,11 @@ final class PushPresentationTests: XCTestCase {
         run(allow: true)
     }
 
-    func testDeniedPermissionDoesNotPresent() {
+    func testDeniedPermissionDoesNotPresent() throws {
+        // Refusing permission persists across app launches and would poison every later notification test.
+        guard ProcessInfo.processInfo.environment["CUATE_FRESH_PERMISSION_PROBE"] == "1" else {
+            throw XCTSkip("Run alone on a fresh simulator with TEST_RUNNER_CUATE_FRESH_PERMISSION_PROBE=1")
+        }
         run(allow: false)
     }
 
