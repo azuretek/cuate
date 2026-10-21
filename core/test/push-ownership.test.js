@@ -21,6 +21,15 @@ test('the actual page selects remote delivery before registration settles, falls
   page.client = { pushRegister: async () => { throw new Error('synthetic refusal'); } };
   assert.equal(await page.registerPush(), false);
   assert.equal(page.pushRegistered, false);
+  let rejectOld;
+  page.client = { pushRegister: () => new Promise((_, reject) => { rejectOld = reject; }) };
+  const stale = page.registerPush();
+  await Promise.resolve();
+  page.client = { pushRegister: async () => {} };
+  assert.equal(await page.registerPush(), true);
+  rejectOld(new Error('stale refusal'));
+  assert.equal(await stale, false);
+  assert.equal(page.pushRegistered, true, 'stale refusal cannot clear the new owner');
   page.notifyPermission = 'denied';
   assert.equal(await page.registerPush(), false);
 });
