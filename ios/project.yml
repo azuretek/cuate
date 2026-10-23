@@ -85,6 +85,7 @@ targets:
         script: |
           set -eu
           if [ "$CONFIGURATION" = Debug ]; then
+            cp "$SRCROOT/../core/test/push-presentation-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/push-presentation-fixture.js"
             cp "$SRCROOT/../core/test/rotation-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/rotation-fixture.js"
             cp "$SRCROOT/../core/test/system-bars-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/system-bars-fixture.js"
             cp "$SRCROOT/../core/test/about-fixture.js" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/about-fixture.js"
@@ -194,6 +195,8 @@ targets:
     platform: iOS
     sources:
       - path: CuateTests
+      # Compile the unmodified extension decoder into the test bundle; no second implementation.
+      - path: CuateNotify/NotificationService.swift
       - path: TestSupport
     dependencies:
       - target: Cuate

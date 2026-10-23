@@ -41,6 +41,12 @@ final class NoticeRouter: NSObject, UNUserNotificationCenterDelegate {
         bridge?.emit("notify.opened")
     }
 
+    // Registered phones use the remote notice even with the app open. Without this delegate iOS silently drops
+    // foreground notices. Local notices use the same presentation path when push is unavailable.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         var args: [String: Any] = [:]

@@ -46,6 +46,12 @@ xcodebuild test -project Cuate.xcodeproj -scheme Cuate \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
+## Notification presentation probe
+
+Debug builds accept `--push-presentation-fixture` to raise one synthetic notification through the real bridge while the app is foregrounded. No server, account or Firebase token is used. PushPresentationTests checks foreground presentation and refusal after denying permission; run each on a fresh simulator so permission state is independent. The denial probe is opt-in with `TEST_RUNNER_CUATE_FRESH_PERMISSION_PROBE=1` and `-only-testing:CuateUITests/PushPresentationTests/testDeniedPermissionDoesNotPresent`; otherwise it skips, since denying permission in the ordinary suite would poison later notification tests. LateNoticeTests covers background presentation and tap routing. These exercise the OS and app, not APNs or Firebase delivery. Simulator injection cannot prove a release token, network delivery or delivery under Focus.
+
+The hosted iOS workflow retains the full suite and additionally runs the opt-in denial probe after erasing only its disposable simulator. It also injects `core/test/push-injection.apns` with `simctl push` and runs `LateNoticeTests/testInjectedNoticeRevealsALateMessage` with `TEST_RUNNER_CUATE_INJECTED_NOTICE_PROBE=1`, pressing that distinct system notice and checking the same late-message routing assertions. The injected payload models already-decrypted notification content, not the sealed wire payload. `PushSealingTests` separately compiles the unmodified extension decoder and opens a server-produced synthetic ciphertext, refusing wrong keys and tampering. Neither probe proves OS service-extension invocation, Keychain entitlement sharing, Firebase/APNs registration or network delivery.
+
 ## Default messaging app
 
 The app answers the `im:` links iOS sends to the default messaging app (issue 333), and the page opens the conversation the link names or starts one. Being listed under Settings, Apps, Default Apps, Messaging needs the `com.apple.developer.messaging-app` entitlement, which Apple grants to a team on request. Until it is granted the build signs with `Cuate/Cuate.entitlements`; once it is, set the build setting `CUATE_ENTITLEMENTS` to `Cuate/CuateMessaging.entitlements` (in `project.yml`, or on the release job's command line) and the same build is offered as a default.
