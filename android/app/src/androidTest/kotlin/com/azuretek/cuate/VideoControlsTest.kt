@@ -90,6 +90,7 @@ class VideoControlsTest {
             val before = awaitControls(scenario, OURS)
             val missing = OURS.filter { it !in before }
             println("video controls ($shape) accessibility tree over the empty video:\n" + describeTree())
+            if (missing.isNotEmpty()) keepEmptyFailure(scenario, shape)
             assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + SystemSurface.failureSuffix(), missing.isEmpty())
             assertTrue("the fixture did not let the clip go", evaluate(scenario, "window.videoControlsRelease()") == "true")
             val scene = awaitState(scenario, "vc:ready ")
@@ -266,6 +267,92 @@ class VideoControlsTest {
             if (label.isNotEmpty() || node.isClickable) lines.add(node.className.toString() + " '" + label + "' " + bounds.toShortString())
         }
         return lines.joinToString("\n")
+    }
+
+    /** Evidence only after the original pre-clip deadline, never a recovery or a readiness condition (issue 509). */
+    private fun keepEmptyFailure(scenario: ActivityScenario<MainActivity>, shape: String) {
+        val evidence = JSONObject().put("shape", shape).put("stage", "empty-before-release")
+        fun capture(name: String, read: () -> Any?) {
+            try { evidence.put(name, read()) } catch (error: Throwable) {
+                evidence.put(name, JSONObject().put("error", error.toString()))
+            }
+        }
+        // Read all roots without the label/clickable filter used by the human-readable report.
+        capture("nativeTrees") {
+            roots().map { root ->
+                val lines = mutableListOf<String>()
+                walk(root) { node ->
+                    val bounds = Rect()
+                    node.getBoundsInScreen(bounds)
+                    lines.add("window=" + node.windowId + " class=" + node.className +
+                        " package=" + node.packageName + " children=" + node.childCount +
+                        " visible=" + node.isVisibleToUser + " bounds=" + bounds.toShortString() +
+                        " label=" + (node.contentDescription ?: node.text ?: ""))
+                }
+                lines.joinToString("\n")
+            }.joinToString("\n--- root ---\n")
+        }
+        capture("windows") {
+            instrumentation.uiAutomation.windows.joinToString("\n") { window ->
+                "id=" + window.id + " type=" + window.type + " layer=" + window.layer +
+                    " active=" + window.isActive + " focused=" + window.isFocused
+            }
+        }
+        capture("page") {
+            evaluate(scenario, """
+                (() => {
+                  const viewer = document.querySelector('app-image-viewer');
+                  const box = (node) => {
+                    if (!node) return null;
+                    const rect = node.getBoundingClientRect();
+                    const style = getComputedStyle(node);
+                    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+                    return { tag: node.tagName, label: node.getAttribute('aria-label'), role: node.getAttribute('role'),
+                      connected: node.isConnected, hidden: node.hidden, inert: node.inert,
+                      ariaHidden: node.getAttribute('aria-hidden'), display: style.display,
+                      visibility: style.visibility, opacity: style.opacity,
+                      rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+                      hit: hit ? { tag: hit.tagName, class: String(hit.className) } : null };
+                  };
+                  const controls = {};
+                  for (const selector of ['.viewer', '.close-button', '.viewer-prev', '.viewer-next', '.viewer-bar']) {
+                    controls[selector] = box(viewer?.querySelector(selector));
+                  }
+                  return { state: window.videoControlsState, visibility: document.visibilityState,
+                    focused: document.hasFocus(), video: Boolean(viewer?.querySelector('video.viewer-image')),
+                    pending: Boolean(viewer?.querySelector('.viewer-pending')),
+                    releasePresent: Boolean(document.querySelector('[aria-label="vc:release"]')),
+                    controls, viewport: { w: innerWidth, h: innerHeight, scale: devicePixelRatio } };
+                })()
+            """.trimIndent())
+        }
+        capture("webView") {
+            var state = "no web view"
+            scenario.onActivity { activity ->
+                webView(activity.findViewById(android.R.id.content))?.let { view ->
+                    state = "attached=" + view.isAttachedToWindow + " shown=" + view.isShown +
+                        " windowFocus=" + view.hasWindowFocus() + " visibility=" + view.visibility +
+                        " important=" + view.importantForAccessibility + " width=" + view.width + " height=" + view.height
+                }
+            }
+            state
+        }
+        // Keep a failure of one diagnostic from hiding the original assertion or the other evidence.
+        capture("screenshot") { keepScreenshot("video-controls-$shape-empty-failure.png"); "retained" }
+        capture("windowManager") {
+            instrumentation.uiAutomation.executeShellCommand("timeout 5 dumpsys window windows").use { descriptor ->
+                java.io.FileInputStream(descriptor.fileDescriptor).bufferedReader().use { it.readText() }
+            }
+        }
+        try {
+            val outputDir = java.io.File(requireNotNull(
+                InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+            ) { "The test runner must provide a retained output directory" })
+            kotlin.check(outputDir.isDirectory || outputDir.mkdirs()) { "Cannot create evidence directory" }
+            java.io.File(outputDir, "video-controls-$shape-empty-failure.json").writeText(evidence.toString(2))
+        } catch (error: Exception) {
+            println("video controls failure evidence could not be retained: $error\n$evidence")
+        }
     }
 
     /** The video's box on the screen, from the page's report in its own pixels, scaled onto the web view. */
