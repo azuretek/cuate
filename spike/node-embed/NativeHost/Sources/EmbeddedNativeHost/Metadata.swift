@@ -6,10 +6,12 @@ import SQLite3
 public enum MetadataFailure: String, Error { case invalid, unavailable, schema, query, limit }
 public enum MetadataReader {
     public static func read(database: String, kind: String, guids: [String]) throws -> [[Any]] {
-        guard ["voices", "renames", "sendEffects", "members"].contains(kind), guids.count <= 128,
+        guard ["voices", "renames", "sendEffects", "members", "backgrounds", "backgroundLatest"].contains(kind), guids.count <= 128,
               guids.allSatisfy({ !$0.utf8.contains(0) && $0.utf8.count <= 512 }) else { throw MetadataFailure.invalid }
         let ids = Array(Set(guids.filter { !$0.isEmpty })).sorted()
-        if ids.isEmpty { return [] }
+        let latest = kind == "backgroundLatest"
+        guard !latest || guids.isEmpty else { throw MetadataFailure.invalid }
+        if ids.isEmpty && !latest { return [] }
         var db: OpaquePointer?
         guard sqlite3_open_v2(database, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else {
             sqlite3_close(db); throw MetadataFailure.unavailable
@@ -51,6 +53,9 @@ public enum MetadataReader {
             case "renames":
                 guard columns.contains("item_type"), columns.contains("group_title") else { return [] }
                 select = "guid, group_title FROM message WHERE item_type = 2"
+            case "backgrounds", "backgroundLatest":
+                guard columns.contains("item_type"), columns.contains("group_action_type") else { return [] }
+                select = latest ? "j.chat_id, m.guid, m.group_action_type FROM message m JOIN chat_message_join j ON j.message_id = m.ROWID WHERE m.item_type = 3 AND m.group_action_type IN (4,6) ORDER BY m.date DESC, m.ROWID DESC" : "guid, group_action_type FROM message WHERE item_type = 3 AND group_action_type IN (4,6)"
             case "members":
                 guard columns.contains("item_type"), columns.contains("group_action_type") else { return [] }
                 let handles = try statement("SELECT name FROM pragma_table_info('handle')")
@@ -66,7 +71,7 @@ public enum MetadataReader {
                 guard columns.contains("expressive_send_style_id") else { return [] }
                 select = "guid, expressive_send_style_id FROM message WHERE COALESCE(expressive_send_style_id, '') != ''"
             }
-            let query = try statement("SELECT " + select + " AND guid IN (" + ids.map { _ in "?" }.joined(separator: ",") + ")")
+            let query = try statement("SELECT " + select + (latest ? "" : " AND guid IN (" + ids.map { _ in "?" }.joined(separator: ",") + ")"))
             defer { sqlite3_finalize(query) }
             for (i, id) in ids.enumerated() {
                 let result = id.withCString { sqlite3_bind_text(query, Int32(i + 1), $0, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) }
@@ -74,9 +79,22 @@ public enum MetadataReader {
             }
             var rows: [[Any]] = []; code = sqlite3_step(query)
             while code == SQLITE_ROW {
-                guard rows.count < 128 else { throw MetadataFailure.limit }
+                guard rows.count < (latest ? 200 : 128) else { throw MetadataFailure.limit }
                 let guid = text(query, 0)
-                if kind == "voices" {
+                if latest {
+                    func scalar(_ column: Int32) throws -> Any {
+                        switch sqlite3_column_type(query, column) {
+                        case SQLITE_NULL: return NSNull()
+                        case SQLITE_INTEGER: return sqlite3_column_int64(query, column)
+                        case SQLITE_FLOAT: return sqlite3_column_double(query, column)
+                        case SQLITE_TEXT: return text(query, column)
+                        default: throw MetadataFailure.query
+                        }
+                    }
+                    rows.append([try scalar(0), try scalar(1), sqlite3_column_int64(query, 2) == 4 ? "set" : "clear"])
+                } else if kind == "backgrounds" {
+                    rows.append([guid, sqlite3_column_int64(query, 1) == 4 ? "set" : "clear"])
+                } else if kind == "voices" {
                     let played = sqlite3_column_int64(query, 1) == 1
                     let ms = sqlite3_column_double(query, 2)
                     var value: [String: Any] = ["played": played]

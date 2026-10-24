@@ -18,5 +18,11 @@ module.exports = function metadataReaders(session) {
     },
     close() {},
   });
-  return {voices:reader('voices'),renames:reader('renames'),sendEffects:reader('sendEffects'),members:reader('members'),close(){closed=true;}};
+  return {voices:reader('voices'),renames:reader('renames'),sendEffects:reader('sendEffects'),members:reader('members'),backgrounds:{...reader('backgrounds'),latest(){
+    if(closed)throw Object.assign(new Error('metadata.closed'),{code:'metadata.closed'});
+    const value=JSON.parse(globalThis.nativeMetadataRead(session.id,'backgroundLatest','[]'));
+    if(value.error)throw Object.assign(new Error('metadata.'+value.error),{code:'metadata.'+value.error});
+    if(value.pid!==process.pid)throw new Error('metadata.pid');
+    const found=new Map();for(const [rawId,rawGuid,action] of value.rows){const id=String(rawId);if(!found.has(id))found.set(id,{chatId:id,guid:String(rawGuid),action});}return found;
+  }},close(){closed=true;}};
 };

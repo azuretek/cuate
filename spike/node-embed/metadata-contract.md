@@ -4,7 +4,7 @@ This is a source-only addition to the embedding experiment. Production main.js i
 
 ## Declared call
 
-nativeMetadataRead(sessionId, kind, guidsJSON) returns JSON containing pid and rows, or one constant error code. Allowed kinds are voices, renames, sendEffects and members. It takes no SQL, path, mutation flag or arbitrary method. Only an admitted non-fixture library session supplies the database path. Calls after close begins, unknown sessions and synthetic-engine sessions are refused. The C result is copied before its allocation is freed; no V8 handle crosses threads.
+nativeMetadataRead(sessionId, kind, guidsJSON) returns JSON containing pid and rows, or one constant error code. Allowed GUID kinds are voices, renames, sendEffects, members and backgrounds; backgroundLatest accepts only an empty GUID array for fixed newest-event discovery. The changes action envelope is declared separately in change-contract.md. It takes no SQL, path, mutation flag or arbitrary method. Only an admitted non-fixture library session supplies the database path. Calls after close begins, unknown sessions and synthetic-engine sessions are refused. The C result is copied before its allocation is freed; no V8 handle crosses threads.
 
 Swift opens SQLite read-only, verifies main is read-only, binds GUIDs, never creates an absent file, never waits on a busy lock, and closes every statement and connection before return. The call runs synchronously on the Node worker to preserve the existing among() seam; the Swift main loop remains separate. Admission is at most 128 GUIDs, 512 UTF-8 bytes each and no NUL. Statements have a one-million SQLite VM-step budget, each SQLite value and JSON result is bounded to 65,536 bytes. JS chunks a larger page without silently discarding ids. These are experiment resource limits, not production performance acceptance. A page containing an oversized field fails rather than returning partial metadata.
 
@@ -20,7 +20,7 @@ metadata.cjs compares all four readers to the unchanged product readers using sy
 - rich-text.js: attributed-string decoding, text identity checks and runs remain to port.
 - changes.js: bounded session-native latest/read/unsent/among reader and unchanged-engine differential proof; see change-contract.md for cursor semantics, replay/restart, resource refusals and remaining production cutover.
 - members.js: this native read-only port and injected JS adapter; add/remove/leave actions, optional handle schemas and JS-compatible string/type handling. History and live event consumers are exercised; no production wiring change.
-- backgrounds.js: row metadata plus imsg status subprocess and cache path lookup remain to port.
+- backgrounds.js: bounded native among/latest event metadata and unchanged history/live consumers; see background-contract.md for whole-query limits. Current status, its subprocess and cache path lookup remain unported.
 - contacts.js: Contacts framework/JXA reads and changes are another owner; no files changed here.
 - mac.js/mac-care.js: power assertions, system settings, lock and permission preflight shell-outs remain native-host work.
 - attachments.js/link-media.js: image/audio/video/thumbnail conversion and trusted cache paths remain native framework work; conversion limits, original fallback and path safety stay required.
