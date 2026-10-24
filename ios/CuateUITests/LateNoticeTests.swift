@@ -113,11 +113,14 @@ final class LateNoticeTests: XCTestCase {
         let ready = NSPredicate { _, _ in
             if let group {
                 let exists = group.exists
+                // The ListCell scroll container can be hittable while its tap performs no expansion.
+                // Use the actual notification content button recorded in the retained native tree.
+                let expand = group.buttons["ShortLook.Platter.Content.Seamless"]
                 if discovery.action(targetExists: notice.exists, groupLabel: exists ? group.label : nil,
-                                    groupHittable: exists && group.isHittable) == .expandGroup {
+                                    expansionButtonHittable: exists && expand.exists && expand.isHittable) == .expandGroup {
                     self.keep("late-notice-group-before-expansion")
-                    group.tap()
-                    self.keep("late-notice-group-expanded")
+                    expand.tap()
+                    self.keep("late-notice-group-expansion-pressed")
                     still = 0; last = .null
                     return false
                 }
