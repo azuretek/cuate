@@ -108,6 +108,7 @@ final class LateNoticeTests: XCTestCase {
     /// so it is neither still sliding in nor sliding away. False when that does not hold within the timeout.
     private func pressable(_ notice: XCUIElement, in springboard: XCUIApplication, timeout: TimeInterval, expanding group: XCUIElement? = nil) -> Bool {
         var discovery = NoticeGroupReadiness()
+        var expansionReadiness = NoticeExpansionReadiness()
         var last = CGRect.null
         var still = 0
         let ready = NSPredicate { _, _ in
@@ -116,11 +117,21 @@ final class LateNoticeTests: XCTestCase {
                 // The ListCell scroll container can be hittable while its tap performs no expansion.
                 // Use the actual notification content button recorded in the retained native tree.
                 let expand = group.buttons["ShortLook.Platter.Content.Seamless"]
+                let hittable = exists && expand.exists && expand.isHittable
+                // The first press can expand the compact list while leaving the app group collapsed.
+                // Require the same on-screen/still evidence as the final target before consuming expansion.
+                let stable = expansionReadiness.observe(hittable ? expand.frame : nil, screen: springboard.frame)
                 if discovery.action(targetExists: notice.exists, groupLabel: exists ? group.label : nil,
-                                    expansionButtonHittable: exists && expand.exists && expand.isHittable) == .expandGroup {
+                                    expansionButtonHittable: hittable && stable,
+                                    expansionButtonFrame: stable ? expand.frame : nil) == .expandGroup {
                     self.keep("late-notice-group-before-expansion")
+                    print("late notice group expansion at " + String(describing: expand.frame))
                     expand.tap()
                     self.keep("late-notice-group-expansion-pressed")
+                    let tree = XCTAttachment(string: springboard.debugDescription)
+                    tree.name = "late-notice-group-post-press-tree"
+                    tree.lifetime = .keepAlways
+                    self.add(tree)
                     still = 0; last = .null
                     return false
                 }
