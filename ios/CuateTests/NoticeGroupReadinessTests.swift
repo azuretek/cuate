@@ -6,22 +6,30 @@ final class NoticeGroupReadinessTests: XCTestCase {
 
     func testCollapsedLocalNoticeIsExpandedButNeverAcceptedAsTheInjectedTarget() {
         var readiness = NoticeGroupReadiness()
-        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, groupHittable: true), .expandGroup)
-        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, groupHittable: true), .waitForTarget)
-        XCTAssertEqual(readiness.action(targetExists: true, groupLabel: nil, groupHittable: false), .observeTarget)
+        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, expansionButtonHittable: true), .expandGroup)
+        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, expansionButtonHittable: true), .waitForTarget)
+        XCTAssertEqual(readiness.action(targetExists: true, groupLabel: nil, expansionButtonHittable: false), .observeTarget)
     }
 
     func testMissingOrUnrelatedGroupNeverAuthorizesAPress() {
         var readiness = NoticeGroupReadiness()
         for label in [nil, "Grouped, unrelated sender", "Fixture Late, Late fixture message"] as [String?] {
-            XCTAssertEqual(readiness.action(targetExists: false, groupLabel: label, groupHittable: true), .waitForTarget)
+            XCTAssertEqual(readiness.action(targetExists: false, groupLabel: label, expansionButtonHittable: true), .waitForTarget)
         }
-        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, groupHittable: false), .waitForTarget)
-        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, groupHittable: true), .expandGroup)
+        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, expansionButtonHittable: false), .waitForTarget)
+        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, expansionButtonHittable: true), .expandGroup)
+    }
+
+    func testAHittableContainerWithoutItsContentButtonDoesNotConsumeExpansion() {
+        var readiness = NoticeGroupReadiness()
+        // The failed native run tapped a hittable ListCell scroll view, leaving the group collapsed.
+        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, expansionButtonHittable: false), .waitForTarget)
+        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, expansionButtonHittable: true), .expandGroup)
+        XCTAssertEqual(readiness.action(targetExists: false, groupLabel: collapsed, expansionButtonHittable: true), .waitForTarget)
     }
 
     func testAnAlreadyExposedTargetDoesNotPressTheGroup() {
         var readiness = NoticeGroupReadiness()
-        XCTAssertEqual(readiness.action(targetExists: true, groupLabel: collapsed, groupHittable: true), .observeTarget)
+        XCTAssertEqual(readiness.action(targetExists: true, groupLabel: collapsed, expansionButtonHittable: true), .observeTarget)
     }
 }
