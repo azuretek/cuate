@@ -15,14 +15,17 @@ final class BackgroundTests: XCTestCase {
         XCUIDevice.shared.startInPortrait()
         app.launch()
         defer { app.terminate() }
+        let deadline = ProcessInfo.processInfo.systemUptime + 90
         let verdict = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'background:'")).firstMatch
         let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'background:pass' OR label BEGINSWITH 'background:fail'"), object: verdict)
-        _ = XCTWaiter().wait(for: [settled], timeout: 90)
-        let shot = XCUIScreen.main.screenshot()
-        let capture = XCTAttachment(screenshot: shot)
-        capture.name = "conversation-background"
-        capture.lifetime = .keepAlways
-        add(capture)
+        _ = XCTWaiter().wait(for: [settled], timeout: max(0, deadline - ProcessInfo.processInfo.systemUptime))
+        var shot = XCUIScreen.main.screenshot()
+        defer {
+            let capture = XCTAttachment(screenshot: shot)
+            capture.name = "conversation-background"
+            capture.lifetime = .keepAlways
+            add(capture)
+        }
         guard verdict.exists else {
             XCTFail("The background fixture reported nothing" + SystemSurface.failureSuffix(app))
             return
@@ -37,12 +40,22 @@ final class BackgroundTests: XCTestCase {
             XCTFail("The fixture named no point of bare backdrop")
             return
         }
-        guard let seen = pixel(shot.image, at: point) else {
+        // The page can name its loaded image before the simulator has composited it. Read the screen's
+        // actual pixel, not a sleep or a second DOM marker, and spend only the original startup budget.
+        var readiness = BackdropReadiness(deadline: deadline, colour: colour)
+        var lastPixel: BackdropReadiness.Pixel?
+        repeat {
+            shot = XCUIScreen.main.screenshot()
+            lastPixel = pixel(shot.image, at: point)
+            _ = readiness.sample(at: ProcessInfo.processInfo.systemUptime, pixel: lastPixel)
+        } while readiness.status == .waiting
+        XCTAssertEqual(readiness.status, .ready, "The backdrop did not paint within the original startup deadline")
+        guard let seen = lastPixel else {
             XCTFail("The screen could not be read at \(point)")
             return
         }
         print("backdrop pixel at \(point): \(seen.r),\(seen.g),\(seen.b)")
-        let close = abs(seen.r - colour.r) <= 40 && abs(seen.g - colour.g) <= 40 && abs(seen.b - colour.b) <= 40
+        let close = BackdropReadiness.matches(seen, colour: colour)
         XCTAssertTrue(close, "The screen shows \(seen.r),\(seen.g),\(seen.b) behind the messages, not the backdrop's \(colour.r),\(colour.g),\(colour.b)")
     }
 

@@ -7,6 +7,16 @@ import { readFileSync } from 'node:fs';
 const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8');
 const naming = JSON.parse(read('core/spec/naming.json'));
 
+test('the backdrop proof waits for painted pixels within the marker deadline (issue 510)', () => {
+  const proof = read('ios/' + naming.product + 'UITests/BackgroundTests.swift');
+  assert.match(proof, /let deadline = ProcessInfo.processInfo.systemUptime \+ 90/);
+  assert.match(proof, /timeout: max\(0, deadline - ProcessInfo.processInfo.systemUptime\)/);
+  assert.match(proof, /BackdropReadiness\(deadline: deadline, colour: colour\)/);
+  assert.match(proof, /repeat \{\s*shot = XCUIScreen.main.screenshot\(\)[\s\S]*readiness.sample[\s\S]*while readiness.status == \.waiting/);
+  assert.match(proof, /XCTAssertEqual\(readiness.status, \.ready/);
+  assert.match(proof, /defer \{[\s\S]*XCTAttachment\(screenshot: shot\)[\s\S]*capture.lifetime = \.keepAlways/);
+});
+
 test('the conversation draws its background behind the messages, never in the timeline (issue 417)', () => {
   const conv = read('core/app/components/app-conversation.js');
   const body = /<div class="conv-body"[^>]*>([\s\S]*?)<div class=\$\{'messages'/.exec(conv);
