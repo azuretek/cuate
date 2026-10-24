@@ -48,6 +48,11 @@ struct ShellWebView: UIViewRepresentable {
             forMainFrameOnly: true
         ))
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--push-presentation-fixture"),
+           let url = Bundle.main.url(forResource: "push-presentation-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         if ProcessInfo.processInfo.arguments.contains("--rotation-fixture"),
            let url = Bundle.main.url(forResource: "rotation-fixture", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
