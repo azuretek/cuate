@@ -39,14 +39,21 @@ globalThis.historyProof = {
       scroll.scrollTop += target.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
       pane().keep.record();
       const anchor = { ...pane().keep.anchor };
+      // Failure-only diagnostics distinguish a stale keeper anchor from an extra page or an undrawn model.
+      const position = () => {
+        const drawn = [...pane().querySelectorAll('.messages > .bubble-row')];
+        return { anchor: { ...pane().keep.anchor }, first: drawn[0]?.dataset.id, last: drawn.at(-1)?.dataset.id, target: target.dataset.id, targetConnected: target.isConnected, scrollTop: scroll.scrollTop, written: pane().keep.written, width: scroll.clientWidth, height: scroll.clientHeight, beforeCount: root().historyWindow?.beforeCount, afterCount: root().historyWindow?.afterCount };
+      };
+      const positioned = position();
       // What the page held when the proof asked, so a refused page names why rather than only that it was refused.
       const asked = { first: root().messages[0]?.id, rows: root().messages.length, seq: root().openSeq, pending: Boolean(root().pendingHistory), olderPending: Boolean(pane().olderPending), hasOlder: root().historyWindow?.hasOlder, chat: root().openChatId };
       const moved = await root().loadOlder(pane().historyMeasurements());
       const after = () => ({ first: root().messages[0]?.id, rows: root().messages.length, seq: root().openSeq, pending: Boolean(root().pendingHistory), olderPending: Boolean(pane().olderPending), hasOlder: root().historyWindow?.hasOlder, chat: root().openChatId, problem: root().problem || '' });
       assert(moved, 'older page returned ' + JSON.stringify({ asked, after: after() }));
+      const returned = { model: after(), view: position() };
       await settle();
       const held = [...pane().querySelectorAll('.messages > .bubble-row')].find((row) => row.dataset.id === anchor.key);
-      assert(held, 'anchor retained while adjacent page loads');
+      assert(held, 'anchor retained while adjacent page loads ' + JSON.stringify({ anchor, asked, positioned, returned, after: after(), view: position(), steps }));
       const drift = held.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
       assert(Math.abs(drift) <= 1, 'scroll anchor drift: ' + drift);
       maxRows = Math.max(maxRows, root().messages.length);
