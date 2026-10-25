@@ -8,8 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // validating one ask that service, and so does Gatekeeper's assessment, so none of them can tell a dropped connection
 // from an unnotarized app. A stapling failure is therefore told apart by what is on disk: the app is signed and
 // carries no stapled ticket. Then the ticket is stapled here, a bounded number of times with a pause between, and only
-// once that works, which proves Apple holds a ticket for this code, is the packaging run again so its disk image and
-// update files are built. Any other failure is the result and is thrown at once.
+// once that works, which proves Apple holds a ticket for this code, are its disk image and update files built from
+// the existing bundle. Rebuilding would sign new code and discard the recovered ticket. Other failures are thrown.
 export const STAPLE_ATTEMPTS = 3;
 export const PACKAGE_ATTEMPTS = 3;
 // The checks after packaging that ask Apple's service are asked again, bounded, before they fail the build; the
@@ -46,7 +46,9 @@ export function packageMac(arch, { environment = process.env, execute = execFile
     const app = path.join(desktop, 'dist', arch === 'arm64' ? 'mac-arm64' : 'mac', naming.product + '.app');
     for (let attempt = 1; ; attempt += 1) {
       try {
-        run('pnpm', ['package', '--mac', '--' + arch, '--config.forceCodeSigning=true'], { cwd: desktop, env });
+        const args = ['package', '--mac', '--' + arch, '--config.forceCodeSigning=true'];
+        if (attempt > 1) args.push('--prepackaged', app);
+        run('pnpm', args, { cwd: desktop, env });
         break;
       } catch (error) {
         if (attempt >= PACKAGE_ATTEMPTS || ticketed(app) || !passes('codesign', ['--verify', '--deep', '--strict', app])) throw error;
