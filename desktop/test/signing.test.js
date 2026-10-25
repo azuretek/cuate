@@ -77,6 +77,42 @@ test('a packaging failure that is not an unstapled signed app is thrown at once,
   assert.equal(packs, PACKAGE_ATTEMPTS);
 });
 
+test('recovering a ticket packages the existing app without signing or notarizing it again', () => {
+  const packages = [];
+  packageMac('x64', { environment: signingInputs, pause: () => {}, ticketed: () => false, execute(command, args) {
+    if (command !== 'pnpm') return;
+    packages.push(args);
+    if (packages.length === 1) throw new Error('Failed to staple your application with code: 68');
+    assert.ok(args.includes('--prepackaged'), 'recovery must preserve the signed and stapled bundle');
+    assert.match(args[args.indexOf('--prepackaged') + 1], /[/\\]dist[/\\]mac[/\\][^/\\]+\.app$/);
+  } });
+  assert.equal(packages.length, 2);
+});
+
+test('the pinned builder turns a prepackaged Mac app into containers without rebuilding it', async () => {
+  const require = createRequire(new URL('../package.json', import.meta.url));
+  const builderRequire = createRequire(require.resolve('electron-builder'));
+  const libRequire = createRequire(builderRequire.resolve('app-builder-lib'));
+  builderRequire('app-builder-lib');
+  const { MacPackager } = libRequire('./macPackager');
+  const app = '/synthetic/already-stapled.app';
+  const tasks = {};
+  const targets = [{ name: 'dmg' }, { name: 'zip' }];
+  let packaged = false;
+  const packager = {
+    doPack() { assert.fail('recovery must not recreate, re-sign or re-notarize the app'); },
+    packageInDistributableFormat(bundle, arch, actualTargets, actualTasks) {
+      assert.equal(bundle, app);
+      assert.equal(arch, 1);
+      assert.equal(actualTargets, targets);
+      assert.equal(actualTasks, tasks);
+      packaged = true;
+    },
+  };
+  await MacPackager.prototype.packMacTargets.call(packager, '/synthetic/output', 1, targets, app, tasks);
+  assert.equal(packaged, true);
+});
+
 test('the checks after packaging that ask Apple are asked again, bounded; the signature check is not', async () => {
   const { CHECK_ATTEMPTS } = await import('../scripts/package-mac.mjs');
   const calls = [];
