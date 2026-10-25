@@ -40,7 +40,8 @@ const program = (want) => [
   '  if (matched) { matches += 1; found = p; }',
   '}',
   'if (matches !== 1) found = null;',
-  'if (found) { app.activate(); app.show(found); }',
+  // Contacts exposes writable selection, not a show command. Select first so a refusal never activates a wrong card.
+  'if (found) { app.selection = [found]; app.activate(); }',
   'JSON.stringify(Boolean(found));',
 ].join(NL);
 
