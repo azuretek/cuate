@@ -2,6 +2,8 @@
 
 A push to main that changes a shipped path produces a test build: the desktop apps, the server and the Android APK, one version, one GitHub prerelease. A manual workflow dispatch compares the snapshot with the most recent reachable dev tag and refuses if nothing ships. Documentation, Markdown, root scripts, workflow files, hooks, LICENSE and .gitignore do not trigger a release. A server-only change does: the server ships with the clients. Unknown paths ship by default. The sole classifier is scripts/release/changes.mjs.
 
+After a signed Mac build fails only at stapling, the wrapper verifies the bundle and recovers its ticket with bounded stapler calls. The container retry uses `--prepackaged` on that same bundle, so it does not discard the recovered signature and ticket by rebuilding. Signature verification, Gatekeeper assessment and ticket validation remain required. Issue #503 and `desktop/test/signing.test.js` hold this recovery contract.
+
 ## Stable releases: the tag lane
 
 A real release is cut only by a `vX.Y.Z` tag, never automatically. The tag is produced by release-please (`release-please-config.json`, `.release-please-manifest.json`, `.github/workflows/release-please.yml`), which watches `main`, keeps ONE pull request open that carries the next version bump and its `CHANGELOG.md` entry together, and, when that pull request merges, bumps every file that carries the version and creates the tag. It is mirrored from chela. The settings that make the tag lane work, missing from the first attempt here (pull request #278), are `draft: true` and `force-tag-creation: true`, beside `include-v-in-tag: true` and `include-component-in-tag: false`.
