@@ -2,6 +2,7 @@ package com.azuretek.cuate
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Rect
 import android.util.Base64
 import android.view.View
@@ -71,7 +72,83 @@ class VideoControlsTest {
     @Test
     fun landscapeVideoKeepsEveryControlClear() = check("landscape")
 
-    private fun check(shape: String) {
+    @Test
+    fun emptyFailureCaptureContract() = captureContract(false)
+
+    @Test
+    fun emptyFailureCaptureSurvivesDiagnosticError() = captureContract(true)
+
+    // Controlled observations prove capture, not recurrence or repair of the real missing-tree defect.
+    private class CaptureContract(val failWindows: Boolean) {
+        val name = if (failWindows) "portrait-contract-windows-error" else "portrait-contract-healthy"
+        val reads = mutableListOf<String>()
+        var observed = false
+    }
+
+    private fun contractFile(contract: CaptureContract, extension: String): java.io.File {
+        val directory = java.io.File(requireNotNull(
+            InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+        ))
+        return java.io.File(directory, "video-controls-" + contract.name + "-empty-failure." + extension)
+    }
+
+    private fun captureContract(failWindows: Boolean) {
+        val contract = CaptureContract(failWindows)
+        for (extension in listOf("json", "png")) {
+            assertTrue("Stale evidence must not satisfy the contract", !contractFile(contract, extension).exists())
+        }
+        check("portrait", contract)
+        assertTrue("The original missing-control assertion never ran", contract.observed)
+    }
+
+    private fun verifyCaptureContract(
+        scenario: ActivityScenario<MainActivity>, contract: CaptureContract, error: AssertionError
+    ) {
+        assertTrue("An unrelated assertion must not satisfy the contract", error.message.orEmpty().startsWith(
+            "the viewer was not in the accessibility tree before its clip: missing close"
+        ))
+        val held = JSONObject(evaluate(scenario, """
+            ({ state: window.videoControlsState,
+              releasePresent: Boolean(document.querySelector('[aria-label="vc:release"]')),
+              video: Boolean(document.querySelector('app-image-viewer video.viewer-image')),
+              pending: Boolean(document.querySelector('app-image-viewer .viewer-pending')) })
+        """.trimIndent()))
+        fun requireHeld(page: JSONObject) {
+            assertTrue("The clip must remain held", page.getString("state").startsWith("vc:empty ") &&
+                page.getBoolean("releasePresent") && !page.getBoolean("video") && page.getBoolean("pending"))
+        }
+        requireHeld(held)
+        val json = contractFile(contract, "json")
+        assertTrue("Failure JSON was not retained", json.isFile && json.length() > 0)
+        val evidence = JSONObject(json.readText())
+        val fields = listOf("shape", "stage", "nativeTrees", "windows", "page", "webView", "screenshot", "windowManager")
+        assertTrue("The retained JSON lost a diagnostic field", fields.all { evidence.has(it) })
+        assertTrue("The evidence is not from the held portrait clip", evidence.getString("shape") == "portrait" &&
+            evidence.getString("stage") == "empty-before-release")
+        assertTrue("A diagnostic stopped the later captures", contract.reads == fields.drop(2))
+        for (field in listOf("nativeTrees", "webView", "windowManager")) {
+            assertTrue("A real diagnostic failed: $field", evidence.get(field) is String && evidence.getString(field).isNotBlank())
+        }
+        if (contract.failWindows) {
+            assertTrue("The diagnostic error was not retained", evidence.getJSONObject("windows").getString("error")
+                .contains("capture-contract-windows-error"))
+        } else {
+            assertTrue("The real windows diagnostic failed", evidence.get("windows") is String && evidence.getString("windows").isNotBlank())
+        }
+        requireHeld(JSONObject(evidence.getString("page")))
+        assertTrue("Screenshot capture did not finish", evidence.getString("screenshot") == "retained")
+        val png = contractFile(contract, "png")
+        assertTrue("Failure PNG was not retained", png.isFile && png.length() > 0)
+        val image = BitmapFactory.decodeFile(png.absolutePath)
+        assertTrue("Failure PNG did not decode", image != null)
+        requireNotNull(image).let {
+            try { assertTrue("Failure PNG has no pixels", it.width > 0 && it.height > 0) }
+            finally { it.recycle() }
+        }
+        contract.observed = true
+    }
+
+    private fun check(shape: String, contract: CaptureContract? = null) {
         val intent = Intent(instrumentation.targetContext, MainActivity::class.java)
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             val booted = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
@@ -87,10 +164,23 @@ class VideoControlsTest {
             val empty = awaitState(scenario, "vc:empty ")
             println("video controls empty scene ($shape): $empty")
             // The tree is built over the viewer while its video has nothing to play: the viewer's own controls are in it.
-            val before = awaitControls(scenario, OURS)
+            val before = if (contract == null) awaitControls(scenario, OURS) else awaitControls(scenario, OURS, true)
             val missing = OURS.filter { it !in before }
             println("video controls ($shape) accessibility tree over the empty video:\n" + describeTree())
-            assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + SystemSurface.failureSuffix(), missing.isEmpty())
+            if (contract != null) assertTrue("Only the controlled observation may be missing", missing == listOf("close"))
+            if (missing.isNotEmpty()) keepEmptyFailure(scenario, shape, contract?.name ?: shape) { name ->
+                contract?.reads?.add(name)
+                if (contract?.failWindows == true && name == "windows") throw IllegalStateException("capture-contract-windows-error")
+            }
+            try {
+                assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + SystemSurface.failureSuffix(), missing.isEmpty())
+            } catch (error: AssertionError) {
+                if (contract == null || !error.message.orEmpty().startsWith(
+                    "the viewer was not in the accessibility tree before its clip: missing close"
+                )) throw error
+                verifyCaptureContract(scenario, contract, error)
+                return@use
+            }
             assertTrue("the fixture did not let the clip go", evaluate(scenario, "window.videoControlsRelease()") == "true")
             val scene = awaitState(scenario, "vc:ready ")
             println("video controls scene ($shape): $scene")
@@ -164,7 +254,7 @@ class VideoControlsTest {
      * the tree, never a fixed time. Once the first stretch passes without them, the web view is asked to rebuild its tree
      * and the wait continues within the same bound (issue 443).
      */
-    private fun awaitControls(scenario: ActivityScenario<MainActivity>, names: List<String>): Map<String, Found> {
+    private fun awaitControls(scenario: ActivityScenario<MainActivity>, names: List<String>, omitCloseObservation: Boolean = false): Map<String, Found> {
         val automation = instrumentation.uiAutomation
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -176,14 +266,14 @@ class VideoControlsTest {
         var found: Map<String, Found> = emptyMap()
         do {
             instrumentation.waitForIdleSync()
-            found = collect()
+            found = collect().let { if (omitCloseObservation) it - "close" else it }
             if (names.all { it in found }) return found
             val now = System.nanoTime()
             if (!rebuilt && now >= rebuildAt) {
                 rebuilt = true
                 rebuildTree(scenario)
                 instrumentation.waitForIdleSync()
-                found = collect()
+                found = collect().let { if (omitCloseObservation) it - "close" else it }
                 if (names.all { it in found }) return found
                 continue
             }
@@ -266,6 +356,95 @@ class VideoControlsTest {
             if (label.isNotEmpty() || node.isClickable) lines.add(node.className.toString() + " '" + label + "' " + bounds.toShortString())
         }
         return lines.joinToString("\n")
+    }
+
+    /** Evidence only after the original pre-clip deadline, never a recovery or a readiness condition (issue 509). */
+    private fun keepEmptyFailure(
+        scenario: ActivityScenario<MainActivity>, shape: String, evidenceName: String = shape,
+        beforeRead: (String) -> Unit = {}
+    ) {
+        val evidence = JSONObject().put("shape", shape).put("stage", "empty-before-release")
+        fun capture(name: String, read: () -> Any?) {
+            try { beforeRead(name); evidence.put(name, read()) } catch (error: Throwable) {
+                evidence.put(name, JSONObject().put("error", error.toString()))
+            }
+        }
+        // Read all roots without the label/clickable filter used by the human-readable report.
+        capture("nativeTrees") {
+            roots().map { root ->
+                val lines = mutableListOf<String>()
+                walk(root) { node ->
+                    val bounds = Rect()
+                    node.getBoundsInScreen(bounds)
+                    lines.add("window=" + node.windowId + " class=" + node.className +
+                        " package=" + node.packageName + " children=" + node.childCount +
+                        " visible=" + node.isVisibleToUser + " bounds=" + bounds.toShortString() +
+                        " label=" + (node.contentDescription ?: node.text ?: ""))
+                }
+                lines.joinToString("\n")
+            }.joinToString("\n--- root ---\n")
+        }
+        capture("windows") {
+            instrumentation.uiAutomation.windows.joinToString("\n") { window ->
+                "id=" + window.id + " type=" + window.type + " layer=" + window.layer +
+                    " active=" + window.isActive + " focused=" + window.isFocused
+            }
+        }
+        capture("page") {
+            evaluate(scenario, """
+                (() => {
+                  const viewer = document.querySelector('app-image-viewer');
+                  const box = (node) => {
+                    if (!node) return null;
+                    const rect = node.getBoundingClientRect();
+                    const style = getComputedStyle(node);
+                    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+                    return { tag: node.tagName, label: node.getAttribute('aria-label'), role: node.getAttribute('role'),
+                      connected: node.isConnected, hidden: node.hidden, inert: node.inert,
+                      ariaHidden: node.getAttribute('aria-hidden'), display: style.display,
+                      visibility: style.visibility, opacity: style.opacity,
+                      rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+                      hit: hit ? { tag: hit.tagName, class: String(hit.className) } : null };
+                  };
+                  const controls = {};
+                  for (const selector of ['.viewer', '.close-button', '.viewer-prev', '.viewer-next', '.viewer-bar']) {
+                    controls[selector] = box(viewer?.querySelector(selector));
+                  }
+                  return { state: window.videoControlsState, visibility: document.visibilityState,
+                    focused: document.hasFocus(), video: Boolean(viewer?.querySelector('video.viewer-image')),
+                    pending: Boolean(viewer?.querySelector('.viewer-pending')),
+                    releasePresent: Boolean(document.querySelector('[aria-label="vc:release"]')),
+                    controls, viewport: { w: innerWidth, h: innerHeight, scale: devicePixelRatio } };
+                })()
+            """.trimIndent())
+        }
+        capture("webView") {
+            var state = "no web view"
+            scenario.onActivity { activity ->
+                webView(activity.findViewById(android.R.id.content))?.let { view ->
+                    state = "attached=" + view.isAttachedToWindow + " shown=" + view.isShown +
+                        " windowFocus=" + view.hasWindowFocus() + " visibility=" + view.visibility +
+                        " important=" + view.importantForAccessibility + " width=" + view.width + " height=" + view.height
+                }
+            }
+            state
+        }
+        // Keep a failure of one diagnostic from hiding the original assertion or the other evidence.
+        capture("screenshot") { keepScreenshot("video-controls-$evidenceName-empty-failure.png"); "retained" }
+        capture("windowManager") {
+            instrumentation.uiAutomation.executeShellCommand("timeout 5 dumpsys window windows").use { descriptor ->
+                java.io.FileInputStream(descriptor.fileDescriptor).bufferedReader().use { it.readText() }
+            }
+        }
+        try {
+            val outputDir = java.io.File(requireNotNull(
+                InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+            ) { "The test runner must provide a retained output directory" })
+            kotlin.check(outputDir.isDirectory || outputDir.mkdirs()) { "Cannot create evidence directory" }
+            java.io.File(outputDir, "video-controls-$evidenceName-empty-failure.json").writeText(evidence.toString(2))
+        } catch (error: Exception) {
+            println("video controls failure evidence could not be retained: $error\n$evidence")
+        }
     }
 
     /** The video's box on the screen, from the page's report in its own pixels, scaled onto the web view. */
