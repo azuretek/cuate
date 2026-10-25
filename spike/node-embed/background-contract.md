@@ -1,0 +1,21 @@
+# Native background-event metadata: source-only partial port
+
+Production main.js, backgrounds.js, the API and runtime selection are unchanged. The product reader remains the differential oracle. This adds native among() action enrichment and latest() event discovery, not current background status, picture/cache lookup or media conversion. The injected background metadata object deliberately has no status() implementation; it is not a complete production BackgroundReader replacement.
+
+## Calls and authority
+
+The existing session-bound nativeMetadataRead seam admits backgrounds with up to128 bound GUIDs and backgroundLatest with an empty GUID array only. There is no caller SQL, database path, status subprocess, cache path or platform write. Unknown, fixture and closing sessions refuse. SQLite opens READONLY, never creates absent files, has no busy wait and finalizes each statement/connection. Each call keeps the existing one-million-VM-step and65,536-byte value/result budgets. Background latest fails when more than200 matching joined event rows must be returned, even if those rows concern one chat. It never returns a truncated partial result. These are spike safety bounds, not production performance acceptance.
+
+## Preserved source behavior
+
+Only item_type3 with group_action_type4/6 becomes set/clear. The source SQL predicates are unchanged. Latest joins event rows to chats and sorts date descending then ROWID descending; the JavaScript facade keeps the first event for each String(chat_id), with the same Map insertion order. Clear events remain present, unjoined rows are absent, duplicated joins follow the same row order, null/scalar chat IDs and GUIDs use JavaScript String conversion and length-aware text preserves NUL in output. Missing optional event columns return empty; missing required tables/columns fail with constant error codes. The unchanged engine consumes set/clear metadata in both history and live event mapping. Neither current backdrop fetching nor its cache behavior is claimed.
+
+## Explicit limitations
+
+The product reader accepts unbounded whole-store discovery; the native experiment refuses above200 matching joined rows, exhausted budgets, unsupported scalar values or oversized results. GUID input limits and no-NUL admission are inherited from metadata-contract.md. Large among inputs are chunked; membership and per-GUID values match, not arbitrary cross-batch Map insertion order. Native schema discovery is per call, while the product caches columns until close. A store without the message table is malformed here rather than inferred empty. No capability-aware HTTP/client denial mapping is introduced by these private spike errors. Synchronous reads are bounded but have no independent mid-call cancellation; close refuses subsequent admission and does not prove prevention of accepted platform writes.
+
+## Tests
+
+backgrounds.cjs compares among/latest with the unchanged product reader on synthetic data: all action codes and non-events, same-date ROWID ties, clear versus set, repeated reads, multiple chats and duplicate joins, missing/unjoined/injection-shaped IDs, more than128 GUIDs, null and NUL output, optional schemas and malformed stores, noncreation, exclusive-lock refusal and resource release. A201-row fixture proves explicit whole-query denial instead of silent truncation. Unchanged createEngine history and live mapping consume both set/clear actions and match the product reader. Swift fixtures check read-only bytes, invalid latest filters, legacy versus malformed schema and VM deadline termination. Dropped among metadata and reversed latest ordering must each fail their differential assertions; restored exact committed modules replay on both relocated runtime candidates.
+
+All twenty canonical obligations remain open. This does not select a runtime, implement a product adapter cutover, establish the signed server TCC identity, verify setup/menu, grant retention, license/security-update/release/migration gates, client inaccessible-versus-empty parity, supervised sends or the seven-day soak. SIP remains deliberately off; the current issue says FDA notRequired, not an unproved file-denial premise or a request to change SIP.
