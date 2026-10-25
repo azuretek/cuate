@@ -164,7 +164,7 @@ class VideoControlsTest {
             val empty = awaitState(scenario, "vc:empty ")
             println("video controls empty scene ($shape): $empty")
             // The tree is built over the viewer while its video has nothing to play: the viewer's own controls are in it.
-            val before = awaitControls(scenario, OURS, contract != null)
+            val before = if (contract == null) awaitControls(scenario, OURS) else awaitControls(scenario, OURS, true)
             val missing = OURS.filter { it !in before }
             println("video controls ($shape) accessibility tree over the empty video:\n" + describeTree())
             if (contract != null) assertTrue("Only the controlled observation may be missing", missing == listOf("close"))
