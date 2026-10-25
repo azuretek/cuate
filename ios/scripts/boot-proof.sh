@@ -50,6 +50,9 @@ if ! command -v timeout >/dev/null 2>&1; then
     local rc=0
     wait "$pid" || rc=$?
     kill "$watch" 2>/dev/null || true
+    # Consume the watchdog exit before another builtin writes to the CI pipe.
+    # Bash 3.2 does not restart that write when a late SIGCHLD interrupts it.
+    wait "$watch" 2>/dev/null || true
     return "$rc"
   }
 fi
