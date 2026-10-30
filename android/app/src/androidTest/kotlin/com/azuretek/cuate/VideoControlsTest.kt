@@ -42,6 +42,9 @@ import java.util.concurrent.TimeUnit
 class VideoControlsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
+    // No listener: preserve the accessibility event delivery being observed.
+    private val waitTrace = mutableListOf<String>()
+
     private data class Found(val name: String, val bounds: Rect, val visible: Boolean, val label: String)
 
     private fun webView(group: ViewGroup): WebView? {
@@ -121,7 +124,7 @@ class VideoControlsTest {
         val json = contractFile(contract, "json")
         assertTrue("Failure JSON was not retained", json.isFile && json.length() > 0)
         val evidence = JSONObject(json.readText())
-        val fields = listOf("shape", "stage", "nativeTrees", "windows", "page", "webView", "screenshot", "windowManager")
+        val fields = listOf("shape", "stage", "nativeTrees", "windows", "page", "webView", "screenshot", "windowManager", "waitTrace", "cacheProbe")
         assertTrue("The retained JSON lost a diagnostic field", fields.all { evidence.has(it) })
         assertTrue("The evidence is not from the held portrait clip", evidence.getString("shape") == "portrait" &&
             evidence.getString("stage") == "empty-before-release")
@@ -135,6 +138,11 @@ class VideoControlsTest {
         } else {
             assertTrue("The real windows diagnostic failed", evidence.get("windows") is String && evidence.getString("windows").isNotBlank())
         }
+        assertTrue("Wait provenance must be retained", evidence.getString("waitTrace").contains("begin flags="))
+        val probe = evidence.getJSONObject("cacheProbe")
+        assertTrue("The cache probe must not release the clip", probe.getString("heldState").contains("vc:empty "))
+        assertTrue("Cache provenance must be retained", probe.has("serviceFlags") && probe.has("cleared") &&
+            probe.has("cachedTree") && probe.has("freshTree"))
         requireHeld(JSONObject(evidence.getString("page")))
         assertTrue("Screenshot capture did not finish", evidence.getString("screenshot") == "retained")
         val png = contractFile(contract, "png")
@@ -164,14 +172,17 @@ class VideoControlsTest {
             val empty = awaitState(scenario, "vc:empty ")
             println("video controls empty scene ($shape): $empty")
             // The tree is built over the viewer while its video has nothing to play: the viewer's own controls are in it.
-            val before = if (contract == null) awaitControls(scenario, OURS) else awaitControls(scenario, OURS, true)
+            // Resolve the real tree before injecting a capture-only missing observation.
+            // Injecting inside readiness forces a 30-second wait and a real tree rebuild.
+            val observed = awaitControls(scenario, OURS)
+            val before = if (contract == null) observed else observed - "close"
             val missing = OURS.filter { it !in before }
             println("video controls ($shape) accessibility tree over the empty video:\n" + describeTree())
-            if (contract != null) assertTrue("Only the controlled observation may be missing", missing == listOf("close"))
             if (missing.isNotEmpty()) keepEmptyFailure(scenario, shape, contract?.name ?: shape) { name ->
                 contract?.reads?.add(name)
                 if (contract?.failWindows == true && name == "windows") throw IllegalStateException("capture-contract-windows-error")
             }
+            if (contract != null) assertTrue("Only the controlled observation may be missing", missing == listOf("close"))
             try {
                 assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + SystemSurface.failureSuffix(), missing.isEmpty())
             } catch (error: AssertionError) {
@@ -254,7 +265,7 @@ class VideoControlsTest {
      * the tree, never a fixed time. Once the first stretch passes without them, the web view is asked to rebuild its tree
      * and the wait continues within the same bound (issue 443).
      */
-    private fun awaitControls(scenario: ActivityScenario<MainActivity>, names: List<String>, omitCloseObservation: Boolean = false): Map<String, Found> {
+    private fun awaitControls(scenario: ActivityScenario<MainActivity>, names: List<String>): Map<String, Found> {
         val automation = instrumentation.uiAutomation
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -262,25 +273,45 @@ class VideoControlsTest {
         val started = System.nanoTime()
         val deadline = started + TimeUnit.SECONDS.toNanos(CONTROLS_SECONDS)
         val rebuildAt = started + TimeUnit.SECONDS.toNanos(REBUILD_AFTER_SECONDS)
+        waitTrace.clear()
+        fun trace(stage: String) {
+            if (waitTrace.size == 128) waitTrace.removeAt(1)
+            waitTrace.add("ns=" + (System.nanoTime() - started) + " " + stage)
+        }
+        trace("begin flags=" + automation.serviceInfo.flags + " names=" + names)
         var rebuilt = false
         var found: Map<String, Found> = emptyMap()
         do {
             instrumentation.waitForIdleSync()
-            found = collect().let { if (omitCloseObservation) it - "close" else it }
+            trace("collect begin")
+            found = collect()
+            trace("collect end names=" + found.keys)
             if (names.all { it in found }) return found
             val now = System.nanoTime()
             if (!rebuilt && now >= rebuildAt) {
                 rebuilt = true
+                trace("rebuild begin")
                 rebuildTree(scenario)
+                trace("rebuild end")
                 instrumentation.waitForIdleSync()
-                found = collect().let { if (omitCloseObservation) it - "close" else it }
+                trace("collect begin")
+                found = collect()
+                trace("collect end names=" + found.keys)
                 if (names.all { it in found }) return found
                 continue
             }
             val left = TimeUnit.NANOSECONDS.toMillis(deadline - now)
             if (left <= 0) break
-            try { automation.waitForIdle(TREE_SETTLE_MS, left) } catch (busy: java.util.concurrent.TimeoutException) { continue }
+            trace("waitForIdle begin budgetMs=" + left)
+            try {
+                automation.waitForIdle(TREE_SETTLE_MS, left)
+                trace("waitForIdle idle")
+            } catch (busy: java.util.concurrent.TimeoutException) {
+                trace("waitForIdle timeout")
+                continue
+            }
         } while (System.nanoTime() < deadline)
+        trace("deadline rebuilt=" + rebuilt)
         return found
     }
 
@@ -435,6 +466,16 @@ class VideoControlsTest {
             instrumentation.uiAutomation.executeShellCommand("timeout 5 dumpsys window windows").use { descriptor ->
                 java.io.FileInputStream(descriptor.fileDescriptor).bufferedReader().use { it.readText() }
             }
+        }
+        capture("waitTrace") { waitTrace.joinToString("\n") }
+        // Only after the original missing result and cached evidence. This is not recovery.
+        capture("cacheProbe") {
+            val automation = instrumentation.uiAutomation
+            JSONObject().put("serviceFlags", automation.serviceInfo.flags)
+                .put("cachedTree", describeTree())
+                .put("cleared", automation.clearCache())
+                .put("freshTree", describeTree())
+                .put("heldState", evaluate(scenario, "window.videoControlsState || null"))
         }
         try {
             val outputDir = java.io.File(requireNotNull(
