@@ -80,7 +80,7 @@ const omit = (o, keys) => {
 // voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
 // store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
 // client of ours has played, kept by the server ({ has(attachmentId) }), or null.
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null, services = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -183,8 +183,22 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return rows;
     }
   };
+  // The service each row travelled on, asked of the store in one read (issue 520), so a consumer gating on a
+  // sender reads the message's own service and never the chat's. A store that cannot be read leaves the rows unmarked.
+  const markServices = (rows) => {
+    const asked = services ? rows.filter((m) => m && m.guid && !m.service) : [];
+    if (!asked.length) return rows;
+    try {
+      const found = services.among(asked.map((m) => String(m.guid)));
+      if (!found.size) return rows;
+      return rows.map((m) => (m && m.guid && found.has(String(m.guid)) ? { ...m, service: found.get(String(m.guid)) } : m));
+    } catch (e) {
+      log.emit('service.failed', { error: failure(e) });
+      return rows;
+    }
+  };
   // Every raw row passes the same marks before it is mapped, whichever read it came from.
-  const prepare = (rows) => markVoices(markSendEffects(markRichText(markStoreEvents(rows))));
+  const prepare = (rows) => markServices(markVoices(markSendEffects(markRichText(markStoreEvents(rows)))));
   // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
   // again only when its background has changed since.
   const backdrops = new Map();
@@ -795,6 +809,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
 
   // imsg stages one file per send under the Messages attachments folder before dispatch. An empty caption is left
   // out, so a file on its own is not a text send carrying nothing.
+  // A voice message is a file sent with imsg's send.attachment and audio set (issue 520), which stages it as Messages'
+  // own audio message so it arrives as the waveform bubble rather than a file. It rides the bridge and carries no caption.
+  const sendVoice = (chatId, file, { replyTo = null } = {}) => (bridgeDown() ? refusedNoBridge() : sendOut(withReply({ chat_id: Number(chatId), file, audio: true }, replyTo), 'send.attachment', [-32601, -32602, -32003], replyTo));
   const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => (replyTo && bridgeDown() ? refusedNoBridge() : sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo));
 
   // imsg names and versions its capabilities rather than advertising adjectives, so the client asks for the version
@@ -851,6 +868,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     try { changeReader?.close?.(); } catch { /* already closed */ }
     try { voices?.close?.(); } catch { /* already closed */ }
     try { members?.close?.(); } catch { /* already closed */ }
+    try { services?.close?.(); } catch { /* already closed */ }
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     const c = current;
     current = null;
@@ -871,6 +889,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     removeMember,
     sendText,
     sendFile,
+    sendVoice,
     react,
     edit,
     scanEdits,

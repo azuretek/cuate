@@ -2735,7 +2735,9 @@ var engine = (() => {
       attachments: m.is_audio_message ? parts.attachments.map((a) => markVoice(a, m)) : parts.attachments,
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
       ...styles.length ? { styles } : {},
-      ...sendEffect ? { sendEffect } : {}
+      ...sendEffect ? { sendEffect } : {},
+      // The service this message travelled on, as the store recorded it on the row (issue 520); none where unknown.
+      ...typeof m.service === "string" && m.service ? { service: m.service } : {}
     };
   }
   var isRecording = (a) => /^audio\//i.test(String(a.mime || "")) || /\.(caf|amr)$/i.test(String(a.name || ""));

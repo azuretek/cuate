@@ -62,11 +62,13 @@ export function createSender({ engine, store, config, log, platformOfChat = () =
     };
   };
 
-  const send = async function send(chatId, { text = '', file = '', replyTo = '' } = {}, clientKey) {
+  const send = async function send(chatId, { text = '', file = '', replyTo = '', voice = false } = {}, clientKey) {
     const prev = store.getSend(clientKey);
     if (prev) return { http: 200, body: { status: prev.status, clientKey, messageId: prev.message_id ?? null, duplicate: true } };
     if (inFlight.has(clientKey)) return { http: 409, error: ['in_flight', 'That message is still being sent.'] };
     if (!String(text).trim() && !file) return { http: 400, error: ['bad_text', 'Send text, a file, or a file with a caption'] };
+    // A voice message is a recording on its own: Messages gives the waveform bubble no caption (issue 520).
+    if (voice && (!file || String(text).trim())) return { http: 400, error: ['bad_voice', 'A voice message is one audio file with no text.'] };
     // A threaded reply is offered only where the conversation's platform carries threads (issue 184): a request to
     // thread anywhere else is refused in place, and never sent as a reply the recipient cannot read. Costing nothing,
     // it is checked before the rate window is charged.
@@ -98,7 +100,7 @@ export function createSender({ engine, store, config, log, platformOfChat = () =
     const opts = replyTo ? { replyTo } : {};
     try {
       store.putSend(clientKey, chatId, 'pending', null);
-      const r = path ? await engine.sendFile(chatId, path, text, opts) : await engine.sendText(chatId, text, opts);
+      const r = path && voice ? await engine.sendVoice(chatId, path, opts) : path ? await engine.sendFile(chatId, path, text, opts) : await engine.sendText(chatId, text, opts);
       if (r.ok) {
         store.putSend(clientKey, chatId, 'sent', r.messageId);
         return { http: 201, body: { status: 'sent', clientKey, messageId: r.messageId ?? null } };
@@ -111,6 +113,10 @@ export function createSender({ engine, store, config, log, platformOfChat = () =
       store.putSend(clientKey, chatId, 'failed', null);
       if (r.unsupported) {
         refund();
+        if (voice) {
+          log.emit('send.refused', { reason: 'voice_unsupported', chat: chatId });
+          return { http: 422, error: ['voice_unsupported', 'The Mac cannot send a voice message right now: it needs the engine bridge running.'] };
+        }
         log.emit('send.refused', { reason: 'reply_unsupported', chat: chatId });
         return { http: 422, error: ['reply_unsupported', 'The Mac cannot send a threaded reply right now: it needs the engine bridge running.'] };
       }
