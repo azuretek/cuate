@@ -103,7 +103,7 @@ test('the iOS shell lets media play without a gesture, as the Android shell does
   assert.match(shell, /#if DEBUG[\s\S]*--live-photo-fixture[\s\S]*#endif/, 'the Live Photo fixture is a Debug seam');
   assert.match(read('ios/project.yml'), /CONFIGURATION.*Debug[\s\S]*core\/test\/live-photo-fixture\.js[\s\S]*core\/test\/live-photo-fixture\.mp4/, 'copied into test builds only');
   const uiTest = read('ios/' + naming.product + 'UITests/LivePhotoTests.swift');
-  for (const part of ['--live-photo-fixture', '"Play the Live Photo"', 'control.tap()', 'hasPrefix("live:pass")']) assert.ok(uiTest.includes(part), 'the UI test presses LIVE and reads the verdict: ' + part);
+  for (const part of ['--live-photo-fixture', '"Play the Live Photo"', 'pressUntil("press-live"', '.element(control)', 'hasPrefix("live:pass")']) assert.ok(uiTest.includes(part), 'the UI test presses LIVE and reads the verdict: ' + part);
   assert.doesNotMatch(read('core/app/main.js'), /live-photo-fixture/);
 });
 

@@ -70,14 +70,14 @@ final class LateNoticeTests: XCTestCase {
             print("late notice pressed from its banner")
         }
         // A press in Notification Center can land on the cell without opening it, the first press only expanding it, so a
-        // notice still there and pressable after a while is pressed once more before the app is required in front.
-        notice.tap()
-        if !app.wait(for: .runningForeground, timeout: 15), pressable(notice, in: springboard, timeout: 5) {
-            keep("late-notice-pressed-again")
-            print("late notice pressed again")
-            notice.tap()
-        }
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Pressing the notice brings the app back")
+        // notice still there and pressable after the window is pressed once more, by the one press rule (issues 517 and
+        // 519), whose window starts when a press returns and which reads whether the app is in front before every decision.
+        let steady = steadiness(notice, in: springboard)
+        let opened = pressUntil("open-notice", rule: PressUntil(window: 15, maxPresses: 2), at: { steady() ? .element(notice) : .absent }, reached: {
+            app.state == .runningForeground
+        })
+        if opened.presses.count > 1 { keep("late-notice-pressed-again") }
+        XCTAssertTrue(opened.ok || app.wait(for: .runningForeground, timeout: 30), "Pressing the notice brings the app back. Each press: " + opened.presses.joined(separator: " | "))
 
         let settled = NSPredicate { _, _ in label("late-notice:pass").exists || label("late-notice:fail").exists }
         _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 60)
@@ -90,9 +90,17 @@ final class LateNoticeTests: XCTestCase {
     /// Whether the notice can be pressed: hittable, its centre on the screen, and its frame the same on consecutive reads,
     /// so it is neither still sliding in nor sliding away. False when that does not hold within the timeout.
     private func pressable(_ notice: XCUIElement, in springboard: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let steady = steadiness(notice, in: springboard)
+        let ready = NSPredicate { _, _ in steady() }
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: timeout) == .completed
+    }
+
+    /// A reader of whether the notice can be pressed now, by the test above: each call reads it once, and it holds only
+    /// once the frame has been the same on consecutive reads.
+    private func steadiness(_ notice: XCUIElement, in springboard: XCUIApplication) -> () -> Bool {
         var last = CGRect.null
         var still = 0
-        let ready = NSPredicate { _, _ in
+        return {
             guard notice.exists, notice.isHittable else { still = 0; last = .null; return false }
             let frame = notice.frame
             let screen = springboard.frame
@@ -101,7 +109,6 @@ final class LateNoticeTests: XCTestCase {
             last = frame
             return still >= 2
         }
-        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: nil)], timeout: timeout) == .completed
     }
 
     private func keep(_ name: String) {

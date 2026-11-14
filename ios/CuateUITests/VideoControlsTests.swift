@@ -65,7 +65,10 @@ final class VideoControlsTests: XCTestCase {
         // back if the player hid them anyway.
         if !player[0].element.waitForExistence(timeout: 10) {
             let clip = page.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "clip-2.mp4")).firstMatch
-            if clip.exists { clip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap() }
+            let shown = pressUntil("show-player-controls", at: {
+                clip.exists ? .point(clip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)), "the picture at \(clip.frame)") : .absent
+            }, reached: { player[0].element.exists })
+            if !shown.ok { print("video controls (" + shape + ") the player's controls did not come back. Each press: " + shown.presses.joined(separator: " | ")) }
         }
         let ours = [
             Control(name: "close", element: page.buttons["Close"]),
@@ -134,25 +137,15 @@ final class VideoControlsTests: XCTestCase {
     }
 
     /// Presses the fixture's release control until the page says the clip is on its way. XCTest can tap a control and the
-    /// page never see a click (issues 384 and 471), so the step waits on the state it needs rather than on one tap; the
+    /// page never see a click (issues 384 and 471), so the step goes through the one press rule (issues 517 and 519); the
     /// control leaves the page once it has been pressed, so a later press can never reach anything else.
     private func releaseClip(_ app: XCUIApplication, _ page: XCUIElement) {
         let released = page.staticTexts.matching(NSPredicate(format: "label == 'vc:loading' OR label BEGINSWITH 'vc:ready' OR label BEGINSWITH 'vc:fail'")).firstMatch
         let control = page.buttons["vc:release"]
-        let deadline = Date().addingTimeInterval(30)
-        var presses: [String] = []
-        repeat {
-            if released.exists { return }
-            guard control.exists else {
-                presses.append("no release control")
-                _ = released.waitForExistence(timeout: 2)
-                continue
-            }
-            presses.append((control.isHittable ? "hittable" : "not hittable") + " at " + String(describing: control.frame))
-            control.tap()
-            if released.waitForExistence(timeout: 5) { return }
-        } while Date() < deadline
-        XCTFail("The release control was pressed \(presses.count) times and the clip was never let go. Each press: " + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
+        let step = pressUntil("release-clip", target: { control }, reached: { released.exists })
+        if !step.ok {
+            XCTFail("The release control was pressed \(step.presses.count) times and the clip was never let go. Each press: " + step.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
+        }
     }
 
     /// The video's box on screen, from the page's report (`"video":{"x":..,"y":..,"w":..,"h":..}` beside the viewport, in
