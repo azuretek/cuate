@@ -510,7 +510,8 @@
       "historyCursor": "string?",
       "styles": "TextStyle[]?",
       "edits": "EditVersion[]?",
-      "sendEffect": "string?"
+      "sendEffect": "string?",
+      "service": "string?"
     },
     "EditVersion": {
       "text": "string",
@@ -559,7 +560,8 @@
       "text": "string?",
       "file": "string?",
       "clientKey": "string",
-      "replyTo": "string?"
+      "replyTo": "string?",
+      "voice": "boolean?"
     },
     "ReactionRequest": {
       "emoji": "string",

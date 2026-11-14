@@ -204,6 +204,20 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // Voice messages as Messages records them (issue 440): a row with one Core Audio recording, marked a voice message in
   // the store, and played there once it is played on any of the person's devices, which imsg's row never says. The
   // adapter learns of it through `voices`, the fake's stand-in for the store reader in voices.js, with the same shape.
+  // The service each row travelled on (issue 520): iMessage unless a test says otherwise, read through `services`,
+  // the fake's stand-in for services.js, with the same shape.
+  const serviceOf = new Map();
+  const services = {
+    among(guids) {
+      const found = new Map();
+      for (const g of guids || []) {
+        const m = messages.find((x) => x.guid === String(g));
+        if (m) found.set(m.guid, serviceOf.get(m.guid) || 'iMessage');
+      }
+      return found;
+    },
+    close() {},
+  };
   const voiceRows = new Map();
   let voiceFault = null;
   const voices = {
@@ -283,6 +297,9 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     changes,
     backgrounds,
     voices,
+    services,
+    setService(guid, service) { serviceOf.set(String(guid), service); },
+    voiceSends: [],
     members,
     // A participant adds someone to the group, removes someone, or leaves it (handle unused), on their phone (issue 456).
     memberElsewhere(chatId, sender, action, handle = null) {
@@ -565,6 +582,20 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
             const answerGuid = p.reply_to && behavior.replyAnswer === 'existing' ? String(p.reply_to) : m.guid;
             if (behavior.sendDelayMs > 0) setTimeout(() => reply(req.id, { ok: true, id: m.id, guid: answerGuid }), behavior.sendDelayMs).unref();
             else reply(req.id, { ok: true, id: m.id, guid: answerGuid });
+            setTimeout(() => broadcast(m), 30).unref();
+            return undefined;
+          }
+          // A voice message (issue 520): imsg's send.attachment with audio set rides the bridge and stages the file as
+          // Messages' own audio message.
+          case 'send.attachment': {
+            attempts += 1;
+            if (behavior.bridge !== 'ready') return noBridge(req.id);
+            if (!p.file) return fail(req.id, -32602, 'file is required');
+            const name = path.basename(p.file);
+            const m = add({ chat_id: p.chat_id, is_from_me: true, text: '', attachments: [{ filename: name, transfer_name: name, uti: 'com.apple.coreaudio-format', mime_type: 'audio/x-caf', total_bytes: 0, is_sticker: false, missing: false, original_path: p.file }] });
+            if (p.audio) voiceRows.set(m.guid, { played: false });
+            world.voiceSends.push({ chatId: p.chat_id, file: p.file, audio: Boolean(p.audio) });
+            reply(req.id, { ok: true, id: m.id, guid: m.guid });
             setTimeout(() => broadcast(m), 30).unref();
             return undefined;
           }

@@ -2511,6 +2511,9 @@
           },
           "sendEffect": {
             "type": "string"
+          },
+          "service": {
+            "type": "string"
           }
         },
         "required": [
@@ -2696,6 +2699,9 @@
           },
           "replyTo": {
             "type": "string"
+          },
+          "voice": {
+            "type": "boolean"
           }
         },
         "required": [
