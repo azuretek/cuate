@@ -59,7 +59,9 @@ test('the store reader reads message.service read-only, and names nothing for a 
     const o = new DatabaseSync(old);
     o.exec("CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT); INSERT INTO message (guid) VALUES ('g-a')");
     o.close();
-    assert.equal(createServiceReader({ dbPath: old }).among(['g-a']).size, 0);
+    // Every reader is closed before the folder is removed: Windows refuses to delete a file an open handle holds.
+    const oldReader = createServiceReader({ dbPath: old });
+    try { assert.equal(oldReader.among(['g-a']).size, 0); } finally { oldReader.close(); }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
