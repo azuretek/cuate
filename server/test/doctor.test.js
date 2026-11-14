@@ -327,6 +327,70 @@ test('Messages is watched and relaunched through the injected exec', async () =>
   assert.deepEqual(calls, [['pgrep', ['-x', 'Messages']], ['pgrep', ['-x', 'Messages']], ['open', ['-a', 'Messages']]]);
 });
 
+// The server owns the bridge in Messages (Abi, 2026-11-13): a plain `open -a` drops it, and nothing put it back.
+test('Messages is opened through the engine with its bridge where the server owns it', async () => {
+  const { log } = logger();
+  const calls = [];
+  const exec = async (cmd, args, opts) => { calls.push([cmd, args, opts && opts.timeoutMs]); return { code: 0, stdout: '' }; };
+  const mac = createMac({ log, settings: {}, platform: 'darwin', exec, bridgeBin: '/opt/imsg/bin/imsg' });
+  assert.equal(mac.ownsBridge(), true);
+  assert.deepEqual(await mac.relaunchMessages(), { launched: true, bridge: true });
+  assert.deepEqual(await mac.relaunchMessages({ force: true }), { launched: true, bridge: true });
+  assert.deepEqual(calls, [['/opt/imsg/bin/imsg', ['launch', '--json'], 60000], ['/opt/imsg/bin/imsg', ['launch', '--force', '--json'], 60000]], 'never a plain open -a, and a launch has a minute');
+  const off = createMac({ log, settings: { messages: { bridge: false } }, platform: 'darwin', exec, bridgeBin: '/opt/imsg/bin/imsg' });
+  assert.equal(off.ownsBridge(), false);
+  calls.length = 0;
+  await off.relaunchMessages();
+  assert.deepEqual(calls.map((c) => c[0]), ['open'], 'with the setting off it opens Messages as before');
+  const failing = createMac({ log, settings: {}, platform: 'darwin', exec: async () => ({ code: 1 }), bridgeBin: 'imsg' });
+  assert.deepEqual(await failing.relaunchMessages(), { launched: false, reason: 'the engine could not open Messages with its bridge' });
+});
+
+const bridgeWatch = (bridge) => {
+  const { lines, log } = logger();
+  const state = { at: 0, running: true, launches: [], checks: 0, bridge };
+  const engine = { info: () => ({ ready: true }), start: async () => {}, checkBridge: async () => { state.checks += 1; return { ...state.bridge }; } };
+  const mac = {
+    ...fakeControl(),
+    ownsBridge: () => true,
+    messagesRunning: async () => state.running,
+    relaunchMessages: async (o = {}) => { state.launches.push(Boolean(o.force)); return { launched: true, bridge: true }; },
+  };
+  const w = createWatchdog({ engine, mac, log, now: () => state.at, everyMs: 60000 });
+  return { w, lines, state };
+};
+
+test('the watchdog relaunches Messages with its bridge when the bridge stops answering, and leaves a ready one alone', async () => {
+  const { w, lines, state } = bridgeWatch({ known: true, ready: true });
+  await w.tick();
+  assert.deepEqual(state.launches, [], 'a ready bridge is left alone');
+  state.bridge = { known: true, ready: false, error: 'the bridge stopped answering' };
+  state.at = 60000;
+  await w.tick();
+  assert.deepEqual(state.launches, [true], 'a bridge that does not answer is replaced by a forced relaunch');
+  assert.ok(lines.find((l) => l.event === 'mac.relaunch' && l.reason === 'the bridge in Messages was not answering'));
+  state.at = 120000;
+  await w.tick();
+  assert.deepEqual(state.launches, [true], 'a fresh bridge gets two ticks to come up before it is judged again');
+  for (const at of [180000, 300000, 420000]) { state.at = at; await w.tick(); }
+  assert.equal(state.launches.length, 3, 'at most three relaunches an hour');
+  assert.ok(lines.find((l) => l.event === 'mac.refused' && l.what === 'bridge' && l.reason === 'relaunched 3 times in the last hour'));
+  assert.equal(w.counts().bridgeRelaunches, 3);
+});
+
+test('the watchdog never relaunches for a bridge the engine does not report, or one another program manages', async () => {
+  const unknown = bridgeWatch({ known: false, ready: false });
+  await unknown.w.tick();
+  assert.deepEqual(unknown.state.launches, []);
+  const { lines, log } = logger();
+  let checks = 0;
+  const engine = { info: () => ({ ready: true }), start: async () => {}, checkBridge: async () => { checks += 1; return { known: true, ready: false }; } };
+  const mac = { ...fakeControl({}, { messages: { managedBy: 'bluebubbles' } }), ownsBridge: () => true, relaunchMessages: async () => { throw new Error('must not relaunch'); } };
+  await createWatchdog({ engine, mac, log }).tick();
+  assert.equal(checks, 0, 'a Messages another program manages is not even probed');
+  assert.equal(lines.filter((l) => l.event === 'mac.relaunch').length, 0);
+});
+
 const watch = (over = {}, settings = {}, macOver = {}) => {
   const { lines, log } = logger();
   const state = { restarts: 0, ready: false, running: true, relaunches: 0, at: 0 };
