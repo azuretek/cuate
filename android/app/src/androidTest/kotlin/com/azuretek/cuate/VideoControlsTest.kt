@@ -289,12 +289,16 @@ class VideoControlsTest {
         val automation = instrumentation.uiAutomation
         val deadline = drawnAt + TimeUnit.SECONDS.toNanos(VIEWER_TREE_SECONDS)
         var republishes = 0
+        // The controls this reading waits for: a contract run omits its controlled observation from what it reads, so it
+        // must omit it from what it waits for too, or it republishes until the bound and its last read can land while
+        // the viewer is hidden for a republish (issue 509).
+        val wanted = if (omitCloseObservation) OURS - "close" else OURS
         while (true) {
             instrumentation.waitForIdleSync()
             val found = collect().let { if (omitCloseObservation) it - "close" else it }
             val millis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - drawnAt)
             println("video controls ($shape) tree after $republishes republishes, ${millis}ms from the page's report: " + OURS.filter { it in found })
-            if (OURS.all { it in found } || System.nanoTime() >= deadline) return Viewer(found, republishes, millis)
+            if (wanted.all { it in found } || System.nanoTime() >= deadline) return Viewer(found, republishes, millis)
             republishes += 1
             republish(scenario)
             val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())

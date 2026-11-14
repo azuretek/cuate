@@ -64,3 +64,11 @@ test('a viewer missing from the tree says whether the web view or the app lost i
   assert.doesNotMatch(after, /republish|awaitViewer/, 'after the clip the player\'s node is never rebuilt from scratch');
   assert.match(after, /awaitControls\(scenario, PLAYER \+ OURS\)/);
 });
+
+test('a contract run waits only for the controls it reads, so it never republishes to the bound (issue 509)', () => {
+  const kt = readFileSync(new URL('../../android/app/src/androidTest/kotlin/com/azuretek/cuate/VideoControlsTest.kt', import.meta.url), 'utf8');
+  const body = kt.slice(kt.indexOf('private fun awaitViewer('), kt.indexOf('private fun republish('));
+  assert.match(body, /val wanted = if \(omitCloseObservation\) OURS - "close" else OURS/);
+  assert.match(body, /if \(wanted\.all \{ it in found \}/);
+  assert.doesNotMatch(body, /if \(OURS\.all \{ it in found \}/, 'waiting on a control the reading removed never completes');
+});
