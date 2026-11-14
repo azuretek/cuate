@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Rect
+import android.os.Build
 import android.util.Base64
 import android.view.View
 import android.view.ViewGroup
@@ -38,6 +39,16 @@ import java.util.concurrent.TimeUnit
 // and no further read of that snapshot finds them. If the controls are still absent after the first stretch, the web
 // view is asked to rebuild its tree once and the wait continues, so a stale snapshot cannot fail a green app. Every
 // assertion below is unchanged: the same controls must be in the tree and the viewer must be reachable before its clip.
+//
+// Issue 509: that one rebuild was not enough. The retained evidence had the page's viewer drawn, every control of ours
+// answering a press at its middle, while the tree held only the web view's empty document, still so after the rebuild.
+// So the read over the empty video now starts from the page's own report that it drew the viewer's controls, and its
+// bound runs from that report, not from the step. Every node is read fresh rather than from the automation's cache, and
+// each reading that lacks a control is followed by a republish, the page hiding the viewer from accessibility for two
+// frames and showing it again and the web view's node hidden and shown again, until the controls are there or the bound
+// passes. If the page still draws them then, the failure says the web view never exposed them, an Android tree defect,
+// and if the page does not, it says the app lost them. The read after the clip keeps issue 443's single rebuild: a
+// republish there would rebuild the player's node from scratch and hide the empty node issue 446 guards against.
 @RunWith(AndroidJUnit4::class)
 class VideoControlsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -162,18 +173,25 @@ class VideoControlsTest {
             val fixture = instrumentation.context.assets.open("video-controls-fixture.js").bufferedReader().use { it.readText() }
             evaluate(scenario, fixture)
             val empty = awaitState(scenario, "vc:empty ")
+            val drawnAt = System.nanoTime()
             println("video controls empty scene ($shape): $empty")
+            // The page's own report comes first: a control it never drew is the app's defect, whatever the tree says.
+            val notDrawn = OURS.filter { empty.optJSONObject("drawn")?.optBoolean(it) != true }
+            assertTrue("the page never drew the viewer's own controls before its clip: " + notDrawn.joinToString(", ") +
+                " not drawn where a press at the middle reaches them ($empty)", notDrawn.isEmpty())
             // The tree is built over the viewer while its video has nothing to play: the viewer's own controls are in it.
-            val before = if (contract == null) awaitControls(scenario, OURS) else awaitControls(scenario, OURS, true)
+            val viewer = awaitViewer(scenario, shape, drawnAt, contract != null)
+            val before = viewer.found
             val missing = OURS.filter { it !in before }
             println("video controls ($shape) accessibility tree over the empty video:\n" + describeTree())
             if (contract != null) assertTrue("Only the controlled observation may be missing", missing == listOf("close"))
-            if (missing.isNotEmpty()) keepEmptyFailure(scenario, shape, contract?.name ?: shape) { name ->
+            val cause = if (missing.isEmpty()) "" else viewerCause(scenario, viewer)
+            if (missing.isNotEmpty()) keepEmptyFailure(scenario, shape, contract?.name ?: shape, viewer.summary() + cause) { name ->
                 contract?.reads?.add(name)
                 if (contract?.failWindows == true && name == "windows") throw IllegalStateException("capture-contract-windows-error")
             }
             try {
-                assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + SystemSurface.failureSuffix(), missing.isEmpty())
+                assertTrue("the viewer was not in the accessibility tree before its clip: missing " + missing.joinToString(", ") + cause + SystemSurface.failureSuffix(), missing.isEmpty())
             } catch (error: AssertionError) {
                 if (contract == null || !error.message.orEmpty().startsWith(
                     "the viewer was not in the accessibility tree before its clip: missing close"
@@ -248,17 +266,94 @@ class VideoControlsTest {
         throw AssertionError("the video controls fixture never reached $prefix: $state")
     }
 
+    private data class Viewer(val found: Map<String, Found>, val republishes: Int, val millis: Long) {
+        fun summary() = "$republishes republishes over ${millis}ms from the page's report that it drew the viewer"
+    }
+
+    /** Lets the automation read every view, its ids and every window; the first call connects the accessibility service. */
+    private fun connect() {
+        val automation = instrumentation.uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
+    }
+
+    /**
+     * The viewer's own controls, read from the tree over the empty video (issue 509). The bound runs from the page's report
+     * that it drew them, so a slow boot or a slow fixture cannot spend it. A reading that lacks any of them is followed by
+     * a republish, and the next reading waits for the page to say the round is done and for the service's events to
+     * settle: states, never a fixed time.
+     */
+    private fun awaitViewer(scenario: ActivityScenario<MainActivity>, shape: String, drawnAt: Long, omitCloseObservation: Boolean): Viewer {
+        connect()
+        val automation = instrumentation.uiAutomation
+        val deadline = drawnAt + TimeUnit.SECONDS.toNanos(VIEWER_TREE_SECONDS)
+        var republishes = 0
+        while (true) {
+            instrumentation.waitForIdleSync()
+            val found = collect().let { if (omitCloseObservation) it - "close" else it }
+            val millis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - drawnAt)
+            println("video controls ($shape) tree after $republishes republishes, ${millis}ms from the page's report: " + OURS.filter { it in found })
+            if (OURS.all { it in found } || System.nanoTime() >= deadline) return Viewer(found, republishes, millis)
+            republishes += 1
+            republish(scenario)
+            val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (left > 0) try { automation.waitForIdle(TREE_SETTLE_MS, minOf(left, SETTLE_BOUND_MS)) } catch (_: java.util.concurrent.TimeoutException) { }
+        }
+    }
+
+    /**
+     * One republish (issue 509). The page hides the viewer from accessibility for two frames and shows it again, so the
+     * renderer sends the viewer's nodes anew; the web view's node is hidden and shown again across a frame, so Android asks
+     * the web view for its tree again; and on Android 14 and later the automation's own cache of nodes is dropped.
+     */
+    private fun republish(scenario: ActivityScenario<MainActivity>) {
+        val round = evaluate(scenario, "window.videoControlsRepublish()")
+        assertTrue("the fixture refused to republish the viewer while its clip was held: $round", round.toIntOrNull()?.let { it > 0 } == true)
+        scenario.onActivity { activity ->
+            webView(activity.findViewById(android.R.id.content))?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        }
+        instrumentation.waitForIdleSync()
+        scenario.onActivity { activity ->
+            webView(activity.findViewById(android.R.id.content))?.let { view ->
+                view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                view.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+                view.invalidate()
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) instrumentation.uiAutomation.clearCache()
+        // The next reading is taken only with the viewer shown again, so a round cannot itself hide a control from it.
+        val back = System.nanoTime() + TimeUnit.SECONDS.toNanos(REPUBLISH_ROUND_SECONDS)
+        while (evaluate(scenario, "window.videoControlsRepublished >= $round") != "true") {
+            assertTrue("the page never showed the viewer again after republish $round", System.nanoTime() < back)
+            instrumentation.waitForIdleSync()
+        }
+    }
+
+    /**
+     * Why the viewer's controls were not in the tree once the bound passed (issue 509): the page asked again. A page that
+     * still draws every one of them makes it the web view's tree, not the app; a page that lost one makes it the app.
+     */
+    private fun viewerCause(scenario: ActivityScenario<MainActivity>, viewer: Viewer): String {
+        val drawn = JSONObject(evaluate(scenario, "window.videoControlsDrawn()"))
+        val lost = OURS.filter { !drawn.optBoolean(it) }
+        return if (lost.isEmpty()) {
+            "; the page still draws every one where a press at its middle reaches it ($drawn), and " + viewer.summary() +
+                " never brought them into the tree: Android's web view did not expose the page, an Android accessibility tree defect, not the app's"
+        } else {
+            "; the page no longer draws " + lost.joinToString(", ") + " ($drawn) after " + viewer.summary() + ": the app lost them"
+        }
+    }
+
     /**
      * The controls named, read from the accessibility tree once all of them are there or the bound passes. The first call
      * connects the accessibility service. Between readings it waits for the service's own events to settle, a state of
      * the tree, never a fixed time. Once the first stretch passes without them, the web view is asked to rebuild its tree
      * and the wait continues within the same bound (issue 443).
      */
-    private fun awaitControls(scenario: ActivityScenario<MainActivity>, names: List<String>, omitCloseObservation: Boolean = false): Map<String, Found> {
+    private fun awaitControls(scenario: ActivityScenario<MainActivity>, names: List<String>): Map<String, Found> {
+        connect()
         val automation = instrumentation.uiAutomation
-        automation.serviceInfo = automation.serviceInfo.apply {
-            flags = flags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-        }
         val started = System.nanoTime()
         val deadline = started + TimeUnit.SECONDS.toNanos(CONTROLS_SECONDS)
         val rebuildAt = started + TimeUnit.SECONDS.toNanos(REBUILD_AFTER_SECONDS)
@@ -266,14 +361,14 @@ class VideoControlsTest {
         var found: Map<String, Found> = emptyMap()
         do {
             instrumentation.waitForIdleSync()
-            found = collect().let { if (omitCloseObservation) it - "close" else it }
+            found = collect()
             if (names.all { it in found }) return found
             val now = System.nanoTime()
             if (!rebuilt && now >= rebuildAt) {
                 rebuilt = true
                 rebuildTree(scenario)
                 instrumentation.waitForIdleSync()
-                found = collect().let { if (omitCloseObservation) it - "close" else it }
+                found = collect()
                 if (names.all { it in found }) return found
                 continue
             }
@@ -316,9 +411,11 @@ class VideoControlsTest {
         return roots
     }
 
+    // Every node is read fresh from the app, never from the automation's cache, which can hold a tree the page has moved
+    // past (issue 509).
     private fun collect(): Map<String, Found> {
         val found = mutableMapOf<String, Found>()
-        for (root in roots()) walk(root) { node ->
+        for (root in roots()) walk(root, fresh = true) { node ->
             val label = (node.contentDescription ?: node.text ?: "").toString().trim()
             val lower = label.lowercase()
             val name = when {
@@ -341,15 +438,16 @@ class VideoControlsTest {
         return found
     }
 
-    private fun walk(node: AccessibilityNodeInfo, visit: (AccessibilityNodeInfo) -> Unit) {
+    private fun walk(node: AccessibilityNodeInfo, fresh: Boolean = false, visit: (AccessibilityNodeInfo) -> Unit) {
+        if (fresh && !node.refresh()) return
         visit(node)
-        for (i in 0 until node.childCount) node.getChild(i)?.let { walk(it, visit) }
+        for (i in 0 until node.childCount) node.getChild(i)?.let { walk(it, fresh, visit) }
     }
 
     private fun describeTree(): String {
         val root = instrumentation.uiAutomation.rootInActiveWindow ?: return "(no window)"
         val lines = mutableListOf<String>()
-        walk(root) { node ->
+        walk(root, fresh = true) { node ->
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
             val label = (node.contentDescription ?: node.text ?: "").toString().take(80)
@@ -360,10 +458,10 @@ class VideoControlsTest {
 
     /** Evidence only after the original pre-clip deadline, never a recovery or a readiness condition (issue 509). */
     private fun keepEmptyFailure(
-        scenario: ActivityScenario<MainActivity>, shape: String, evidenceName: String = shape,
+        scenario: ActivityScenario<MainActivity>, shape: String, evidenceName: String, republish: String,
         beforeRead: (String) -> Unit = {}
     ) {
-        val evidence = JSONObject().put("shape", shape).put("stage", "empty-before-release")
+        val evidence = JSONObject().put("shape", shape).put("stage", "empty-before-release").put("republish", republish)
         fun capture(name: String, read: () -> Any?) {
             try { beforeRead(name); evidence.put(name, read()) } catch (error: Throwable) {
                 evidence.put(name, JSONObject().put("error", error.toString()))
@@ -373,7 +471,7 @@ class VideoControlsTest {
         capture("nativeTrees") {
             roots().map { root ->
                 val lines = mutableListOf<String>()
-                walk(root) { node ->
+                walk(root, fresh = true) { node ->
                     val bounds = Rect()
                     node.getBoundsInScreen(bounds)
                     lines.add("window=" + node.windowId + " class=" + node.className +
@@ -497,5 +595,8 @@ class VideoControlsTest {
         const val TREE_SETTLE_MS = 300L
         const val CONTROLS_SECONDS = 30L
         const val REBUILD_AFTER_SECONDS = 15L
+        const val VIEWER_TREE_SECONDS = 30L
+        const val SETTLE_BOUND_MS = 5000L
+        const val REPUBLISH_ROUND_SECONDS = 10L
     }
 }
