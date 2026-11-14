@@ -80,7 +80,7 @@ const omit = (o, keys) => {
 // voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
 // store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
 // client of ours has played, kept by the server ({ has(attachmentId) }), or null.
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null, services = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -183,8 +183,22 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       return rows;
     }
   };
+  // The service each row travelled on, asked of the store in one read (issue 520), so a consumer gating on a
+  // sender reads the message's own service and never the chat's. A store that cannot be read leaves the rows unmarked.
+  const markServices = (rows) => {
+    const asked = services ? rows.filter((m) => m && m.guid && !m.service) : [];
+    if (!asked.length) return rows;
+    try {
+      const found = services.among(asked.map((m) => String(m.guid)));
+      if (!found.size) return rows;
+      return rows.map((m) => (m && m.guid && found.has(String(m.guid)) ? { ...m, service: found.get(String(m.guid)) } : m));
+    } catch (e) {
+      log.emit('service.failed', { error: failure(e) });
+      return rows;
+    }
+  };
   // Every raw row passes the same marks before it is mapped, whichever read it came from.
-  const prepare = (rows) => markVoices(markSendEffects(markRichText(markStoreEvents(rows))));
+  const prepare = (rows) => markServices(markVoices(markSendEffects(markRichText(markStoreEvents(rows)))));
   // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
   // again only when its background has changed since.
   const backdrops = new Map();
@@ -244,6 +258,12 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // Whether the engine can edit one of our messages: imsg lists `message.edit` in status.methods only while its bridge
   // is ready and reports the selector Messages edits with, so an engine that cannot is never asked (issue 391).
   let canEdit = false;
+  // Whether the engine's IMCore bridge, the helper injected into Messages, answers (issue 515). Typing, read
+  // receipts, reactions, threaded replies and edits all go through it, and the engine works one request at a time, so a
+  // bridge that has stopped answering holds every request behind each of those for its full timeout: a send waits
+  // minutes and comes back uncertain (Abi, 2026-11-13). known is false for an engine whose status names no bridge,
+  // which is asked as before. The watchdog reads this through checkBridge() and has the bridge relaunched.
+  let bridge = { known: false, ready: false, error: null };
   // The link's own record, so the log and the diagnostics can say what happened: the generation of the current
   // child, how long it had been up, the last request that failed, and the restart history.
   let gen = 0;
@@ -421,9 +441,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       log.emit('engine.error', { method: 'status', code: numCode(e), error: e.message, ms: Date.now() - statusAt });
     }
     if (current !== c) return; // a newer start replaced this one, or the child died
-    canReadStatus = Array.isArray(st?.methods) && st.methods.includes('message.send_status');
-    canType = Array.isArray(st?.methods) && st.methods.includes('typing');
-    canEdit = Array.isArray(st?.methods) && st.methods.includes('message.edit');
+    applyStatus(st);
     // capabilities is the engine's own block (an older release omits it, so it stays null). The reaction sender
     // reads it through supportsEmojiTapback to decide whether an arbitrary emoji can be sent.
     setState({ version: st && st.version != null ? String(st.version) : null, capabilities: st && typeof st.capabilities === 'object' ? st.capabilities : null });
@@ -443,10 +461,16 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     markReady(ready);
     log.emit('engine.start', { kind, version: state.version, ready, edit: canEdit });
     if (ready) primeEdits();
-    // Present and OFF by default (issue 230): the only source of another person typing is a bridge that is already
-    // running, which this server never starts. The switch, and the engine advertising the method, must both be on.
+    // Present and OFF by default (issue 230): the only source of another person typing is the bridge, which the Mac care
+    // opens Messages with and relaunches when it stops answering. The switch, and the engine advertising the method,
+    // must both be on.
     // Whether inbound typing is being listened for, and why not when it is not, is logged once per engine start, so a
     // missing indicator can be told apart from a source that was never on (Abi, 2026-10-14).
+    await subscribeBridgeEvents(st);
+    if (!ready && c.alive) scheduleRestart(); // a live child that will not answer is retried on the backoff
+  }
+
+  async function subscribeBridgeEvents(st) {
     if (!typingIncoming) log.emit('typing.subscribe', { subscribed: false, reason: 'switched off' });
     else if (!(Array.isArray(st?.methods) && st.methods.includes('bridge.events.subscribe'))) log.emit('typing.subscribe', { subscribed: false, reason: 'the engine does not offer bridge events' });
     else {
@@ -455,7 +479,47 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
         log.emit('typing.subscribe', { subscribed: true, reason: 'bridge events' });
       } catch { log.emit('typing.subscribe', { subscribed: false, reason: 'subscribe failed' }); /* request() logged the error */ }
     }
-    if (!ready && c.alive) scheduleRestart(); // a live child that will not answer is retried on the backoff
+  }
+
+  // What the engine's status says it can do now. imsg lists in status.methods only what is usable at this moment, so
+  // a bridge that went away takes typing and edit with it, and one that came back returns them.
+  function applyStatus(st) {
+    const methods = Array.isArray(st?.methods) ? st.methods : [];
+    canReadStatus = methods.includes('message.send_status');
+    canType = methods.includes('typing');
+    canEdit = methods.includes('message.edit');
+    const b = st && st.bridge && typeof st.bridge === 'object' && typeof st.bridge.ready === 'boolean' ? st.bridge : null;
+    setBridge(b ? { known: true, ready: b.ready, error: b.ready ? null : String(b.error || 'the bridge is not ready') } : { known: false, ready: false, error: null });
+  }
+
+  function setBridge(next, method = null) {
+    const was = bridge;
+    bridge = next;
+    if (next.known && (!was.known || was.ready !== next.ready)) log.emit('engine.bridge', { ready: next.ready, ...(method ? { method } : {}), ...(next.error ? { reason: next.error } : {}) });
+  }
+
+  // A bridge request that timed out, or that the engine says never reached Messages after waiting on it, means the
+  // bridge has stopped answering. Every bridge request after it is refused at once rather than queued for its full
+  // timeout in front of the sends, until a status read finds the bridge ready again. A bridge that is simply not started
+  // (-32003) answers at once, costs the sends nothing, and is left to the engine's own refusal.
+  const bridgeFault = (e) => Boolean(e) && (e.code === 'timeout' || (e.code === -32603 && /before dispatch/i.test(String(e.message || ''))));
+  function noteBridgeFailure(method, e) {
+    if (!bridgeFault(e)) return;
+    canType = false;
+    canEdit = false;
+    setBridge({ known: true, ready: false, error: 'the bridge stopped answering' }, method);
+  }
+  const bridgeDown = () => bridge.known && !bridge.ready;
+  const bridgeRefusal = () => Object.assign(new Error('the bridge in Messages is not answering'), { code: 'bridge_down' });
+
+  // Reads the engine's status again: whether the bridge answers, and with it what can be asked. The watchdog calls it
+  // every minute and after a relaunch; a bridge that comes back has its event stream subscribed again.
+  async function checkBridge() {
+    const was = bridge.ready;
+    const st = await request('status', {}, 15000);
+    applyStatus(st);
+    if (bridge.ready && !was) await subscribeBridgeEvents(st);
+    return { ...bridge };
   }
 
   async function start({ force = false } = {}) {
@@ -688,6 +752,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       if (guid && existing && guid === existing) return { ok: false, uncertain: true, code: 'reply_id_echoed' };
       return { ok: true, messageId: guid };
     } catch (e) {
+      // A tapback, an edit and a threaded reply go through the bridge; a plain send does not.
+      if (method !== 'send' || existing) noteBridgeFailure(method, e);
       const disposition = e.data && e.data.disposition;
       if (e.code === -32001 || e.code === 'timeout' || e.code === 'engine_exit' || disposition === 'may_have_completed' || disposition === 'still_in_flight') {
         return { ok: false, uncertain: true, code: String(e.code) };
@@ -700,8 +766,14 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // imsg `read` marks every message in a conversation read on the Mac, which is also what sends the read
   // receipt. The engine resolves the chat target itself and answers { ok: true }.
   async function read(chatId) {
-    const r = await request('read', { chat_id: Number(chatId) }, timeoutMs);
-    return { ok: Boolean(r && r.ok) };
+    if (bridgeDown()) throw bridgeRefusal();
+    try {
+      const r = await request('read', { chat_id: Number(chatId) }, timeoutMs);
+      return { ok: Boolean(r && r.ok) };
+    } catch (e) {
+      noteBridgeFailure('read', e);
+      throw e;
+    }
   }
 
   // Conversations and groups are Messages' own (issue 326): a new conversation with one address is a direct chat and
@@ -732,11 +804,15 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // unsupported rather than sent outside the thread. reply_to is never an optional extra the adapter may drop.
   const replyCodes = [-32601, -32602, -32003];
   const withReply = (params, replyTo) => (replyTo ? { ...params, reply_to: replyTo } : params);
-  const sendText = (chatId, text, { replyTo = null } = {}) => sendOut(withReply({ chat_id: Number(chatId), text }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo);
+  const refusedNoBridge = () => Promise.resolve({ ok: false, uncertain: false, unsupported: true, code: 'bridge_down' });
+  const sendText = (chatId, text, { replyTo = null } = {}) => (replyTo && bridgeDown() ? refusedNoBridge() : sendOut(withReply({ chat_id: Number(chatId), text }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo));
 
   // imsg stages one file per send under the Messages attachments folder before dispatch. An empty caption is left
   // out, so a file on its own is not a text send carrying nothing.
-  const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo);
+  // A voice message is a file sent with imsg's send.attachment and audio set (issue 520), which stages it as Messages'
+  // own audio message so it arrives as the waveform bubble rather than a file. It rides the bridge and carries no caption.
+  const sendVoice = (chatId, file, { replyTo = null } = {}) => (bridgeDown() ? refusedNoBridge() : sendOut(withReply({ chat_id: Number(chatId), file, audio: true }, replyTo), 'send.attachment', [-32601, -32602, -32003], replyTo));
+  const sendFile = (chatId, file, text = '', { replyTo = null } = {}) => (replyTo && bridgeDown() ? refusedNoBridge() : sendOut(withReply(text ? { chat_id: Number(chatId), file, text } : { chat_id: Number(chatId), file }, replyTo), 'send', replyTo ? replyCodes : undefined, replyTo));
 
   // imsg names and versions its capabilities rather than advertising adjectives, so the client asks for the version
   // it needs. A capability's version tracks the shape of its API, and advertising it means the build supports that
@@ -759,7 +835,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     try {
       await request('typing', { chat_id: Number(chatId), typing: Boolean(on) }, 10000);
       return true;
-    } catch {
+    } catch (e) {
+      noteBridgeFailure('typing', e);
       return false;
     }
   }
@@ -767,6 +844,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // imsg's bridge `tapback` adds or removes a reaction on a message by its guid, as an arbitrary `emoji` when the
   // engine advertises it, otherwise as one of the six classic `kind`s (issue 188).
   const react = (chatId, targetId, { type = '', emoji = '', remove = false } = {}) => {
+    if (bridgeDown()) return refusedNoBridge();
     const base = { chat_id: Number(chatId), message_guid: String(targetId), remove: Boolean(remove) };
     if (emoji && supportsEmojiTapback()) return sendOut({ ...base, emoji }, 'tapback');
     if (!type) return Promise.resolve({ ok: false, uncertain: false, unsupported: true, code: 'emoji_unsupported' });
@@ -790,6 +868,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     try { changeReader?.close?.(); } catch { /* already closed */ }
     try { voices?.close?.(); } catch { /* already closed */ }
     try { members?.close?.(); } catch { /* already closed */ }
+    try { services?.close?.(); } catch { /* already closed */ }
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
     const c = current;
     current = null;
@@ -810,6 +889,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     removeMember,
     sendText,
     sendFile,
+    sendVoice,
     react,
     edit,
     scanEdits,
@@ -818,6 +898,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     supportsEmojiTapback,
     typing,
     canType: () => canType,
+    checkBridge,
+    bridge: () => ({ ...bridge }),
     capabilityVersion: (name) => capabilityVersion(name),
     emojiTapbackVersion: () => capabilityVersion('tapback.emoji'),
     // The link's state and its restart history, read by /api/v1/info and the diagnostics surface: a person

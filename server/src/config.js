@@ -16,8 +16,8 @@ export const DEFAULTS = Object.freeze({
   port: 7447,
   engine: { kind: 'imsg', bin: 'imsg', db: null, live: null },
   // Inbound typing is present and OFF: the ordinary database watch reports none, and the only source is an injected
-  // v2 bridge (imsg bridge.events.subscribe). Turning this on needs an already-running bridge and is not something
-  // this server starts (issue 230).
+  // v2 bridge (imsg bridge.events.subscribe). Turning this on needs the bridge, which the server opens Messages with
+  // and relaunches when it stops answering (mac.messages.bridge; issue 230, Abi 2026-11-13).
   // Outgoing typing is ON: while one of our devices types in a conversation, the engine shows the other person the
   // indicator, where it can (issue 319).
   typing: { incoming: false, outgoing: true },

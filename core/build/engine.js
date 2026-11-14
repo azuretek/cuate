@@ -451,6 +451,7 @@ var engine = (() => {
     settingsGroups: () => settingsGroups,
     settingsTabs: () => settingsTabs,
     settleFavourite: () => settleFavourite,
+    settleSent: () => settleSent,
     settlesOpen: () => settlesOpen,
     settlesOpenAt: () => settlesOpenAt,
     sha256Hex: () => sha256Hex,
@@ -2734,7 +2735,9 @@ var engine = (() => {
       attachments: m.is_audio_message ? parts.attachments.map((a) => markVoice(a, m)) : parts.attachments,
       reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
       ...styles.length ? { styles } : {},
-      ...sendEffect ? { sendEffect } : {}
+      ...sendEffect ? { sendEffect } : {},
+      // The service this message travelled on, as the store recorded it on the row (issue 520); none where unknown.
+      ...typeof m.service === "string" && m.service ? { service: m.service } : {}
     };
   }
   var isRecording = (a) => /^audio\//i.test(String(a.mime || "")) || /\.(caf|amr)$/i.test(String(a.name || ""));
@@ -3745,10 +3748,31 @@ var engine = (() => {
   function deliveryLabel(m) {
     if (!m.fromMe) return "";
     if (m.state === "sending") return "Sending\u2026";
-    if (m.state === "uncertain") return "May not have sent";
+    if (m.state === "uncertain") return "Sent, still going out";
     if (m.state === "failed") return "Not sent";
     if (typeof m.readAt === "string" && Number.isFinite(Date.parse(m.readAt))) return "Read " + m.readAt;
     return "Sent";
+  }
+  function settleSent(messages, pending, { slackMs = 12e4 } = {}) {
+    const used = /* @__PURE__ */ new Set();
+    const settled = [];
+    let out = messages;
+    for (const [key, p] of pending) {
+      const local = messages.find((m) => m.id === p.localId);
+      if (!local) continue;
+      const at = Date.parse(local.sentAt);
+      const match = messages.find((m) => {
+        if (used.has(m.id) || !m.fromMe || String(m.id).startsWith("local:") || String(m.chatId) !== String(p.chatId)) return false;
+        if (p.messageId) return m.id === p.messageId;
+        if (!p.text || (m.text || "") !== p.text) return false;
+        return !(Number.isFinite(at) && Date.parse(m.sentAt) < at - slackMs);
+      });
+      if (!match) continue;
+      used.add(match.id);
+      settled.push(key);
+      out = out.filter((x) => x.id !== p.localId);
+    }
+    return { messages: out, settled };
   }
   function applyReaction(messages, r) {
     const i = messages.findIndex((m2) => m2.id === r.targetId);
