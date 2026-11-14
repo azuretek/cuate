@@ -10,7 +10,9 @@ import { execFile, spawn } from 'node:child_process';
 export const MAC_DEFAULTS = Object.freeze({
   awake: true,
   lock: { enabled: false, method: 'displaySleep', command: null, args: [] },
-  messages: { manage: true, app: 'Messages', managedBy: null },
+  // bridge: where the engine has one (imsg), this server opens Messages through the engine with its bridge injected,
+  // and has it relaunched when the bridge stops answering, rather than leaving that to anything outside the server.
+  messages: { manage: true, app: 'Messages', managedBy: null, bridge: true },
 });
 
 export const LOCK_METHODS = ['displaySleep', 'loginFramework'];
@@ -31,6 +33,7 @@ export function macConfig(raw = {}) {
       manage: m.manage === undefined ? MAC_DEFAULTS.messages.manage : m.manage,
       app: m.app || MAC_DEFAULTS.messages.app,
       managedBy: m.managedBy || null,
+      bridge: m.bridge === undefined ? MAC_DEFAULTS.messages.bridge : Boolean(m.bridge),
     },
   };
 }
@@ -108,8 +111,8 @@ export async function readMacSettings({ exec, platform = process.platform } = {}
   };
 }
 
-const defaultExec = (cmd, args) => new Promise((resolve) => {
-  execFile(cmd, args, { encoding: 'utf8', timeout: 5000 }, (error, stdout, stderr) => {
+const defaultExec = (cmd, args, { timeoutMs = 5000 } = {}) => new Promise((resolve) => {
+  execFile(cmd, args, { encoding: 'utf8', timeout: timeoutMs }, (error, stdout, stderr) => {
     resolve({
       code: error ? (Number.isInteger(error.code) ? error.code : 1) : 0,
       error: error ? String(error.code || error.message) : null,
@@ -126,6 +129,9 @@ const defaultExec = (cmd, args) => new Promise((resolve) => {
  * - lock: refused with a reason rather than half applied when the setting is off, the engine needs the screen, or
  *   the chosen method has no helper.
  * - messages: relaunched only when the caller decides to; another program managing Messages is never fought with.
+ * - bridge: with bridgeBin (the imsg engine's own command), Messages is opened through `imsg launch`, which injects the
+ *   bridge typing, read receipts, reactions and edits need. A plain `open -a` drops it, and nothing ever put it back:
+ *   from 2026-11-05 every send queued behind bridge requests that could not answer (2026-11-13).
  */
 export function createMac({
   log,
@@ -133,6 +139,7 @@ export function createMac({
   platform = process.platform,
   pid = process.pid,
   engineNeedsScreen = false,
+  bridgeBin = null,
   exec = defaultExec,
   spawnChild = spawn,
 }) {
@@ -140,6 +147,7 @@ export function createMac({
   let hold = null;
   let locked = false;
 
+  const ownsBridge = () => platform === 'darwin' && Boolean(bridgeBin) && mac.messages.bridge;
   const refused = (what, r) => {
     log.emit('mac.refused', { what, reason: r });
     return { held: false, locked: false, launched: false, reason: r };
@@ -226,9 +234,21 @@ export function createMac({
       return Boolean(r && r.code === 0);
     },
 
-    /** Opens Messages. The caller decides whether to, so a refused relaunch is visible rather than silent. */
-    async relaunchMessages() {
+    /** Whether this server owns the bridge in Messages: on a Mac, with an engine that has one and the setting on. */
+    ownsBridge,
+
+    /**
+     * Opens Messages, with the engine's bridge injected where this server owns it. force relaunches a Messages already
+     * running, which is how a bridge that stopped answering is replaced. The caller decides whether to, so a refused
+     * relaunch is visible rather than silent.
+     */
+    async relaunchMessages({ force = false } = {}) {
       if (platform !== 'darwin') return { launched: false, reason: 'not macOS' };
+      if (ownsBridge()) {
+        const r = await exec(bridgeBin, ['launch', ...(force ? ['--force'] : []), '--json'], { timeoutMs: 60000 });
+        if (!r || r.code !== 0) return { launched: false, reason: 'the engine could not open Messages with its bridge' };
+        return { launched: true, bridge: true };
+      }
       const r = await exec('open', ['-a', mac.messages.app]);
       if (!r || r.code !== 0) return { launched: false, reason: 'open -a ' + mac.messages.app + ' failed' };
       return { launched: true };

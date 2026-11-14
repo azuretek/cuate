@@ -5,7 +5,7 @@ import { orderChats, chatTitle, chatPreview, initials, applyMessageToChats, sort
 import { EMOJI, EMOJI_CATEGORIES } from '../app/rules/emoji-data.js';
 import { graphemes, countGraphemes, insertEmoji, deleteGrapheme, searchEmoji, emojiInCategory, frequentEmoji, isEmoji, emojiPickerSections, pickerSide } from '../app/rules/emoji.js';
 import { ATTACH_ACCEPT, sizeLabel, stageCheck, toBase64, localAttachment } from '../app/rules/attach.js';
-import { mergeMessages, groupMessages, deliveryLabel, applyReaction, summarizeReactions, TAPBACKS, tapbackType, myReaction, replyQuote, canTarget } from '../app/rules/messages.js';
+import { mergeMessages, groupMessages, deliveryLabel, settleSent, applyReaction, summarizeReactions, TAPBACKS, tapbackType, myReaction, replyQuote, canTarget } from '../app/rules/messages.js';
 import { formatListTime, formatSeparator, daysAgo } from '../app/rules/time.js';
 import { connectionSentence } from '../app/rules/connection.js';
 import { SETTINGS_SCHEMA, settingsFields, settingsGroups, settingValue, coerceSetting, mergeSettings, settingsAfterWrite, settingsAfterRefusal, optionLabel, ABOUT_ORDER, aboutRows, aboutLinks } from '../app/rules/settings.js';
@@ -84,10 +84,33 @@ test('a conversation groups into sender runs, with separators after a gap', () =
   assert.deepEqual(shape, ['sep', '1F', '2L', '3FL', 'sep', '4FL']);
 });
 
+// One send is one entry (2026-11-13): an uncertain send's bubble is replaced by its message when that lands late,
+// however it reaches the list, and never by an older message with the same words or by one in another chat.
+test('a send settles to one entry when its message lands, even after an uncertain answer', () => {
+  const local = msg({ id: 'local:k1', fromMe: true, sender: null, text: 'winter break?', sentAt: '2026-11-13T23:30:24.000Z', state: 'uncertain' });
+  const pending = new Map([['k1', { localId: 'local:k1', chatId: '1', text: 'winter break?', messageId: null }]]);
+  const older = msg({ id: 'old', fromMe: true, sender: null, text: 'winter break?', sentAt: '2026-11-12T10:00:00.000Z' });
+  const other = msg({ id: 'elsewhere', chatId: '2', fromMe: true, sender: null, text: 'winter break?', sentAt: '2026-11-13T23:33:17.000Z' });
+  let r = settleSent([older, local, other], pending);
+  assert.deepEqual(r.settled, [], 'an older copy and one in another chat leave the bubble alone');
+  assert.equal(r.messages.length, 3);
+  const landed = msg({ id: 'g1', fromMe: true, sender: null, text: 'winter break?', sentAt: '2026-11-13T23:33:17.000Z' });
+  r = settleSent([older, local, landed], pending);
+  assert.deepEqual(r.settled, ['k1']);
+  assert.deepEqual(r.messages.map((m) => m.id), ['old', 'g1'], 'the late message replaces the bubble: one entry, not two');
+  const twice = new Map([...pending, ['k2', { localId: 'local:k2', chatId: '1', text: 'winter break?', messageId: null }]]);
+  const local2 = { ...local, id: 'local:k2' };
+  r = settleSent([local, local2, landed], twice);
+  assert.deepEqual(r.settled, ['k1'], 'one confirmed message settles one bubble, so two sends of the same words stay two');
+  const byId = new Map([['k3', { localId: 'local:k3', chatId: '1', text: 'x', messageId: 'g9' }]]);
+  r = settleSent([{ ...local, id: 'local:k3', text: 'x' }, msg({ id: 'g9', fromMe: true, text: 'different' })], byId);
+  assert.deepEqual(r.settled, ['k3'], 'a send the server answered with an id is matched by that id');
+});
+
 test('delivery labels, and one tapback per person', () => {
   assert.equal(deliveryLabel(msg({ fromMe: false })), '');
   assert.equal(deliveryLabel(msg({ fromMe: true })), 'Sent');
-  assert.equal(deliveryLabel(msg({ fromMe: true, state: 'uncertain' })), 'May not have sent');
+  assert.equal(deliveryLabel(msg({ fromMe: true, state: 'uncertain' })), 'Sent, still going out');
   assert.equal(deliveryLabel(msg({ fromMe: true, state: 'failed' })), 'Not sent');
   let ms = [msg({ id: 't' })];
   ms = applyReaction(ms, { targetId: 't', type: 'like', add: true, fromMe: false, sender: 'a@example.com' });

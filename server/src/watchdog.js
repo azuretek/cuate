@@ -1,5 +1,6 @@
-// The watchdog: every minute it checks that the engine answers and that Messages is running, restarts the engine
-// with a backoff and relaunches Messages when it has quit, at most three times an hour. While the config names
+// The watchdog: every minute it checks that the engine answers, that Messages is running and, where this server owns
+// it, that the bridge injected into Messages answers. It restarts the engine with a backoff, and relaunches Messages
+// (with its bridge) when it has quit or its bridge has stopped answering, at most three times an hour. While the config names
 // another program as managing Messages it reports instead of relaunching, because that program launches Messages
 // with its own helper injected and a plain relaunch would drop it. Every effect is injected, so its failure states
 // are proven with fakes and nothing here needs a Mac.
@@ -38,7 +39,47 @@ export function createWatchdog({
 }) {
   const settings = mac.settings;
   const relaunches = [];
-  const counts = { ticks: 0, engineRestarts: 0, messagesRelaunches: 0, reports: 0 };
+  const counts = { ticks: 0, engineRestarts: 0, messagesRelaunches: 0, bridgeRelaunches: 0, reports: 0 };
+  let lastBridgeLaunchAt = -Infinity;
+  const ownsBridge = () => Boolean(settings.messages.manage && !settings.messages.managedBy && typeof mac.ownsBridge === 'function' && mac.ownsBridge() && typeof engine.checkBridge === 'function');
+  const prune = (at) => {
+    const since = at - windowMs;
+    while (relaunches.length && relaunches[0] <= since) relaunches.shift();
+  };
+
+  // A bridge that does not answer holds every engine request behind its own, sends included, so it is replaced as soon
+  // as it is seen: Messages is relaunched with the bridge injected, under the same hourly limit, and given two ticks to
+  // come up before it is judged again.
+  async function careForBridge(at) {
+    let b;
+    try {
+      b = await engine.checkBridge();
+    } catch {
+      return;
+    }
+    if (!b || !b.known || b.ready) return;
+    if (at - lastBridgeLaunchAt < 2 * everyMs) return;
+    prune(at);
+    if (relaunches.length >= relaunchLimit) {
+      counts.reports += 1;
+      log.emit('mac.refused', { what: 'bridge', reason: 'relaunched ' + relaunches.length + ' times in the last hour' });
+      return;
+    }
+    relaunches.push(at);
+    lastBridgeLaunchAt = at;
+    counts.bridgeRelaunches += 1;
+    log.emit('mac.relaunch', { reason: 'the bridge in Messages was not answering' });
+    try {
+      const r = await mac.relaunchMessages({ force: true });
+      if (r && r.launched === false) {
+        log.emit('mac.refused', { what: 'bridge', reason: r.reason || 'the relaunch failed' });
+        return;
+      }
+      await engine.checkBridge();
+    } catch (e) {
+      log.emit('mac.refused', { what: 'bridge', reason: message(e) });
+    }
+  }
   let timer = null;
   let backoff = backoffMs;
   let lastRestartAt = -Infinity;
@@ -75,8 +116,7 @@ export function createWatchdog({
       running = true;
     }
     if (!running) {
-      const since = at - windowMs;
-      while (relaunches.length && relaunches[0] <= since) relaunches.shift();
+      prune(at);
       if (settings.messages.managedBy) {
         counts.reports += 1;
         log.emit('mac.refused', { what: 'messages', reason: 'managed by ' + settings.messages.managedBy });
@@ -88,6 +128,7 @@ export function createWatchdog({
         log.emit('mac.refused', { what: 'messages', reason: 'relaunched ' + relaunches.length + ' times in the last hour' });
       } else {
         relaunches.push(at);
+        if (ownsBridge()) lastBridgeLaunchAt = at;
         counts.messagesRelaunches += 1;
         log.emit('mac.relaunch', { reason: 'Messages was not running' });
         try {
@@ -97,6 +138,8 @@ export function createWatchdog({
           log.emit('mac.refused', { what: 'messages', reason: message(e) });
         }
       }
+    } else if (ready && ownsBridge()) {
+      await careForBridge(at);
     }
     return { ...counts };
   }
@@ -133,7 +176,7 @@ export function createRestarts({ engine, mac, log, exit = (code) => process.exit
   return {
     async messages() {
       log.emit('mac.restart', { what: 'messages' });
-      const r = await mac.relaunchMessages();
+      const r = await mac.relaunchMessages({ force: true });
       const out = { restarted: Boolean(r && r.launched !== false) };
       if (r && r.reason) out.reason = r.reason;
       return out;

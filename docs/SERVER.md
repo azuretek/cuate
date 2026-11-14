@@ -7,6 +7,10 @@
 - The [`imsg`](https://github.com/openclaw/imsg) engine, from its install guide. The server runs it as `imsg rpc`.
 - Permission for the program that starts the server to read the Messages database (**Full Disk Access**, wherever macOS enforces it), and **Automation for Messages** to send. macOS asks the first time; `doctor` says which is missing.
 
+## Messages and its bridge
+
+Typing, read receipts, reactions, threaded replies and edits go through the bridge `imsg` injects into Messages, which needs System Integrity Protection off. The server owns it: whenever it opens Messages (Messages had quit, or the Server screen asked) it does so with `imsg launch`, and every minute the watchdog reads the engine's status and relaunches Messages with `imsg launch --force` when the bridge has stopped answering, at most three times an hour together with any other relaunch. While the bridge is down, requests that need it are refused at once instead of waiting their full timeout, because the engine answers one request at a time and they would otherwise hold every send behind them. `mac.messages.bridge: false` turns this off, and `mac.messages.managedBy` hands Messages to another program entirely.
+
 ## Set it up
 
 From a checkout of this repository:
