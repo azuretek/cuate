@@ -169,7 +169,7 @@ test('every press in the iOS system bars test goes through the one press rule, w
   const rule = read('ios/TestSupport/PressUntil.swift');
   assert.match(rule, /if reached \{ return \.done \}\n\s*if elapsed >= hardCap/, "the page's state is read before any bound");
   assert.match(rule, /if since < window \{ return \.wait \}/, 'the window runs from when a press returns');
-  assert.match(read('ios/' + naming.product + 'UITests/PressUntilStep.swift'), /element\.tap\(\)\n\s*lastReturned = Date\(\)/, 'the window starts after XCTest is done with the press');
+  assert.match(read('ios/' + naming.product + 'UITests/PressUntilStep.swift'), /target\.press\(\)\n\s*lastReturned = Date\(\)/, 'the window starts after XCTest is done with the press');
 });
 
 test('a hold whose evidence is valid gets its confirming sample even when one sample outlasts the window (issue 471)', () => {

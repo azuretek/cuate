@@ -51,32 +51,27 @@ final class LivePhotoTests: XCTestCase {
     }
 
     /// Presses LIVE until the page reports the click arrived (`live:pressed` or a later state), because a tap XCTest
-    /// makes can be lost before the page sees it (issue 384), and a lost tap is not the defect this test is about. It
-    /// presses again only while the page has seen no click, so a second press never stops a motion the first started.
+    /// makes can be lost before the page sees it (issue 384), and a lost tap is not the defect this test is about. The one
+    /// press rule (issues 517 and 519) presses again only while the page has seen no click, so a second press never stops
+    /// a motion the first started.
     /// The control is found by its label; where the web view does not expose it, it is pressed at the point the page
     /// reports for it (`where:live x y width height`, in the page's own coordinates, scaled onto the web view).
     private func pressLive(_ app: XCUIApplication, marker: XCUIElement) -> Bool {
         let page = app.webViews.firstMatch
         let control = page.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Play the Live Photo")).firstMatch
         let spot = page.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'where:live '")).firstMatch
-        let deadline = Date().addingTimeInterval(30)
-        var presses: [String] = []
-        repeat {
-            if control.waitForExistence(timeout: 2) {
-                presses.append("\(control.isHittable ? "hittable" : "not hittable") at \(control.frame)")
-                control.tap()
-            } else if spot.exists, let point = pagePoint(spot.label, in: page) {
-                presses.append("not in the accessibility tree, pressed at \(spot.label) in web view \(page.frame)")
-                page.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
-            } else {
-                presses.append("no LIVE control")
-                continue
+        let step = pressUntil("press-live", at: {
+            if control.exists { return .element(control) }
+            if spot.exists, let point = self.pagePoint(spot.label, in: page) {
+                let label = spot.label
+                return .point(page.coordinate(withNormalizedOffset: .zero).withOffset(point), "not in the accessibility tree, pressed at \(label) in web view \(page.frame)")
             }
-            settle(marker, on: "label != 'live:ready'", timeout: max(0, deadline.timeIntervalSinceNow))
-            if marker.label != "live:ready" { return true }
-        } while Date() < deadline
-        XCTFail("LIVE was pressed \(presses.count) times and the click never reached the page. Each press: " + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app) + "\n" + app.debugDescription)
-        return false
+            return .absent
+        }, reached: { marker.exists && marker.label != "live:ready" })
+        if !step.ok {
+            XCTFail("LIVE was pressed \(step.presses.count) times and the click never reached the page. Each press: " + step.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app) + "\n" + app.debugDescription)
+        }
+        return step.ok
     }
 
     /// The page's point for the control, from its report, scaled from the page's viewport onto the web view's frame.

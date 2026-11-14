@@ -26,13 +26,14 @@ final class BubbleColoursTests: XCTestCase {
         XCTAssertTrue(verdict.label.hasPrefix("bubbles:pass"), "The bubbles are not the right colours: " + verdict.label + SystemSurface.failureSuffix(app))
         let toDark = app.webViews.buttons["Show dark bubbles"]
         XCTAssertTrue(toDark.waitForExistence(timeout: 10), "The fixture offers no way to the dark capture" + SystemSurface.failureSuffix(app))
-        toDark.tap()
-        let darkened = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'bubbles:dark' OR label BEGINSWITH 'bubbles:fail'"), object: verdict)
-        _ = XCTWaiter().wait(for: [darkened], timeout: 20)
+        // A second press repeats the dark capture rather than undoing it, so the rule may press again (issue 519).
+        let step = pressUntil("dark-bubbles", rule: PressUntil(window: 20), target: { toDark }, reached: {
+            verdict.exists && (verdict.label.hasPrefix("bubbles:dark") || verdict.label.hasPrefix("bubbles:fail"))
+        })
         let dark = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         dark.name = "bubble-colours-dark"
         dark.lifetime = .keepAlways
         add(dark)
-        XCTAssertTrue(verdict.label.hasPrefix("bubbles:dark"), "The dark capture did not draw: " + verdict.label + SystemSurface.failureSuffix(app))
+        XCTAssertTrue(verdict.label.hasPrefix("bubbles:dark"), "The dark capture did not draw: " + verdict.label + ". Each press: " + step.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
     }
 }
