@@ -162,6 +162,16 @@ test('the scheme switch on iOS survives a lost tap: the marker is pressed until 
   assert.match(read('android/app/src/androidTest/kotlin/' + packagePath + '/SystemBarsTest.kt'), /window\.systemBarsSwitch\('\$then'\)/);
 });
 
+test('every press in the iOS system bars test goes through the one press rule, which reads the page first and times only the page (issue 517)', () => {
+  const swift = read('ios/' + naming.product + 'UITests/SystemBarsTests.swift');
+  assert.doesNotMatch(swift, /\.tap\(\)/, 'no step taps on its own, with its own wall-clock window');
+  for (const step of ['"focus-"', '"open-settings"', '"scheme-"']) assert.ok(swift.includes('pressUntil(' + step), step + ' goes through pressUntil');
+  const rule = read('ios/TestSupport/PressUntil.swift');
+  assert.match(rule, /if reached \{ return \.done \}\n\s*if elapsed >= hardCap/, "the page's state is read before any bound");
+  assert.match(rule, /if since < window \{ return \.wait \}/, 'the window runs from when a press returns');
+  assert.match(read('ios/' + naming.product + 'UITests/PressUntilStep.swift'), /element\.tap\(\)\n\s*lastReturned = Date\(\)/, 'the window starts after XCTest is done with the press');
+});
+
 test('a hold whose evidence is valid gets its confirming sample even when one sample outlasts the window (issue 471)', () => {
   // On a slow runner one capture took 22.7s, past the 20s window, so a valid first sample never got the second it needs.
   const swift = read('ios/' + naming.product + 'UITests/SystemBarsTests.swift');

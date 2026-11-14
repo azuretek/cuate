@@ -13,13 +13,3 @@ struct SystemBarsReadiness {
         return consecutiveValid >= 2
     }
 }
-
-// A tap is not focus admission. Retry only while the page confirms no focus, never after focus arrived.
-enum FieldFocusReadiness {
-    enum Action { case ready, tap, waitForElement, timedOut }
-    static func action(now: TimeInterval, deadline: TimeInterval, exists: Bool, focused: Bool) -> Action {
-        if now >= deadline { return .timedOut }
-        if focused { return .ready }
-        return exists ? .tap : .waitForElement
-    }
-}

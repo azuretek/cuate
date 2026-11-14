@@ -103,57 +103,40 @@ final class SystemBarsTests: XCTestCase {
         XCTAssertTrue(last.isEmpty, "With the keyboard up on \(kind) (\(scheme)): " + last.joined(separator: "; ") + SystemSurface.failureSuffix(app))
     }
 
-    /// Admit focus before starting the keyboard-layout deadline. A dropped native tap is not a keyboard-layout
-    /// failure; the page's actual focus signal decides whether another tap is permitted (issue 411).
+    /// The keys marker's label split into its fields, or none while the marker is not there to read. Every step reads the
+    /// page's state from this one element's label, the same reading the assertions use (issue 517).
+    private func keysState(_ app: XCUIApplication) -> [String] {
+        let marker = keysMarker(app)
+        return marker.exists ? marker.label.split(separator: ":").map(String.init) : []
+    }
+
+    /// Taps the field until the page reports it focused. A dropped tap is not a keyboard-layout failure, and a focused
+    /// field is never tapped again (issue 411); the press rule decides both from the page's own state (issue 517).
     private func focusField(_ app: XCUIApplication, field: XCUIElement, kind: String) -> Bool {
-        let start = Date()
-        let deadline = start.addingTimeInterval(30)
-        let focused = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "keys:" + kind + ":1:")).firstMatch
-        var attempts = 0
-        while true {
-            switch FieldFocusReadiness.action(now: Date().timeIntervalSince1970, deadline: deadline.timeIntervalSince1970,
-                                             exists: field.exists, focused: focused.exists) {
-            case .ready:
-                print("keyboard focus admitted kind=\(kind) attempts=\(attempts) elapsed=\(Date().timeIntervalSince(start))")
-                return true
-            case .tap:
-                attempts += 1
-                print("keyboard focus attempt=\(attempts) kind=\(kind) elapsed=\(Date().timeIntervalSince(start)) hittable=\(field.isHittable) frame=\(field.frame)")
-                field.tap()
-                _ = focused.waitForExistence(timeout: 3)
-            case .waitForElement:
-                _ = field.waitForExistence(timeout: 2)
-            case .timedOut:
-                XCTFail("The \(kind) field never confirmed focus after \(attempts) taps; " + keysMarker(app).label + SystemSurface.failureSuffix(app))
-                return false
-            }
+        let step = pressUntil("focus-" + kind, target: { field }, reached: {
+            let parts = self.keysState(app)
+            return parts.count == 11 && parts[1] == kind && parts[2] == "1"
+        })
+        if !step.ok {
+            XCTFail("The \(kind) field never confirmed focus after \(step.presses.count) presses; " + keysState(app).joined(separator: ":")
+                + ". Each press: " + step.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
         }
+        return step.ok
     }
 
     /// Presses the keys marker until the page reports `keys:settings:`, which its click handler sets before anything else
-    /// (core/test/system-bars-fixture.js), so the step waits on the state it needs rather than on one tap. A tap made
-    /// just after the keyboard has come up on the composer can be lost: XCTest finds and taps the button, and the page
-    /// never sees a click (issue 384). Past the deadline it fails saying the click never reached the page, with what each
-    /// press saw, so a lost tap is told apart from a Settings sheet that would not open.
+    /// (core/test/system-bars-fixture.js). A tap made just after the keyboard has come up on the composer can be lost
+    /// (issue 384), so the step waits on the state it needs rather than on one tap, and a failure says what each press saw.
     private func openSettings(_ app: XCUIApplication) -> Bool {
-        let reached = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "keys:settings:")).firstMatch
-        let deadline = Date().addingTimeInterval(30)
-        var presses: [String] = []
-        repeat {
-            if reached.exists { return true }
-            let marker = keysMarker(app)
-            let keyboard = app.keyboards.firstMatch.exists ? "keyboard up at \(app.keyboards.firstMatch.frame.minY)" : "keyboard down"
-            guard marker.exists else {
-                presses.append("no marker (\(keyboard))")
-                _ = marker.waitForExistence(timeout: 2)
-                continue
-            }
-            presses.append("\(marker.isHittable ? "hittable" : "not hittable") at \(marker.frame), \(keyboard), web view \(app.webViews.firstMatch.frame), label \(marker.label)")
-            marker.tap()
-            if reached.waitForExistence(timeout: 3) { return true }
-        } while Date() < deadline
-        XCTFail("The keys marker was pressed \(presses.count) times and its click never reached the page (it never reported keys:settings:). Each press: " + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
-        return false
+        let step = pressUntil("open-settings", target: { self.keysMarker(app) }, reached: {
+            let parts = self.keysState(app)
+            return parts.count > 1 && parts[1] == "settings"
+        })
+        if !step.ok {
+            XCTFail("The keys marker was pressed \(step.presses.count) times and the page never reported keys:settings:. Each press: "
+                + step.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
+        }
+        return step.ok
     }
 
     /// A pinch on the conversation leaves the page at scale 1: only the media viewer zooms (issue 180).
@@ -167,27 +150,17 @@ final class SystemBarsTests: XCTestCase {
 
 
     /// Presses the scheme marker until the page reports the next scheme. XCTest can tap the marker and the page never see
-    /// a click (issue 471, as with the keys marker in issue 384), which left the page in the first scheme for the rest of
-    /// the test. A press always means the scheme the test did not launch in (core/test/system-bars-fixture.js), so a
-    /// press after one that did arrive changes nothing. Past the deadline it fails with what each press saw.
+    /// a click (issue 471, as with the keys marker in issue 384). A press always means the scheme the test did not launch
+    /// in (core/test/system-bars-fixture.js), so a press after one that did arrive changes nothing.
     private func switchScheme(_ app: XCUIApplication, from first: String, to then: String) {
-        let next = marker(app, scheme: then)
-        let deadline = Date().addingTimeInterval(30)
-        var presses: [String] = []
-        repeat {
-            if next.exists { return }
-            let current = marker(app, scheme: first)
-            guard current.exists else {
-                presses.append("no \(first) marker")
-                _ = next.waitForExistence(timeout: 2)
-                continue
-            }
-            presses.append("\(current.isHittable ? "hittable" : "not hittable") at \(current.frame)")
-            current.tap()
-            if next.waitForExistence(timeout: 5) { return }
-        } while Date() < deadline
-        XCTFail("The \(first) marker was pressed \(presses.count) times and the page never reported \(then). Each press: "
-            + presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
+        let bars = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "bars:")).firstMatch
+        let step = pressUntil("scheme-" + then, target: { bars }, reached: {
+            bars.exists && bars.label.hasPrefix("bars:" + then + ":ready:")
+        })
+        if !step.ok {
+            XCTFail("The \(first) marker was pressed \(step.presses.count) times and the page never reported \(then). Each press: "
+                + step.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
+        }
     }
 
     private func marker(_ app: XCUIApplication, scheme: String) -> XCUIElement {
