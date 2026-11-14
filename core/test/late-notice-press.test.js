@@ -23,7 +23,7 @@ test('the late notice test presses the notice only once it is on screen and stil
   assert.equal((ui.match(/waitForExistence/g) || []).length, 0, 'existence alone never decides the press');
   assert.match(ui, /func pressable\([\s\S]*?let steady = steadiness\(notice, in: springboard\)/, 'the wait for the notice reads it');
   assert.ok((ui.match(/pressable\(notice/g) || []).length >= 2, 'the banner path and the Notification Center path both wait for it');
-  assert.match(ui, /let steady = steadiness\(notice, in: springboard\)\n\s*let opened = pressUntil\("open-notice", rule: PressUntil\(window: 15, maxPresses: 2\), at: \{ steady\(\) \? \.element\(notice\) : \.absent \}/, 'every press, a second one too, waits for it, and a press that did not open the app is followed by one more');
+  assert.match(ui, /let opened = pressUntil\("open-notice", rule: PressUntil\(window: 15, maxPresses: 2\), at: \{\n\s*if proven \{ proven = false; return \.element\(notice\) \}\n\s*return steady\(\) \? \.element\(notice\) : \.absent/, 'the press pressable() just proved goes at once, and a second press waits for the notice to hold still again');
 });
 
 test('the late notice fixture adds its notice only once the app has left, never on a fixed delay from posting (issue 466)', () => {
@@ -33,4 +33,12 @@ test('the late notice fixture adds its notice only once the app has left, never 
   assert.doesNotMatch(notify[0], /timeInterval: 10/, 'no fixed delay from posting');
   assert.match(bridge, /didEnterBackgroundNotification/, 'the notice waits for the app to leave');
   assert.match(bridge, /applicationState == \.background/, 'or is added at once when the app is already away');
+});
+
+// The notice pressable() has just proved still is pressed at once; only a repeat waits for it to hold still again, or a
+// busy runner spends the window re-proving it and never presses (issue 519).
+test('the first press on the late notice is not held behind a second steadiness proof', () => {
+  const swift = readFileSync(new URL('../../ios/' + JSON.parse(readFileSync(new URL('../spec/naming.json', import.meta.url), 'utf8')).product + 'UITests/LateNoticeTests.swift', import.meta.url), 'utf8');
+  const step = swift.slice(swift.indexOf('pressUntil("open-notice"'), swift.indexOf('reached: {', swift.indexOf('pressUntil("open-notice"')));
+  assert.match(step, /if proven \{ proven = false; return \.element\(notice\) \}/);
 });

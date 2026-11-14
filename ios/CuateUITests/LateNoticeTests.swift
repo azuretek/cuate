@@ -72,8 +72,15 @@ final class LateNoticeTests: XCTestCase {
         // A press in Notification Center can land on the cell without opening it, the first press only expanding it, so a
         // notice still there and pressable after the window is pressed once more, by the one press rule (issues 517 and
         // 519), whose window starts when a press returns and which reads whether the app is in front before every decision.
+        // pressable() above has just proved the notice on screen and still, so the first press goes at once. A fresh
+        // steadiness check here would need three more snapshots, which a busy runner took longer than the window to
+        // give, so the notice was never pressed at all; only a repeat waits for the notice to hold still again.
         let steady = steadiness(notice, in: springboard)
-        let opened = pressUntil("open-notice", rule: PressUntil(window: 15, maxPresses: 2), at: { steady() ? .element(notice) : .absent }, reached: {
+        var proven = true
+        let opened = pressUntil("open-notice", rule: PressUntil(window: 15, maxPresses: 2), at: {
+            if proven { proven = false; return .element(notice) }
+            return steady() ? .element(notice) : .absent
+        }, reached: {
             app.state == .runningForeground
         })
         if opened.presses.count > 1 { keep("late-notice-pressed-again") }
