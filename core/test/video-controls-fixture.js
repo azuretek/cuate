@@ -8,7 +8,8 @@
 // it drew, on one marker the test reads:
 //   vc:boot                 the script is running
 //   vc:empty <json>         the viewer is open on the video and its clip is held back, so the page and the accessibility
-//                           tree are built while the video has nothing to play
+//                           tree are built while the video has nothing to play; "drawn" says which of the viewer's own
+//                           controls the page has painted where a press at its middle reaches it (issue 509)
 //   vc:ready <json>         the viewer is open on the paused video, its controls showing, with the page's own boxes
 //   vc:fail <why>           the scene could not be set
 // The clip is held until the test lets it go (issue 446), so every run takes the real order: the video drawn empty
@@ -87,11 +88,37 @@
   const video = () => el.querySelector('video.viewer-image');
   await until(() => el.querySelector('.viewer') && !el.querySelector('.viewer').getAnimations({ subtree: true }).some((a) => a.playState === 'running'), 'the empty viewer to arrive');
   document.body.append(releaseButton);
+  // Issue 509: the page's own word on the viewer's controls, so a test that cannot find them in the accessibility tree can
+  // tell a page that never drew them from a web view that never exposed what the page drew.
+  const drawn = () => {
+    const out = {};
+    for (const [name, selector] of Object.entries({ close: '.close-button', prev: '.viewer-prev', next: '.viewer-next', bar: '.viewer-bar' })) {
+      const node = el.querySelector(selector);
+      const r = node && node.isConnected ? node.getBoundingClientRect() : null;
+      const hit = r && r.width > 0 && r.height > 0 ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+      out[name] = Boolean(hit && node.contains(hit) && getComputedStyle(node).visibility === 'visible');
+    }
+    return out;
+  };
+  window.videoControlsDrawn = drawn;
+  // Issue 509: Android's web view can keep a tree that lags the page, the viewer drawn and its tree only the empty
+  // document. Hiding the viewer from accessibility for two frames and showing it again makes the renderer drop the
+  // viewer's nodes and send them anew; the page reports each round once the viewer is back. Only while the clip is held:
+  // after it, a node rebuilt from scratch would hide a player node built empty and kept (issue 446).
+  let republished = 0;
+  window.videoControlsRepublished = 0;
+  window.videoControlsRepublish = () => {
+    if (!releaseButton.isConnected) return 0;
+    const round = ++republished;
+    el.setAttribute('aria-hidden', 'true');
+    requestAnimationFrame(() => requestAnimationFrame(() => { el.removeAttribute('aria-hidden'); window.videoControlsRepublished = round; }));
+    return round;
+  };
   // The accessibility tree follows the paint, not the DOM (issue 495): two frames past the settled viewer, so the phone's
   // read over the empty video can already find the viewer and its own controls, however loaded the runner is.
   await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
-  say('vc:empty ' + JSON.stringify({ shape, video: Boolean(video()), pending: Boolean(el.querySelector('.viewer-pending')) }));
+  say('vc:empty ' + JSON.stringify({ shape, video: Boolean(video()), pending: Boolean(el.querySelector('.viewer-pending')), drawn: drawn() }));
   await until(() => !releaseButton.isConnected, 'the test to let the clip go', 120000);
   say('vc:loading');
   await until(() => video() && video().readyState >= 2 && video().videoWidth > 0, 'the clip to load');
