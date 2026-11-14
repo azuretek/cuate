@@ -243,6 +243,8 @@ export function mapMessage(m, { attachmentId }) {
     reactions: (Array.isArray(m.reactions) ? m.reactions : []).map(mapInlineReaction).filter(Boolean),
     ...(styles.length ? { styles } : {}),
     ...(sendEffect ? { sendEffect } : {}),
+    // The service this message travelled on, as the store recorded it on the row (issue 520); none where unknown.
+    ...(typeof m.service === 'string' && m.service ? { service: m.service } : {}),
   };
 }
 
