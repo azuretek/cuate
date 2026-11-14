@@ -22,14 +22,27 @@ final class SystemBarsReadinessTests: XCTestCase {
         XCTAssertFalse(readiness.observe(scheme: "light", problems: []))
         XCTAssertTrue(readiness.observe(scheme: "light", problems: []))
     }
-    func testDroppedTapCanBeReadmittedButFocusedFieldIsNeverRetapped() {
-        XCTAssertEqual(FieldFocusReadiness.action(now: 0, deadline: 30, exists: true, focused: false), .tap)
-        XCTAssertEqual(FieldFocusReadiness.action(now: 3, deadline: 30, exists: true, focused: false), .tap)
-        XCTAssertEqual(FieldFocusReadiness.action(now: 4, deadline: 30, exists: true, focused: true), .ready)
+    // Issue 517: the page's state wins past every bound, which is the run that failed: the field was focused, but XCTest
+    // had spent the window idling after the press, and the deadline was read first.
+    func testThePagesStateWinsPastEveryBound() {
+        let rule = PressUntil(window: 15, maxPresses: 3, hardCap: 120)
+        XCTAssertEqual(rule.next(reached: true, targetPresent: true, presses: 1, elapsed: 500, sinceLastPress: 400), .done)
+        XCTAssertEqual(rule.next(reached: true, targetPresent: false, presses: 0, elapsed: 0, sinceLastPress: nil), .done)
     }
-    func testMissingFieldAndMissingFocusStayBounded() {
-        XCTAssertEqual(FieldFocusReadiness.action(now: 1, deadline: 30, exists: false, focused: false), .waitForElement)
-        XCTAssertEqual(FieldFocusReadiness.action(now: 30, deadline: 30, exists: false, focused: false), .timedOut)
-        XCTAssertEqual(FieldFocusReadiness.action(now: 30, deadline: 30, exists: true, focused: false), .timedOut)
+    func testTheWindowStartsWhenAPressReturnsSoXCTestsOwnTimeNeverCounts() {
+        let rule = PressUntil(window: 15, maxPresses: 3, hardCap: 120)
+        // The press took 30s inside XCTest (synthesis and its idle wait); the page still gets its full window after it.
+        XCTAssertEqual(rule.next(reached: false, targetPresent: true, presses: 1, elapsed: 31, sinceLastPress: 1), .wait)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: true, presses: 1, elapsed: 44, sinceLastPress: 14), .wait)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: true, presses: 1, elapsed: 46, sinceLastPress: 15), .press, "a press the page never saw is made again")
+    }
+    func testPressesAreBoundedAndAMissingTargetDoesNotWaitForever() {
+        let rule = PressUntil(window: 15, maxPresses: 3, hardCap: 120)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: true, presses: 0, elapsed: 0, sinceLastPress: nil), .press)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: true, presses: 3, elapsed: 60, sinceLastPress: 15), .failed)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: false, presses: 0, elapsed: 5, sinceLastPress: nil), .wait)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: false, presses: 0, elapsed: 15, sinceLastPress: nil), .failed)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: false, presses: 1, elapsed: 40, sinceLastPress: 20), .wait)
+        XCTAssertEqual(rule.next(reached: false, targetPresent: true, presses: 1, elapsed: 120, sinceLastPress: 5), .failed, "the hard cap ends any step")
     }
 }
