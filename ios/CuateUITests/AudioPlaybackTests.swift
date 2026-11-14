@@ -38,7 +38,11 @@ final class AudioPlaybackTests: XCTestCase {
         let play = page.buttons["Play memo.m4a"]
         XCTAssertTrue(play.waitForExistence(timeout: 10), "the play control is in the accessibility tree" + SystemSurface.failureSuffix(app))
         XCTAssertTrue(play.isHittable, "the play control takes a press" + SystemSurface.failureSuffix(app))
-        play.tap()
+        // The control turns to pause once the page plays, so a press that arrived is never pressed again (issue 519).
+        let started = pressUntil("play-memo", target: { play }, reached: {
+            page.buttons["Pause memo.m4a"].exists || self.reads(marker, "au:playing", "au:fail")
+        })
+        XCTAssertTrue(started.ok, "the play control was pressed \(started.presses.count) times and the page never played. Each press: " + started.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
 
         let playing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'au:playing' OR label BEGINSWITH 'au:fail'"), object: marker)
         _ = XCTWaiter().wait(for: [playing], timeout: 30)
@@ -54,16 +58,18 @@ final class AudioPlaybackTests: XCTestCase {
         XCTAssertTrue(page.buttons["Pause memo.m4a"].exists, "the control turned to pause" + SystemSurface.failureSuffix(app))
         keep(app, "audio playing")
 
-        page.buttons["Pause memo.m4a"].tap()
-        let paused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'au:paused'"), object: marker)
-        _ = XCTWaiter().wait(for: [paused], timeout: 10)
+        let paused = pressUntil("pause-memo", target: { page.buttons["Pause memo.m4a"] }, reached: { self.reads(marker, "au:paused") })
+        XCTAssertTrue(paused.ok, "the pause control was pressed \(paused.presses.count) times and the page never paused. Each press: " + paused.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
         print("audio fixture after pause: " + marker.label)
         XCTAssertTrue(marker.label.hasPrefix("au:paused"), "pause holds it part way in: " + marker.label + SystemSurface.failureSuffix(app))
         keep(app, "audio paused")
 
         let voicePlay = page.buttons["Play Audio Message.caf"]
         XCTAssertTrue(voicePlay.waitForExistence(timeout: 10), "the voice message's play control is in the accessibility tree" + SystemSurface.failureSuffix(app))
-        voicePlay.tap()
+        let voiced = pressUntil("play-voice", target: { voicePlay }, reached: {
+            page.buttons["Pause Audio Message.caf"].exists || self.reads(marker, "au:voice", "au:fail")
+        })
+        XCTAssertTrue(voiced.ok, "the voice message's play control was pressed \(voiced.presses.count) times and the page never played it. Each press: " + voiced.presses.joined(separator: " | ") + SystemSurface.failureSuffix(app))
         let voicing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'au:voice' OR label BEGINSWITH 'au:fail'"), object: marker)
         _ = XCTWaiter().wait(for: [voicing], timeout: 30)
         print("audio fixture after voice play: " + marker.label)
@@ -76,6 +82,13 @@ final class AudioPlaybackTests: XCTestCase {
         XCTAssertGreaterThan(spoken["filled"] as? Int ?? 0, 0, "its waveform fills: " + marker.label)
         XCTAssertEqual(spoken["unplayed"] as? Bool, false, "its mark is gone once played: " + marker.label)
         keep(app, "audio voice")
+    }
+
+    /// Whether the marker reads one of the states named, read from its label as the assertions read it.
+    private func reads(_ marker: XCUIElement, _ states: String...) -> Bool {
+        guard marker.exists else { return false }
+        let label = marker.label
+        return states.contains { label.hasPrefix($0) }
     }
 
     private func keep(_ app: XCUIApplication, _ name: String) {
