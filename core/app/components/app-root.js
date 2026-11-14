@@ -10,7 +10,7 @@ import {
   hideChats, forgetChats, groupAddresses, upsertChat, parseMessagingLink, linkTarget,
   requestDelete, resolveDelete,
 } from '../rules/chats.js';
-import { mergeMessages, applyReaction, reactionUnsupported, applyEdit } from '../rules/messages.js';
+import { mergeMessages, applyReaction, reactionUnsupported, applyEdit, settleSent } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
 import { initialWindow, shiftWindow, HISTORY_PAGE_SIZE, HISTORY_MAX_MESSAGES, HISTORY_CACHED_CHATS } from '../rules/history-window.js';
 import { platformOf, foldReactions } from '../rules/platform.js';
@@ -1337,7 +1337,8 @@ class AppRoot extends KitElement {
       const p = this.pending.get(clientKey);
       if (!p) return true;
       if (r.status === 'uncertain') {
-        this.pending.delete(clientKey);
+        // Still pending: the engine was handed the message and may deliver it late, and when it lands it replaces this
+        // bubble rather than drawing a second one (Abi, 2026-11-13).
         this.mark(localId, 'uncertain');
         return true;
       }
@@ -2162,6 +2163,17 @@ class AppRoot extends KitElement {
   emptyControls() {
     const layout = this.windowControls();
     return layout && layout.drawn ? windowControlsHtml({ order: layout.order, maximized: this.maximized, onAction: (name) => this.windowAction(name) }) : nothing;
+  }
+
+  // A send's bubble is settled whichever way its confirmed message reached the list, not only by the live stream: a
+  // reload or a page of history that carries it replaces the bubble too, so one send is never drawn twice.
+  willUpdate(changed) {
+    super.willUpdate(changed);
+    if (!changed.has('messages') || !this.pending.size) return;
+    const r = settleSent(this.messages, this.pending);
+    if (!r.settled.length) return;
+    for (const key of r.settled) this.pending.delete(key);
+    this.messages = r.messages;
   }
 
   // The one class the stylesheet keys off: it says a surface is leaving, so the sheet and its dim leave together. A

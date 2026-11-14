@@ -242,10 +242,40 @@ export function groupMessages(messages, { gapMs = 3600000, runMs = 300000 } = {}
 export function deliveryLabel(m) {
   if (!m.fromMe) return '';
   if (m.state === 'sending') return 'Sending\u2026';
-  if (m.state === 'uncertain') return 'May not have sent';
+  // The engine could not vouch for the send in time, but it was handed over and is never retried, so it is said as sent
+  // and still on its way rather than as a failure; the confirmed message replaces it when it lands (Abi, 2026-11-13).
+  if (m.state === 'uncertain') return 'Sent, still going out';
   if (m.state === 'failed') return 'Not sent';
   if (typeof m.readAt === 'string' && Number.isFinite(Date.parse(m.readAt))) return 'Read ' + m.readAt;
   return 'Sent';
+}
+
+// The bubbles drawn when Send was pressed that a confirmed message now stands for, so one send is one entry however its
+// message reaches the list: the live stream, a reload or a page of history (Abi, 2026-11-13). pending is the client's
+// [key, { localId, chatId, text, messageId }] list. A send the server answered with an id is matched by that id; one
+// it could not vouch for (uncertain) is matched by its words, to our own message in the same chat sent no earlier than
+// slackMs before the bubble, and each confirmed message settles at most one bubble, so two sends of the same words stay
+// two. Pure: the caller removes the settled keys from its own pending map.
+export function settleSent(messages, pending, { slackMs = 120000 } = {}) {
+  const used = new Set();
+  const settled = [];
+  let out = messages;
+  for (const [key, p] of pending) {
+    const local = messages.find((m) => m.id === p.localId);
+    if (!local) continue;
+    const at = Date.parse(local.sentAt);
+    const match = messages.find((m) => {
+      if (used.has(m.id) || !m.fromMe || String(m.id).startsWith('local:') || String(m.chatId) !== String(p.chatId)) return false;
+      if (p.messageId) return m.id === p.messageId;
+      if (!p.text || (m.text || '') !== p.text) return false;
+      return !(Number.isFinite(at) && Date.parse(m.sentAt) < at - slackMs);
+    });
+    if (!match) continue;
+    used.add(match.id);
+    settled.push(key);
+    out = out.filter((x) => x.id !== p.localId);
+  }
+  return { messages: out, settled };
 }
 
 // One tapback per person per message: adding replaces that person's earlier one.
