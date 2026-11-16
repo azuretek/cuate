@@ -42,7 +42,10 @@ test('every platform build takes its version from version.mjs', () => {
   assert.match(read('desktop/electron-builder.mjs'), /version: process\.env\.BUILD_VERSION \|\|/);
   // The iOS build setting is named for the product, so it is spelled from naming.json rather than typed here.
   assertWired(workflow('ios.yml'), naming.slug.toUpperCase() + '_BUILD_VERSION="${{ steps.version.outputs.version }}"', 'ios.yml');
-  assertWired(workflow('android.yml'), '-PversionName="${{ steps.version.outputs.version }}"', 'android.yml');
+  // android.yml and the release both sign through android-release.yml (issue 525); the release hands it the prepared version.
+  assertWired(workflow('android-release.yml'), '-PversionName="${{ steps.version.outputs.version }}"', 'android-release.yml');
+  assert.equal(workflow('android-release.yml').jobs.apk.steps.find((step) => step.id === 'version').env.REQUESTED, '${{ inputs.version }}');
+  assert.equal(release.jobs.android.with.version, '${{ needs.prepare.outputs.version }}', 'the APK is given the prepared version');
   assert.match(read('scripts/gen-server-stamp.mjs'), /import \{ snapshot \} from '\.\/release\/version\.mjs'/);
   assert.match(read('server/src/paths.js'), /'server', 'stamp\.json'/);
 });

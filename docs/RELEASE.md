@@ -51,10 +51,10 @@ The server, built by `.github/workflows/server-artifact.yml` from the same commi
 - `<slug>-server-<version>.manifest.json`: the version, the commit, the Node range (the root package's `engines.node`) and the path, size and SHA-256 of every file in the tarball.
 - `<slug>-server-<version>.tar.gz.sha256`: the tarball's SHA-256, in the format `sha256sum -c` reads.
 
-The Android APK (issue 192), signed with the release keystore by `.github/workflows/android.yml` from the same commit:
+The Android APK (issue 192), built and signed with the release keystore by `.github/workflows/android-release.yml` in the release run itself, from the same commit and the same version as the desktop packages and the server (issue 525):
 
 - `<slug>-android-<version>.apk`: the signed APK.
-- `<slug>-android-<version>.manifest.json`: the version, the commit, the file, its size and SHA-256, and the SHA-256 of the certificate that signed it, written by `scripts/release/android-artifact.mjs build` from the signer `apksigner` reads back out of the APK. The release job fetches both from the android run for the commit (the platforms gate has already required it to succeed), and the publisher verifies them with the rest.
+- `<slug>-android-<version>.manifest.json`: the version, the commit, the file, its size and SHA-256, and the SHA-256 of the certificate that signed it, written by `scripts/release/android-artifact.mjs build` from the signer `apksigner` reads back out of the APK. The release job downloads both from its own run's android leg, and the publisher verifies them with the rest. A release never downloads an artifact from another run: workflow artifacts live one day, so a release that ran a day after the android pipeline's run failed at that download, and every release rebuilds the APK for its commit instead. `desktop/test/release.test.js` fails when the release workflow, a workflow it calls or a script those run downloads from another run.
 
 ## Phone updates
 
