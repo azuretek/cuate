@@ -2,8 +2,12 @@
 // it, that the bridge injected into Messages answers. It restarts the engine with a backoff, and relaunches Messages
 // (with its bridge) when it has quit or its bridge has stopped answering, at most three times an hour. While the config names
 // another program as managing Messages it reports instead of relaunching, because that program launches Messages
-// with its own helper injected and a plain relaunch would drop it. Every effect is injected, so its failure states
-// are proven with fakes and nothing here needs a Mac.
+// with its own helper injected and a plain relaunch would drop it. A Messages already running with another program's
+// helper injected is reported the same way instead of relaunched for the bridge (issue 524), since that program puts
+// its own helper back within seconds. Every effect is injected, so its failure states are proven with fakes and
+// nothing here needs a Mac.
+import { foreignReason } from './mac.js';
+
 export const WATCHDOG_DEFAULTS = Object.freeze({
   everyMs: 60000,
   relaunchLimit: 3,
@@ -41,6 +45,8 @@ export function createWatchdog({
   const relaunches = [];
   const counts = { ticks: 0, engineRestarts: 0, messagesRelaunches: 0, bridgeRelaunches: 0, reports: 0 };
   let lastBridgeLaunchAt = -Infinity;
+  // The foreign helper last reported, so a Messages that stays that way is reported once and not every minute.
+  let foreignSeen = null;
   const ownsBridge = () => Boolean(settings.messages.manage && !settings.messages.managedBy && typeof mac.ownsBridge === 'function' && mac.ownsBridge() && typeof engine.checkBridge === 'function');
   const prune = (at) => {
     const since = at - windowMs;
@@ -57,8 +63,30 @@ export function createWatchdog({
     } catch {
       return;
     }
+    if (b && b.known && b.ready) foreignSeen = null;
     if (!b || !b.known || b.ready) return;
     if (at - lastBridgeLaunchAt < 2 * everyMs) return;
+    // ★ Another program's helper in Messages means that program launched it and will launch it again with its helper
+    // the moment Messages is killed: measured 2026-11-15, a forced relaunch only crashed Messages and BlueBubbles put
+    // its own helper back within seconds (issue 524). So the relaunch is refused and named, once per change.
+    let injection = null;
+    if (typeof mac.readMessagesInjection === 'function') {
+      try {
+        injection = await mac.readMessagesInjection();
+      } catch {
+        injection = null;
+      }
+    }
+    if (injection && injection.verdict === 'foreign') {
+      const key = injection.foreign.join(':') + '|' + (injection.program || '');
+      if (key !== foreignSeen) {
+        foreignSeen = key;
+        counts.reports += 1;
+        log.emit('mac.refused', { what: 'bridge', reason: foreignReason(injection) });
+      }
+      return;
+    }
+    if (injection && injection.verdict !== 'unknown') foreignSeen = null;
     prune(at);
     if (relaunches.length >= relaunchLimit) {
       counts.reports += 1;

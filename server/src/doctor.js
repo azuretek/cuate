@@ -1,10 +1,17 @@
 // Checks the Mac and the engine and says what to fix, one line each. It never changes anything.
 import { accessSync, constants } from 'node:fs';
 import { createRpc } from './engine/rpc.js';
-import { createMac } from './mac.js';
+import { createMac, foreignReason } from './mac.js';
 import { createContacts } from './contacts.js';
 
 const quiet = { emit: () => {} };
+
+// ★ imsg answers status only after its bridge probe, which waits up to ten seconds on a bridge that does not answer
+// (IMsgBridgeProtocol.defaultResponseTimeout). Doctor gave the whole request those same ten seconds, so a dead bridge
+// read as an engine that did not answer, failed doctor and refused an install (2026-11-15, issue 524), although since
+// issue 515 a send never waits on the bridge. The request outlasts the probe, and the bridge is reported on its own.
+export const IMSG_BRIDGE_PROBE_MS = 10000;
+export const DOCTOR_STATUS_TIMEOUT_MS = 30000;
 
 // What the engine's own status report says about the Messages database, which is the Full Disk Access grant in
 // action. The engine retries the open on every status, and its error text tells the three states apart: ready,
@@ -33,6 +40,7 @@ export async function runDoctor({
   engineNeedsScreen = Boolean(config.engine && config.engine.needsScreen),
   contactsSettleMs = 5000,
   contactsPollMs = 250,
+  statusTimeoutMs = DOCTOR_STATUS_TIMEOUT_MS,
 }) {
   const lines = [];
   let failed = false;
@@ -52,7 +60,7 @@ export async function runDoctor({
   let exited = false;
   transport.onExit(() => { exited = true; });
   try {
-    const st = await rpc.request('status', {}, 10000);
+    const st = await rpc.request('status', {}, statusTimeoutMs);
     const version = st && st.version != null ? ' ' + String(st.version) : '';
     ok('engine ' + config.engine.kind + version + ' answered');
     const verdict = databaseVerdict(st);
@@ -60,6 +68,11 @@ export async function runDoctor({
     else if (verdict === 'missing') bad('the Messages database is not there, so Messages is not signed in (or chat.db has never been created): open Messages, finish signing in, then run doctor again');
     else if (verdict === 'blocked') bad('the Messages database could not be opened: give the program that starts the server Full Disk Access, and if its entry is already on, switch it off and on again because a macOS or Homebrew update leaves the grant stale, then run doctor again');
     else bad('engine ' + config.engine.kind + version + ' cannot read the Messages database' + (st && st.database && st.database.error ? ': ' + st.database.error : '') + ': give Full Disk Access to the program that starts the server, then run doctor again');
+    // The bridge imsg injects into Messages (issue 515) is a warning when it does not answer, never a failure: sends go
+    // without it, and only typing, read receipts, reactions, threaded replies and edits wait for it.
+    const bridge = st && st.bridge && typeof st.bridge === 'object' && typeof st.bridge.ready === 'boolean' ? st.bridge : null;
+    if (bridge && bridge.ready) ok('the bridge in Messages answers, so typing, read receipts, reactions, replies and edits work');
+    else if (bridge) warn('the bridge in Messages is not answering' + (bridge.error ? ' (' + String(bridge.error) + ')' : '') + ': sends still go out, but typing, read receipts, reactions, threaded replies and edits wait until it does; the running server relaunches Messages with its bridge unless another program has its own helper injected');
     if (st && st.contacts) engineContacts = st.contacts;
     // ★ A freshly started imsg answers its first status before its Contacts catalog has loaded: the catalog starts
     // unavailable and the status read starts the load behind the answer rather than waiting for it, so the first
@@ -69,7 +82,7 @@ export async function runDoctor({
     const settleBy = Date.now() + contactsSettleMs;
     while (engineContacts && engineContacts.available === false && !exited && Date.now() < settleBy) {
       await new Promise((resolve) => setTimeout(resolve, contactsPollMs));
-      const again = await rpc.request('status', {}, 10000).catch(() => null);
+      const again = await rpc.request('status', {}, statusTimeoutMs).catch(() => null);
       if (again && again.contacts) engineContacts = again.contacts;
     }
   } catch (e) {
@@ -150,6 +163,18 @@ export async function runDoctor({
       if (s.screenLockRequired === null) warn('the lock-screen password setting could not be read');
       else if (s.screenLockRequired && s.screenLockDelaySeconds === 0) ok('the screen locks at once and asks for a password');
       else bad('locking is on but the screen does not ask for a password at once: turn on "Require password immediately after sleep or screen saver begins"');
+    }
+    // Which helper the running Messages was started with (issue 524). Another program's helper keeps the imsg bridge
+    // out, and that program relaunches Messages with it whenever it is killed, so it is named rather than fought.
+    if (typeof control.readMessagesInjection === 'function') {
+      const inj = await control.readMessagesInjection().catch(() => null);
+      const managedBy = control.settings && control.settings.messages ? control.settings.messages.managedBy : null;
+      const wantsBridge = Boolean(config.engine && config.engine.kind === 'imsg' && control.settings && control.settings.messages && control.settings.messages.bridge);
+      if (inj && inj.verdict === 'foreign' && managedBy) ok(foreignReason(inj).split(';')[0] + ', and the config names ' + managedBy + ' as managing Messages');
+      else if (inj && inj.verdict === 'foreign') warn(foreignReason(inj) + ' (for BlueBubbles, its Private API): until then the imsg bridge cannot load, and the server reports this instead of relaunching Messages against it');
+      else if (inj && inj.verdict === 'ours') ok('Messages runs the imsg bridge helper');
+      else if (inj && inj.verdict === 'none' && wantsBridge) warn('Messages runs with no helper injected, so the imsg bridge is not loaded: the running server relaunches Messages with it');
+      else if (inj && inj.verdict === 'unknown' && inj.reason && inj.reason !== 'not macOS') warn('which helper Messages runs could not be read: ' + inj.reason);
     }
   }
   return { failed, lines };
