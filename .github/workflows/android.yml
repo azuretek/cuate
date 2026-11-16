@@ -143,142 +143,17 @@ jobs:
   # The publish half: the APK, signed with the Android release keystore.
   #
   # A pull request ships nothing, so this job does not run there; a push to main
-  # or a manual run does, and it is the one path that needs the keystore. Until it
-  # is set it fails loudly, naming what is missing, rather than publishing
-  # nothing in silence.
+  # or a manual run does, and it is the one path that needs the keystore. The
+  # signing itself is android-release.yml, the same reusable leg release.yml
+  # calls to build the APK it publishes in its own run (issue 525).
   release:
     name: sign and publish the APK
     needs: [build-and-boot]
     if: github.event_name != 'pull_request' && needs.build-and-boot.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: android
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Restore the signing keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -eo pipefail
-          missing=""
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::the Android signing keystore is not configured. Set these repository secrets:$missing"
-            exit 1
-          fi
-          key="$RUNNER_TEMP/cuate-release.jks"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$key"
-          {
-            echo "CUATE_ANDROID_KEYSTORE=$key"
-            echo "CUATE_ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
-            echo "CUATE_ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
-            echo "CUATE_ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
-          } >> "$GITHUB_ENV"
-
-      - name: Decide the version
-        id: version
-        run: |
-          set -eo pipefail
-          # The one owner of the base and of both derivations, so the APK cannot
-          # name itself something the desktop and iOS builds do not.
-          node ../scripts/release/version.mjs > /dev/null
-          echo "the release APK names itself $(node ../scripts/release/version.mjs)"
-
-      # Firebase's client config carries an API key, so it is never committed: the release writes it from a secret and
-      # Gradle reads the four values push needs from it (issue 347, docs/PUSH.md).
-      - name: Write the Firebase config
-        env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.CUATE_GOOGLE_SERVICES_JSON }}
-        run: |
-          set -eo pipefail
-          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-            echo "::error::CUATE_GOOGLE_SERVICES_JSON is not set. It is the base64 of the Android app's google-services.json from the Firebase project (docs/PUSH.md)."
-            exit 1
-          fi
-          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 --decode > "$RUNNER_TEMP/google-services.json"
-          node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$RUNNER_TEMP/google-services.json"
-          echo "CUATE_GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
-
-      - name: Build the signed APK
-        run: |
-          set -eo pipefail
-          ./gradlew --no-daemon :app:assembleRelease \
-            -PversionName="${{ steps.version.outputs.version }}" \
-            -PversionCode="${{ steps.version.outputs.count }}"
-
-      # A release APK whose signing is assumed is not a verified APK. This reads the
-      # signer certificate back out of the file and fails the job when it is not
-      # the one the keystore holds, so green means signed by the release identity
-      # rather than merely produced.
-      - name: Verify the signature
-        id: signature
-        run: |
-          set -eo pipefail
-          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          apksigner="$(find "$sdk/build-tools" -name apksigner -type f | sort | tail -1)"
-          if [ -z "$apksigner" ]; then
-            echo "::error::apksigner was not found in the Android SDK build-tools"
-            exit 1
-          fi
-          apk="$(find app/build/outputs/apk/release -name '*.apk' | head -1)"
-          if [ -z "$apk" ]; then
-            echo "::error::no release APK was produced"
-            exit 1
-          fi
-          "$apksigner" verify --print-certs "$apk" | tee "$RUNNER_TEMP/apk-signature.txt"
-          digest() { printf '%s' "$1" | tr -d ':' | tr 'A-Z' 'a-z'; }
-          from_apk="$(grep -i 'certificate SHA-256 digest' "$RUNNER_TEMP/apk-signature.txt" | head -1 | awk '{print $NF}')"
-          from_store="$(keytool -list -v -keystore "$CUATE_ANDROID_KEYSTORE" -storepass "$CUATE_ANDROID_KEYSTORE_PASSWORD" -alias "$CUATE_ANDROID_KEY_ALIAS" | grep -i 'SHA256:' | head -1 | awk '{print $2}')"
-          if [ -z "$from_apk" ] || [ -z "$from_store" ]; then
-            echo "::error::could not read the signing certificate from the APK or from the keystore"
-            exit 1
-          fi
-          if [ "$(digest "$from_apk")" != "$(digest "$from_store")" ]; then
-            echo "::error::the APK is signed by a different certificate than the keystore holds: APK $from_apk, keystore $from_store"
-            exit 1
-          fi
-          echo "the APK is signed by the keystore certificate $from_store"
-          {
-            echo "apk=$apk"
-            echo "signer=$from_apk"
-          } >> "$GITHUB_OUTPUT"
-
-      # The release carries the APK and a manifest naming its size, SHA-256 and signer (issue 192), which a phone
-      # checks before it hands a download to Android's installer. release.yml attaches both to the GitHub release.
-      - name: Name the APK and write its manifest
-        run: |
-          set -eo pipefail
-          node ../scripts/release/android-artifact.mjs build "${{ steps.signature.outputs.apk }}" "${{ steps.signature.outputs.signer }}" "${{ steps.version.outputs.version }}" "$GITHUB_SHA" ../android-release
-          node ../scripts/release/android-artifact.mjs verify ../android-release "${{ steps.version.outputs.version }}" "$GITHUB_SHA"
-
-      - name: Keep the release APK and its manifest
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-release
-          path: android-release/*
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Keep the signed APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
+    uses: ./.github/workflows/android-release.yml
+    secrets:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      CUATE_GOOGLE_SERVICES_JSON: ${{ secrets.CUATE_GOOGLE_SERVICES_JSON }}

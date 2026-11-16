@@ -1,15 +1,13 @@
-// The Android half of a test release (issue 192): the signed APK the android pipeline built for the commit, and a
-// manifest naming its version, commit, size, SHA-256 and the SHA-256 of the certificate that signed it. A phone that
-// updates itself checks the download against this manifest, and its signer against both the manifest and itself,
-// before Android's installer is asked. The names come from core/spec/releases.json through the same function the
+// The Android half of a test release (issue 192): the signed APK built for the commit in the release's own run
+// (issue 525), and a manifest naming its version, commit, size, SHA-256 and the SHA-256 of the certificate that
+// signed it. A phone that updates itself checks the download against this manifest, and its signer against both the
+// manifest and itself, before Android's installer is asked. The names come from core/spec/releases.json through the same function the
 // phone's page uses (releaseAssets in core/app/rules/updates.js), and the manifest is held by the same rule.
 //
-//   build <apk> <signer> <version> <commit> <out>   name the APK and write its manifest (android.yml's release job)
-//   fetch <commit> <out>                            download the android run's artifact for the commit (release.yml)
-//   verify <dir> <version> [<commit>]               the publisher's check
-import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+//   build <apk> <signer> <version> <commit> <out>   name the APK and write its manifest (android-release.yml)
+//   verify <dir> <version> [<commit>]               the leg's own check, and the publisher's
+import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { releaseAssets, apkManifestProblem } from '../../core/app/rules/updates.js';
@@ -57,21 +55,9 @@ export function verifyAndroidAssets(dir, version, { commit } = {}) {
   return Object.values(names);
 }
 
-// The android pipeline's run for this commit on main, which the platforms gate has already required to succeed, and
-// its release artifact. Read with the release job's own token; nothing here can publish.
-export function fetchAndroidAssets({ commit, out, gh = (args) => execFileSync('gh', args, { encoding: 'utf8', timeout: 120000 }) }) {
-  const runs = JSON.parse(gh(['run', 'list', '--repo', naming.repo, '--workflow', 'android.yml', '--commit', commit, '--event', 'push', '--json', 'databaseId,conclusion', '--limit', '20']));
-  const run = runs.find((r) => r.conclusion === 'success');
-  if (!run) throw new Error('No successful android run for ' + commit);
-  mkdirSync(out, { recursive: true });
-  gh(['run', 'download', String(run.databaseId), '--repo', naming.repo, '--name', 'android-release', '--dir', out]);
-  return readdirSync(out);
-}
-
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [verb, ...args] = process.argv.slice(2);
   if (verb === 'build') console.log(JSON.stringify(buildAndroidAssets({ apk: args[0], signer: args[1], version: args[2], commit: args[3], out: args[4] }).manifest));
-  else if (verb === 'fetch') console.log(JSON.stringify(fetchAndroidAssets({ commit: args[0], out: args[1] })));
   else if (verb === 'verify') console.log(JSON.stringify(verifyAndroidAssets(args[0], args[1], { commit: args[2] })));
-  else throw new Error('usage: android-artifact.mjs build|fetch|verify ...');
+  else throw new Error('usage: android-artifact.mjs build|verify ...');
 }
