@@ -22,6 +22,14 @@
   const BYTES_PER_SECOND = 50 * 1024;
   const CHAT_COUNT = 24;
   const HISTORY = 120;
+  // The one timing bound the proofs hold (issue 530), on the warm launch with the store alone: its scheme and its first
+  // message are drawn within this long of sign-in, on the page's own clock. What it read before it drew is the proof
+  // that it drew from the store; this only catches a store read or a draw that hangs, which no count can see. It is
+  // never a race between two launches: on a shared simulator a busy moment during one launch moves its times by more
+  // than the store saves (765 ms against 757 ms failed #526 with every count right). CI's warm launches with the store
+  // have drawn in 95 to 1295 ms, so ten seconds is several times the slowest seen and well inside the minute each wait
+  // below allows.
+  const BACKSTOP_MS = 10000;
   const SERVER = 'https://fixture.invalid';
   const mark = document.createElement('output');
   Object.assign(mark.style, { position: 'fixed', bottom: '0', left: '0', zIndex: '9999', fontSize: '1px' });
@@ -249,7 +257,7 @@
     await root.cache?.flush();
     const shownEdit = (root.messages.find((m) => m.id === edited.id) || {}).text === edited.text;
     say('cache:result ' + JSON.stringify({
-      mode: MODE, run: RUN, store: Boolean(root.cache), link: { rttMs: RTT_MS, bytesPerSecond: BYTES_PER_SECOND },
+      mode: MODE, run: RUN, store: Boolean(root.cache), link: { rttMs: RTT_MS, bytesPerSecond: BYTES_PER_SECOND }, backstopMs: BACKSTOP_MS,
       bytes, requests: asked.length, listMs: Math.round(listMs), firstVisibleMs: Math.round(firstVisibleMs), newestVisibleMs: Math.round(newestVisibleMs),
       themedMs: themedMs === null ? null : Math.round(themedMs), answersBeforeThemed, settingsBeforeThemed, pagesBeforeFirstVisible, photosMs: photosMs === null ? null : Math.round(photosMs), backdropMs: backdropMs === null ? null : Math.round(backdropMs),
       pageReads: asked.filter((a) => /\/messages/.test(a.path)).length, pictureReads: asked.filter((a) => /\/attachments\//.test(a.path)).length,

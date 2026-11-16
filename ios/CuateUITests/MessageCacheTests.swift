@@ -48,15 +48,20 @@ final class MessageCacheTests: XCTestCase {
         XCTAssertGreaterThan(number("off-warm", "photoReads"), 0, "without the store a conversation's photo and backdrop are read on every launch")
         XCTAssertEqual(number("on-warm", "photoReads"), 0, "and with it on none")
         XCTAssertGreaterThanOrEqual(number("on-warm", "themedMs"), 0, "a warm open draws its scheme")
-        // What a launch had read before it drew says where it drew from, however busy the simulator is; the times are
-        // only a loose backstop (issue 478).
+        // What a launch had read before it drew says where it drew from, however busy the simulator is (issue 478), and
+        // those counts are the proof. No time from one launch is compared with another's: the launches run one after
+        // another on a shared simulator, so a busy moment during one moves its times by more than the store saves, and a
+        // strict "sooner" failed #526 at 765 ms against 757 ms with every count right (issue 530). The one timing check
+        // is a generous bound on the warm launch with the store alone, backstopMs, which the fixture states with its
+        // reasoning. Its times are the page's own clock from sign-in to the state the page reports, so XCTest's launch,
+        // its waiting and its reading of the marker are never in them.
         XCTAssertGreaterThanOrEqual(number("off-warm", "settingsBeforeThemed"), 1, "without the store the scheme waits on the server's settings")
         XCTAssertEqual(number("on-warm", "answersBeforeThemed"), 0, "and with it the scheme is drawn before the server answers anything")
-        XCTAssertLessThan(number("on-warm", "themedMs"), number("off-warm", "themedMs"), "and sooner")
+        XCTAssertLessThan(number("on-warm", "themedMs"), number("on-warm", "backstopMs"), "and within the backstop of sign-in")
         XCTAssertEqual(results["on-warm"]?["shownEdit"] as? Bool, true, "and still draws an edit made while it was closed")
         XCTAssertLessThan(number("on-warm", "bytes"), number("off-warm", "bytes") / 4, "a warm open costs a fraction of the bytes it did")
         XCTAssertGreaterThanOrEqual(number("off-warm", "pagesBeforeFirstVisible"), 1, "without the store the first message waits on a page read")
         XCTAssertEqual(number("on-warm", "pagesBeforeFirstVisible"), 0, "and with it the first message is drawn from the store")
-        XCTAssertLessThan(number("on-warm", "firstVisibleMs"), number("off-warm", "firstVisibleMs"), "and sooner")
+        XCTAssertLessThan(number("on-warm", "firstVisibleMs"), number("on-warm", "backstopMs"), "and within the backstop of sign-in")
     }
 }
