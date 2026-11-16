@@ -922,6 +922,10 @@ class AppRoot extends KitElement {
       // looks for its message among them (issue 414).
       // What the store drew may be an older stretch than the page, so the page is laid out on its own.
       if (cached?.fromStore) cached = null;
+      // The page is laid over the window as it is now, not the one held when this open began: a page of history that
+      // landed while the newest page was in flight stays, rather than the window going back to where it was and taking
+      // the message the person is reading with it (issue 504).
+      else if (cached && this.historyWindow) cached = { ...cached, messages: this.messages, hasMore: this.hasMore, historyWindow: { ...this.historyWindow, messages: this.messages } };
       if (cached?.historyWindow?.afterCount && !newest) {
         const fresh = new Map(messages.map((m) => [m.id, m]));
         this.applyWindow({ ...cached.historyWindow, messages: cached.messages.map((m) => fresh.get(m.id) || m) });
@@ -1101,7 +1105,12 @@ class AppRoot extends KitElement {
       // again, or a refresh of the same conversation, re-opens it without leaving it, and that must not throw
       // away a page the person is waiting for. Only leaving the conversation invalidates the answer.
       if (this.openChatId !== chatId) return false;
-      const next = shiftWindow({ ...state, messages: this.messages }, foldFor(messages, this.chats, chatId), { direction, hasMore, heights: detail?.heights });
+      // The page meets the window only at the message it was asked from. A window another writer moved while the page
+      // was in flight no longer ends there, and laying the page against the window held at the ask would leave a gap in
+      // the conversation (issue 504), so the page is not merged and the next ask starts from the window's new edge.
+      const reached = direction === 'older' ? this.messages[0] : this.messages.at(-1);
+      if (reached?.id !== edge.id) return false;
+      const next = shiftWindow({ ...(this.historyWindow || state), messages: this.messages }, foldFor(messages, this.chats, chatId), { direction, hasMore, heights: detail?.heights });
       this.applyWindow(next);
       return true;
     } catch (e) { this.problem = this.describe(e); return false; }

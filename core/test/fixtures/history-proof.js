@@ -26,6 +26,34 @@ globalThis.historyProof = {
     await root().open('1', { show: true });
     await settle();
     const steps = [];
+    // A refresh of the conversation on screen spans a page boundary (issue 504), in the order the Windows packaged leg
+    // met it when its window was shown again: the refresh begins while one page is asked for, and answers while the
+    // next is in flight, before that page lands. The answers are ordered by what the page reports it asked for, never
+    // by a wait, so every platform proves the same interleaving. The store is taken as not current, as a catch-up that
+    // has not finished leaves it, so the refresh reads the newest page rather than answering from the store.
+    const RACE_FROM = 2;
+    const client = root().client;
+    const ask = client.messages.bind(client);
+    const race = { order: [] };
+    race.nextAsked = new Promise((resolve) => { race.ask = resolve; });
+    client.messages = async (chatId, options = {}) => {
+      const answer = ask(chatId, options);
+      if (!race.refresh || race.done) return answer;
+      if (!options.beforeCursor && !options.afterCursor) {
+        race.order.push('refresh asked');
+        await race.nextAsked;
+        const page = await answer;
+        race.order.push('refresh answered');
+        return page;
+      }
+      if (steps.length !== RACE_FROM + 1) return answer;
+      race.order.push('page asked');
+      race.ask();
+      const page = await answer;
+      await race.refresh;
+      race.order.push('page answered');
+      return page;
+    };
     let maxRows = 0;
     let maxObserved = 0;
     const deadline = performance.now() + 90000;
@@ -47,7 +75,17 @@ globalThis.historyProof = {
       const positioned = position();
       // What the page held when the proof asked, so a refused page names why rather than only that it was refused.
       const asked = { first: root().messages[0]?.id, rows: root().messages.length, seq: root().openSeq, pending: Boolean(root().pendingHistory), olderPending: Boolean(pane().olderPending), hasOlder: root().historyWindow?.hasOlder, chat: root().openChatId };
+      if (steps.length === RACE_FROM) {
+        race.upToDate = root().upToDate;
+        root().upToDate = false;
+        race.refresh = root().open(root().openChatId);
+      }
       const moved = await root().loadOlder(pane().historyMeasurements());
+      if (steps.length === RACE_FROM + 1) {
+        race.done = true;
+        root().upToDate = race.upToDate;
+        assert(race.order.join(',') === 'refresh asked,page asked,refresh answered,page answered', 'refresh answered while the page was in flight ' + JSON.stringify(race.order));
+      }
       const after = () => ({ first: root().messages[0]?.id, rows: root().messages.length, seq: root().openSeq, pending: Boolean(root().pendingHistory), olderPending: Boolean(pane().olderPending), hasOlder: root().historyWindow?.hasOlder, chat: root().openChatId, problem: root().problem || '' });
       assert(moved, 'older page returned ' + JSON.stringify({ asked, after: after() }));
       const returned = { model: after(), view: position() };
@@ -65,7 +103,7 @@ globalThis.historyProof = {
     }
     assert(root().messages[0].id === 'SYNTHETIC-1', 'reached oldest message without timestamp gaps');
     const click = await this.photoTarget();
-    return { steps, maxRows, maxObserved, click };
+    return { steps, maxRows, maxObserved, click, race: race.order };
   },
   // The photo the real pointer presses, placed the way the app places a message it brings into view
   // (revealMessage): through the scroll keeper's anchor, never a bare scrollIntoView, because the keeper
