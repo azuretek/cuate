@@ -60,7 +60,10 @@ that only compiles is not a shell that runs, so the boot is the acceptance rathe
 than the compile.
 
 On a push to `main`, or a manual run, it additionally builds a signed release
-APK and keeps it as an artifact. That job needs these repository secrets:
+APK and keeps it as an artifact. The signing is
+`.github/workflows/android-release.yml`, the reusable leg the test release also
+calls, so a release builds the APK it publishes in its own run (issue 525). That
+job needs these repository secrets:
 
 | Secret | What it is |
 |---|---|

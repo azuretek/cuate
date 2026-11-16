@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +11,7 @@ import { expectedAssets, verifyAssets, verifyDesktopAssets } from '../../scripts
 import { buildServerArtifact, serverAssetNames, sourceFiles, verifyServerAssets } from '../../scripts/release/server-artifact.mjs';
 import { digestText, manifestOf, readTarball, sha256, writeTarball } from '../../server/src/artifact.js';
 import { collect } from '../../scripts/release/collect.mjs';
-import { androidAssetNames, buildAndroidAssets, verifyAndroidAssets, signerDigest, fetchAndroidAssets } from '../../scripts/release/android-artifact.mjs';
+import { androidAssetNames, buildAndroidAssets, verifyAndroidAssets, signerDigest } from '../../scripts/release/android-artifact.mjs';
 import { publish, prunePlan } from '../../scripts/release/release.mjs';
 import config from '../electron-builder.mjs';
 const naming = JSON.parse(readFileSync(new URL('../../core/spec/naming.json', import.meta.url)));
@@ -151,7 +151,7 @@ test('all six native packaging legs and their tests gate the sole publisher', ()
   assert.equal(packaging.jobs.build.strategy.matrix.include.length, 6);
   // The publisher needs the platforms gate beside the build: a test build may not
   // publish from a run whose phone or desktop leg was red.
-  assert.deepEqual(workflow.jobs.release.needs, ['prepare', 'platforms', 'build', 'server']);
+  assert.deepEqual(workflow.jobs.release.needs, ['prepare', 'platforms', 'build', 'server', 'android']);
   assert.match(workflow.jobs.release.if, /needs\.platforms\.result == 'success'/);
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
   assert.deepEqual(workflow.on.push.branches, ['main']);
@@ -280,14 +280,94 @@ test('the publisher verifies the Android APK against its manifest and refuses a 
   assert.throws(() => signerDigest('not a digest'), /certificate/);
 });
 
-test('the release fetches the APK from the successful android run for its commit, and refuses without one', (t) => {
-  const out = mkdtempSync(path.join(os.tmpdir(), 'android-fetch-'));
-  t.after(() => rmSync(out, { recursive: true, force: true }));
-  const calls = [];
-  const gh = (runs) => (args) => { calls.push(args); return args[1] === 'list' ? JSON.stringify(runs) : ''; };
-  fetchAndroidAssets({ commit: sha, out, gh: gh([{ databaseId: 5, conclusion: 'failure' }, { databaseId: 7, conclusion: 'success' }]) });
-  assert.deepEqual(calls.at(-1).slice(0, 3), ['run', 'download', '7']);
-  assert.ok(calls.at(-1).includes('android-release'));
-  assert.ok(calls[0].includes(sha) && calls[0].includes('android.yml'));
-  assert.throws(() => fetchAndroidAssets({ commit: sha, out, gh: gh([{ databaseId: 5, conclusion: 'failure' }]) }), /No successful android run/);
+// Issue 525: a release builds every asset it publishes in its own run. The APK used to be downloaded from the android
+// pipeline's run for the commit, whose artifact lives one day, so a release that ran a day later failed at the
+// download. Every workflow the release runs (itself and each reusable workflow it calls) and every repository script
+// those run, with the scripts they import, is read for a download from another run.
+const WORKFLOW_DIR = new URL('../../.github/workflows/', import.meta.url);
+const REPO_ROOT = new URL('../../', import.meta.url);
+const CROSS_RUN_TEXT = /\brun\s+download\b|['"]run['"],\s*['"]download['"]|\/actions\/(?:runs\/[^'"\s]*\/)?artifacts\b/;
+function crossRunDownloads(entry, { readWorkflow = (file) => parse(readFileSync(new URL(file, WORKFLOW_DIR), 'utf8')), readScript = (file) => (existsSync(new URL(file, REPO_ROOT)) ? readFileSync(new URL(file, REPO_ROOT), 'utf8') : null) } = {}) {
+  const found = [];
+  const workflows = new Map();
+  const queue = [entry];
+  while (queue.length) {
+    const file = queue.shift();
+    if (workflows.has(file)) continue;
+    const doc = readWorkflow(file);
+    workflows.set(file, doc);
+    for (const job of Object.values(doc.jobs || {})) {
+      const called = /^\.\/\.github\/workflows\/(.+)$/.exec(String(job.uses || ''));
+      if (called) queue.push(called[1]);
+    }
+  }
+  const scripts = [];
+  for (const [file, doc] of workflows) {
+    for (const [key, job] of Object.entries(doc.jobs || {})) {
+      for (const step of job.steps || []) {
+        const where = file + ' ' + key + ': ' + (step.name || step.uses || String(step.run).split('\n')[0]);
+        if (/^actions\/download-artifact@/.test(String(step.uses || ''))) {
+          for (const input of ['run-id', 'github-token', 'repository']) if (step.with?.[input] !== undefined) found.push(where + ' (download-artifact ' + input + ')');
+        }
+        const run = String(step.run || '');
+        if (CROSS_RUN_TEXT.test(run)) found.push(where);
+        // A script is named relative to the step's working directory, the way the shell resolves it.
+        const workdir = step['working-directory'] || job.defaults?.run?.['working-directory'] || '.';
+        for (const match of run.matchAll(/(?:^|[\s"'=])((?:[\w.-]+\/)*[\w.-]+\.m?js)\b/g)) scripts.push(path.posix.normalize(path.posix.join(workdir, match[1])));
+      }
+    }
+  }
+  const read = new Set();
+  while (scripts.length) {
+    const file = scripts.shift();
+    if (read.has(file)) continue;
+    read.add(file);
+    const text = readScript(file);
+    // A name that is not a file in the repository (a package's own binary, a generated file) is not our script.
+    if (text === null) continue;
+    if (CROSS_RUN_TEXT.test(text)) found.push(file);
+    for (const match of text.matchAll(/^import[^'"]*['"](\.{1,2}\/[^'"]+)['"]/gm)) {
+      const next = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1]));
+      scripts.push(next);
+    }
+  }
+  return found;
+}
+
+test('the release builds the APK in its own run and never downloads an artifact from another run', () => {
+  assert.deepEqual(crossRunDownloads('release.yml'), [], 'a release downloads only what its own run built');
+  const release = parse(readFileSync(new URL('release.yml', WORKFLOW_DIR), 'utf8'));
+  const android = parse(readFileSync(new URL('android.yml', WORKFLOW_DIR), 'utf8'));
+  const leg = parse(readFileSync(new URL('android-release.yml', WORKFLOW_DIR), 'utf8'));
+  assert.equal(release.jobs.android.uses, './.github/workflows/android-release.yml');
+  assert.equal(release.jobs.android.with.version, release.jobs.build.with.version, 'one version for the APK, the desktop and the server');
+  assert.equal(release.jobs.android.if, release.jobs.build.if);
+  assert.ok(release.jobs.release.needs.includes('android'), 'the publisher needs this run\'s android leg');
+  assert.ok(release.jobs.release.steps.some((step) => String(step.uses).startsWith('actions/download-artifact') && step.with?.name === 'android-release' && step.with?.path === 'release-assets'));
+  assert.equal(release.jobs.release.permissions.actions, undefined, 'the publisher reads no other run, so it is granted no Actions access');
+  // android.yml's own push and manual runs sign through the same leg, so there is one way an APK is built and signed.
+  assert.equal(android.jobs.release.uses, './.github/workflows/android-release.yml');
+  assert.match(String(android.jobs.release.if), /github\.event_name != 'pull_request'/);
+  assert.deepEqual(Object.keys(leg.on), ['workflow_call'], 'the leg is reusable, never a pipeline of its own');
+  const runs = leg.jobs.apk.steps.map((step) => step.run || '');
+  const at = (re) => runs.findIndex((run) => re.test(run));
+  assert.ok(at(/apksigner/) >= 0 && at(/apksigner/) < at(/android-artifact\.mjs build/), 'the signer is checked before the manifest is written');
+  assert.ok(at(/android-artifact\.mjs verify/) >= at(/android-artifact\.mjs build/));
+  assert.ok(leg.jobs.apk.steps.some((step) => step.with?.name === 'android-release'));
+});
+
+test('the cross-run guard catches a download from another run, directly or through a script', () => {
+  const workflows = {
+    'direct.yml': { jobs: { release: { steps: [{ run: 'gh run download 43639522319 --name android-release' }] } } },
+    'input.yml': { jobs: { release: { steps: [{ uses: 'actions/download-artifact@v4', with: { name: 'x', 'run-id': '5', 'github-token': 't' } }] } } },
+    'caller.yml': { jobs: { leg: { uses: './.github/workflows/script.yml' } } },
+    'script.yml': { jobs: { release: { steps: [{ run: 'node scripts/release/outer.mjs' }] } } },
+    'clean.yml': { jobs: { release: { steps: [{ uses: 'actions/download-artifact@v4', with: { name: 'android-release' } }] } } },
+  };
+  const scripts = { 'scripts/release/outer.mjs': "import { x } from './inner.mjs';\n", 'scripts/release/inner.mjs': "gh(['run', 'download', id]);\n" };
+  const options = { readWorkflow: (file) => workflows[file], readScript: (file) => scripts[file] ?? null };
+  assert.equal(crossRunDownloads('direct.yml', options).length, 1);
+  assert.equal(crossRunDownloads('input.yml', options).length, 2);
+  assert.deepEqual(crossRunDownloads('caller.yml', options), ['scripts/release/inner.mjs']);
+  assert.deepEqual(crossRunDownloads('clean.yml', options), []);
 });
