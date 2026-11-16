@@ -5,7 +5,7 @@ import { compareHistory } from '../../../core/app/rules/history.js';
 import path from 'node:path';
 import { openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { createRpc } from './rpc.js';
-import { isReady, nextDelay } from './link.js';
+import { isReady, nextDelay, STATUS_TIMEOUT_MS } from './link.js';
 import { annotatePayloads } from './payload.js';
 import { annotateLivePhotos } from './live-photo.js';
 import { mapChat, mapMessage, mapReaction, isGroupPhotoRow, PHOTO_SCAN_ROWS, mayBeStoreEventRow, mapBackground, RENAME_ITEM_TYPE } from '../../../core/app/rules/engine-imsg.js';
@@ -80,7 +80,9 @@ const omit = (o, keys) => {
 // voices: where the adapter learns which messages are voice messages and which were played (voices.js reads the Messages
 // store; the fake keeps its own), or null, in which case no recording is marked (issue 440). heard: the recordings a
 // client of ours has played, kept by the server ({ has(attachmentId) }), or null.
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null, services = null }) {
+// statusTimeoutMs: how long every status read waits, at start and in checkBridge. It outlasts imsg's bridge probe
+// (link.js), so a bridge that does not answer is reported as such and never keeps the engine from coming up (issue 528).
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, statusTimeoutMs = STATUS_TIMEOUT_MS, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null, services = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -435,7 +437,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     let st = null;
     const statusAt = Date.now();
     try {
-      st = await c.rpc.request('status', {}, 10000);
+      st = await c.rpc.request('status', {}, statusTimeoutMs);
     } catch (e) {
       log.emit('engine.request', { method: 'status', ms: Date.now() - statusAt, ok: false });
       log.emit('engine.error', { method: 'status', code: numCode(e), error: e.message, ms: Date.now() - statusAt });
@@ -516,7 +518,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // every minute and after a relaunch; a bridge that comes back has its event stream subscribed again.
   async function checkBridge() {
     const was = bridge.ready;
-    const st = await request('status', {}, 15000);
+    const st = await request('status', {}, statusTimeoutMs);
     applyStatus(st);
     if (bridge.ready && !was) await subscribeBridgeEvents(st);
     return { ...bridge };

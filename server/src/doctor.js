@@ -1,17 +1,11 @@
 // Checks the Mac and the engine and says what to fix, one line each. It never changes anything.
 import { accessSync, constants } from 'node:fs';
 import { createRpc } from './engine/rpc.js';
+import { STATUS_TIMEOUT_MS } from './engine/link.js';
 import { createMac, foreignReason } from './mac.js';
 import { createContacts } from './contacts.js';
 
 const quiet = { emit: () => {} };
-
-// ★ imsg answers status only after its bridge probe, which waits up to ten seconds on a bridge that does not answer
-// (IMsgBridgeProtocol.defaultResponseTimeout). Doctor gave the whole request those same ten seconds, so a dead bridge
-// read as an engine that did not answer, failed doctor and refused an install (2026-11-15, issue 524), although since
-// issue 515 a send never waits on the bridge. The request outlasts the probe, and the bridge is reported on its own.
-export const IMSG_BRIDGE_PROBE_MS = 10000;
-export const DOCTOR_STATUS_TIMEOUT_MS = 30000;
 
 // What the engine's own status report says about the Messages database, which is the Full Disk Access grant in
 // action. The engine retries the open on every status, and its error text tells the three states apart: ready,
@@ -40,7 +34,9 @@ export async function runDoctor({
   engineNeedsScreen = Boolean(config.engine && config.engine.needsScreen),
   contactsSettleMs = 5000,
   contactsPollMs = 250,
-  statusTimeoutMs = DOCTOR_STATUS_TIMEOUT_MS,
+  // Outlasts imsg's bridge probe (STATUS_TIMEOUT_MS in engine/link.js), so a dead bridge is a warning and not an engine
+  // that did not answer: since issue 515 a send never waits on the bridge (issue 524).
+  statusTimeoutMs = STATUS_TIMEOUT_MS,
 }) {
   const lines = [];
   let failed = false;
