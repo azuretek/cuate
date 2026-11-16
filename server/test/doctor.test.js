@@ -7,7 +7,8 @@ import { logSpec } from '../src/paths.js';
 import { readFileSync } from 'node:fs';
 import { createMac, foreignReason, injectionVerdict, macConfig, OUR_HELPER, parseAutomaticLogin, parseFileVault, parseInjectedLibraries, parsePowerFailure, parseProgramName, parseScreenLock, parseSleep } from '../src/mac.js';
 import { createRestarts, createWatchdog } from '../src/watchdog.js';
-import { databaseVerdict, DOCTOR_STATUS_TIMEOUT_MS, IMSG_BRIDGE_PROBE_MS, runDoctor } from '../src/doctor.js';
+import { databaseVerdict, runDoctor } from '../src/doctor.js';
+import { IMSG_BRIDGE_PROBE_MS, STATUS_TIMEOUT_MS } from '../src/engine/link.js';
 import { createContacts } from '../src/contacts.js';
 
 const logger = () => {
@@ -662,7 +663,7 @@ test('doctor warns about a bridge that will not answer and never fails an instal
 });
 
 test('doctor gives the engine status longer than the engine spends probing a dead bridge (issue 524)', async () => {
-  assert.ok(DOCTOR_STATUS_TIMEOUT_MS >= 2 * IMSG_BRIDGE_PROBE_MS, 'the status request outlasts the engine bridge probe');
+  assert.ok(STATUS_TIMEOUT_MS >= 2 * IMSG_BRIDGE_PROBE_MS, 'the status request outlasts the engine bridge probe');
   const slow = await doctor({ makeTransport: () => slowStatusTransport(DEAD_BRIDGE, 60), statusTimeoutMs: 1000 });
   assert.equal(slow.failed, false, slow.lines.join('\n'));
   assert.ok(find(slow.lines, 'ok    engine imsg 1.2.3 answered'));
