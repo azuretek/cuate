@@ -2,17 +2,18 @@
 // and against the adapter's own supervision, not a mock of the whole process. The failing states are the ones a real
 // server met: a child killed mid-request, an engine that never becomes ready, a bridge that is not connected, a
 // request that hangs, a link that flaps, and a child replaced while a request is in flight.
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createEngine } from '../src/engine/index.js';
-import { isReady, nextDelay, RESTART_MIN_MS, RESTART_MAX_MS, STABLE_MS } from '../src/engine/link.js';
+import { isReady, nextDelay, IMSG_BRIDGE_PROBE_MS, RESTART_MIN_MS, RESTART_MAX_MS, STABLE_MS, STATUS_TIMEOUT_MS } from '../src/engine/link.js';
 import { createLogger } from '../../core/kit/log.js';
 import { logSpec } from '../src/paths.js';
 import { boot, waitFor } from './helpers.js';
 
 // A transport a test drives. It answers the methods it is told to, can be made to hang on one, and can be made to
 // exit on demand. Every transport an engine spawns is kept, so a test can count children and reach the current one.
-function script({ status = 'ok', databaseReady = true, subscribe = 'ok', subscribeCode = null, hang = [] } = {}) {
+// statusDelayMs holds the status answer back on the clock, the way imsg holds it while its bridge probe waits.
+function script({ status = 'ok', databaseReady = true, subscribe = 'ok', subscribeCode = null, hang = [], statusDelayMs = 0 } = {}) {
   const made = [];
   const makeTransport = () => {
     const lineCbs = new Set();
@@ -27,7 +28,11 @@ function script({ status = 'ok', databaseReady = true, subscribe = 'ok', subscri
         const req = JSON.parse(s);
         t.requests.push(req.method);
         if (hang.includes(req.method)) return; // never answers
-        if (req.method === 'status') return status === 'hang' ? undefined : reply(req.id, { version: 'test-1', database: { ready: databaseReady }, methods: [], capabilities: { features: {} } });
+        if (req.method === 'status') {
+          if (status === 'hang') return undefined;
+          const answer = () => reply(req.id, { version: 'test-1', database: { ready: databaseReady }, methods: [], capabilities: { features: {} } });
+          return statusDelayMs ? void setTimeout(answer, statusDelayMs) : answer();
+        }
         if (req.method === 'watch.subscribe') {
           if (subscribeCode !== null) return fail(req.id, subscribeCode, 'no watch method');
           if (subscribe === 'hang') return undefined;
@@ -68,6 +73,63 @@ test('the backoff doubles while the link cannot stay up and resets only after it
   assert.equal(nextDelay(RESTART_MAX_MS, { readyForMs: 0 }), RESTART_MAX_MS, 'capped');
   assert.equal(nextDelay(RESTART_MAX_MS, { readyForMs: STABLE_MS - 1 }), RESTART_MAX_MS, 'a flap does not reset it');
   assert.equal(nextDelay(RESTART_MAX_MS, { readyForMs: STABLE_MS }), RESTART_MIN_MS, 'a link that stayed ready resets it');
+});
+
+// The engine's clock is mocked, so the 12 s a dead bridge costs imsg's status passes at once; replies still arrive on
+// setImmediate, which is left real. Each step waits on the state it needs, never on a count.
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+async function until(cond, boundMs = 5000) {
+  const deadline = Date.now() + boundMs;
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error('the engine never reached the state the test waits on');
+    await settle();
+  }
+}
+
+test('an engine whose status waits out a dead bridge still comes up ready (issue 528)', async () => {
+  assert.ok(STATUS_TIMEOUT_MS >= 2 * IMSG_BRIDGE_PROBE_MS, 'a status read outlasts the engine bridge probe');
+  const statusDelayMs = 12000;
+  assert.ok(statusDelayMs > IMSG_BRIDGE_PROBE_MS && statusDelayMs < STATUS_TIMEOUT_MS);
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const s = script({ statusDelayMs });
+    const { engine, lines } = mk(s);
+    let settled = false;
+    const started = engine.start().finally(() => { settled = true; });
+    await until(() => s.made.length === 1 && s.made[0].requests.includes('status'));
+    mock.timers.tick(statusDelayMs);
+    await until(() => settled);
+    await started;
+    assert.equal(engine.info().ready, true, lines.map((l) => JSON.stringify(l)).join('\n'));
+    assert.ok(lines.some((l) => l.event === 'engine.start' && l.ready === true));
+    assert.equal(lines.some((l) => l.event === 'engine.error' && l.method === 'status'), false, 'the status read did not time out');
+    assert.equal(s.made.length, 1, 'and no second child was spawned');
+    await engine.stop();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('a status that never answers still times out, at the one status bound (issue 528)', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const s = script({ status: 'hang' });
+    const { engine, lines } = mk(s);
+    let settled = false;
+    const started = engine.start().finally(() => { settled = true; });
+    await until(() => s.made.length === 1 && s.made[0].requests.includes('status'));
+    mock.timers.tick(STATUS_TIMEOUT_MS - 1);
+    await settle();
+    assert.equal(settled, false, 'the read is still waiting just short of the bound');
+    mock.timers.tick(1);
+    await until(() => settled);
+    await started;
+    assert.equal(engine.info().ready, false);
+    assert.ok(lines.some((l) => l.event === 'engine.error' && l.method === 'status' && l.error.includes('after ' + STATUS_TIMEOUT_MS + ' ms')), JSON.stringify(lines.filter((l) => l.method === 'status')));
+    await engine.stop();
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test('an engine whose database is not readable is never reported ready', async () => {

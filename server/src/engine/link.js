@@ -15,6 +15,14 @@ export const RESTART_MAX_MS = 30000;
 // An engine ready for this long counts as healthy, and only then does the delay return to the minimum.
 export const STABLE_MS = 60000;
 
+// ★ imsg answers status only after its bridge probe, which waits up to ten seconds on a bridge that does not answer
+// (IMsgBridgeProtocol.defaultResponseTimeout). A status read given those same ten seconds reads a dead bridge as an
+// engine that did not answer: doctor failed an install for it (issue 524), and the read at start kept the engine from
+// ever coming up ready, so the watchdog never reached the bridge to say why (issue 528). Every status read, at start,
+// in checkBridge and in doctor, outlasts the probe by this one bound, and the bridge is reported on its own.
+export const IMSG_BRIDGE_PROBE_MS = 10000;
+export const STATUS_TIMEOUT_MS = 30000;
+
 // Connected only when the child is alive, the engine answered status with a readable Messages database, and the
 // watch is subscribed. An engine too old to know watch.subscribe is not held back by it: the method is reported
 // unsupported and the link is still connected for reads and sends.
