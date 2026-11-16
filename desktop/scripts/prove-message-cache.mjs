@@ -81,16 +81,20 @@ app.whenReady().then(async () => {
   assert.equal(onWarm.pageReads, 0, 'a warm open reads no page of a conversation the store holds');
   assert.equal(onWarm.pictureReads, 0, 'nor any picture a tile drew before');
   assert.ok(offWarm.photoReads > 0 && onWarm.photoReads === 0, 'a conversation\'s photo and backdrop are read on every launch without the store, and on none with it');
-  // What a launch had read before it drew says where it drew from, however busy the runner is; the times are only a
-  // loose backstop (issue 478).
+  // What a launch had read before it drew says where it drew from, however busy the runner is (issue 478), and those
+  // counts are the proof. No time from one launch is compared with another's: the launches run one after another on a
+  // shared runner, so a busy moment during one moves its times by more than the store saves, and a strict "sooner"
+  // failed #526 at 765 ms against 757 ms with every count right (issue 530). The one timing check is a generous bound on
+  // the warm launch with the store alone, backstopMs, which the fixture states with its reasoning, on the page's own clock
+  // from sign-in to the state the page reports.
   assert.ok(offWarm.settingsBeforeThemed >= 1, 'without the store the scheme waits on the server\'s settings');
   assert.ok(onWarm.themedMs !== null && onWarm.answersBeforeThemed === 0, 'and with it the scheme is drawn before the server answers anything');
-  assert.ok(onWarm.themedMs < offWarm.themedMs, 'and sooner');
+  assert.ok(onWarm.themedMs < onWarm.backstopMs, 'and within the backstop of sign-in');
   assert.equal(onWarm.shownEdit, true, 'and still draws an edit made while it was closed');
   assert.ok(onWarm.bytes < offWarm.bytes / 4, 'a warm open costs a fraction of the bytes it did');
   assert.ok(offWarm.pagesBeforeFirstVisible >= 1, 'without the store the first message waits on a page read');
   assert.equal(onWarm.pagesBeforeFirstVisible, 0, 'and with it the first message is drawn from the store');
-  assert.ok(onWarm.firstVisibleMs < offWarm.firstVisibleMs, 'and sooner');
+  assert.ok(onWarm.firstVisibleMs < onWarm.backstopMs, 'and within the backstop of sign-in');
   writeFileSync(path.join(output, 'report.json'), JSON.stringify({ platform: process.platform, results }, null, 2));
   removeProfile();
   clearTimeout(bound);

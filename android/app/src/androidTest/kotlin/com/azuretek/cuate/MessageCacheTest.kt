@@ -86,15 +86,19 @@ class MessageCacheTest {
         assertEquals("nor any picture a tile drew before", 0, onWarm.getInt("pictureReads"))
         assertTrue("without the store a conversation's photo and backdrop are read on every launch: $offWarm", offWarm.getInt("photoReads") > 0)
         assertEquals("and with it on none", 0, onWarm.getInt("photoReads"))
-        // What a launch had read before it drew says where it drew from, however busy the emulator is; the times are
-        // only a loose backstop (issue 478).
+        // What a launch had read before it drew says where it drew from, however busy the emulator is (issue 478), and those
+        // counts are the proof. No time from one launch is compared with another's: the launches run one after another on a
+        // shared emulator, so a busy moment during one moves its times by more than the store saves, and a strict "sooner"
+        // failed #526 at 765 ms against 757 ms with every count right (issue 530). The one timing check is a generous bound on
+        // the warm launch with the store alone, backstopMs, which the fixture states with its reasoning, on the page's own clock
+        // from sign-in to the state the page reports.
         assertTrue("without the store the scheme waits on the server's settings: $offWarm", offWarm.getInt("settingsBeforeThemed") >= 1)
         assertEquals("and with it the scheme is drawn before the server answers anything: $onWarm", 0, onWarm.getInt("answersBeforeThemed"))
-        assertTrue("and sooner: $onWarm against $offWarm", onWarm.getLong("themedMs") < offWarm.getLong("themedMs"))
+        assertTrue("and within the backstop of sign-in: $onWarm", onWarm.getLong("themedMs") < onWarm.getLong("backstopMs"))
         assertTrue("and still draws an edit made while it was closed", onWarm.getBoolean("shownEdit"))
         assertTrue("a warm open costs a fraction of the bytes it did: $onWarm against $offWarm", onWarm.getLong("bytes") < offWarm.getLong("bytes") / 4)
         assertTrue("without the store the first message waits on a page read: $offWarm", offWarm.getInt("pagesBeforeFirstVisible") >= 1)
         assertEquals("and with it the first message is drawn from the store: $onWarm", 0, onWarm.getInt("pagesBeforeFirstVisible"))
-        assertTrue("and sooner: $onWarm against $offWarm", onWarm.getLong("firstVisibleMs") < offWarm.getLong("firstVisibleMs"))
+        assertTrue("and within the backstop of sign-in: $onWarm", onWarm.getLong("firstVisibleMs") < onWarm.getLong("backstopMs"))
     }
 }
