@@ -1,7 +1,7 @@
 // The Mac's own controls, behind one interface so the rules stay testable off a Mac: holding sleep off while the
 // server runs, locking the screen once Messages and the engine are ready, and reading the settings the server
-// relies on. Every effect is injected. On a Mac they run caffeinate, pmset, fdesetup, defaults, systemsetup and
-// pgrep; a test passes fakes, so nothing in the suite needs a real Mac.
+// relies on. Every effect is injected. On a Mac they run caffeinate, pmset, fdesetup, defaults, systemsetup, pgrep
+// and ps; a test passes fakes, so nothing in the suite needs a real Mac.
 import { execFile, spawn } from 'node:child_process';
 
 // Where the Mac-care section of the config starts. None of it is destructive: sleep is held off while the server
@@ -74,6 +74,51 @@ export function parseScreenLock(askText, delayText) {
   const a = /^\s*1\s*$/m.test(String(askText || '')) ? true : /^\s*0\s*$/m.test(String(askText || '')) ? false : null;
   const d = /^\s*(\d+)\s*$/m.exec(String(delayText || ''));
   return { required: a, delaySeconds: d ? Number(d[1]) : null };
+}
+
+// Which helper the running Messages was started with (issue 524). Another program can launch Messages with its own
+// helper injected through DYLD_INSERT_LIBRARIES (BlueBubbles' Private API does), and then the imsg bridge never loads:
+// measured 2026-11-15, `imsg launch --force` killed that Messages, it crashed, and BlueBubbles relaunched it within
+// seconds with its own helper again, so relaunching against it only crashes Messages. The file name is imsg's own
+// (BridgeHelperLocator.fileName), so a helper by that name wherever it is installed is ours.
+export const OUR_HELPER = 'imsg-bridge-helper.dylib';
+
+/**
+ * `ps eww -p <pid>`: the command line followed by the environment. The DYLD_INSERT_LIBRARIES value runs to the next
+ * NAME= word or the end of the line, so a path with a space in it is still read whole. Libraries are colon separated.
+ */
+export function parseInjectedLibraries(text) {
+  const m = /(?:^|\s)DYLD_INSERT_LIBRARIES=(.*?)(?=\s+[A-Za-z_][A-Za-z0-9_]*=|\s*$)/m.exec(String(text || ''));
+  if (!m) return [];
+  return m[1].split(':').map((s) => s.trim()).filter(Boolean);
+}
+
+/** `ps -o comm= -p <ppid>`: the launching program's executable, named by its last path part. */
+export function parseProgramName(text) {
+  const t = String(text || '').trim().split('\n')[0].trim();
+  if (!t) return null;
+  const name = t.split('/').filter(Boolean).pop();
+  return name || null;
+}
+
+/**
+ * The verdict on what Messages runs injected: 'ours' (only the imsg bridge helper), 'none', or 'foreign' (any other
+ * library, even beside ours, because the program that injected it relaunches Messages with it). foreign names each
+ * library that is not ours, and program the process that launched Messages.
+ */
+export function injectionVerdict(libraries = [], program = null) {
+  const libs = Array.isArray(libraries) ? libraries.filter(Boolean).map(String) : [];
+  const foreign = libs.filter((l) => l.split('/').pop() !== OUR_HELPER);
+  if (foreign.length) return { verdict: 'foreign', libraries: libs, foreign, program: program || null };
+  if (libs.length) return { verdict: 'ours', libraries: libs, foreign: [], program: program || null };
+  return { verdict: 'none', libraries: [], foreign: [], program: program || null };
+}
+
+/** The one sentence the watchdog and doctor both say about a foreign helper, so the two never disagree. */
+export function foreignReason(injection) {
+  const lib = (injection && injection.foreign && injection.foreign[0]) || 'a helper';
+  const by = injection && injection.program ? injection.program : 'an unknown program';
+  return 'Messages runs ' + lib + ' injected by ' + by + "; turn off that program's Messages injection";
 }
 
 const NOT_A_MAC = Object.freeze({
@@ -232,6 +277,33 @@ export function createMac({
       if (platform !== 'darwin') return true;
       const r = await exec('pgrep', ['-x', mac.messages.app]);
       return Boolean(r && r.code === 0);
+    },
+
+    /**
+     * What the running Messages was started with (issue 524): the libraries in its DYLD_INSERT_LIBRARIES and the program
+     * that launched it, judged by injectionVerdict. 'unknown' off a Mac, with Messages not running, or when its
+     * environment could not be read, so a caller that cannot tell acts as it did before.
+     */
+    async readMessagesInjection() {
+      const unknown = (reason) => ({ verdict: 'unknown', libraries: [], foreign: [], program: null, reason });
+      if (platform !== 'darwin') return unknown('not macOS');
+      try {
+        const found = await exec('pgrep', ['-x', mac.messages.app]);
+        const target = found && found.code === 0 ? String(found.stdout || '').trim().split(/\s+/)[0] : '';
+        if (!/^\d+$/.test(target)) return unknown('Messages is not running');
+        const env = await exec('ps', ['eww', '-p', target]);
+        if (!env || env.code !== 0 || !String(env.stdout || '').trim()) return unknown('the environment of Messages could not be read');
+        const parent = await exec('ps', ['-o', 'ppid=', '-p', target]);
+        const ppid = parent && parent.code === 0 ? String(parent.stdout || '').trim() : '';
+        let program = null;
+        if (/^\d+$/.test(ppid)) {
+          const comm = await exec('ps', ['-o', 'comm=', '-p', ppid]);
+          if (comm && comm.code === 0) program = parseProgramName(comm.stdout);
+        }
+        return { ...injectionVerdict(parseInjectedLibraries(env.stdout), program), pid: Number(target) };
+      } catch (e) {
+        return unknown(e && e.message ? e.message : String(e));
+      }
     },
 
     /** Whether this server owns the bridge in Messages: on a Mac, with an engine that has one and the setting on. */

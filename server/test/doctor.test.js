@@ -4,9 +4,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLogger } from '../../core/kit/log.js';
 import { logSpec } from '../src/paths.js';
-import { createMac, macConfig, parseAutomaticLogin, parseFileVault, parsePowerFailure, parseScreenLock, parseSleep } from '../src/mac.js';
+import { readFileSync } from 'node:fs';
+import { createMac, foreignReason, injectionVerdict, macConfig, OUR_HELPER, parseAutomaticLogin, parseFileVault, parseInjectedLibraries, parsePowerFailure, parseProgramName, parseScreenLock, parseSleep } from '../src/mac.js';
 import { createRestarts, createWatchdog } from '../src/watchdog.js';
-import { databaseVerdict, runDoctor } from '../src/doctor.js';
+import { databaseVerdict, DOCTOR_STATUS_TIMEOUT_MS, IMSG_BRIDGE_PROBE_MS, runDoctor } from '../src/doctor.js';
 import { createContacts } from '../src/contacts.js';
 
 const logger = () => {
@@ -474,4 +475,216 @@ test('the three restarts on request perform their action, each one event', async
   assert.equal(exited, 0);
   assert.deepEqual(events(lines).filter((e) => e === 'mac.restart').length, 3);
   assert.deepEqual(lines.filter((l) => l.event === 'mac.restart').map((l) => l.what), ['messages', 'engine', 'server']);
+});
+
+// Another program's helper injected into Messages (issue 524). Measured 2026-11-15: Messages had been launched by
+// BlueBubbles with only its own helper in DYLD_INSERT_LIBRARIES, and a forced relaunch crashed Messages and BlueBubbles
+// put its helper straight back. The ps output below is synthetic, shaped like `ps eww -p <pid>` on macOS.
+const FOREIGN_LIB = '/Applications/BlueBubbles.app/Contents/Resources/private-api/macos11/BlueBubblesHelper.dylib';
+const OUR_LIB = '/opt/imsg/lib/' + OUR_HELPER;
+const psLine = (env) => '  PID   TT  STAT      TIME COMMAND\n 4242   ??  S      0:12.34 /System/Applications/Messages.app/Contents/MacOS/Messages ' + env + '\n';
+const FOREIGN_PS = psLine('DYLD_INSERT_LIBRARIES=' + FOREIGN_LIB + ' PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR=/var/folders/zz/T/ XPC_FLAGS=0x0');
+
+test('the injected libraries of Messages are read from its environment', () => {
+  assert.deepEqual(parseInjectedLibraries(FOREIGN_PS), [FOREIGN_LIB]);
+  assert.deepEqual(parseInjectedLibraries(psLine('PATH=/usr/bin DYLD_INSERT_LIBRARIES=' + OUR_LIB)), [OUR_LIB], 'last on the line');
+  assert.deepEqual(parseInjectedLibraries(psLine('DYLD_INSERT_LIBRARIES=/Applications/Some Tool.app/a.dylib:' + OUR_LIB + ' HOME=/var/empty')), ['/Applications/Some Tool.app/a.dylib', OUR_LIB], 'a path with a space and a colon list');
+  assert.deepEqual(parseInjectedLibraries(psLine('PATH=/usr/bin TMPDIR=/tmp')), []);
+  assert.deepEqual(parseInjectedLibraries(''), []);
+  assert.deepEqual(parseInjectedLibraries(psLine('XDYLD_INSERT_LIBRARIES=/x.dylib')), [], 'only the variable itself');
+  assert.equal(parseProgramName('/Applications/BlueBubbles.app/Contents/MacOS/BlueBubbles\n'), 'BlueBubbles');
+  assert.equal(parseProgramName('launchd'), 'launchd');
+  assert.equal(parseProgramName('  '), null);
+});
+
+test('the injection verdict tells ours, none and a foreign helper apart, and names the foreign one', () => {
+  assert.equal(injectionVerdict([], 'launchd').verdict, 'none');
+  assert.equal(injectionVerdict([OUR_LIB], 'imsg').verdict, 'ours');
+  const foreign = injectionVerdict([FOREIGN_LIB], 'BlueBubbles');
+  assert.deepEqual(foreign, { verdict: 'foreign', libraries: [FOREIGN_LIB], foreign: [FOREIGN_LIB], program: 'BlueBubbles' });
+  const both = injectionVerdict([OUR_LIB, FOREIGN_LIB], 'BlueBubbles');
+  assert.equal(both.verdict, 'foreign', 'a foreign helper beside ours is still foreign: its program relaunches Messages with it');
+  assert.deepEqual(both.foreign, [FOREIGN_LIB]);
+  assert.equal(foreignReason(foreign), 'Messages runs ' + FOREIGN_LIB + " injected by BlueBubbles; turn off that program's Messages injection");
+  assert.equal(foreignReason(injectionVerdict([FOREIGN_LIB], null)), 'Messages runs ' + FOREIGN_LIB + " injected by an unknown program; turn off that program's Messages injection");
+});
+
+// An exec that answers the four commands the read runs, each overridable, and records what was asked.
+const injectionExec = (over = {}) => {
+  const calls = [];
+  const answers = {
+    pgrep: { code: 0, stdout: '4242\n' },
+    env: { code: 0, stdout: FOREIGN_PS },
+    ppid: { code: 0, stdout: '  777\n' },
+    comm: { code: 0, stdout: '/Applications/BlueBubbles.app/Contents/MacOS/BlueBubbles\n' },
+    ...over,
+  };
+  const exec = async (cmd, args) => {
+    calls.push([cmd, ...args].join(' '));
+    const key = cmd === 'pgrep' ? 'pgrep' : args[0] === 'eww' ? 'env' : args[1] === 'ppid=' ? 'ppid' : 'comm';
+    const a = answers[key];
+    if (a instanceof Error) throw a;
+    return a;
+  };
+  return { exec, calls };
+};
+
+test('the running Messages is read for its injected helper and the program that launched it', async () => {
+  const { log } = logger();
+  const read = async (over, platform = 'darwin') => {
+    const x = injectionExec(over);
+    return { r: await createMac({ log, platform, exec: x.exec }).readMessagesInjection(), calls: x.calls };
+  };
+  const foreign = await read();
+  assert.deepEqual(foreign.r, { verdict: 'foreign', libraries: [FOREIGN_LIB], foreign: [FOREIGN_LIB], program: 'BlueBubbles', pid: 4242 });
+  assert.deepEqual(foreign.calls, ['pgrep -x Messages', 'ps eww -p 4242', 'ps -o ppid= -p 4242', 'ps -o comm= -p 777']);
+  assert.equal((await read({ env: { code: 0, stdout: psLine('DYLD_INSERT_LIBRARIES=' + OUR_LIB) } })).r.verdict, 'ours');
+  assert.equal((await read({ env: { code: 0, stdout: psLine('PATH=/usr/bin') } })).r.verdict, 'none');
+  const noParent = await read({ ppid: { code: 1, stdout: '' } });
+  assert.equal(noParent.r.verdict, 'foreign');
+  assert.equal(noParent.r.program, null, 'an unread parent leaves the program unnamed, never guessed');
+  assert.equal((await read({ comm: { code: 1, stdout: '' } })).r.program, null);
+  const notRunning = await read({ pgrep: { code: 1, stdout: '' } });
+  assert.deepEqual([notRunning.r.verdict, notRunning.r.reason], ['unknown', 'Messages is not running']);
+  assert.deepEqual(notRunning.calls, ['pgrep -x Messages']);
+  const unread = await read({ env: { code: 1, stdout: '' } });
+  assert.deepEqual([unread.r.verdict, unread.r.reason], ['unknown', 'the environment of Messages could not be read']);
+  const thrown = await read({ env: new Error('ps went away') });
+  assert.deepEqual([thrown.r.verdict, thrown.r.reason], ['unknown', 'ps went away']);
+  const linux = await read({}, 'linux');
+  assert.deepEqual([linux.r.verdict, linux.r.reason, linux.calls.length], ['unknown', 'not macOS', 0]);
+});
+
+const withInjection = (w, mac) => createWatchdog({ engine: { info: () => ({ ready: true }), start: async () => {}, checkBridge: async () => ({ ...w.state.bridge }) }, mac, log: w.log, now: () => w.state.at, everyMs: 60000 });
+
+test('the watchdog reports a foreign helper in Messages once per change instead of relaunching against it', async () => {
+  const { lines, log } = logger();
+  const state = { at: 0, launches: 0, reads: 0, bridge: { known: true, ready: false }, injection: injectionVerdict([FOREIGN_LIB], 'BlueBubbles') };
+  const mac = {
+    ...fakeControl(),
+    ownsBridge: () => true,
+    readMessagesInjection: async () => { state.reads += 1; return state.injection; },
+    relaunchMessages: async () => { state.launches += 1; return { launched: true, bridge: true }; },
+  };
+  const w = withInjection({ state, log }, mac);
+  const refusals = () => lines.filter((l) => l.event === 'mac.refused' && l.what === 'bridge').map((l) => l.reason);
+  await w.tick();
+  assert.equal(state.launches, 0, 'never relaunched against the program that put its helper there');
+  assert.deepEqual(refusals(), ['Messages runs ' + FOREIGN_LIB + " injected by BlueBubbles; turn off that program's Messages injection"]);
+  assert.deepEqual([w.counts().reports, w.counts().bridgeRelaunches], [1, 0], 'a report, not a relaunch');
+  for (const at of [60000, 120000, 180000]) { state.at = at; await w.tick(); }
+  assert.equal(refusals().length, 1, 'the same helper is reported once, not every minute');
+  assert.equal(w.counts().reports, 1);
+  assert.equal(state.reads, 4, 'it is read again every tick, so a change is seen');
+  state.injection = injectionVerdict([FOREIGN_LIB], 'launchd');
+  state.at = 240000;
+  await w.tick();
+  assert.equal(refusals().length, 2, 'a change of program is a change');
+  assert.ok(refusals()[1].includes('injected by launchd'));
+  assert.equal(lines.filter((l) => l.event === 'mac.relaunch').length, 0);
+  state.injection = injectionVerdict([], 'launchd');
+  state.at = 300000;
+  await w.tick();
+  assert.equal(state.launches, 1, 'once the foreign helper is gone the bridge is relaunched as before');
+  state.injection = injectionVerdict([FOREIGN_LIB], 'BlueBubbles');
+  state.at = 600000;
+  await w.tick();
+  assert.equal(refusals().filter((r) => r.startsWith('Messages runs')).length, 3, 'a helper that comes back is reported again');
+  assert.equal(state.launches, 1);
+});
+
+test('the watchdog relaunches as before when the injection is ours, none, unknown or unreadable', async () => {
+  for (const injection of [injectionVerdict([OUR_LIB], 'imsg'), injectionVerdict([], 'launchd'), { verdict: 'unknown', libraries: [], foreign: [], program: null, reason: 'Messages is not running' }, new Error('ps failed')]) {
+    const { lines, log } = logger();
+    const state = { at: 0, launches: 0, bridge: { known: true, ready: false } };
+    const mac = {
+      ...fakeControl(),
+      ownsBridge: () => true,
+      readMessagesInjection: async () => { if (injection instanceof Error) throw injection; return injection; },
+      relaunchMessages: async () => { state.launches += 1; return { launched: true, bridge: true }; },
+    };
+    await withInjection({ state, log }, mac).tick();
+    assert.equal(state.launches, 1, String(injection.verdict || injection.message));
+    assert.equal(lines.filter((l) => l.event === 'mac.refused').length, 0);
+  }
+});
+
+test('the watchdog neither reads nor relaunches a Messages another program is named as managing', async () => {
+  const { lines, log } = logger();
+  let reads = 0;
+  const engine = { info: () => ({ ready: true }), start: async () => {}, checkBridge: async () => ({ known: true, ready: false }) };
+  const mac = { ...fakeControl({}, { messages: { managedBy: 'bluebubbles' } }), ownsBridge: () => true, readMessagesInjection: async () => { reads += 1; return injectionVerdict([FOREIGN_LIB], 'BlueBubbles'); }, relaunchMessages: async () => { throw new Error('must not relaunch'); } };
+  await createWatchdog({ engine, mac, log }).tick();
+  assert.equal(reads, 0);
+  assert.equal(lines.filter((l) => l.event === 'mac.relaunch' || l.event === 'mac.refused').length, 0);
+});
+
+// The guard: no forced relaunch of Messages for the bridge without reading what Messages runs first. The only other
+// forced relaunch is the one a person asks for from the Server screen or the command line.
+test('every forced bridge relaunch in the watchdog reads the injection in Messages first', () => {
+  const src = readFileSync(new URL('../src/watchdog.js', import.meta.url), 'utf8');
+  const forced = [...src.matchAll(/relaunchMessages\(\{ force: true \}\)/g)].map((m) => m.index);
+  assert.equal(forced.length, 2, 'the guard found the forced relaunches: ' + forced.length);
+  const care = src.indexOf('async function careForBridge');
+  const request = src.indexOf('export function createRestarts');
+  assert.ok(care > 0 && request > care, 'the guard found careForBridge and createRestarts');
+  for (const at of forced) {
+    if (at > request) continue;
+    assert.ok(at > care, 'a forced relaunch outside careForBridge');
+    const before = src.slice(care, at);
+    assert.ok(before.includes('readMessagesInjection()') && before.includes("verdict === 'foreign'"), 'the bridge relaunch reads the injection and refuses a foreign one first');
+  }
+});
+
+// A transport that answers status after a delay, the way imsg does while its bridge probe waits on a dead bridge.
+const slowStatusTransport = (result, delayMs) => {
+  const cbs = new Set();
+  return {
+    onLine: (cb) => cbs.add(cb),
+    onExit: () => {},
+    write: (s) => {
+      const msg = JSON.parse(s);
+      setTimeout(() => { for (const cb of cbs) cb(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result })); }, delayMs);
+    },
+    close: async () => {},
+  };
+};
+const DEAD_BRIDGE = { ...READY, bridge: { ready: false, error: 'The existing bridge did not answer a non-launching status probe.' } };
+
+test('doctor warns about a bridge that will not answer and never fails an install for it (issue 524)', async () => {
+  const r = await doctor({ makeTransport: () => statusTransport(DEAD_BRIDGE) });
+  assert.equal(r.failed, false, r.lines.join('\n'));
+  assert.ok(find(r.lines, 'warn  the bridge in Messages is not answering (The existing bridge did not answer a non-launching status probe.): sends still go out'), r.lines.join('\n'));
+  const ready = await doctor({ makeTransport: () => statusTransport({ ...READY, bridge: { ready: true } }) });
+  assert.ok(find(ready.lines, 'ok    the bridge in Messages answers'), ready.lines.join('\n'));
+  const none = await doctor();
+  assert.equal(none.lines.some((l) => l.includes('the bridge in Messages')), false, 'an engine that names no bridge is not reported on it');
+});
+
+test('doctor gives the engine status longer than the engine spends probing a dead bridge (issue 524)', async () => {
+  assert.ok(DOCTOR_STATUS_TIMEOUT_MS >= 2 * IMSG_BRIDGE_PROBE_MS, 'the status request outlasts the engine bridge probe');
+  const slow = await doctor({ makeTransport: () => slowStatusTransport(DEAD_BRIDGE, 60), statusTimeoutMs: 1000 });
+  assert.equal(slow.failed, false, slow.lines.join('\n'));
+  assert.ok(find(slow.lines, 'ok    engine imsg 1.2.3 answered'));
+  const short = await doctor({ makeTransport: () => slowStatusTransport(DEAD_BRIDGE, 200), statusTimeoutMs: 20 });
+  assert.equal(short.failed, true, 'an engine that truly does not answer in time still fails');
+  assert.ok(find(short.lines, 'fail  engine imsg did not answer'), short.lines.join('\n'));
+});
+
+test('doctor names the program whose helper runs in Messages', async () => {
+  const withInj = (injection, settings = {}, config = CONFIG) => doctor({ config, mac: { ...fakeControl({}, settings), readMessagesInjection: async () => injection } });
+  const foreign = await withInj(injectionVerdict([FOREIGN_LIB], 'BlueBubbles'));
+  assert.equal(foreign.failed, false, 'a warning, not a failure');
+  assert.ok(find(foreign.lines, 'warn  Messages runs ' + FOREIGN_LIB + " injected by BlueBubbles; turn off that program's Messages injection (for BlueBubbles, its Private API)"), foreign.lines.join('\n'));
+  const managed = await withInj(injectionVerdict([FOREIGN_LIB], 'BlueBubbles'), { messages: { managedBy: 'bluebubbles' } });
+  assert.ok(find(managed.lines, 'ok    Messages runs ' + FOREIGN_LIB + ' injected by BlueBubbles, and the config names bluebubbles as managing Messages'), managed.lines.join('\n'));
+  assert.ok(find((await withInj(injectionVerdict([OUR_LIB], 'imsg'))).lines, 'ok    Messages runs the imsg bridge helper'));
+  assert.ok(find((await withInj(injectionVerdict([], 'launchd'))).lines, 'warn  Messages runs with no helper injected'));
+  const fakeEngine = await withInj(injectionVerdict([], 'launchd'), {}, { ...CONFIG, engine: { ...CONFIG.engine, kind: 'fake' } });
+  assert.equal(fakeEngine.lines.some((l) => l.includes('no helper injected')), false, 'no bridge is expected of an engine without one');
+  assert.ok(find((await withInj({ verdict: 'unknown', libraries: [], foreign: [], program: null, reason: 'Messages is not running' })).lines, 'warn  which helper Messages runs could not be read: Messages is not running'));
+  const offMac = await withInj({ verdict: 'unknown', libraries: [], foreign: [], program: null, reason: 'not macOS' });
+  assert.equal(offMac.lines.some((l) => l.includes('helper')), false);
+  const noRead = await doctor();
+  assert.equal(noRead.lines.some((l) => l.includes('helper')), false, 'a control that cannot read it says nothing');
 });
