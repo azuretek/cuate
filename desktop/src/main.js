@@ -1452,15 +1452,15 @@ async function runSmoke(w) {
   await pick('\u{1F44D}');
   await waitFor(`!document.querySelector(${q(row + ' .reaction.mine')})`, 10000);
   const unreacted = await js("!document.querySelector('app-composer app-emoji-picker')");
+  // The smoke's engine advertises tapback.emoji version 2 (FAKE_TAPBACK_EMOJI), so this conversation on the message service
+  // is offered the full panel and any emoji goes as itself (issue 533); it comes off again so the row is as it was.
   await reactFrom('party');
   const customPicked = await pick('\u{1F389}');
-  await waitFor(`(document.querySelector(${q(row + ' .message-note')})?.textContent || '').includes('six classic reactions, not arbitrary emoji')`, 10000);
-  const refusedCustom = await js(`!document.querySelector(${q(row + ' .reaction.mine')}) && !document.querySelector('app-emoji-picker')`);
-  // The refusal is also told in the app's own notice style (issue 241). Assert that notice appeared, then dismiss it
-  // so the notice area is clear for the update flow further down, which is the only other notice source.
-  report.reactionRefusalNotice = await js("Boolean(document.querySelector('.app-notice[data-id^=\"reaction:\"]'))");
-  await js("(() => { const b = document.querySelector('.app-notice[data-id^=\"reaction:\"] .close-button'); if (b) b.click(); return true; })()");
-  await waitFor("!document.querySelector('.app-notice[data-id^=\"reaction:\"]')", 5000);
+  await waitFor(`[...document.querySelectorAll(${q(row + ' .reaction.mine')})].some((r) => r.textContent.includes('\u{1F389}'))`, 10000);
+  const sentCustom = await js(`!document.querySelector('app-emoji-picker') && !document.querySelector(${q(row + ' .message-note')})`);
+  await reactFrom('party');
+  await pick('\u{1F389}');
+  await waitFor(`!document.querySelector(${q(row + ' .reaction.mine')})`, 10000);
   // Any emoji someone else reacted with arrives as a reaction on the message it names (issue 188): the fixture's raised
   // hands on your own message, drawn at the bubble's corner like a tapback and not marked as yours, on a desktop window
   // and at a phone's width, light and dark.
@@ -1492,10 +1492,23 @@ async function runSmoke(w) {
     inside: Boolean(theirMenu) && theirMenu.inside,
     ownNoReply: Boolean(ownMenu) && Boolean(ownMenu.time) && ownMenu.labels.join('|') === 'React',
     composerPanel: panel.composer && !panel.inList && !panel.menu && panel.targeted && panel.clear,
-    reacted, unreacted, refusedCustom: Boolean(customPicked) && refusedCustom, receivedEmoji,
+    reacted, unreacted, sentCustom: Boolean(customPicked) && sentCustom, receivedEmoji,
   };
   report.react = Object.values(reactChecks).every(Boolean);
   console.log('react: ' + JSON.stringify({ checks: reactChecks, theirMenu, ownMenu, panel, customPicked }));
+
+  // React offers exactly what a conversation carries, and a reaction that arrives as text shows as a reaction (issue 533):
+  // the shared fixture the iOS and Android tests run (core/test/reaction-choices-fixture.js), run here in this window's
+  // own page, draws an SMS, an RCS and two message-service conversations, opens React in each and folds every cited
+  // phrasing; its verdict is the page's own. Its conversations are taken away again so the rest of the smoke sees the app.
+  await smokeStep('reaction choices');
+  await js(readFileSync(process.env.SMOKE_REACTIONS_FIXTURE || path.join(CORE, 'test/reaction-choices-fixture.js'), 'utf8') + ';true');
+  await waitFor('Boolean(window.reactionChoicesProof)', 30000);
+  const reactionChoices = await js('window.reactionChoicesProof');
+  await both('14g-reaction-choices');
+  await js("(() => { document.querySelectorAll('body > app-conversation, [data-reactions-fixture]').forEach((e) => e.remove()); return true; })()");
+  report.reactionChoices = Boolean(reactionChoices && reactionChoices.ok);
+  console.log('reaction choices: ' + JSON.stringify(reactionChoices));
 
   // Reply in thread opens the thread as its own conversation over the rest, which blurs behind it; the composer repeats
   // none of the message (issues 169 and 183).

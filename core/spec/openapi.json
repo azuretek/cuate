@@ -2032,6 +2032,9 @@
           "edit": {
             "type": "boolean"
           },
+          "tapbackEmoji": {
+            "type": "number"
+          },
           "restarts": {
             "type": "number"
           },

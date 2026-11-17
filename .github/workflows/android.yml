@@ -95,6 +95,7 @@ jobs:
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/edit-history.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/text-format.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/group-rename.png
+            test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/reaction-choices.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/send-effects.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/mention.png
             test -s app/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*/bubble-colours-light.png

@@ -62,7 +62,7 @@ function engineSetup(config) {
   if (config.engine.kind === 'fake') {
     const root = path.join(dataDir, 'fake-attachments');
     return import('./engine/fake.js').then(({ createFakeImsg }) => {
-      const world = createFakeImsg({ attachmentsRoot: root, liveText: process.env.FAKE_LIVE || config.engine.live || null, liveEdit: process.env.FAKE_LIVE_EDIT || null });
+      const world = createFakeImsg({ attachmentsRoot: root, liveText: process.env.FAKE_LIVE || config.engine.live || null, liveEdit: process.env.FAKE_LIVE_EDIT || null, tapbackEmoji: Number.parseInt(process.env.FAKE_TAPBACK_EMOJI || '0', 10) || 0 });
       return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, renames: world.renames, members: world.members, sendEffects: world.sendEffects, services: world.services };
     });
   }

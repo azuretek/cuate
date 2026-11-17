@@ -388,6 +388,7 @@
       "version": "string?",
       "ready": "boolean",
       "edit": "boolean?",
+      "tapbackEmoji": "number?",
       "restarts": "number?",
       "uptimeMs": "number?",
       "readyMs": "number?",

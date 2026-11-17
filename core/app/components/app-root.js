@@ -13,13 +13,13 @@ import {
 import { mergeMessages, applyReaction, reactionUnsupported, applyEdit, settleSent } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
 import { initialWindow, shiftWindow, HISTORY_PAGE_SIZE, HISTORY_MAX_MESSAGES, HISTORY_CACHED_CHATS } from '../rules/history-window.js';
-import { platformOf, foldReactions } from '../rules/platform.js';
+import { conversationPlatform, platformCapabilities, platformReactionUnsupported, foldReactions } from '../rules/platform.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 
 // The text-fallback reactions a client on another service sends are folded onto the messages they quote, so they
 // show as reactions rather than as new text (issue 184). The platform comes from the chat's own service; a list on a
 // platform with no fallback is returned untouched.
-const foldFor = (list, chats, chatId) => foldReactions(list, platformOf((chats || []).find((c) => c.id === chatId)));
+const foldFor = (list, chats, chatId) => foldReactions(list, conversationPlatform((chats || []).find((c) => c.id === chatId)));
 import { connectionSentence } from '../rules/connection.js';
 import { applyTyping, TYPING_TTL_MS } from '../rules/typing.js';
 import { noticeEnabled, updateNotice, updateNoticeKey, autoDownloadEnabled, messageNotice, messageTarget, noticeTarget, serverUpdateNotice } from '../rules/notifications.js';
@@ -1422,7 +1422,9 @@ class AppRoot extends KitElement {
   // same attempt succeeds after an engine upgrade without restarting the app (issue 241).
   refuseReaction(messageId, e) {
     if (e.code === 'reaction_unsupported') {
-      const { message, detail } = reactionUnsupported(this.info?.engine);
+      // The limit named is the one that applies: the engine's on the message service, the conversation's anywhere else.
+      const platform = conversationPlatform((this.chats || []).find((c) => c.id === this.openChatId));
+      const { message, detail } = platformCapabilities(platform).emoji ? reactionUnsupported(this.info?.engine) : platformReactionUnsupported(platform);
       this.messageNote = { id: messageId, text: message };
       this.appNotices = putNotice(this.appNotices, { id: 'reaction:' + messageId, revision: messageId + ':' + message, message, detail, tone: 'warn' });
       return;
@@ -2124,7 +2126,7 @@ class AppRoot extends KitElement {
 
   mainView(chat) {
     return chat
-      ? html`<app-conversation .chat=${chat} .host=${this.host} .reveal=${this.revealing} .messages=${this.messages} .historyWindow=${this.historyWindow} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .canEdit=${Boolean(this.info?.engine?.edit)} .note=${this.messageNote} .typing=${this.typing} .favourites=${this.favourites} @open-external=${(e) => this.openExternal(e.detail.url)} @favourite=${(e) => this.favouriteEmoji(e.detail)} @forget-favourite=${(e) => this.forgetEmoji(e.detail)} @react=${(e) => respond(e, this.react(e.detail))} @edit=${(e) => respond(e, this.edit(e.detail))} @groupinfo=${() => this.openGroupInfo()} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder(e.detail))} @newer=${(e) => respond(e, this.loadHistory('newer', e.detail))} @history-measured=${(e) => this.measureHistory(e.detail)} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
+      ? html`<app-conversation .chat=${chat} .host=${this.host} .reveal=${this.revealing} .messages=${this.messages} .historyWindow=${this.historyWindow} .hasMore=${this.hasMore} .sending=${this.sending} .uploadMaxBytes=${this.info?.uploadMaxBytes} .client=${this.client} .windowControls=${this.windowControls()} .maximized=${this.maximized} .phone=${this.isPhone()} .reacting=${this.reacting} .canEdit=${Boolean(this.info?.engine?.edit)} .engine=${this.info?.engine || null} .note=${this.messageNote} .typing=${this.typing} .favourites=${this.favourites} @open-external=${(e) => this.openExternal(e.detail.url)} @favourite=${(e) => this.favouriteEmoji(e.detail)} @forget-favourite=${(e) => this.forgetEmoji(e.detail)} @react=${(e) => respond(e, this.react(e.detail))} @edit=${(e) => respond(e, this.edit(e.detail))} @groupinfo=${() => this.openGroupInfo()} @send=${(e) => respond(e, this.send(e.detail))} @draft=${(e) => this.onDraft(e.detail)} @older=${(e) => respond(e, this.loadOlder(e.detail))} @newer=${(e) => respond(e, this.loadHistory('newer', e.detail))} @history-measured=${(e) => this.measureHistory(e.detail)} @window-action=${(e) => this.windowAction(e.detail)} @back=${() => { this.listOpen = true; }}></app-conversation>`
       : html`<header class="conv-head conv-head--empty">${this.emptyControls()}</header><div class="empty">${EMPTY_PANE}</div>`;
   }
 

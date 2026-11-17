@@ -164,6 +164,12 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The reaction choices fixture (issue 533), the same seam: Debug only, and its script is copied into test builds only.
+        if ProcessInfo.processInfo.arguments.contains("--reaction-choices-fixture"),
+           let url = Bundle.main.url(forResource: "reaction-choices-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The group members fixture (issue 456), the same seam: Debug only, and its script is copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--group-members-fixture"),
            let url = Bundle.main.url(forResource: "group-members-fixture", withExtension: "js"),

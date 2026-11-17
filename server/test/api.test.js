@@ -190,7 +190,7 @@ test('a reaction and a threaded reply go through the routes and the client, and 
   const at = (id) => '/api/v1/chats/1/messages/' + id + '/reactions';
   const added = await client.react('1', 'FAKE-0013', { emoji: '\u{1F602}' });
   conforms(added, 'ReactionResult');
-  assert.deepEqual(added, { status: 'sent', targetId: 'FAKE-0013', type: 'laugh', add: true });
+  assert.deepEqual(added, { status: 'sent', targetId: 'FAKE-0013', type: 'laugh', add: true, form: 'tapback' });
   await waitFor(() => events.some((e) => e.name === 'reaction' && e.data.targetId === 'FAKE-0013' && e.data.fromMe && e.data.add));
   conforms(events.find((e) => e.name === 'reaction').data, 'ReactionEvent');
   const mine = (await client.messages('1')).messages.find((m) => m.id === 'FAKE-0013').reactions.filter((r) => r.fromMe);
