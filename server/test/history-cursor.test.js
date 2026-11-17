@@ -88,3 +88,34 @@ test('cursor routes reject malformed, overflowing and contradictory bounds', asy
     }
   }
 });
+
+// Issue 537: a message that reached the client by the live stream carried no history cursor, because imsg puts one only on
+// a history page, so a window that ended on it could not page newer and showed the old-engine banner.
+test('a live message carries the same history cursor a history page gives it (issue 537)', async (t) => {
+  const server = await boot();
+  t.after(() => server.close());
+  const client = createApiClient({ baseUrl: server.base, token: server.tokens.device });
+  const live = new Promise((resolve) => server.engine.on((name, data) => { if (name === 'message.new' && data.message.text === 'Synthetic live cursor') resolve(data.message); }));
+  server.world.incoming(1, 'Synthetic live cursor');
+  const message = await live;
+  assert.match(String(message.historyCursor), /^-?\d+:\d+$/, 'the live message carries a history cursor');
+  const page = await client.messages('1', { limit: 5 });
+  const same = page.messages.find((m) => m.id === message.id);
+  assert.equal(message.historyCursor, same.historyCursor, 'the same cursor a history page gives the same row');
+});
+
+// Issue 537: an engine older than history cursors pages by none, so the server gives its rows none from the store either,
+// and its client says to update the engine rather than holding a cursor the engine would ignore.
+test('an engine that does not page by cursor is given none from the store (issue 537)', async (t) => {
+  const server = await boot();
+  t.after(() => server.close());
+  server.world.behavior.historyCursors = false;
+  await server.engine.start({ force: true });
+  const client = createApiClient({ baseUrl: server.base, token: server.tokens.device });
+  const live = new Promise((resolve) => server.engine.on((name, data) => { if (name === 'message.new' && data.message.text === 'Synthetic old engine') resolve(data.message); }));
+  server.world.incoming(1, 'Synthetic old engine');
+  const message = await live;
+  assert.equal(message.historyCursor ?? null, null, 'no cursor on the live message');
+  const page = await client.messages('1', { limit: 5 });
+  assert.ok(page.messages.length && page.messages.every((m) => (m.historyCursor ?? null) === null), 'none on a history page either');
+});

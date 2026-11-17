@@ -621,7 +621,10 @@ class AppConversation extends KitElement {
     // 2026-10-12 choice that gave ours the accent). What we send is still one colour whatever the platform: who is on the
     // other end is told by serviceNote, never by a second bubble colour.
     const kind = mine ? 'me' : 'them';
-    const label = mine && (m.state || m === lastMine) ? deliveryLabel(m) : '';
+    // A read receipt says when in this device's own time and words (issue 537).
+    const now = Date.now();
+    const locale = globalThis.navigator?.language;
+    const label = mine && (m.state || m === lastMine) ? deliveryLabel(m, { now, locale }) : '';
     const own = myReaction(m);
     const ownGlyph = own ? reactionGlyph(own) : null;
     const busy = this.reacting === m.id;

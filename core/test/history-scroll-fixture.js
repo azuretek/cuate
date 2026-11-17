@@ -12,9 +12,14 @@
 //     message the window already holds, and the window never holds more than three pages.
 // Coming back down, the newer pages evicted on the way up are asked for again the same way, and the walk ends on the
 // newest message with nothing newer left to load.
+// Then the path that showed the old-engine banner (issue 537): at the newest message one message arrives and is laid in,
+// the reader scrolls up two steps, a second arrives and is counted past the window, and the reader scrolls down to the
+// newest: both are shown and no banner is. Here the pages land as the server answers them, since a message that arrives
+// while the reader is a screen from the newest cannot have been asked for a page ahead.
 //
-// globalThis.historyWalk({ root, chatId, upTo }) runs the walk on a signed-in page and resolves its report, or throws
-// with what it measured. The desktop proof calls it against the real server (it sets globalThis.historyWalkHosted
+// globalThis.historyWalk({ root, chatId, upTo, arrive }) runs the walk on a signed-in page and resolves its report, or
+// throws with what it measured. arrive(k, text) makes a message with those words arrive in the conversation by the live
+// stream, as the k-th of the last part. The desktop proof calls it against the real server (it sets globalThis.historyWalkHosted
 // first); everywhere else this script signs the real page in to a stand-in server held here, with a thousand synthetic
 // messages, runs the walk and reports on a marker and on window.historyScrollProof:
 //   scroll:pass <json>   every step held
@@ -38,7 +43,7 @@
   };
   const number = (id) => Number(String(id || '').split('-').at(-1));
 
-  globalThis.historyWalk = async function historyWalk({ root, chatId, upTo }) {
+  globalThis.historyWalk = async function historyWalk({ root, chatId, upTo, arrive }) {
     const pane = () => root.querySelector('app-conversation');
     const settle = async () => { await root.updateComplete; if (pane()) await pane().updateComplete; await frame(); await frame(); };
     await root.open(chatId, { show: true });
@@ -56,6 +61,9 @@
     const inFlight = { older: 0, newer: 0 };
     let current = null;
     let walking = true;
+    // Whether a page waits for the reader to move on (the walk) or lands as the server answers it (the live part).
+    let holding = true;
+    const landing = new Set();
     // The loaded messages the reader had ahead each way before the last step moved them, so an ask can be held to the
     // first step on which the reader came within the page's lead.
     const reachOf = () => { const r = pane().historyReach(scroller()); return { older: r.rowsAbove, newer: r.rowsBelow }; };
@@ -67,6 +75,8 @@
       const record = { direction };
       current = record;
       record.done = load(direction, detail);
+      landing.add(record.done);
+      record.done.finally(() => landing.delete(record.done));
       current = null;
       return record.done;
     };
@@ -75,7 +85,9 @@
       const record = current;
       if (!direction || !walking || !record) return ask(id, options);
       const reported = pane().lastAsk || {};
-      const edge = direction === 'older' ? root.messages[0] : root.messages.at(-1);
+      // A page is asked from the message nearest the window's edge that has a history cursor: the edge itself, unless the
+      // window ends on messages that came by the live stream with none (issue 537).
+      const edge = (direction === 'older' ? root.messages : [...root.messages].reverse()).find((m) => m.historyCursor);
       inFlight[direction] += 1;
       const entry = {
         direction, step: steps.length, ahead: reported.direction === direction ? reported.ahead : null, lead: reported.lead, before: lastReach[direction],
@@ -86,9 +98,10 @@
       try {
         const page = await ask(id, options);
         entry.answered = true;
-        await new Promise((resolve) => held.push({ due: entry.step + HOLD_STEPS, resolve, record }));
-        const holding = new Set(root.messages.map((m) => m.id));
-        entry.duplicates = page.messages.filter((m) => holding.has(m.id)).length;
+        if (holding) await new Promise((resolve) => held.push({ due: entry.step + HOLD_STEPS, resolve, record }));
+        // A message the window holds with no cursor is brought again with its cursor, which is no duplicate.
+        const kept = new Set(root.messages.filter((m) => m.historyCursor).map((m) => m.id));
+        entry.duplicates = page.messages.filter((m) => kept.has(m.id)).length;
         entry.landed = steps.length;
         return page;
       } finally {
@@ -149,6 +162,7 @@
       // Every page asked for has had its answer from the server before the reader moves on, so how far the reader moves
       // before a page lands is counted in steps alone, never in how fast a link or a runner is.
       await until(() => asks.every((a) => a.answered), 'the server to answer the pages asked for');
+      if (!holding && landing.size) { await Promise.all([...landing]); await settle(); }
       const el = scroller();
       const view = el.getBoundingClientRect();
       const distance = Math.round(el.clientHeight * STEP);
@@ -176,6 +190,51 @@
       return record;
     };
 
+    // The live part (issue 537), from the newest message.
+    const banner = () => /Update the message engine/.test(root.problem || '');
+    const heard = (text) => new Promise((resolve) => {
+      if (!root.arrivals) root.arrivals = new Set();
+      const watch = (m) => { if (m.text === text) { root.arrivals.delete(watch); resolve(m); } };
+      root.arrivals.add(watch);
+    });
+    const come = async (k) => {
+      const text = 'Live message ' + k + ' synthetic';
+      const message = heard(text);
+      await arrive(k, text);
+      return message;
+    };
+    const windowState = () => ({ first: root.messages[0]?.id, last: root.messages.at(-1)?.id, rows: root.messages.length, afterCount: root.historyWindow?.afterCount || 0, hasNewer: Boolean(root.historyWindow?.hasNewer), problem: root.problem || '' });
+    async function liveArrivals() {
+      walking = true;
+      holding = false;
+      const first = await come(1);
+      await settle();
+      await until(() => rows().some((r) => r.dataset.id === first.id), 'the first live message drawn');
+      if (root.messages.at(-1)?.id !== first.id || root.historyWindow?.afterCount) fail('the first live message was not laid in as the newest', windowState());
+      const up = [await step(-1), await step(-1)];
+      const second = await come(2);
+      await settle();
+      const counted = windowState();
+      if (!counted.hasNewer || counted.afterCount < 1 || root.messages.some((m) => m.id === second.id)) fail('the second live message was not counted past the window', counted);
+      let still = 0;
+      const down = [];
+      while (root.historyWindow?.hasNewer || rows().at(-1).getBoundingClientRect().bottom > scroller().getBoundingClientRect().bottom + 1) {
+        if (down.length > 40) fail('the walk down never reached the newest live message', windowState());
+        const r = await step(1);
+        down.push(r);
+        if (banner()) fail('the old-engine banner showed on the way down', windowState());
+        still = r.moved === 0 ? still + 1 : 0;
+        if (still > 3) fail('the view stopped short of the newest live message', { r, ...windowState() });
+      }
+      if (landing.size) { await Promise.all([...landing]); await settle(); }
+      walking = false;
+      const shown = rows().map((r) => r.dataset.id);
+      const report = { first: first.id, second: second.id, cursors: [Boolean(first.historyCursor), Boolean(second.historyCursor)], counted: counted.afterCount, up: up.length, down: down.length, last: shown.at(-1), bothShown: shown.includes(first.id) && shown.includes(second.id), banner: banner() };
+      if (!report.bothShown || report.last !== second.id || root.historyWindow?.hasNewer) fail('the live messages were not both shown at the newest', { ...report, ...windowState() });
+      if (report.banner) fail('the old-engine banner showed', { ...report, ...windowState() });
+      return report;
+    }
+
     try {
       const newest = number(root.messages.at(-1)?.id);
       while (number(topRow()?.id) > upTo) {
@@ -199,8 +258,9 @@
       const older = asks.filter((a) => a.direction === 'older');
       const newer = asks.filter((a) => a.direction === 'newer');
       if (newer.length < 4) fail('the evicted newer pages were not loaded again on the way down', { newer: newer.length });
+      const live = arrive ? await liveArrivals() : null;
       return {
-        ok: true, steps: steps.length, turn, end, evicted, older: older.length, newer: newer.length,
+        ok: true, steps: steps.length, turn, end, evicted, older: older.length, newer: newer.length, live,
         minAhead: Math.min(...asks.map((a) => a.ahead)), lead: asks[0]?.lead, minCover: Math.min(...steps.filter((s) => s.cover >= 0).map((s) => s.cover)),
         maxDrift: Math.max(0, ...landings.map((l) => Math.abs(l.drift))), landings: landings.length, maxRows: Math.max(...steps.map((s) => s.rows)),
         asks: asks.map((a) => a.direction[0] + a.step + ':' + a.ahead + '/' + a.lead + '>' + a.landed),
@@ -266,18 +326,31 @@
       const body = route(url, init.method || 'GET');
       return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)), blob: async () => new Blob([JSON.stringify(body)]) };
     };
+    const sockets = [];
+    let seq = 0;
     window.WebSocket = class {
-      constructor() { setTimeout(() => this.onopen && this.onopen(), 0); }
+      constructor() { sockets.push(this); setTimeout(() => this.onopen && this.onopen(), 0); }
       send(raw) {
         const f = JSON.parse(raw);
         if (f.type === 'auth') setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ type: 'hello', epoch: 'fixture', seq: 0, resumed: false }) }), 0);
       }
-      close(code) { setTimeout(() => this.onclose && this.onclose({ code }), 0); }
+      close(code) { sockets.splice(sockets.indexOf(this), 1); setTimeout(() => this.onclose && this.onclose({ code }), 0); }
     };
     await root.start('https://fixture.invalid', 'fixture-token');
     if (root.phase !== 'ready') throw new Error('the page did not sign in: ' + root.problem);
     say('scroll:walking');
-    const report = await globalThis.historyWalk({ root, chatId: CHAT, upTo: 400 });
+    // A message arrives as the live stream carries it from imsg, with no history cursor (issue 537); the server's own pages
+    // give it one.
+    const arrive = async (k, text) => {
+      const n = TOTAL + k;
+      const m = { ...history.at(-1), id: 'fixture-' + n, fromMe: false, sender: sam, senderName: 'Sam Example', text, sentAt: at(n), historyCursor: (1000000 + n) + ':' + n };
+      history.push(m);
+      const { historyCursor, ...streamed } = m;
+      void historyCursor;
+      const frame = JSON.stringify({ type: 'event', seq: ++seq, name: 'message.new', data: { message: streamed } });
+      for (const s of sockets) if (s.onmessage) s.onmessage({ data: frame });
+    };
+    const report = await globalThis.historyWalk({ root, chatId: CHAT, upTo: 400, arrive });
     window.historyScrollProof = report;
     say('scroll:pass ' + JSON.stringify(report));
   })().catch((error) => {

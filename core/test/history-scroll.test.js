@@ -112,6 +112,25 @@ test('the page holds one page on its way in each direction: an older and a newer
   assert.equal(host.messages.at(-1).id, 'SYNTHETIC-450');
 });
 
+// Issue 537: the walk ends on the path that showed the old-engine banner on the Mac desktop client, and every platform's
+// proof requires it: at the newest one message arrives and is laid in, two steps up a second is counted past the window,
+// and back at the newest both are shown with no banner.
+test('every platform walks the live path that showed the old-engine banner (issue 537)', () => {
+  const fixture = read('core/test/history-scroll-fixture.js');
+  assert.match(fixture, /async function liveArrivals\(\)/);
+  assert.match(fixture, /const up = \[await step\(-1\), await step\(-1\)\]/, 'two steps up between the two arrivals');
+  assert.match(fixture, /the second live message was not counted past the window/);
+  assert.match(fixture, /the old-engine banner showed/);
+  assert.match(fixture, /historyWalk\(\{ root, chatId: CHAT, upTo: 400, arrive \}\)/, 'the phones\' stand-in makes messages arrive');
+  assert.match(fixture, /const \{ historyCursor, \.\.\.streamed \} = m;/, 'by a live stream that carries no cursor, as imsg\'s does not');
+  assert.match(read('core/test/fixtures/history-proof.js'), /historyWalk\(\{ root: root\(\), chatId: '1', upTo: 400, arrive \}\)/, 'the desktop proof makes them arrive');
+  const proof = read('desktop/scripts/prove-history-window.mjs');
+  assert.match(proof, /server\.world\.incoming\(1, /, 'through the real server\'s synthetic engine');
+  assert.match(proof, /walk\.live\?\.bothShown && !walk\.live\.banner/);
+  assert.match(read('ios/' + naming.product + 'UITests/HistoryScrollTests.swift'), /bothShown/);
+  assert.match(read('android/app/src/androidTest/kotlin/com/azuretek/' + naming.product.toLowerCase() + '/HistoryScrollTest.kt'), /optBoolean\("bothShown"\)/);
+});
+
 test('every platform runs the same history scroll walk (issue 535)', () => {
   const fixture = read('core/test/history-scroll-fixture.js');
   assert.match(fixture, /globalThis\.historyWalk = /);

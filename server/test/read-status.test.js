@@ -34,7 +34,8 @@ test('history reads an outgoing receipt from its exact GUID, never inbound read 
     assert.equal(messages[0].readAt ?? null, null);
     assert.equal(messages[1].readAt, at);
     assert.deepEqual(f.calls.filter((r) => r.method === 'message.send_status').map((r) => r.params), [{ guid: 'outgoing' }]);
-    assert.equal(deliveryLabel(messages[1]), 'Read ' + at);
+    // The receipt says when as a time, never the raw timestamp (issue 537).
+    assert.equal(deliveryLabel(messages[1], { now: Date.parse(at), locale: 'en-US', timeZone: 'UTC' }), 'Read 11:00 AM');
   } finally { await f.engine.stop(); }
 });
 

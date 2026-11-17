@@ -36,6 +36,18 @@ export function initialWindow(messages, { totalCount = messages.length, hasMore 
   return { messages: held, beforeCount, afterCount: 0, beforeHeight: beforeCount * estimate, afterHeight: 0, estimate, hasOlder: hasMore, hasNewer: false };
 }
 
+// The live messages counted past the newer edge (id to the order each was counted in) after a newer page lands (issue
+// 537). One the window now holds is no longer counted, and so is one counted before the page was asked (`since`), which
+// the server already had when it answered. One counted while the page was on its way is still to come: the page may have
+// answered that nothing is newer, so the window keeps Load newer, counting it, until a page brings it.
+export function keepCounted(state, counted, since = 0) {
+  const held = new Set(state.messages.map((m) => m.id));
+  const left = new Map([...counted].filter(([id, n]) => n > since && !held.has(id)));
+  if (!left.size || (state.hasNewer && state.afterCount >= left.size)) return { state, counted: left };
+  const afterCount = Math.max(state.afterCount, left.size);
+  return { state: { ...state, hasNewer: true, afterCount, afterHeight: state.afterHeight + (afterCount - state.afterCount) * state.estimate }, counted: left };
+}
+
 export function shiftWindow(state, incoming, { direction, hasMore, heights = [] } = {}) {
   const measured = new Map(heights);
   const ids = new Set(state.messages.map((m) => m.id));

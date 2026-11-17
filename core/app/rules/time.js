@@ -19,6 +19,13 @@ export function formatListTime(iso, { now, locale, timeZone } = {}) {
   return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'numeric', day: 'numeric', timeZone }).format(t);
 }
 
+// When a message was read (issue 537), said the way the conversation says a time: the time alone today, Yesterday, the
+// weekday this week, and the date before that, each with the time.
+export function formatReadTime(iso, { now, locale, timeZone } = {}) {
+  if (daysAgo(iso, { now, timeZone }) <= 0) return clock(Date.parse(iso), locale, timeZone);
+  return formatSeparator(iso, { now, locale, timeZone });
+}
+
 export function formatSeparator(iso, { now, locale, timeZone } = {}) {
   const t = Date.parse(iso);
   const d = daysAgo(iso, { now, timeZone });

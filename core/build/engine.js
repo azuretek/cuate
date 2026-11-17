@@ -200,7 +200,7 @@ var engine = (() => {
     clampScale: () => clampScale,
     cleanTones: () => cleanTones,
     clientReport: () => clientReport,
-    clock: () => clock,
+    clock: () => clock2,
     closedByEscape: () => closedByEscape,
     closedByPress: () => closedByPress,
     coerceSetting: () => coerceSetting,
@@ -273,6 +273,7 @@ var engine = (() => {
     forgetNoticeState: () => forgetNoticeState,
     forgetRead: () => forgetRead,
     formatListTime: () => formatListTime,
+    formatReadTime: () => formatReadTime,
     formatSeparator: () => formatSeparator,
     formatTraceparent: () => formatTraceparent,
     frequentEmoji: () => frequentEmoji,
@@ -323,6 +324,7 @@ var engine = (() => {
     isPlayableLink: () => isPlayableLink,
     isRenameRow: () => isRenameRow,
     isUnplayed: () => isUnplayed,
+    keepCounted: () => keepCounted,
     lengthClock: () => lengthClock,
     letters: () => letters,
     linkHref: () => linkHref,
@@ -3678,6 +3680,36 @@ var engine = (() => {
     return String(a.sentAt).localeCompare(String(b.sentAt));
   }
 
+  // core/app/rules/time.js
+  var dayKey = (t, timeZone) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+  function daysAgo(iso2, { now, timeZone } = {}) {
+    const a = dayKey(Date.parse(iso2), timeZone);
+    const b = dayKey(now, timeZone);
+    return Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+  }
+  var clock = (t, locale, timeZone) => new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone }).format(t);
+  function formatListTime(iso2, { now, locale, timeZone } = {}) {
+    if (!iso2) return "";
+    const t = Date.parse(iso2);
+    const d = daysAgo(iso2, { now, timeZone });
+    if (d <= 0) return clock(t, locale, timeZone);
+    if (d === 1) return "Yesterday";
+    if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t);
+    return new Intl.DateTimeFormat(locale, { year: "numeric", month: "numeric", day: "numeric", timeZone }).format(t);
+  }
+  function formatReadTime(iso2, { now, locale, timeZone } = {}) {
+    if (daysAgo(iso2, { now, timeZone }) <= 0) return clock(Date.parse(iso2), locale, timeZone);
+    return formatSeparator(iso2, { now, locale, timeZone });
+  }
+  function formatSeparator(iso2, { now, locale, timeZone } = {}) {
+    const t = Date.parse(iso2);
+    const d = daysAgo(iso2, { now, timeZone });
+    if (d <= 0) return "Today " + clock(t, locale, timeZone);
+    if (d === 1) return "Yesterday " + clock(t, locale, timeZone);
+    if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t) + " " + clock(t, locale, timeZone);
+    return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(t);
+  }
+
   // core/app/rules/messages.js
   var GLYPHS = REACTION_GLYPHS;
   var TAPBACKS2 = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
@@ -3852,12 +3884,12 @@ var engine = (() => {
     }
     return items;
   }
-  function deliveryLabel(m) {
+  function deliveryLabel(m, clock3 = {}) {
     if (!m.fromMe) return "";
     if (m.state === "sending") return "Sending\u2026";
     if (m.state === "uncertain") return "Sent, still going out";
     if (m.state === "failed") return "Not sent";
-    if (typeof m.readAt === "string" && Number.isFinite(Date.parse(m.readAt))) return "Read " + m.readAt;
+    if (typeof m.readAt === "string" && Number.isFinite(Date.parse(m.readAt))) return "Read " + formatReadTime(m.readAt, clock3);
     return "Sent";
   }
   function settleSent(messages, pending, { slackMs = 12e4 } = {}) {
@@ -3924,6 +3956,13 @@ var engine = (() => {
     const held = messages.slice(-HISTORY_MAX_MESSAGES);
     const beforeCount = Math.max(hasMore ? HISTORY_PAGE_SIZE : 0, totalCount - held.length);
     return { messages: held, beforeCount, afterCount: 0, beforeHeight: beforeCount * estimate, afterHeight: 0, estimate, hasOlder: hasMore, hasNewer: false };
+  }
+  function keepCounted(state, counted, since = 0) {
+    const held = new Set(state.messages.map((m) => m.id));
+    const left = new Map([...counted].filter(([id, n]) => n > since && !held.has(id)));
+    if (!left.size || state.hasNewer && state.afterCount >= left.size) return { state, counted: left };
+    const afterCount = Math.max(state.afterCount, left.size);
+    return { state: { ...state, hasNewer: true, afterCount, afterHeight: state.afterHeight + (afterCount - state.afterCount) * state.estimate }, counted: left };
   }
   function shiftWindow(state, incoming, { direction, hasMore, heights = [] } = {}) {
     const measured = new Map(heights);
@@ -4052,11 +4091,15 @@ var engine = (() => {
     for (const r of (list.reactions || []).filter((x) => String(x.chatId) === id)) out = applyReaction(out, r);
     return { messages: applyReads(out, list, id), arrived };
   }
-  function olderFromHeld(held, edgeId, size2) {
+  function olderFromHeld(held, edgeId, size2, { cursors = false } = {}) {
     if (!held) return null;
     const i = held.messages.findIndex((m) => m.id === edgeId);
     if (i <= 0) return null;
     const from = Math.max(0, i - size2);
+    if (cursors) {
+      const bare2 = held.messages.slice(from, i).findLastIndex((m) => !m.historyCursor);
+      if (bare2 >= 0) return { messages: held.messages.slice(from + bare2 + 1, i), hasMore: true };
+    }
     return { messages: held.messages.slice(from, i), hasMore: from > 0 || held.hasOlder };
   }
   function mediaEvictions(entries, { cap = MEDIA_CACHE_BYTES, keep = null } = {}) {
@@ -4508,7 +4551,7 @@ var engine = (() => {
     }
     return answer === "probably" ? null : "m4a";
   }
-  function clock(seconds) {
+  function clock2(seconds) {
     const s = Number.isFinite(Number(seconds)) && Number(seconds) > 0 ? Math.floor(Number(seconds)) : 0;
     const h = Math.floor(s / 3600);
     const m = Math.floor(s % 3600 / 60);
@@ -4517,7 +4560,7 @@ var engine = (() => {
   }
   function lengthClock(seconds) {
     const s = Number(seconds);
-    return clock(Number.isFinite(s) && s > 0 ? Math.round(s) : 0);
+    return clock2(Number.isFinite(s) && s > 0 ? Math.round(s) : 0);
   }
   function progressOf(current, duration) {
     const d = Number(duration);
@@ -5253,32 +5296,6 @@ var engine = (() => {
   };
   function zoomKey(key) {
     return Object.prototype.hasOwnProperty.call(KEYS, key) ? KEYS[key] : null;
-  }
-
-  // core/app/rules/time.js
-  var dayKey = (t, timeZone) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
-  function daysAgo(iso2, { now, timeZone } = {}) {
-    const a = dayKey(Date.parse(iso2), timeZone);
-    const b = dayKey(now, timeZone);
-    return Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
-  }
-  var clock2 = (t, locale, timeZone) => new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone }).format(t);
-  function formatListTime(iso2, { now, locale, timeZone } = {}) {
-    if (!iso2) return "";
-    const t = Date.parse(iso2);
-    const d = daysAgo(iso2, { now, timeZone });
-    if (d <= 0) return clock2(t, locale, timeZone);
-    if (d === 1) return "Yesterday";
-    if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t);
-    return new Intl.DateTimeFormat(locale, { year: "numeric", month: "numeric", day: "numeric", timeZone }).format(t);
-  }
-  function formatSeparator(iso2, { now, locale, timeZone } = {}) {
-    const t = Date.parse(iso2);
-    const d = daysAgo(iso2, { now, timeZone });
-    if (d <= 0) return "Today " + clock2(t, locale, timeZone);
-    if (d === 1) return "Yesterday " + clock2(t, locale, timeZone);
-    if (d < 7) return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone }).format(t) + " " + clock2(t, locale, timeZone);
-    return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(t);
   }
 
   // core/app/rules/typing.js
