@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { apiSpec, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt } from './paths.js';
 import { createSender } from './send.js';
-import { platformOf } from '../../core/app/rules/platform.js';
+import { conversationPlatform } from '../../core/app/rules/platform.js';
 import { eventPreview } from '../../core/app/rules/chats.js';
 import { createAttachments } from './attachments.js';
 import { createUploads } from './uploads.js';
@@ -362,7 +362,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     } catch {
       // The list could not be read, so the platform is unknown and the sender refuses rather than guess.
     }
-    return platformOf(chat);
+    return conversationPlatform(chat);
   };
   const send = createSender({ engine, store, config, log, platformOfChat });
 

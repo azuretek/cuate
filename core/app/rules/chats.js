@@ -175,11 +175,15 @@ export function chatTitle(chat) {
 import { stripInlineObjects, isMachineName } from './engine-imsg.js';
 export { isMachineName };
 import { messageSummary } from './payload.js';
+import { conversationPlatform, platformCapabilities, parseReactionText, REACTION_GLYPHS } from './platform.js';
 
 export function chatPreview(chat) {
   const m = chat.lastMessage;
   if (!m) return '';
   if (m.event) return eventText(m);
+  // A reaction that arrived as text reads as the reaction it is, never as the words that carried it (issue 533).
+  const reaction = platformCapabilities(conversationPlatform(chat)).fold && !m.attachments ? parseReactionText(m.text) : null;
+  if (reaction) return eventText({ ...m, event: { kind: 'reaction', emoji: reaction.emoji || REACTION_GLYPHS[reaction.type] || '', remove: reaction.remove, quote: reaction.text, truncated: reaction.truncated, noun: reaction.noun } });
   // A message that carries an inline object reads as the object, not as the placeholder character, and one with nothing
   // readable left is the attachment it actually is (issue #80). A payload reads as the link it is, never as its name
   // (issue 238).
@@ -195,6 +199,7 @@ export function eventText(m) {
   if (m.event && m.event.kind === 'groupPhoto') return who + ' changed the group photo';
   if (m.event && m.event.kind === 'background') return who + (m.event.action === 'clear' ? ' removed the background' : ' changed the background');
   if (m.event && m.event.kind === 'rename') return m.event.name ? who + ' named the conversation \u201c' + m.event.name + '\u201d' : who + ' removed the name from the conversation';
+  if (m.event && m.event.kind === 'reaction') return who + reactionWords(m.event);
   if (m.event && m.event.kind === 'member') {
     if (m.event.action === 'leave') return who + ' left the conversation';
     const person = m.event.person ? String(m.event.person.name || m.event.person.handle || '') : '';
@@ -205,10 +210,25 @@ export function eventText(m) {
   return '';
 }
 
+// A reaction that names a message the app has not loaded (issue 533): who reacted, with what, and to what, as a quiet line.
+// A long quote is cut, so the line stays one line's worth.
+const NOUN_WORDS = { image: 'an image', video: 'a video', audio: 'an audio message', sticker: 'a sticker', attachment: 'an attachment', message: 'a message' };
+const QUOTE_MAX = 60;
+function reactionWords(e) {
+  let what = NOUN_WORDS[e.noun] || 'a message';
+  if (typeof e.quote === 'string') {
+    const cut = e.truncated || [...e.quote].length > QUOTE_MAX;
+    what = '\u201c' + [...e.quote].slice(0, QUOTE_MAX).join('').trimEnd() + (cut ? '\u2026' : '') + '\u201d';
+  }
+  const emoji = e.emoji || 'a reaction';
+  return e.remove ? ' removed ' + emoji + ' from ' + what : ' reacted ' + emoji + ' to ' + what;
+}
+
 // What a list preview keeps of an event: its kind, and the action and the person its words need.
 export function eventPreview(e) {
   const person = e.person && e.person.handle ? { person: { handle: String(e.person.handle), name: e.person.name ? String(e.person.name) : null } } : {};
-  return { kind: e.kind, ...(e.action ? { action: e.action } : {}), ...person, ...(typeof e.name === 'string' ? { name: e.name } : {}) };
+  const reaction = e.kind === 'reaction' ? { emoji: String(e.emoji || ''), remove: Boolean(e.remove), quote: typeof e.quote === 'string' ? e.quote : null, truncated: Boolean(e.truncated), noun: e.noun || null } : {};
+  return { kind: e.kind, ...(e.action ? { action: e.action } : {}), ...person, ...(typeof e.name === 'string' ? { name: e.name } : {}), ...reaction };
 }
 
 // A group's people as they are after a person joined or left it (issue 456), so the list, the header and the group's

@@ -98,6 +98,7 @@ var engine = (() => {
     PLAYED_KEY: () => PLAYED_KEY,
     PLAYED_MAX: () => PLAYED_MAX,
     PRESS_STATES: () => PRESS_STATES,
+    REACTION_GLYPHS: () => REACTION_GLYPHS,
     RENAME_ITEM_TYPE: () => RENAME_ITEM_TYPE,
     SATURATED: () => SATURATED,
     SCHEMES: () => SCHEMES,
@@ -123,6 +124,7 @@ var engine = (() => {
     SWATCH_TOKENS: () => SWATCH_TOKENS,
     SWIPE_MIN_PX: () => SWIPE_MIN_PX,
     TAPBACKS: () => TAPBACKS2,
+    TAPBACK_NAMES: () => TAPBACK_NAMES,
     TEXT_EFFECTS: () => TEXT_EFFECTS,
     TEXT_EFFECT_IDS: () => TEXT_EFFECT_IDS,
     TEXT_FORMATS: () => TEXT_FORMATS,
@@ -215,6 +217,7 @@ var engine = (() => {
     contrast: () => contrast,
     contrastRatio: () => contrastRatio,
     controlLayout: () => controlLayout,
+    conversationPlatform: () => conversationPlatform,
     copyFormat: () => copyFormat,
     countGraphemes: () => countGraphemes,
     createApiClient: () => createApiClient,
@@ -408,8 +411,11 @@ var engine = (() => {
     queueFavourite: () => queueFavourite,
     quietCount: () => quietCount,
     quietNotices: () => quietNotices,
+    reactionAllowed: () => reactionAllowed,
+    reactionChoices: () => reactionChoices,
     reactionFallbackText: () => reactionFallbackText,
     reactionGlyph: () => reactionGlyph,
+    reactionOffer: () => reactionOffer,
     reactionUnsupported: () => reactionUnsupported,
     readyBanner: () => readyBanner,
     recipientSuggestions: () => recipientSuggestions,
@@ -2758,6 +2764,181 @@ var engine = (() => {
     };
   }
 
+  // core/app/rules/platform.js
+  function platformOf(chat) {
+    const s = String(chat && chat.service || "").trim().toLowerCase();
+    if (s === "" || s === "imessage") return "imessage";
+    if (s === "sms") return "sms";
+    if (s === "rcs") return "rcs";
+    return "unknown";
+  }
+  var LIMITS = ["unknown", "sms", "rcs", "imessage"];
+  function conversationPlatform(chat) {
+    let platform = platformOf(chat);
+    const members = chat && Array.isArray(chat.members) ? chat.members : [];
+    for (const m of members) {
+      const service = m && typeof m.service === "string" ? m.service.trim() : "";
+      if (!service) continue;
+      const p = platformOf({ service });
+      if (LIMITS.indexOf(p) < LIMITS.indexOf(platform)) platform = p;
+    }
+    return platform;
+  }
+  var PLATFORM_CAPABILITIES = {
+    imessage: { tapback: true, fallback: false, fold: false, thread: true, emoji: true, edit: true },
+    sms: { tapback: true, fallback: true, fold: true, thread: false, emoji: false, edit: false },
+    rcs: { tapback: true, fallback: false, fold: true, thread: false, emoji: false, edit: false },
+    unknown: { tapback: false, fallback: false, fold: false, thread: false, emoji: false, edit: false }
+  };
+  function platformCapabilities(platform) {
+    return PLATFORM_CAPABILITIES[platform] || PLATFORM_CAPABILITIES.unknown;
+  }
+  function offersReaction(platform) {
+    const c = platformCapabilities(platform);
+    return Boolean(c.tapback || c.fallback);
+  }
+  var REACTION_GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
+  var PHRASES = [
+    { type: "love", verb: "Loved", removed: "a heart" },
+    { type: "like", verb: "Liked", removed: "a like" },
+    { type: "dislike", verb: "Disliked", removed: "a dislike" },
+    { type: "laugh", verb: "Laughed at", removed: "a laugh" },
+    { type: "emphasis", verb: "Emphasized", removed: "an exclamation" },
+    { type: "question", verb: "Questioned", removed: "a question mark" }
+  ];
+  var OPEN = "\u201C";
+  var CLOSE = "\u201D";
+  function fallbackPhrase(type) {
+    const hit = PHRASES.find((p) => p.type === type);
+    return hit ? hit.verb : null;
+  }
+  function reactionFallbackText(type, original, { remove = false } = {}) {
+    const hit = PHRASES.find((p) => p.type === type);
+    if (!hit) return null;
+    const words = String(original == null ? "" : original);
+    const target = words.trim() ? OPEN + words + CLOSE : "a message";
+    return remove ? "Removed " + hit.removed + " from " + target : hit.verb + " " + target;
+  }
+  var NOUNS = { "an image": "image", "a photo": "image", "a video": "video", "a movie": "video", "an audio message": "audio", "a sticker": "sticker", "an attachment": "attachment", "a message": "message" };
+  var VERB_RE = /^(Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) ([\s\S]+)$/;
+  var REACTED_RE = /^Reacted (\S+) to ([\s\S]+)$/u;
+  var REMOVED_RE = /^Removed (a heart|a like|a dislike|a laugh|an exclamation|a question mark) from ([\s\S]+)$/;
+  var REMOVED_EMOJI_RE = /^Removed (\S+) from ([\s\S]+)$/u;
+  var QUOTE_RE = /^["\u201c]([\s\S]*)["\u201d]$/;
+  var ELLIPSIS_RE = /(?:\u2026|\.\.\.)$/;
+  var PICTURE_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+  function reactionTarget(rest) {
+    const q = QUOTE_RE.exec(rest);
+    if (q) {
+      const cut = ELLIPSIS_RE.exec(q[1]);
+      const text = cut ? q[1].slice(0, -cut[0].length) : q[1];
+      if (!text.trim()) return { text: null, truncated: false, noun: "message" };
+      return { text, truncated: Boolean(cut), noun: null };
+    }
+    const noun = NOUNS[rest];
+    return noun ? { text: null, truncated: false, noun } : null;
+  }
+  function parseReactionText(text) {
+    const t = String(text == null ? "" : text).trim();
+    const make = (type, emoji, remove, rest) => {
+      const target = reactionTarget(rest);
+      return target ? { type, emoji, remove, ...target } : null;
+    };
+    let m = VERB_RE.exec(t);
+    if (m) return make(PHRASES.find((p) => p.verb === m[1]).type, null, false, m[2]);
+    m = REACTED_RE.exec(t);
+    if (m) return PICTURE_RE.test(m[1]) ? make("emoji", m[1], false, m[2]) : null;
+    m = REMOVED_RE.exec(t);
+    if (m) return make(PHRASES.find((p) => p.removed === m[1]).type, null, true, m[2]);
+    m = REMOVED_EMOJI_RE.exec(t);
+    if (m) return PICTURE_RE.test(m[1]) ? make("emoji", m[1], true, m[2]) : null;
+    return null;
+  }
+  var squash = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+  var bare = (s) => String(s || "").replace(/\ufe0f/g, "");
+  var who = (m) => m.fromMe ? "me" : m.sender || "";
+  function namedBy(x, parsed) {
+    if (!x || x.event) return false;
+    const files = Array.isArray(x.attachments) ? x.attachments : [];
+    if (parsed.text != null) {
+      const have = squash(x.text);
+      const want = squash(parsed.text);
+      return Boolean(have) && (have === want || parsed.truncated && have.startsWith(want));
+    }
+    const mime = (a) => String(a && a.mime || "");
+    if (parsed.noun === "image") return files.some((a) => mime(a).startsWith("image/") && !a.sticker);
+    if (parsed.noun === "video") return files.some((a) => mime(a).startsWith("video/"));
+    if (parsed.noun === "audio") return files.some((a) => mime(a).startsWith("audio/"));
+    if (parsed.noun === "sticker") return files.some((a) => a && a.sticker);
+    if (parsed.noun === "attachment") return files.length > 0;
+    return !squash(x.text);
+  }
+  function reactionLine(m, parsed) {
+    const emoji = parsed.emoji || REACTION_GLYPHS[parsed.type] || "";
+    return { ...m, text: "", attachments: [], link: null, reactions: [], event: { kind: "reaction", emoji, remove: parsed.remove, quote: parsed.text, truncated: parsed.truncated, noun: parsed.noun } };
+  }
+  function foldReactions(messages, platform) {
+    const list = messages || [];
+    if (!platformCapabilities(platform).fold) return list;
+    const out = [];
+    for (const m of list) {
+      const files = m && Array.isArray(m.attachments) ? m.attachments : [];
+      const parsed = m && !m.event && m.text && !files.length ? parseReactionText(m.text) : null;
+      if (!parsed) {
+        out.push(m);
+        continue;
+      }
+      let at = -1;
+      for (let i = out.length - 1; i >= 0; i -= 1) {
+        if (namedBy(out[i], parsed)) {
+          at = i;
+          break;
+        }
+      }
+      if (at < 0) {
+        out.push(reactionLine(m, parsed));
+        continue;
+      }
+      const target = out[at];
+      const me = who(m);
+      const same = (r) => parsed.type === "emoji" ? bare(r.emoji) === bare(parsed.emoji) : r.type === parsed.type && !r.emoji;
+      let reactions = Array.isArray(target.reactions) ? target.reactions : [];
+      if (parsed.remove) reactions = reactions.filter((r) => !(who(r) === me && same(r)));
+      else reactions = [...reactions.filter((r) => who(r) !== me), { type: parsed.type, emoji: parsed.emoji, fromMe: Boolean(m.fromMe), sender: m.fromMe ? null : m.sender || null }];
+      out[at] = { ...target, reactions };
+    }
+    return out;
+  }
+  function platformReactionUnsupported(platform) {
+    if (offersReaction(platform)) {
+      return {
+        message: "This conversation carries the six classic reactions, not arbitrary emoji.",
+        detail: "Send one of the six classic reactions instead."
+      };
+    }
+    return {
+      message: "This conversation cannot carry a reaction.",
+      detail: "The message service for this conversation could not be determined."
+    };
+  }
+  function platformThreadUnsupported() {
+    return {
+      message: "This conversation has no threads, so the reply was not sent as one.",
+      detail: "Answer with a message instead."
+    };
+  }
+  function serviceNote(chat) {
+    const platform = platformOf(chat);
+    const group = Boolean(chat && chat.isGroup);
+    if (platform === "imessage") {
+      return { encrypted: true, apple: true, label: (group ? "Everyone here is on Apple devices." : "On Apple devices.") + " Your messages here are end-to-end encrypted." };
+    }
+    if (platform === "sms" || platform === "rcs") {
+      return { encrypted: false, apple: false, label: (group ? "Not everyone here is on Apple devices." : "Not on Apple devices.") + " Your messages here go as text messages and are not end-to-end encrypted." };
+    }
+    return null;
+  }
+
   // core/app/rules/chats.js
   var SORT_ORDERS = ["recent", "name", "name-desc"];
   var SORT_LABELS = { recent: "Recent", name: "Name A to Z", "name-desc": "Name Z to A" };
@@ -2879,25 +3060,40 @@ var engine = (() => {
     const m = chat.lastMessage;
     if (!m) return "";
     if (m.event) return eventText(m);
+    const reaction = platformCapabilities(conversationPlatform(chat)).fold && !m.attachments ? parseReactionText(m.text) : null;
+    if (reaction) return eventText({ ...m, event: { kind: "reaction", emoji: reaction.emoji || REACTION_GLYPHS[reaction.type] || "", remove: reaction.remove, quote: reaction.text, truncated: reaction.truncated, noun: reaction.noun } });
     return (m.fromMe ? "You: " : "") + messageSummary({ ...m, text: stripInlineObjects(m.text) });
   }
   function eventText(m) {
-    const who = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
-    if (m.event && m.event.kind === "groupPhoto") return who + " changed the group photo";
-    if (m.event && m.event.kind === "background") return who + (m.event.action === "clear" ? " removed the background" : " changed the background");
-    if (m.event && m.event.kind === "rename") return m.event.name ? who + " named the conversation \u201C" + m.event.name + "\u201D" : who + " removed the name from the conversation";
+    const who2 = m.fromMe ? "You" : String(m.senderName || m.sender || "Someone");
+    if (m.event && m.event.kind === "groupPhoto") return who2 + " changed the group photo";
+    if (m.event && m.event.kind === "background") return who2 + (m.event.action === "clear" ? " removed the background" : " changed the background");
+    if (m.event && m.event.kind === "rename") return m.event.name ? who2 + " named the conversation \u201C" + m.event.name + "\u201D" : who2 + " removed the name from the conversation";
+    if (m.event && m.event.kind === "reaction") return who2 + reactionWords(m.event);
     if (m.event && m.event.kind === "member") {
-      if (m.event.action === "leave") return who + " left the conversation";
+      if (m.event.action === "leave") return who2 + " left the conversation";
       const person = m.event.person ? String(m.event.person.name || m.event.person.handle || "") : "";
       const whom = person || "someone";
-      if (m.event.action === "add") return who + " added " + whom + " to the conversation";
-      if (m.event.action === "remove") return who + " removed " + whom + " from the conversation";
+      if (m.event.action === "add") return who2 + " added " + whom + " to the conversation";
+      if (m.event.action === "remove") return who2 + " removed " + whom + " from the conversation";
     }
     return "";
   }
+  var NOUN_WORDS = { image: "an image", video: "a video", audio: "an audio message", sticker: "a sticker", attachment: "an attachment", message: "a message" };
+  var QUOTE_MAX = 60;
+  function reactionWords(e) {
+    let what = NOUN_WORDS[e.noun] || "a message";
+    if (typeof e.quote === "string") {
+      const cut = e.truncated || [...e.quote].length > QUOTE_MAX;
+      what = "\u201C" + [...e.quote].slice(0, QUOTE_MAX).join("").trimEnd() + (cut ? "\u2026" : "") + "\u201D";
+    }
+    const emoji = e.emoji || "a reaction";
+    return e.remove ? " removed " + emoji + " from " + what : " reacted " + emoji + " to " + what;
+  }
   function eventPreview(e) {
     const person = e.person && e.person.handle ? { person: { handle: String(e.person.handle), name: e.person.name ? String(e.person.name) : null } } : {};
-    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...person, ...typeof e.name === "string" ? { name: e.name } : {} };
+    const reaction = e.kind === "reaction" ? { emoji: String(e.emoji || ""), remove: Boolean(e.remove), quote: typeof e.quote === "string" ? e.quote : null, truncated: Boolean(e.truncated), noun: e.noun || null } : {};
+    return { kind: e.kind, ...e.action ? { action: e.action } : {}, ...person, ...typeof e.name === "string" ? { name: e.name } : {}, ...reaction };
   }
   function peopleAfter(c, message) {
     const e = message.event;
@@ -3461,114 +3657,6 @@ var engine = (() => {
     return null;
   }
 
-  // core/app/rules/platform.js
-  function platformOf(chat) {
-    const s = String(chat && chat.service || "").trim().toLowerCase();
-    if (s === "" || s === "imessage") return "imessage";
-    if (s === "sms") return "sms";
-    if (s === "rcs") return "rcs";
-    return "unknown";
-  }
-  var PLATFORM_CAPABILITIES = {
-    imessage: { tapback: true, fallback: false, thread: true, emoji: true, edit: true },
-    sms: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
-    rcs: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
-    unknown: { tapback: false, fallback: false, thread: false, emoji: false, edit: false }
-  };
-  function platformCapabilities(platform) {
-    return PLATFORM_CAPABILITIES[platform] || PLATFORM_CAPABILITIES.unknown;
-  }
-  function offersReaction(platform) {
-    const c = platformCapabilities(platform);
-    return Boolean(c.tapback || c.fallback);
-  }
-  var PHRASES = [
-    ["love", "Loved"],
-    ["like", "Liked"],
-    ["dislike", "Disliked"],
-    ["laugh", "Laughed at"],
-    ["emphasis", "Emphasized"],
-    ["question", "Questioned"]
-  ];
-  function fallbackPhrase(type) {
-    const hit = PHRASES.find(([t]) => t === type);
-    return hit ? hit[1] : null;
-  }
-  var quoted = (text) => '"' + String(text == null ? "" : text) + '"';
-  function reactionFallbackText(type, original) {
-    const phrase = fallbackPhrase(type);
-    return phrase ? phrase + " " + quoted(original) : null;
-  }
-  var FALLBACK_RE = /^(Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) "([^"]*)"$/;
-  var REACTED_RE = /^Reacted (\S+) to "([^"]*)"$/;
-  function parseReactionText(text) {
-    const t = String(text == null ? "" : text).trim();
-    const m = FALLBACK_RE.exec(t);
-    if (m) {
-      const hit = PHRASES.find(([, phrase]) => phrase === m[1]);
-      return hit ? { type: hit[0], emoji: null, text: m[2] } : null;
-    }
-    const reacted = REACTED_RE.exec(t);
-    return reacted ? { type: "emoji", emoji: reacted[1], text: reacted[2] } : null;
-  }
-  function foldReactions(messages, platform) {
-    const list = messages || [];
-    if (!platformCapabilities(platform).fallback) return list;
-    const out = [];
-    const who = (m) => m.fromMe ? "me" : m.sender || "";
-    for (const m of list) {
-      const parsed = m.text ? parseReactionText(m.text) : null;
-      if (parsed) {
-        let target = null;
-        for (let i = out.length - 1; i >= 0; i -= 1) {
-          const x = out[i];
-          if (x.text && String(x.text).trim() === parsed.text) {
-            target = x;
-            break;
-          }
-        }
-        if (target) {
-          const me = who(m);
-          const reactions = (target.reactions || []).filter((r) => (r.fromMe ? "me" : r.sender || "") !== me);
-          reactions.push({ type: parsed.type, emoji: parsed.emoji, fromMe: m.fromMe, sender: m.fromMe ? null : m.sender || null });
-          out[out.indexOf(target)] = { ...target, reactions };
-          continue;
-        }
-      }
-      out.push(m);
-    }
-    return out;
-  }
-  function platformReactionUnsupported(platform) {
-    if (platformCapabilities(platform).fallback) {
-      return {
-        message: "This conversation carries the six classic reactions, not arbitrary emoji.",
-        detail: "Send one of the six classic reactions instead."
-      };
-    }
-    return {
-      message: "This conversation cannot carry a reaction.",
-      detail: "The message service for this conversation could not be determined."
-    };
-  }
-  function platformThreadUnsupported() {
-    return {
-      message: "This conversation has no threads, so the reply was not sent as one.",
-      detail: "Answer with a message instead."
-    };
-  }
-  function serviceNote(chat) {
-    const platform = platformOf(chat);
-    const group = Boolean(chat && chat.isGroup);
-    if (platform === "imessage") {
-      return { encrypted: true, apple: true, label: (group ? "Everyone here is on Apple devices." : "On Apple devices.") + " Your messages here are end-to-end encrypted." };
-    }
-    if (platform === "sms" || platform === "rcs") {
-      return { encrypted: false, apple: false, label: (group ? "Not everyone here is on Apple devices." : "Not on Apple devices.") + " Your messages here go as text messages and are not end-to-end encrypted." };
-    }
-    return null;
-  }
-
   // core/app/rules/history.js
   var MIN = -(2n ** 63n);
   var MAX = 2n ** 63n - 1n;
@@ -3589,14 +3677,31 @@ var engine = (() => {
   }
 
   // core/app/rules/messages.js
-  var GLYPHS = { love: "\u2764\uFE0F", like: "\u{1F44D}", dislike: "\u{1F44E}", laugh: "\u{1F602}", emphasis: "\u203C\uFE0F", question: "\u2753" };
+  var GLYPHS = REACTION_GLYPHS;
   var TAPBACKS2 = Object.entries(GLYPHS).map(([type, glyph]) => ({ type, glyph }));
   function tapbackType(emoji) {
-    const bare = String(emoji || "").replace(/\ufe0f/g, "");
-    for (const t of TAPBACKS2) if (t.glyph.replace(/\ufe0f/g, "") === bare) return t.type;
+    const bare2 = String(emoji || "").replace(/\ufe0f/g, "");
+    for (const t of TAPBACKS2) if (t.glyph.replace(/\ufe0f/g, "") === bare2) return t.type;
     return null;
   }
   var EMOJI_TAPBACK_VERSION = 2;
+  var TAPBACK_NAMES = { love: "Heart", like: "Thumbs up", dislike: "Thumbs down", laugh: "Ha ha", emphasis: "Exclamation marks", question: "Question mark" };
+  function reactionChoices({ platform, tapbackEmoji = 0 } = {}) {
+    const caps = platformCapabilities(platform);
+    if (!caps.tapback && !caps.fallback) return { kind: "none", choices: [] };
+    const version = Number.isInteger(tapbackEmoji) ? tapbackEmoji : 0;
+    if (caps.emoji && version >= EMOJI_TAPBACK_VERSION) return { kind: "any", choices: null };
+    return { kind: "classic", choices: TAPBACKS2.map((t) => ({ ...t, name: TAPBACK_NAMES[t.type] })) };
+  }
+  function reactionOffer(chat, engine) {
+    return reactionChoices({ platform: conversationPlatform(chat), tapbackEmoji: engine && engine.tapbackEmoji });
+  }
+  function reactionAllowed(offer, emoji) {
+    if (!offer || !String(emoji || "").trim()) return false;
+    if (offer.kind === "any") return true;
+    if (offer.kind === "classic") return tapbackType(emoji) !== null;
+    return false;
+  }
   function engineLabel(engine) {
     if (!engine || typeof engine !== "object") return "";
     const kind = typeof engine.kind === "string" ? engine.kind : "";
@@ -3709,12 +3814,12 @@ var engine = (() => {
     if (!m || !m.replyTo) return null;
     const parent = (messages || []).find((x) => x.id === m.replyTo) || null;
     if (!parent) return { id: m.replyTo, found: false, who: "", text: "An earlier message" };
-    const who = parent.fromMe ? "You" : parent.senderName || parent.sender || "";
+    const who2 = parent.fromMe ? "You" : parent.senderName || parent.sender || "";
     const words = String(parent.text || "").replace(/\s+/g, " ").trim();
     const first = parent.attachments && parent.attachments[0];
     const body = words || (first ? first.name : "");
     const text = Array.from(body).length > max ? Array.from(body).slice(0, max - 1).join("") + "\u2026" : body;
-    return { id: parent.id, found: true, who, text };
+    return { id: parent.id, found: true, who: who2, text };
   }
   function mergeMessages(existing, incoming, { authoritative = false } = {}) {
     const map = new Map(existing.map((m) => [m.id, m]));
@@ -3777,9 +3882,9 @@ var engine = (() => {
   function applyReaction(messages, r) {
     const i = messages.findIndex((m2) => m2.id === r.targetId);
     if (i < 0) return messages;
-    const who = (x) => x.fromMe ? "me" : x.sender || "";
+    const who2 = (x) => x.fromMe ? "me" : x.sender || "";
     const m = messages[i];
-    const reactions = m.reactions.filter((x) => who(x) !== who(r));
+    const reactions = m.reactions.filter((x) => who2(x) !== who2(r));
     if (r.add) reactions.push({ type: r.type, emoji: r.emoji ?? null, fromMe: r.fromMe, sender: r.sender ?? null });
     const out = messages.slice();
     out[i] = { ...m, reactions };

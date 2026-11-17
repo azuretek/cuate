@@ -71,10 +71,14 @@ const PRESS_SLOP = 10;
 class AppEmojiPicker extends KitElement {
   // `dismiss` is the name its host registered the panel under with the kit's dismiss behaviour (core/kit/dismiss.js),
   // drawn on the panel's root so a press inside it is inside that host's panel.
-  static properties = { favourites: { attribute: false }, dismiss: {}, query: { state: true }, category: { state: true }, side: { state: true }, tones: { state: true }, toneFor: { state: true } };
+  // `only`, when the composer sets it, is the short list a reaction on this conversation can be ([{ glyph, name }], the six
+  // classic reactions from reactionOffer in core): the panel then draws just those, with no search, no categories and no
+  // recents, so nothing is offered that the conversation could not carry.
+  static properties = { only: { attribute: false }, favourites: { attribute: false }, dismiss: {}, query: { state: true }, category: { state: true }, side: { state: true }, tones: { state: true }, toneFor: { state: true } };
 
   constructor() {
     super();
+    this.only = null;
     this.favourites = [];
     this.dismiss = '';
     this.query = '';
@@ -299,6 +303,11 @@ class AppEmojiPicker extends KitElement {
   // narrowing them never moves the thing the reader is pointing at, and the order the eye reads is the order the
   // keyboard walks. The panel keeps one height, so the composer below never shifts.
   render() {
+    if (Array.isArray(this.only)) {
+      return html`<div class="emoji-picker reaction-choices" role="dialog" aria-label="React" data-dismiss=${this.dismiss} data-side=${this.side} data-popover data-popover-edge=${this.side === 'below' ? 'top' : 'bottom'}>
+        <div class="emoji-grid reaction-grid">${this.only.map((r) => this.cell(r.glyph, r.name))}</div>
+      </div>`;
+    }
     // The server decides the order: most used first, then most recent. The row draws it as given.
     const frequent = favouriteList(this.favourites);
     const searching = Boolean(this.query.trim());

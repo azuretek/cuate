@@ -6,8 +6,9 @@
 // the list by name both ways, and Edit groups chats unnamed and deletes one only through the slider. The Edit control
 // holds one line at the smallest window and every text size.
 // A message opens one menu (its time, Reply in thread on someone else's, React) by a right click, a long click and,
-// at phone width, a long press; React takes the reaction from the composer's emoji panel and comes off again, an emoji
-// the engine cannot send is refused, a reaction floats at the bubble's top outer corner without moving any message, and
+// at phone width, a long press; React takes the reaction from the composer's emoji panel and comes off again, React offers
+// exactly what a conversation carries (the six classic reactions on SMS and RCS, any emoji on the message service where the
+// engine sends one) and a reaction that arrives as text shows as a reaction (the shared fixture), a reaction floats at the bubble's top outer corner without moving any message, and
 // Reply in thread opens the thread over the blurred conversation, where a reply sent lands. Every field's placeholder
 // is dimmed from its token in both schemes, at desktop and phone width.
 // Run it under a display (xvfb-run on Linux).
@@ -55,7 +56,7 @@ function writeFailureNote(exitCode, applicationOutput, timeout = null) {
 run('init', '--engine', 'fake', '--port', '0');
 const token = run('token', 'create', '--scope', 'device', '--name', 'smoke').trim().split('\n').pop().trim();
 run('sending', 'on');
-const server = spawn(process.execPath, [cli, 'run', '--data', data], { env: { ...process.env, FAKE_LIVE: LIVE, FAKE_LIVE_EDIT: LIVE_EDIT }, stdio: ['ignore', 'pipe', 'inherit'] });
+const server = spawn(process.execPath, [cli, 'run', '--data', data], { env: { ...process.env, FAKE_LIVE: LIVE, FAKE_LIVE_EDIT: LIVE_EDIT, FAKE_TAPBACK_EMOJI: '2' }, stdio: ['ignore', 'pipe', 'inherit'] });
 const port = await new Promise((resolve, reject) => {
   let buf = '';
   const fail = (error) => { clearTimeout(t); server.kill('SIGTERM'); rmSync(data, { recursive: true, force: true }); reject(error); };
@@ -74,7 +75,7 @@ const port = await new Promise((resolve, reject) => {
 });
 
 const electron = packed || createRequire(path.join(root, 'desktop', 'package.json'))('electron');
-const env = { ...process.env, SMOKE_OUT: out, SMOKE_SERVER_URL: 'http://127.0.0.1:' + port, SMOKE_TOKEN: token, SMOKE_LIVE_TEXT: LIVE, SMOKE_SEND_TEXT: SENT, SMOKE_LIVE_EDIT: LIVE_EDIT, SMOKE_EDIT_TEXT: SENT_EDIT, SMOKE_THEME_FIXTURE: path.join(root, 'core/fixtures/themes/elegant-luxury.json') };
+const env = { ...process.env, SMOKE_OUT: out, SMOKE_SERVER_URL: 'http://127.0.0.1:' + port, SMOKE_TOKEN: token, SMOKE_LIVE_TEXT: LIVE, SMOKE_SEND_TEXT: SENT, SMOKE_LIVE_EDIT: LIVE_EDIT, SMOKE_EDIT_TEXT: SENT_EDIT, SMOKE_THEME_FIXTURE: path.join(root, 'core/fixtures/themes/elegant-luxury.json'), SMOKE_REACTIONS_FIXTURE: path.join(root, 'core/test/reaction-choices-fixture.js') };
 const appProc = spawn(electron, packed ? [] : [path.join(root, 'desktop')], { env, stdio: ['ignore', 'pipe', 'inherit'] });
 const smokeTimeoutMs = resolveSmokeTimeoutMs();
 let report = null;
@@ -186,6 +187,7 @@ const checks = [
   { key: 'noticeOpens', bound: 'true', value: (report) => report.noticeOpens, test: (v) => v === true },
   { key: 'editLine', bound: 'true', value: (report) => report.editLine, test: (v) => v === true },
   { key: 'react', bound: 'true', value: (report) => report.react, test: (v) => v === true },
+  { key: 'reactionChoices', bound: 'true', value: (report) => report.reactionChoices, test: (v) => v === true },
   { key: 'reply', bound: 'true', value: (report) => report.reply, test: (v) => v === true },
   { key: 'document', bound: 'true', value: (report) => report.document, test: (v) => v === true },
   { key: 'pdfPreview', bound: 'true', value: (report) => report.pdfPreview, test: (v) => v === true },

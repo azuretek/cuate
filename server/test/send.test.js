@@ -246,7 +246,7 @@ test('a reaction is sent as a standard tapback, shows on the message, and comes 
   s.engine.on((name, data) => { if (name === 'reaction') live.push(data); });
   const added = await s.send.react('1', { targetId: 'FAKE-0013', emoji: '\u2764' });
   assert.equal(added.http, 201);
-  assert.deepEqual(added.body, { status: 'sent', targetId: 'FAKE-0013', type: 'love', add: true });
+  assert.deepEqual(added.body, { status: 'sent', targetId: 'FAKE-0013', type: 'love', add: true, form: 'tapback' });
   assert.deepEqual(s.world.tapbacks, [{ chatId: 1, targetId: 'FAKE-0013', kind: 'love', remove: false }], 'the text and emoji forms of a heart are one tapback');
   assert.deepEqual(await ofMe(s, '1', 'FAKE-0013'), [{ type: 'love', emoji: '\u2764\ufe0f', fromMe: true, sender: null }], 'history carries the glyph, as imsg reports it');
   await waitFor(() => live.length === 1);

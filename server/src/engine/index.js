@@ -913,6 +913,9 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       ready: state.ready,
       // Whether this engine can edit one of our messages now (issue 391): the app offers Edit only where it can.
       edit: canEdit,
+      // The tapback.emoji version this engine advertises (0 for none), so the app offers exactly the reactions it can
+      // send: any emoji at the version an arbitrary emoji needs, the six classic ones below it.
+      tapbackEmoji: capabilityVersion('tapback.emoji'),
       restarts,
       uptimeMs: current ? Date.now() - current.startedAt : null,
       readyMs: readySince ? Date.now() - readySince : null,

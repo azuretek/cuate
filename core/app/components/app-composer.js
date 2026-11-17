@@ -17,6 +17,9 @@ class AppComposer extends KitElement {
     // The message being replied to ({ id }), or null, and the message the emoji panel is choosing a reaction for, or
     // null. The composer repeats neither message's text: the conversation shows the thread itself (issue 169).
     replyTo: { attribute: false }, reactFor: { attribute: false },
+    // The reactions this conversation can carry while the panel is choosing one: the six classic ones as
+    // [{ type, glyph, name }], or null where any emoji can go (reactionOffer in core).
+    reactWith: { attribute: false },
     // The message being edited ({ id, text }), or null (issue 391): its words fill the field, Send saves the edit, and
     // Escape leaves them as they were.
     editing: { attribute: false },
@@ -35,6 +38,7 @@ class AppComposer extends KitElement {
     this.maxBytes = undefined;
     this.replyTo = null;
     this.reactFor = null;
+    this.reactWith = null;
     this.editing = null;
     this.emojiOpen = false;
     this.favourites = [];
@@ -337,7 +341,7 @@ class AppComposer extends KitElement {
       <textarea rows="1" aria-label="Message" .placeholder=${this.placeholder} ?disabled=${this.disabled} @keydown=${this.key} @input=${this.onInput} @paste=${this.paste}></textarea>
       <button class="send" type="submit" aria-label="Send" ?disabled=${this.disabled}><span class="icon" data-icon="arrow-up" aria-hidden="true"></span></button>
     </form>
-    ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .favourites=${this.favourites} aria-label=${this.reactFor ? 'React with an emoji' : nothing} @pick=${(e) => this.pickEmoji(e.detail)} @forget=${(e) => this.forget(e.detail)}></app-emoji-picker>` : nothing}`;
+    ${this.emojiOpen ? html`<app-emoji-picker dismiss="emoji" .favourites=${this.favourites} .only=${this.reactFor && this.reactWith ? this.reactWith : null} aria-label=${this.reactFor ? (this.reactWith ? 'React' : 'React with an emoji') : nothing} @pick=${(e) => this.pickEmoji(e.detail)} @forget=${(e) => this.forget(e.detail)}></app-emoji-picker>` : nothing}`;
   }
 }
 

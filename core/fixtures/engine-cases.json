@@ -357,7 +357,7 @@
         "love",
         "the plan stands"
       ],
-      "expect": "\"Loved \\\"the plan stands\\\"\""
+      "expect": "\"Loved “the plan stands”\""
     },
     {
       "id": "platform.parse",
@@ -365,7 +365,7 @@
       "args": [
         "Loved \"the plan stands\""
       ],
-      "expect": "{\"type\":\"love\",\"emoji\":null,\"text\":\"the plan stands\"}"
+      "expect": "{\"type\":\"love\",\"emoji\":null,\"remove\":false,\"text\":\"the plan stands\",\"truncated\":false,\"noun\":null}"
     },
     {
       "id": "platform.parse-emoji",
@@ -373,7 +373,150 @@
       "args": [
         "Reacted 🎉 to \"the plan stands\""
       ],
-      "expect": "{\"type\":\"emoji\",\"emoji\":\"🎉\",\"text\":\"the plan stands\"}"
+      "expect": "{\"type\":\"emoji\",\"emoji\":\"🎉\",\"remove\":false,\"text\":\"the plan stands\",\"truncated\":false,\"noun\":null}"
+    },
+    {
+      "id": "platform.choices-sms",
+      "call": "reactionChoices",
+      "args": [
+        {
+          "platform": "sms",
+          "tapbackEmoji": 2
+        }
+      ],
+      "expect": "{\"kind\":\"classic\",\"choices\":[{\"type\":\"love\",\"glyph\":\"❤️\",\"name\":\"Heart\"},{\"type\":\"like\",\"glyph\":\"👍\",\"name\":\"Thumbs up\"},{\"type\":\"dislike\",\"glyph\":\"👎\",\"name\":\"Thumbs down\"},{\"type\":\"laugh\",\"glyph\":\"😂\",\"name\":\"Ha ha\"},{\"type\":\"emphasis\",\"glyph\":\"‼️\",\"name\":\"Exclamation marks\"},{\"type\":\"question\",\"glyph\":\"❓\",\"name\":\"Question mark\"}]}"
+    },
+    {
+      "id": "platform.choices-rcs",
+      "call": "reactionChoices",
+      "args": [
+        {
+          "platform": "rcs",
+          "tapbackEmoji": 2
+        }
+      ],
+      "expect": "{\"kind\":\"classic\",\"choices\":[{\"type\":\"love\",\"glyph\":\"❤️\",\"name\":\"Heart\"},{\"type\":\"like\",\"glyph\":\"👍\",\"name\":\"Thumbs up\"},{\"type\":\"dislike\",\"glyph\":\"👎\",\"name\":\"Thumbs down\"},{\"type\":\"laugh\",\"glyph\":\"😂\",\"name\":\"Ha ha\"},{\"type\":\"emphasis\",\"glyph\":\"‼️\",\"name\":\"Exclamation marks\"},{\"type\":\"question\",\"glyph\":\"❓\",\"name\":\"Question mark\"}]}"
+    },
+    {
+      "id": "platform.choices-native",
+      "call": "reactionChoices",
+      "args": [
+        {
+          "platform": "imessage",
+          "tapbackEmoji": 2
+        }
+      ],
+      "expect": "{\"kind\":\"any\",\"choices\":null}"
+    },
+    {
+      "id": "platform.choices-native-older",
+      "call": "reactionChoices",
+      "args": [
+        {
+          "platform": "imessage",
+          "tapbackEmoji": 1
+        }
+      ],
+      "expect": "{\"kind\":\"classic\",\"choices\":[{\"type\":\"love\",\"glyph\":\"❤️\",\"name\":\"Heart\"},{\"type\":\"like\",\"glyph\":\"👍\",\"name\":\"Thumbs up\"},{\"type\":\"dislike\",\"glyph\":\"👎\",\"name\":\"Thumbs down\"},{\"type\":\"laugh\",\"glyph\":\"😂\",\"name\":\"Ha ha\"},{\"type\":\"emphasis\",\"glyph\":\"‼️\",\"name\":\"Exclamation marks\"},{\"type\":\"question\",\"glyph\":\"❓\",\"name\":\"Question mark\"}]}"
+    },
+    {
+      "id": "platform.choices-group",
+      "call": "reactionOffer",
+      "args": [
+        {
+          "service": "iMessage",
+          "isGroup": true,
+          "members": [
+            {
+              "handle": "ana@example.com",
+              "service": "SMS"
+            }
+          ]
+        },
+        {
+          "tapbackEmoji": 2
+        }
+      ],
+      "expect": "{\"kind\":\"classic\",\"choices\":[{\"type\":\"love\",\"glyph\":\"❤️\",\"name\":\"Heart\"},{\"type\":\"like\",\"glyph\":\"👍\",\"name\":\"Thumbs up\"},{\"type\":\"dislike\",\"glyph\":\"👎\",\"name\":\"Thumbs down\"},{\"type\":\"laugh\",\"glyph\":\"😂\",\"name\":\"Ha ha\"},{\"type\":\"emphasis\",\"glyph\":\"‼️\",\"name\":\"Exclamation marks\"},{\"type\":\"question\",\"glyph\":\"❓\",\"name\":\"Question mark\"}]}"
+    },
+    {
+      "id": "platform.fallback-curly",
+      "call": "reactionFallbackText",
+      "args": [
+        "like",
+        "the plan stands"
+      ],
+      "expect": "\"Liked “the plan stands”\""
+    },
+    {
+      "id": "platform.fallback-remove",
+      "call": "reactionFallbackText",
+      "args": [
+        "love",
+        "the plan stands",
+        {
+          "remove": true
+        }
+      ],
+      "expect": "\"Removed a heart from “the plan stands”\""
+    },
+    {
+      "id": "platform.parse-curly",
+      "call": "parseReactionText",
+      "args": [
+        "Liked “the plan stands”"
+      ],
+      "expect": "{\"type\":\"like\",\"emoji\":null,\"remove\":false,\"text\":\"the plan stands\",\"truncated\":false,\"noun\":null}"
+    },
+    {
+      "id": "platform.parse-truncated",
+      "call": "parseReactionText",
+      "args": [
+        "Loved “the plan sta…”"
+      ],
+      "expect": "{\"type\":\"love\",\"emoji\":null,\"remove\":false,\"text\":\"the plan sta\",\"truncated\":true,\"noun\":null}"
+    },
+    {
+      "id": "platform.parse-image",
+      "call": "parseReactionText",
+      "args": [
+        "Liked an image"
+      ],
+      "expect": "{\"type\":\"like\",\"emoji\":null,\"remove\":false,\"text\":null,\"truncated\":false,\"noun\":\"image\"}"
+    },
+    {
+      "id": "platform.parse-removed",
+      "call": "parseReactionText",
+      "args": [
+        "Removed a like from \"the plan stands\""
+      ],
+      "expect": "{\"type\":\"like\",\"emoji\":null,\"remove\":true,\"text\":\"the plan stands\",\"truncated\":false,\"noun\":null}"
+    },
+    {
+      "id": "platform.parse-android",
+      "call": "parseReactionText",
+      "args": [
+        "Reacted 😂 to “the plan stands”"
+      ],
+      "expect": "{\"type\":\"emoji\",\"emoji\":\"😂\",\"remove\":false,\"text\":\"the plan stands\",\"truncated\":false,\"noun\":null}"
+    },
+    {
+      "id": "platform.fold-unmatched",
+      "call": "foldReactions",
+      "args": [
+        [
+          {
+            "id": "FAKE-0001",
+            "fromMe": false,
+            "sender": "+1 555-555-0101",
+            "text": "Loved \"nothing here\"",
+            "attachments": [],
+            "reactions": []
+          }
+        ],
+        "sms"
+      ],
+      "expect": "[{\"id\":\"FAKE-0001\",\"fromMe\":false,\"sender\":\"+1 555-555-0101\",\"text\":\"\",\"attachments\":[],\"reactions\":[],\"link\":null,\"event\":{\"kind\":\"reaction\",\"emoji\":\"❤️\",\"remove\":false,\"quote\":\"nothing here\",\"truncated\":false,\"noun\":null}}]"
     }
   ]
 }

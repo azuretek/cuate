@@ -44,7 +44,7 @@ export function syntheticPdf(pages) {
 
 // liveEdit: with liveText, the words the live message is edited to by its sender on another device, once the client has
 // sent its first message after the live one arrived, which is how the smoke proves an edit made elsewhere reaches the UI.
-export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, liveEdit = null, capabilities = null, features = [] } = {}) {
+export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liveText = null, liveDelayMs = 2000, liveEdit = null, capabilities = null, features = [], tapbackEmoji = 0 } = {}) {
   mkdirSync(path.join(attachmentsRoot, 'fake'), { recursive: true });
   const imagePath = path.join(attachmentsRoot, 'fake', 'sunset.png');
   const png = gradientPng(480, 320);
@@ -83,13 +83,15 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // capabilities: the block the fake's status advertises, so a test can model an engine that sends an arbitrary
   // emoji (a tapback.emoji version of 2 or more) and one that must not (the default, an older engine with no
   // version, and version 1, the first emoji path whose sender target did not survive retainArguments).
+  // tapbackEmoji: the tapback.emoji version the default block advertises (0 for none), which the fake run takes from
+  // FAKE_TAPBACK_EMOJI so the desktop smoke can hold a conversation that is offered any emoji (issue 533).
   // features: the rpc_features the fake's status advertises beside the block, so a test can model an engine that
   // sends an arbitrary emoji (add 'tapback.emoji') and one that does not (the default, an older bridge).
   // replyAnswer: 'own' answers a send with the guid of the row it created (what Messages does); 'existing' models the
   // bridge's reply path, which has answered a threaded reply with the id of an existing message in the chat (issue 208),
   // so a test can prove the server does not report that message as the one it created.
   // edit: false models an engine whose bridge cannot edit a message, so status leaves message.edit out (issue 391).
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', edit: true, capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: {} }, features, replyAnswer: 'own' };
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', edit: true, capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: tapbackEmoji ? { 'tapback.emoji': tapbackEmoji } : {} }, features, replyAnswer: 'own' };
   const tapbackEmojiVersion = () => {
     const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
     return Number.isInteger(v) ? v : 0;
