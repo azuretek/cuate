@@ -14,6 +14,8 @@ import org.junit.runner.RunWith
 // page landing only once the reader has read another screen, and reports a verdict: every message that came into view
 // was already loaded, every page was asked for about a page ahead, nothing on screen moved when a page landed, one page
 // at most was on its way each way, and the window never held more than three pages.
+// Issue 537: then, at the newest message, one message arrives and is laid in, the reader scrolls up two steps, a second
+// arrives and is counted past the window, and scrolling down to the newest must show both with no old-engine banner.
 @RunWith(AndroidJUnit4::class)
 class HistoryScrollTest {
     @Test
@@ -24,6 +26,8 @@ class HistoryScrollTest {
             println("history scroll proof: $proof")
             PageFixture.keepScreenshot("history-scroll.png")
             assertTrue("History did not load ahead both ways: $proof" + SystemSurface.failureSuffix(), proof.optBoolean("ok"))
+            val live = proof.optJSONObject("live")
+            assertTrue("The live messages were not both shown without the engine banner: $proof", live != null && live.optBoolean("bothShown") && !live.optBoolean("banner", true))
         }
     }
 }

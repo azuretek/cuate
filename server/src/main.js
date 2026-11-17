@@ -63,7 +63,7 @@ function engineSetup(config) {
     const root = path.join(dataDir, 'fake-attachments');
     return import('./engine/fake.js').then(({ createFakeImsg }) => {
       const world = createFakeImsg({ attachmentsRoot: root, liveText: process.env.FAKE_LIVE || config.engine.live || null, liveEdit: process.env.FAKE_LIVE_EDIT || null, tapbackEmoji: Number.parseInt(process.env.FAKE_TAPBACK_EMOJI || '0', 10) || 0 });
-      return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, renames: world.renames, members: world.members, sendEffects: world.sendEffects, services: world.services };
+      return { makeTransport: () => world.transport(), attachmentsRoot: root, edits: world.edits, changes: world.changes, backgrounds: world.backgrounds, richText: world.richText, voices: world.voices, renames: world.renames, members: world.members, sendEffects: world.sendEffects, services: world.services, historyCursors: world.historyCursors };
     });
   }
   // Which messages were edited is read from the Messages store the engine reads, read-only (issue 391), and so is
@@ -72,8 +72,8 @@ function engineSetup(config) {
   // were unsent or read by the other person, so a client can ask what changed since it last looked (issue 441), and which
   // rows are a group being renamed, with the name it was given (issue 439), and the effect a message was sent with
   // (issue 442), and which rows are a person added to a group, removed from it or leaving it, with whom each was
-  // about (issue 456).
-  return Promise.all([import('./engine/child.js'), import('./engine/edits.js'), import('./engine/backgrounds.js'), import('./engine/rich-text.js'), import('./engine/voices.js'), import('./engine/changes.js'), import('./engine/renames.js'), import('./engine/send-effects.js'), import('./engine/members.js'), import('./engine/services.js')]).then(([{ childTransport }, { createEditReader }, { createBackgroundReader }, { createRichTextReader }, { createVoiceReader }, { createChangeReader }, { createRenameReader }, { createSendEffectReader }, { createMemberReader }, { createServiceReader }]) => ({
+  // about (issue 456), and the history cursor of a row the engine handed over without one (issue 537).
+  return Promise.all([import('./engine/child.js'), import('./engine/edits.js'), import('./engine/backgrounds.js'), import('./engine/rich-text.js'), import('./engine/voices.js'), import('./engine/changes.js'), import('./engine/renames.js'), import('./engine/send-effects.js'), import('./engine/members.js'), import('./engine/services.js'), import('./engine/history-cursors.js')]).then(([{ childTransport }, { createEditReader }, { createBackgroundReader }, { createRichTextReader }, { createVoiceReader }, { createChangeReader }, { createRenameReader }, { createSendEffectReader }, { createMemberReader }, { createServiceReader }, { createHistoryCursorReader }]) => ({
     makeTransport: (log) => childTransport({ bin: config.engine.bin, args: ['rpc', ...(config.engine.db ? ['--db', config.engine.db] : [])], log }),
     attachmentsRoot: config.attachmentsRoot || messagesAttachmentsRoot(),
     edits: createEditReader({ dbPath: messagesDatabasePath(config) }),
@@ -85,6 +85,7 @@ function engineSetup(config) {
     sendEffects: createSendEffectReader({ dbPath: messagesDatabasePath(config) }),
     members: createMemberReader({ dbPath: messagesDatabasePath(config) }),
     services: createServiceReader({ dbPath: messagesDatabasePath(config) }),
+    historyCursors: createHistoryCursorReader({ dbPath: messagesDatabasePath(config) }),
   }));
 }
 

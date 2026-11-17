@@ -6,6 +6,8 @@ import XCTest
 // landing only once the reader has read another screen. It fails at the step where a message about to come into view
 // was not already loaded, a page was asked for late, the message on screen moved when a page landed, two pages were on
 // their way in one direction, or the window held more than three pages.
+// Issue 537: then, at the newest message, one message arrives and is laid in, the reader scrolls up two steps, a second
+// arrives and is counted past the window, and scrolling down to the newest must show both with no old-engine banner.
 final class HistoryScrollTests: XCTestCase {
     func testHistoryLoadsAheadBothWays() {
         let app = XCUIApplication()
@@ -49,5 +51,6 @@ final class HistoryScrollTests: XCTestCase {
         report.lifetime = .keepAlways
         add(report)
         XCTAssertTrue(verdict.label.hasPrefix("scroll:pass"), "History did not load ahead both ways: " + verdict.label + SystemSurface.failureSuffix(app))
+        XCTAssertTrue(verdict.label.contains("\"bothShown\":true") && verdict.label.contains("\"banner\":false"), "The live messages were not both shown without the engine banner: " + verdict.label)
     }
 }

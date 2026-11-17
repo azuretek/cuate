@@ -12,7 +12,7 @@ import {
 } from '../rules/chats.js';
 import { mergeMessages, applyReaction, reactionUnsupported, applyEdit, settleSent } from '../rules/messages.js';
 import { mediaItems, mediaIndex } from '../rules/media.js';
-import { initialWindow, shiftWindow, HISTORY_PAGE_SIZE, HISTORY_MAX_MESSAGES, HISTORY_CACHED_CHATS } from '../rules/history-window.js';
+import { initialWindow, shiftWindow, keepCounted, HISTORY_PAGE_SIZE, HISTORY_MAX_MESSAGES, HISTORY_CACHED_CHATS } from '../rules/history-window.js';
 import { conversationPlatform, platformCapabilities, platformReactionUnsupported, foldReactions } from '../rules/platform.js';
 import { localAttachment, toBase64 } from '../rules/attach.js';
 
@@ -1093,28 +1093,53 @@ class AppRoot extends KitElement {
     if (!(direction === 'older' ? state.hasOlder : state.hasNewer)) return false;
     const chatId = this.openChatId;
     const edge = direction === 'older' ? this.messages[0] : this.messages.at(-1);
-    // Older messages the device's store holds are drawn from it, with no server read (issue 441).
-    const held = direction === 'older' ? olderFromHeld(this.cache?.heldNow(chatId), edge.id, HISTORY_PAGE_SIZE) : null;
+    // Older messages the device's store holds are drawn from it, with no server read (issue 441). A window that pages by
+    // history cursor stops the held read at a stored message with no cursor (issue 537): one that came by the live stream
+    // before the server gave it one stays without it in this device's store, and a window filled with those would have
+    // nothing to page from, so the server reads that stretch, with its cursors.
+    const cursors = this.messages.some((m) => m.historyCursor);
+    const held = direction === 'older' ? olderFromHeld(this.cache?.heldNow(chatId), edge.id, HISTORY_PAGE_SIZE, { cursors }) : null;
     if (held && held.messages.length) {
       this.applyWindow(shiftWindow({ ...state, messages: this.messages }, foldFor(held.messages, this.chats, chatId), { direction, hasMore: held.hasMore, heights: detail?.heights }));
       return true;
     }
-    if (!edge.historyCursor) { this.problem = 'Update the message engine to browse the whole conversation.'; return false; }
+    // The page is asked from the message nearest that edge which has a history cursor (issue 537). A message that came by
+    // the live stream from a server that adds no cursor to it has none, and the window lays it in as its newest, so an
+    // older page that evicts the newest messages can leave the window ending on one. Asked from the nearest message with
+    // a cursor, the page starts inside the window and the messages it shares with it are already held. Only a window
+    // with no cursor at all is an engine that cannot page.
+    const order = direction === 'older' ? this.messages : [...this.messages].reverse();
+    const between = order.findIndex((m) => m.historyCursor);
+    if (between < 0) { this.problem = 'Update the message engine to browse the whole conversation.'; return false; }
+    const key = direction === 'older' ? 'beforeCursor' : 'afterCursor';
+    // One read, never a chain of them: the page is asked long enough to bring the messages between that one and the edge
+    // again, now with their cursors, and a whole page past the edge.
+    const limit = HISTORY_PAGE_SIZE + between;
+    // Live messages counted past the newer edge while this page is on its way stay counted after it lands (issue 537).
+    const since = this.liveSeq || 0;
     asking.add(direction);
     this.pendingHistory = true;
     try {
-      const { messages, hasMore } = await this.client.messages(chatId, { limit: HISTORY_PAGE_SIZE, [direction === 'older' ? 'beforeCursor' : 'afterCursor']: edge.historyCursor });
+      const { messages, hasMore } = await this.client.messages(chatId, { limit, [key]: order[between].historyCursor });
       this.cache?.keep(chatId, direction === 'older' ? { messages, hasOlder: hasMore } : { messages }, { adjacent: true });
       // The page belongs to the conversation, not to the open that asked for it (issue 484): a window shown
       // again, or a refresh of the same conversation, re-opens it without leaving it, and that must not throw
       // away a page the person is waiting for. Only leaving the conversation invalidates the answer.
       if (this.openChatId !== chatId) return false;
-      // The page meets the window only at the message it was asked from. A window another writer moved while the page
-      // was in flight no longer ends there, and laying the page against the window held at the ask would leave a gap in
-      // the conversation (issue 504), so the page is not merged and the next ask starts from the window's new edge.
+      // The page meets the window at the message it was asked from, at its edge or inside it. A window another writer moved
+      // while the page was in flight no longer ends where it did, and laying the page against the window held at the ask
+      // would leave a gap in the conversation (issue 504), so the page is not merged and the next ask starts from the
+      // window's new edge.
       const reached = direction === 'older' ? this.messages[0] : this.messages.at(-1);
       if (reached?.id !== edge.id) return false;
-      const next = shiftWindow({ ...(this.historyWindow || state), messages: this.messages }, foldFor(messages, this.chats, chatId), { direction, hasMore, heights: detail?.heights });
+      let next = shiftWindow({ ...(this.historyWindow || state), messages: this.messages }, foldFor(messages, this.chats, chatId), { direction, hasMore, heights: detail?.heights });
+      // A newer page asked before a live message arrived can answer that nothing is newer. The message counted while it
+      // was on its way is still to come, so the window keeps Load newer until a page brings it (issue 537).
+      if (direction === 'newer') {
+        const kept = keepCounted(next, this.countedLive(chatId), since);
+        this.historyCounted = { chatId, ids: kept.counted };
+        next = kept.state;
+      }
       this.applyWindow(next);
       return true;
     } catch (e) { this.problem = this.describe(e); return false; }
@@ -1124,10 +1149,19 @@ class AppRoot extends KitElement {
     }
   }
 
+  // The live messages counted past the window's newer edge in this conversation, each with the order it was counted in
+  // (issue 537), so a newer page on its way when one arrived cannot answer it away.
+  countedLive(chatId) {
+    if (this.historyCounted?.chatId !== chatId) this.historyCounted = { chatId, ids: new Map() };
+    return this.historyCounted.ids;
+  }
+
   receiveHistoryMessage(message) {
     const state = this.historyWindow;
     const pane = this.querySelector('app-conversation');
     if (state && !this.messages.some((m) => m.id === message.id) && (state.afterCount || (this.messages.length >= HISTORY_MAX_MESSAGES && !pane?.keep.anchor?.end))) {
+      this.liveSeq = (this.liveSeq || 0) + 1;
+      this.countedLive(message.chatId).set(message.id, this.liveSeq);
       this.historyWindow = { ...state, afterCount: state.afterCount + 1, afterHeight: state.afterHeight + state.estimate, hasNewer: true };
       return;
     }
