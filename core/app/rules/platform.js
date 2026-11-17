@@ -20,21 +20,44 @@ export function platformOf(chat) {
   return 'unknown';
 }
 
+// A group is only as capable as its most limited member. The Mac's own message app gives a conversation one service, the one
+// every member can receive (a group with anyone off the message service is a text conversation for all of them), and
+// the engine reports that one service on the chat; where a member's own service is reported as well, the most limited
+// of them decides, so nothing is offered that one member's phone cannot show. Most limited first.
+const LIMITS = ['unknown', 'sms', 'rcs', 'imessage'];
+
+export function conversationPlatform(chat) {
+  let platform = platformOf(chat);
+  const members = chat && Array.isArray(chat.members) ? chat.members : [];
+  for (const m of members) {
+    const service = m && typeof m.service === 'string' ? m.service.trim() : '';
+    if (!service) continue;
+    const p = platformOf({ service });
+    if (LIMITS.indexOf(p) < LIMITS.indexOf(platform)) platform = p;
+  }
+  return platform;
+}
+
 // What each platform carries natively:
-//  - tapback: a reaction sent through the engine's own bridge, the path the message service's own conversations use
-//  - fallback: the six classic reactions sent as the platform's own text phrase, which the other client reads back
-//    as a reaction on the quoted message
+//  - tapback: a reaction sent through the engine's own bridge. The Mac then sends it the way that conversation's own
+//    service carries one: a reaction on the message service, the classic text form on SMS (exactly the words an iPhone
+//    sends there, which Google's Android app shows as a reaction), and a reaction on RCS, which the iPhone has carried to
+//    Android as a reaction since iOS 18.1 (the sources are in docs/DESIGN.md, Platforms)
+//  - fallback: the six classic reactions sent by the server as that same text when the bridge cannot be reached, which
+//    only SMS takes, since on SMS the text is the reaction's own form; on RCS it would be a stray text
+//  - fold: an incoming reaction that arrives as text (from Android, or from an iPhone over SMS) is folded onto the
+//    message it names rather than drawn as a message
 //  - thread: a reply that stays in a thread
-//  - emoji: any emoji as a reaction (only the bridge path, and only when the engine advertises the versioned
-//    capability; the version gate lives in messages.js)
+//  - emoji: any emoji as a reaction (only the message service, and only when the engine advertises the versioned
+//    capability; the choice is reactionChoices in messages.js)
 //  - edit: changing a message after it was sent (issue 391), which only the message service carries; SMS and RCS
 //    send no edit, so one made there would never reach the other person
 // A platform the app cannot name carries nothing and offers nothing.
 export const PLATFORM_CAPABILITIES = {
-  imessage: { tapback: true, fallback: false, thread: true, emoji: true, edit: true },
-  sms: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
-  rcs: { tapback: false, fallback: true, thread: false, emoji: false, edit: false },
-  unknown: { tapback: false, fallback: false, thread: false, emoji: false, edit: false },
+  imessage: { tapback: true, fallback: false, fold: false, thread: true, emoji: true, edit: true },
+  sms: { tapback: true, fallback: true, fold: true, thread: false, emoji: false, edit: false },
+  rcs: { tapback: true, fallback: false, fold: true, thread: false, emoji: false, edit: false },
+  unknown: { tapback: false, fallback: false, fold: false, thread: false, emoji: false, edit: false },
 };
 
 export function platformCapabilities(platform) {
@@ -47,85 +70,161 @@ export function offersReaction(platform) {
   return Boolean(c.tapback || c.fallback);
 }
 
-// The six classic reactions as the phrase a platform without tapbacks exchanges; the other client reads the phrase
-// back as a reaction on the quoted message. Another emoji has no phrase here, so that platform cannot carry it.
+// The six classic reactions, each with its glyph, the verb the Mac writes for it, and the words it writes when one is
+// taken back. These are the Mac's own summary words, the ones the engine's bridge builds a tapback's body from
+// (openclaw/imsg Sources/IMsgHelper/ReactionHandlers.inc), so what the server sends as text is word for word what an
+// iPhone sends on SMS, curly quotes included.
+export const REACTION_GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
 const PHRASES = [
-  ['love', 'Loved'],
-  ['like', 'Liked'],
-  ['dislike', 'Disliked'],
-  ['laugh', 'Laughed at'],
-  ['emphasis', 'Emphasized'],
-  ['question', 'Questioned'],
+  { type: 'love', verb: 'Loved', removed: 'a heart' },
+  { type: 'like', verb: 'Liked', removed: 'a like' },
+  { type: 'dislike', verb: 'Disliked', removed: 'a dislike' },
+  { type: 'laugh', verb: 'Laughed at', removed: 'a laugh' },
+  { type: 'emphasis', verb: 'Emphasized', removed: 'an exclamation' },
+  { type: 'question', verb: 'Questioned', removed: 'a question mark' },
 ];
+const OPEN = '\u201c';
+const CLOSE = '\u201d';
 
 export function fallbackPhrase(type) {
-  const hit = PHRASES.find(([t]) => t === type);
-  return hit ? hit[1] : null;
+  const hit = PHRASES.find((p) => p.type === type);
+  return hit ? hit.verb : null;
 }
 
-const quoted = (text) => '"' + String(text == null ? '' : text) + '"';
-
-// The text a platform without tapbacks sends for one of the six classic reactions, quoting the message it answers.
+// The text an SMS conversation carries for one of the six classic reactions, quoting the message it answers in curly
+// quotes, or naming "a message" when that message has no words; taking one back is the Mac's own removal sentence.
 // Null for anything else, which that platform cannot carry, so the caller refuses rather than send it.
-export function reactionFallbackText(type, original) {
-  const phrase = fallbackPhrase(type);
-  return phrase ? phrase + ' ' + quoted(original) : null;
+export function reactionFallbackText(type, original, { remove = false } = {}) {
+  const hit = PHRASES.find((p) => p.type === type);
+  if (!hit) return null;
+  const words = String(original == null ? '' : original);
+  const target = words.trim() ? OPEN + words + CLOSE : 'a message';
+  return remove ? 'Removed ' + hit.removed + ' from ' + target : hit.verb + ' ' + target;
 }
 
-// An incoming text-fallback reaction (issue 184): the six phrases, or the custom-emoji phrase
-// `Reacted <emoji> to "<original>"`, either of which a client on another service sends as plain text. Returns
-// { type, emoji, text } or null; `text` is the original message the fallback quotes, which is how it is attached.
-const FALLBACK_RE = /^(Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) "([^"]*)"$/;
-const REACTED_RE = /^Reacted (\S+) to "([^"]*)"$/;
+// An incoming reaction that arrived as text (issues 184 and 533): what an iPhone sends on SMS and what Google's Android app
+// sends from Android. Every shape here is cited in docs/DESIGN.md, Platforms, and held by a fixture in
+// core/test/platform.test.js:
+//  - the six verbs quoting the message: Liked "...", Loved "...", Laughed at "...", Emphasized "...", Questioned "...",
+//    Disliked "..."
+//  - any emoji: Reacted <emoji> to "..."
+//  - a removal: Removed a like from "..." (a heart, a dislike, a laugh, an exclamation, a question mark), or
+//    Removed <emoji> from "..."
+//  - the quote in curly or straight quotes, either side, and cut short with an ellipsis (... or the one character)
+//  - a message with no words named by what it is: an image, a video, a movie, an audio message, a sticker, an
+//    attachment, or a message
+// Returns { type, emoji, remove, text, truncated, noun } or null. text is the quoted words (null when the message is
+// named by a noun instead), truncated says the quote was cut short, and noun is what the message with no words was.
+const NOUNS = { 'an image': 'image', 'a photo': 'image', 'a video': 'video', 'a movie': 'video', 'an audio message': 'audio', 'a sticker': 'sticker', 'an attachment': 'attachment', 'a message': 'message' };
+const VERB_RE = /^(Loved|Liked|Disliked|Laughed at|Emphasized|Questioned) ([\s\S]+)$/;
+const REACTED_RE = /^Reacted (\S+) to ([\s\S]+)$/u;
+const REMOVED_RE = /^Removed (a heart|a like|a dislike|a laugh|an exclamation|a question mark) from ([\s\S]+)$/;
+const REMOVED_EMOJI_RE = /^Removed (\S+) from ([\s\S]+)$/u;
+const QUOTE_RE = /^["\u201c]([\s\S]*)["\u201d]$/;
+const ELLIPSIS_RE = /(?:\u2026|\.\.\.)$/;
+const PICTURE_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+
+function reactionTarget(rest) {
+  const q = QUOTE_RE.exec(rest);
+  if (q) {
+    const cut = ELLIPSIS_RE.exec(q[1]);
+    const text = cut ? q[1].slice(0, -cut[0].length) : q[1];
+    if (!text.trim()) return { text: null, truncated: false, noun: 'message' };
+    return { text, truncated: Boolean(cut), noun: null };
+  }
+  const noun = NOUNS[rest];
+  return noun ? { text: null, truncated: false, noun } : null;
+}
 
 export function parseReactionText(text) {
   const t = String(text == null ? '' : text).trim();
-  const m = FALLBACK_RE.exec(t);
-  if (m) {
-    const hit = PHRASES.find(([, phrase]) => phrase === m[1]);
-    return hit ? { type: hit[0], emoji: null, text: m[2] } : null;
-  }
-  const reacted = REACTED_RE.exec(t);
-  return reacted ? { type: 'emoji', emoji: reacted[1], text: reacted[2] } : null;
+  const make = (type, emoji, remove, rest) => {
+    const target = reactionTarget(rest);
+    return target ? { type, emoji, remove, ...target } : null;
+  };
+  let m = VERB_RE.exec(t);
+  if (m) return make(PHRASES.find((p) => p.verb === m[1]).type, null, false, m[2]);
+  m = REACTED_RE.exec(t);
+  if (m) return PICTURE_RE.test(m[1]) ? make('emoji', m[1], false, m[2]) : null;
+  m = REMOVED_RE.exec(t);
+  if (m) return make(PHRASES.find((p) => p.removed === m[1]).type, null, true, m[2]);
+  m = REMOVED_EMOJI_RE.exec(t);
+  if (m) return PICTURE_RE.test(m[1]) ? make('emoji', m[1], true, m[2]) : null;
+  return null;
 }
 
-// Fold the text-fallback reactions a client on another service sends into reactions on the messages they quote, so
-// show as reactions rather than as new text, in history and live (issue 184). A fallback quotes the original's text;
-// it attaches to the most recent loaded message carrying exactly that text, and replaces the reaction of the same
-// person already on it, one per person. A fallback whose quote matches nothing loaded is left as the text it is,
-// since guessing which message it meant would put a reaction on the wrong one. A platform that carries no fallback
-// leaves the list untouched.
+const squash = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+const bare = (s) => String(s || '').replace(/\ufe0f/g, '');
+const who = (m) => (m.fromMe ? 'me' : m.sender || '');
+
+// Whether a loaded message is the one a reaction names: the same words (a quote cut short matches the start of
+// them), or, for one named by a noun, the latest message carrying that kind of file, or with no words at all.
+function namedBy(x, parsed) {
+  if (!x || x.event) return false;
+  const files = Array.isArray(x.attachments) ? x.attachments : [];
+  if (parsed.text != null) {
+    const have = squash(x.text);
+    const want = squash(parsed.text);
+    return Boolean(have) && (have === want || (parsed.truncated && have.startsWith(want)));
+  }
+  const mime = (a) => String((a && a.mime) || '');
+  if (parsed.noun === 'image') return files.some((a) => mime(a).startsWith('image/') && !a.sticker);
+  if (parsed.noun === 'video') return files.some((a) => mime(a).startsWith('video/'));
+  if (parsed.noun === 'audio') return files.some((a) => mime(a).startsWith('audio/'));
+  if (parsed.noun === 'sticker') return files.some((a) => a && a.sticker);
+  if (parsed.noun === 'attachment') return files.length > 0;
+  return !squash(x.text);
+}
+
+// The words an unmatched reaction is drawn with, and the event that carries them: a quiet line naming who reacted, with
+// what, and to what, so it never reads as a message the person typed.
+function reactionLine(m, parsed) {
+  const emoji = parsed.emoji || REACTION_GLYPHS[parsed.type] || '';
+  return { ...m, text: '', attachments: [], link: null, reactions: [], event: { kind: 'reaction', emoji, remove: parsed.remove, quote: parsed.text, truncated: parsed.truncated, noun: parsed.noun } };
+}
+
+// Fold the reactions that arrive as text into reactions on the messages they name, in history and live (issue 184),
+// so they show as a reaction chip and never as a stray message. A reaction attaches to the most recent loaded message
+// it names and replaces the reaction the same person already has on it, one per person; a removal takes that
+// person's matching reaction off. One that names nothing loaded is drawn as a quiet line saying who reacted, with
+// what, and to what, rather than as the raw text, since guessing which message it meant would put a reaction on the
+// wrong one. A platform whose reactions never arrive as text leaves the list untouched.
 export function foldReactions(messages, platform) {
   const list = messages || [];
-  if (!platformCapabilities(platform).fallback) return list;
+  if (!platformCapabilities(platform).fold) return list;
   const out = [];
-  const who = (m) => (m.fromMe ? 'me' : m.sender || '');
   for (const m of list) {
-    const parsed = m.text ? parseReactionText(m.text) : null;
-    if (parsed) {
-      let target = null;
-      for (let i = out.length - 1; i >= 0; i -= 1) {
-        const x = out[i];
-        if (x.text && String(x.text).trim() === parsed.text) { target = x; break; }
-      }
-      if (target) {
-        const me = who(m);
-        const reactions = (target.reactions || []).filter((r) => (r.fromMe ? 'me' : r.sender || '') !== me);
-        reactions.push({ type: parsed.type, emoji: parsed.emoji, fromMe: m.fromMe, sender: m.fromMe ? null : m.sender || null });
-        out[out.indexOf(target)] = { ...target, reactions };
-        continue;
-      }
+    const files = m && Array.isArray(m.attachments) ? m.attachments : [];
+    const parsed = m && !m.event && m.text && !files.length ? parseReactionText(m.text) : null;
+    if (!parsed) {
+      out.push(m);
+      continue;
     }
-    out.push(m);
+    let at = -1;
+    for (let i = out.length - 1; i >= 0; i -= 1) {
+      if (namedBy(out[i], parsed)) { at = i; break; }
+    }
+    if (at < 0) {
+      out.push(reactionLine(m, parsed));
+      continue;
+    }
+    const target = out[at];
+    const me = who(m);
+    const same = (r) => (parsed.type === 'emoji' ? bare(r.emoji) === bare(parsed.emoji) : r.type === parsed.type && !r.emoji);
+    let reactions = Array.isArray(target.reactions) ? target.reactions : [];
+    if (parsed.remove) reactions = reactions.filter((r) => !(who(r) === me && same(r)));
+    else reactions = [...reactions.filter((r) => who(r) !== me), { type: parsed.type, emoji: parsed.emoji, fromMe: Boolean(m.fromMe), sender: m.fromMe ? null : m.sender || null }];
+    out[at] = { ...target, reactions };
   }
   return out;
 }
 
 // What the reader is told when the reaction they chose is not one this platform carries: the honest limit, in the
 // app's own notice style, in place. It names no transport of its own (issue 56), and never substitutes another
-// reaction or sends nothing silently.
+// reaction or sends nothing silently. The menu offers only what the conversation carries (reactionChoices), so this is
+// what a request made around it hears.
 export function platformReactionUnsupported(platform) {
-  if (platformCapabilities(platform).fallback) {
+  if (offersReaction(platform)) {
     return {
       message: 'This conversation carries the six classic reactions, not arbitrary emoji.',
       detail: 'Send one of the six classic reactions instead.',
@@ -136,6 +235,7 @@ export function platformReactionUnsupported(platform) {
     detail: 'The message service for this conversation could not be determined.',
   };
 }
+
 
 // What the reader is told when a threaded reply is asked for on a platform with no threads: it is refused in place,
 // and never sent as a threaded reply the recipient cannot read.

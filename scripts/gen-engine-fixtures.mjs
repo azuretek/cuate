@@ -63,6 +63,21 @@ const CASES = [
   { id: 'platform.fallback', call: 'reactionFallbackText', args: ['love', 'the plan stands'] },
   { id: 'platform.parse', call: 'parseReactionText', args: ['Loved "the plan stands"'] },
   { id: 'platform.parse-emoji', call: 'parseReactionText', args: ['Reacted \u{1F389} to "the plan stands"'] },
+  // Issue 533: React offers exactly what the conversation carries, the same answer in every shell's engine, and
+  // the incoming phrasings each shell folds the same way.
+  { id: 'platform.choices-sms', call: 'reactionChoices', args: [{ platform: 'sms', tapbackEmoji: 2 }] },
+  { id: 'platform.choices-rcs', call: 'reactionChoices', args: [{ platform: 'rcs', tapbackEmoji: 2 }] },
+  { id: 'platform.choices-native', call: 'reactionChoices', args: [{ platform: 'imessage', tapbackEmoji: 2 }] },
+  { id: 'platform.choices-native-older', call: 'reactionChoices', args: [{ platform: 'imessage', tapbackEmoji: 1 }] },
+  { id: 'platform.choices-group', call: 'reactionOffer', args: [{ service: 'iMessage', isGroup: true, members: [{ handle: 'ana@example.com', service: 'SMS' }] }, { tapbackEmoji: 2 }] },
+  { id: 'platform.fallback-curly', call: 'reactionFallbackText', args: ['like', 'the plan stands'] },
+  { id: 'platform.fallback-remove', call: 'reactionFallbackText', args: ['love', 'the plan stands', { remove: true }] },
+  { id: 'platform.parse-curly', call: 'parseReactionText', args: ['Liked \u201cthe plan stands\u201d'] },
+  { id: 'platform.parse-truncated', call: 'parseReactionText', args: ['Loved \u201cthe plan sta\u2026\u201d'] },
+  { id: 'platform.parse-image', call: 'parseReactionText', args: ['Liked an image'] },
+  { id: 'platform.parse-removed', call: 'parseReactionText', args: ['Removed a like from "the plan stands"'] },
+  { id: 'platform.parse-android', call: 'parseReactionText', args: ['Reacted \u{1F602} to \u201cthe plan stands\u201d'] },
+  { id: 'platform.fold-unmatched', call: 'foldReactions', args: [[{ id: 'FAKE-0001', fromMe: false, sender: '+1 555-555-0101', text: 'Loved "nothing here"', attachments: [], reactions: [] }], 'sms'] },
 ];
 
 export function fixtures() {

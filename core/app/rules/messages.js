@@ -1,8 +1,8 @@
 // Pure: the conversation's rules.
-import { platformCapabilities } from './platform.js';
+import { platformCapabilities, conversationPlatform, REACTION_GLYPHS } from './platform.js';
 import { compareHistory } from './history.js';
 
-const GLYPHS = { love: '\u2764\ufe0f', like: '\ud83d\udc4d', dislike: '\ud83d\udc4e', laugh: '\ud83d\ude02', emphasis: '\u203c\ufe0f', question: '\u2753' };
+const GLYPHS = REACTION_GLYPHS;
 
 // The six standard tapbacks, in the order the Mac offers them, as { type, glyph }. These are the reactions every
 // engine can send; one that advertises tapback.emoji version 2 sends any other emoji as itself, and one that does not shows it
@@ -21,6 +21,38 @@ export function tapbackType(emoji) {
 // capabilities, so the client asks for the version it needs rather than trusting a flag; a build advertising an
 // older version, or none, is refused before the bridge is asked, and the refusal names this version.
 export const EMOJI_TAPBACK_VERSION = 2;
+
+// The six classic reactions by name, for the reader and a screen reader, in the order TAPBACKS gives.
+export const TAPBACK_NAMES = { love: 'Heart', like: 'Thumbs up', dislike: 'Thumbs down', laugh: 'Ha ha', emphasis: 'Exclamation marks', question: 'Question mark' };
+
+// What a reaction on this conversation can be, decided once for every surface that offers one (the message menu's
+// React, a long press, and the server that sends it): 'any' emoji where the conversation is on the message service and
+// the engine advertises tapback.emoji at the version an arbitrary emoji needs; the six 'classic' reactions where only
+// those can go (SMS and RCS, and the message service on an engine that sends only the six); and 'none' where the
+// platform carries no reaction at all. The panel draws exactly what this says, so nothing is offered that would be
+// refused, and the server enforces the same answer. `choices` lists the glyphs to draw for 'classic', null for 'any'.
+export function reactionChoices({ platform, tapbackEmoji = 0 } = {}) {
+  const caps = platformCapabilities(platform);
+  if (!caps.tapback && !caps.fallback) return { kind: 'none', choices: [] };
+  const version = Number.isInteger(tapbackEmoji) ? tapbackEmoji : 0;
+  if (caps.emoji && version >= EMOJI_TAPBACK_VERSION) return { kind: 'any', choices: null };
+  return { kind: 'classic', choices: TAPBACKS.map((t) => ({ ...t, name: TAPBACK_NAMES[t.type] })) };
+}
+
+// The same answer for a chat as the app holds it and the engine as /api/v1/info reports it (`tapbackEmoji`, the
+// version the engine advertises). An engine the app has not heard from yet advertises nothing, so it is offered the six.
+export function reactionOffer(chat, engine) {
+  return reactionChoices({ platform: conversationPlatform(chat), tapbackEmoji: engine && engine.tapbackEmoji });
+}
+
+// Whether one emoji is a reaction the answer allows: any emoji for 'any', one of the six (in either presentation) for
+// 'classic', nothing for 'none'.
+export function reactionAllowed(offer, emoji) {
+  if (!offer || !String(emoji || '').trim()) return false;
+  if (offer.kind === 'any') return true;
+  if (offer.kind === 'classic') return tapbackType(emoji) !== null;
+  return false;
+}
 
 // The engine as one line for a reader, e.g. "imsg 0.9.2", or '' when the app does not know the build. The build is
 // named when it is known and never invented.

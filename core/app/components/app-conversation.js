@@ -10,7 +10,7 @@ import { chatTitle, eventText } from '../rules/chats.js';
 import { hasContactEditor, handleKey } from '../rules/contacts.js';
 import './app-avatar.js';
 import './app-backdrop.js';
-import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel, editRefusal, editVersions } from '../rules/messages.js';
+import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReaction, reactionOffer, messageActions, threadIds, threadRoot, threadMarks, replyCountLabel, editRefusal, editVersions } from '../rules/messages.js';
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
@@ -104,6 +104,9 @@ class AppConversation extends KitElement {
     // Whether the engine can edit a message (issue 391), handed down from the page, and the message being edited
     // ({ id, text }) while its words are in the composer.
     canEdit: {}, editing: { state: true },
+    // The engine as the server reports it (/api/v1/info), handed down from the page, so React offers exactly what this
+    // conversation can carry (reactionOffer): the six classic reactions or any emoji.
+    engine: { attribute: false },
     // The person's emoji favourites, the same list on every device (issue 494), handed down to the composer's panel.
     favourites: { attribute: false },
     // The messages sent with Invisible Ink whose words have been pressed into view (issue 442); every other one is veiled.
@@ -641,7 +644,7 @@ class AppConversation extends KitElement {
         <div class="screen-effect" aria-hidden="true"></div>
         ${thread ? this.threadView() : nothing}
       </div>
-      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} .editing=${this.editing} .favourites=${this.favourites} @send=${(e) => respond(e, this.onSend(e.detail))} @edit-cancel=${() => this.cancelEdit()} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
+      <app-composer data-dismiss-keep="thread" .disabled=${!this.sending} .maxBytes=${this.uploadMaxBytes} .phone=${this.phone} .placeholder=${this.composerPlaceholder()} .replyTo=${this.replyingTo} .reactFor=${this.reactFor} .reactWith=${this.reactFor ? reactionOffer(this.chat, this.engine).choices : null} .editing=${this.editing} .favourites=${this.favourites} @send=${(e) => respond(e, this.onSend(e.detail))} @edit-cancel=${() => this.cancelEdit()} @reply-cancel=${() => this.closeThread()} @react-pick=${(e) => this.reactPicked(e.detail)} @react-cancel=${() => { this.reactFor = null; }}></app-composer>`;
   }
 }
 

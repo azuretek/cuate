@@ -403,6 +403,10 @@ app-composer { display: block; flex: none; position: relative; border-top: var(-
 .emoji-row.at-bottom { border-top: var(--size-border) solid var(--color-border); padding-top: var(--space-2); }
 .emoji-row.at-top { border-bottom: var(--size-border) solid var(--color-border); padding-bottom: var(--space-2); }
 .emoji-grid { flex: 1; min-height: 0; }
+/* A conversation that carries only the six classic reactions offers just those, one row with nothing to search (issue 533). */
+.emoji-picker.reaction-choices { width: auto; height: auto; }
+.reaction-grid { grid-template-columns: repeat(6, var(--size-emoji)); justify-content: space-around; overflow: visible; }
+.reaction-grid .emoji-cell { font-size: var(--font-size-xl); }
 .emoji-cell { border: 0; background: none; font-size: var(--font-size-lg); line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1); cursor: pointer; }
 .emoji-cell:hover { background: var(--color-bg-sunken); }
 /* An emoji this device cannot draw, shown in a message by its name rather than as an empty box (issue 392). */
