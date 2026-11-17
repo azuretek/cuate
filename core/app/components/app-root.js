@@ -1084,8 +1084,11 @@ class AppRoot extends KitElement {
 
   loadOlder(detail) { return this.loadHistory('older', detail); }
 
+  // One page at a time in each direction (the conversation asks for the next page ahead of the reader both ways), so an
+  // older page and a newer one may be on their way together, but never two of either. pendingHistory says whether any is.
   async loadHistory(direction, detail = {}) {
-    if (this.pendingHistory || !this.messages.length) return false;
+    const asking = this.historyAsks || (this.historyAsks = new Set());
+    if (asking.has(direction) || !this.messages.length) return false;
     const state = this.historyWindow || initialWindow(this.messages, { hasMore: this.hasMore });
     if (!(direction === 'older' ? state.hasOlder : state.hasNewer)) return false;
     const chatId = this.openChatId;
@@ -1097,6 +1100,7 @@ class AppRoot extends KitElement {
       return true;
     }
     if (!edge.historyCursor) { this.problem = 'Update the message engine to browse the whole conversation.'; return false; }
+    asking.add(direction);
     this.pendingHistory = true;
     try {
       const { messages, hasMore } = await this.client.messages(chatId, { limit: HISTORY_PAGE_SIZE, [direction === 'older' ? 'beforeCursor' : 'afterCursor']: edge.historyCursor });
@@ -1114,7 +1118,10 @@ class AppRoot extends KitElement {
       this.applyWindow(next);
       return true;
     } catch (e) { this.problem = this.describe(e); return false; }
-    finally { this.pendingHistory = false; }
+    finally {
+      asking.delete(direction);
+      this.pendingHistory = asking.size > 0;
+    }
   }
 
   receiveHistoryMessage(message) {

@@ -14,6 +14,7 @@ import { groupMessages, deliveryLabel, summarizeReactions, reactionGlyph, myReac
 import { platformOf, platformCapabilities, serviceNote } from '../rules/platform.js';
 import { formatSeparator } from '../rules/time.js';
 import { rememberPlace, placeFor } from '../rules/places.js';
+import { historyLead, prefetchDirection } from '../rules/history-window.js';
 import { typingNote, typingBubble, typingPulse, TYPING_BUBBLE_LABEL } from '../rules/typing.js';
 import { windowControlsHtml } from './window-controls.js';
 import { closeButtonHtml } from './close-button.js';
@@ -173,27 +174,84 @@ class AppConversation extends KitElement {
     return emit(this, name, detail);
   }
 
-  // Older messages load as the person scrolls up to them, before they reach the top, so the history reads as one long
-  // conversation rather than a page with a button at its head: within a screen of the top, the next page is asked for
-  // once, and the place the person is on stays where it is while it lands above (the keep's anchor holds the message).
-  // The button stays for a keyboard and for a page that is shorter than its view.
-  async nearTop(e) {
-    const el = e.currentTarget;
-    if (this.olderPending || !el) return;
-    this.olderPending = true;
-    const deadline = Date.now() + 15000;
-    try {
-      while (el.isConnected && Date.now() < deadline) {
-        const state = this.historyWindow;
-        const direction = this.hasMore && el.scrollTop <= (state?.beforeHeight || 0) + el.clientHeight
-          ? 'older' : state?.hasNewer && el.scrollTop + el.clientHeight >= el.scrollHeight - state.afterHeight - el.clientHeight ? 'newer' : null;
-        if (!direction) break;
-        const before = this.messages[0]?.id + ':' + this.messages.at(-1)?.id;
-        const advanced = await this.fire(direction, this.historyMeasurements());
-        await this.updateComplete;
-        if (!advanced || before === this.messages[0]?.id + ':' + this.messages.at(-1)?.id) break;
+  // History loads ahead of the reader both ways, so the conversation reads as one long list with nothing to wait for:
+  // the next page in either direction is asked for while the reader is still about a page from that edge of the window
+  // (rules/history-window.js prefetchDirection), so it is in the window before they reach it, and scrolling back down
+  // after an older page evicted the newest ones reloads them the same way. Each direction has at most one page on its
+  // way, a page that lands is checked again at once in case the reader is still short, and the place the person is on
+  // stays where it is while a page lands above or below it (the keep's anchor holds the message). A scroll this view's
+  // own keep wrote (putting the place back) is not the person reading, so it starts nothing: opening a conversation
+  // reads only its newest page. The buttons stay for a keyboard and for a page shorter than its view.
+  nearTop(e) {
+    const el = e?.currentTarget || this.querySelector('.messages');
+    if (!el) return;
+    const written = this.keep.written;
+    if (written !== null && written !== undefined && Math.abs(el.scrollTop - written) < 1) return;
+    // The keep hears this scroll first, so the place the reach is counted from is the one the person just moved to.
+    this.keep.record();
+    this.prefetchHistory(el);
+  }
+
+  // Where the reader is in the window, in loaded messages: those above the screen, below it, and on it. Above is counted
+  // to the keep's place (the message the person is on, which only their own scrolling moves), so a page landing, or a
+  // picture growing as it loads, cannot make the reader look nearer an edge than they are in the frames before the keep
+  // has put the view back. What fits on the screen is measured, as a binary search over a few row positions. Kept as
+  // reach, with the lead it implies, so a proof reads what the page itself saw.
+  historyReach(el = this.querySelector('.messages')) {
+    const rows = el ? el.querySelectorAll(':scope > .bubble-row') : [];
+    const count = rows.length;
+    if (!el || !count) return { rowsAbove: 0, rowsBelow: 0, visibleRows: 0 };
+    const view = el.getBoundingClientRect();
+    const firstIndex = (test) => {
+      let lo = 0;
+      let hi = count;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (test(rows[mid].getBoundingClientRect())) hi = mid;
+        else lo = mid + 1;
       }
-    } finally { this.olderPending = false; }
+      return lo;
+    };
+    const top = firstIndex((r) => r.bottom > view.top);
+    const visibleRows = Math.max(0, firstIndex((r) => r.top >= view.bottom) - top);
+    const anchor = this.keep.anchor;
+    let rowsAbove = top;
+    if (anchor?.end) rowsAbove = Math.max(0, count - visibleRows);
+    else if (anchor?.key != null) {
+      const at = [...rows].findIndex((row) => row.dataset.id === anchor.key);
+      if (at >= 0) rowsAbove = at;
+    }
+    return { rowsAbove, rowsBelow: Math.max(0, count - rowsAbove - visibleRows), visibleRows };
+  }
+
+  prefetchHistory(el) {
+    if (!el || !el.isConnected) return;
+    this.historyAsking ??= new Set();
+    const state = this.historyWindow || { hasOlder: this.hasMore, hasNewer: false };
+    for (;;) {
+      const reach = this.historyReach(el);
+      this.reach = { ...reach, lead: historyLead(reach.visibleRows) };
+      const direction = prefetchDirection(state, { ...reach, asking: [...this.historyAsking] });
+      if (!direction) return;
+      this.askHistory(direction, el, reach);
+    }
+  }
+
+  async askHistory(direction, el, reach) {
+    this.historyAsking.add(direction);
+    this.olderPending = true;
+    this.lastAsk = { direction, ahead: direction === 'older' ? reach.rowsAbove : reach.rowsBelow, lead: historyLead(reach.visibleRows) };
+    const edge = () => (direction === 'older' ? this.messages[0]?.id : this.messages.at(-1)?.id);
+    const before = edge();
+    let advanced;
+    try {
+      advanced = await this.fire(direction, this.historyMeasurements());
+      await this.updateComplete;
+    } finally {
+      this.historyAsking.delete(direction);
+      this.olderPending = this.historyAsking.size > 0;
+    }
+    if (advanced && edge() !== before) this.prefetchHistory(el);
   }
 
   historyMeasurements() {

@@ -171,6 +171,63 @@ test('a view at its end stays there through its own scroll and the browser clamp
 });
 
 
+// Found walking a long conversation (issue 535): a picture above the place that grows as it loads, in the frame
+// between the person's scroll and its event, was read as part of the scroll, so what they saw jumped by its height; and
+// a resize handled in that frame put the view back where it was before the scroll, so the scroll was undone.
+test('a picture that grows above the place before the person\'s scroll is heard moves nothing they see', () => {
+  const el = fakeScroller({ heights: Array(100).fill(80), width: 674, height: 300 });
+  const host = { addController() {}, matches: () => false, querySelector: () => el };
+  const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row' });
+  keep.hostUpdated();
+  keep.onInput();
+  el.scrollTop = 50 * 80;
+  keep.record();
+  assert.deepEqual(keep.anchor, { key: 'm50', offset: 0 });
+  // Two messages up with the person's own wheel, and before that scroll is heard a picture well above them grows.
+  keep.onInput();
+  el.scrollTop = 48 * 80;
+  el.heights = el.heights.map((h, i) => (i === 45 ? h + 30 : h));
+  keep.record();
+  assert.deepEqual(keep.anchor, { key: 'm48', offset: 0 }, 'the place moved by the scroll alone');
+  assert.equal(el.scrollTop, 48 * 80 + 30, 'and the view was put where it says, the picture taken up above it');
+});
+
+test('a resize handled before the person\'s scroll is heard does not undo the scroll', () => {
+  const el = fakeScroller({ heights: Array(100).fill(80), width: 674, height: 300 });
+  const host = { addController() {}, matches: () => false, querySelector: () => el };
+  const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row' });
+  keep.hostUpdated();
+  keep.onInput();
+  el.scrollTop = 50 * 80;
+  keep.record();
+  keep.onInput();
+  el.scrollTop = 48 * 80;
+  el.heights = el.heights.map((h, i) => (i === 45 ? h + 30 : h));
+  // The picture's resize is handled first; the scroll event comes after.
+  keep.restore();
+  assert.deepEqual(keep.anchor, { key: 'm48', offset: 0 }, 'the scroll was heard before the view was put back');
+  assert.equal(el.scrollTop, 48 * 80 + 30);
+  keep.record();
+  assert.deepEqual(keep.anchor, { key: 'm48', offset: 0 }, 'and its late event changes nothing');
+});
+
+test('a place set from outside is never moved by a scroll still to be heard for the place before it', () => {
+  const el = fakeScroller({ heights: Array(100).fill(80), width: 674, height: 300 });
+  const host = { addController() {}, matches: () => false, querySelector: () => el };
+  const keep = new KeepScroll(host, { scroller: '.messages', items: '.bubble-row' });
+  keep.hostUpdated();
+  keep.onInput();
+  el.scrollTop = 50 * 80;
+  keep.record();
+  keep.onInput();
+  el.scrollTop = 48 * 80;
+  // Another conversation's place, or a message brought into view, is set before that scroll is heard.
+  keep.anchor = { key: 'm10', offset: 0 };
+  keep.restore();
+  assert.deepEqual(keep.anchor, { key: 'm10', offset: 0 });
+  assert.equal(el.scrollTop, 10 * 80, 'the place set is where the view goes');
+});
+
 test('window replacement releases evicted rows from resize observation (issue 394)', () => {
   const watched = new Set();
   const keep = new KeepScroll({ addController() {} }, {});

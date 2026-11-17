@@ -6,6 +6,30 @@ export const HISTORY_PAGE_SIZE = 50;
 export const HISTORY_MAX_MESSAGES = HISTORY_PAGE_SIZE * 3;
 export const HISTORY_CACHED_CHATS = 3;
 
+// How many loaded messages the reader is kept from either edge of the window, so the next page is asked for while they
+// are still about a page away and is in the window before they reach it. A page is fifty messages, but the window holds
+// three, so the lead leaves room for what is on screen and for the page that lands: once an older page lands and the
+// newest one is evicted, what is left below the screen is still at least the lead, so landing a page never asks for
+// the other side and the window never swings back and forth. Counted in messages, never pixels, so a picture or a text
+// size cannot change it.
+export function historyLead(visibleRows = 0) {
+  const room = Math.floor((HISTORY_MAX_MESSAGES - HISTORY_PAGE_SIZE - Math.max(0, visibleRows)) / 2);
+  return Math.max(1, Math.min(HISTORY_PAGE_SIZE, room));
+}
+
+// The page to ask for next, given where the reader is in the window: rowsAbove and rowsBelow are the loaded messages
+// wholly above and below the screen, visibleRows those on it, and asking the directions already being asked for, each of
+// which is asked for at most once at a time. A side with more history and fewer loaded messages than the lead is short;
+// when both are, the nearer edge goes first. null when the reader has a lead both ways.
+export function prefetchDirection(state, { rowsAbove = 0, rowsBelow = 0, visibleRows = 0, asking = [] } = {}) {
+  if (!state) return null;
+  const lead = historyLead(visibleRows);
+  const older = Boolean(state.hasOlder) && rowsAbove < lead && !asking.includes('older');
+  const newer = Boolean(state.hasNewer) && rowsBelow < lead && !asking.includes('newer');
+  if (older && newer) return rowsAbove <= rowsBelow ? 'older' : 'newer';
+  return older ? 'older' : newer ? 'newer' : null;
+}
+
 export function initialWindow(messages, { totalCount = messages.length, hasMore = false, estimate = 1 } = {}) {
   const held = messages.slice(-HISTORY_MAX_MESSAGES);
   const beforeCount = Math.max(hasMore ? HISTORY_PAGE_SIZE : 0, totalCount - held.length);

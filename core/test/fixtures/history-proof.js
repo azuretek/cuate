@@ -19,10 +19,38 @@ const pane = () => root().querySelector('app-conversation');
 const viewer = () => root().querySelector('app-image-viewer');
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const settle = async () => { await root().updateComplete; if (pane()) await pane().updateComplete; await frame(); await frame(); };
+// After a frame has been painted: a task queued from a frame callback runs once that frame's rendering is done, its resize
+// handling included, so what it reads is what the reader was shown rather than a layout caught before the keep put it
+// back. Ordered by frames, never by a clock.
+const painted = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+// A reading taken on painted frames until two in a row agree, so a picture landing in one frame (put back in the next)
+// is not mistaken for where the page settled. Bounded by the same deadline as every other wait here.
+async function steady(read, label) {
+  const deadline = performance.now() + 20000;
+  await painted();
+  let last = read();
+  for (;;) {
+    if (performance.now() > deadline) throw new Error('Timed out: ' + label + ' ' + JSON.stringify(last));
+    await painted();
+    const now = read();
+    if (now !== null && last !== null && Math.abs(now - last) < 0.5) return now;
+    last = now;
+  }
+}
 
 globalThis.historyProof = {
+  // The reader's walk (core/test/history-scroll-fixture.js, the same script the phones run): up past several evicted
+  // pages and back down to the newest message, every page landing only once the reader has read another screen, and
+  // every step asserting the messages coming into view were already loaded and nothing on screen moved.
+  async walk() {
+    await until(() => root()?.phase === 'ready', 'application ready');
+    return globalThis.historyWalk({ root: root(), chatId: '1', upTo: 400 });
+  },
   async history() {
     await until(() => root()?.phase === 'ready', 'application ready');
+    // The walk left the pages it read in the device's store, which would answer this loop's pages with no server read.
+    // The store starts again, so every page below is read from the server as on a fresh launch, which the race needs.
+    if (root().cache) await root().cache.reset(root().cache.cursor);
     await root().open('1', { show: true });
     await settle();
     const steps = [];
@@ -63,9 +91,10 @@ globalThis.historyProof = {
       const rows = [...pane().querySelectorAll('.messages > .bubble-row')];
       const target = rows[Math.min(25, rows.length - 1)];
       const scroll = pane().querySelector('.messages');
-      pane().keep.onInput();
-      scroll.scrollTop += target.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
-      pane().keep.record();
+      // Placed through the keep, as the app places a message, so the conversation reads it as its own placing rather
+      // than the reader scrolling, and this loop alone asks for each page.
+      pane().keep.anchor = { key: target.dataset.id, offset: 0 };
+      pane().keep.restore();
       const anchor = { ...pane().keep.anchor };
       // Failure-only diagnostics distinguish a stale keeper anchor from an extra page or an undrawn model.
       const position = () => {
@@ -92,8 +121,8 @@ globalThis.historyProof = {
       await settle();
       const held = [...pane().querySelectorAll('.messages > .bubble-row')].find((row) => row.dataset.id === anchor.key);
       assert(held, 'anchor retained while adjacent page loads ' + JSON.stringify({ anchor, asked, positioned, returned, after: after(), view: position(), steps }));
-      const drift = held.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
-      assert(Math.abs(drift) <= 1, 'scroll anchor drift: ' + drift);
+      const drift = (await steady(() => (held.isConnected ? held.getBoundingClientRect().top - scroll.getBoundingClientRect().top : null), 'the anchor to settle')) - anchor.offset;
+      assert(Math.abs(drift) <= 1, 'scroll anchor drift: ' + drift + ' ' + JSON.stringify({ anchor, positioned, returned, view: position(), steps: steps.slice(-2) }));
       maxRows = Math.max(maxRows, root().messages.length);
       maxObserved = Math.max(maxObserved, pane().keep.observed.size);
       assert(root().messages.length <= 150, 'resident messages bounded');
