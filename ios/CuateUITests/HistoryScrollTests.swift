@@ -14,8 +14,27 @@ final class HistoryScrollTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let verdict = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'scroll:'")).firstMatch
-        let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH 'scroll:pass' OR label BEGINSWITH 'scroll:fail'"), object: verdict)
-        _ = XCTWaiter().wait(for: [settled], timeout: 180)
+        // The fixture signs in, and signing in asks for notifications (issue 327). The question is answered here, the way
+        // LateNoticeTests answers it, so it is never left open when this test ends: the late notice test runs next, and in
+        // #536's iOS run 44017390960, with this one left open, its own sign-in timed out waiting to be told notifications
+        // were allowed.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let clearAlerts = {
+            for owner in [springboard, app] {
+                let alert = owner.alerts.firstMatch
+                guard alert.exists else { continue }
+                for name in ["Allow", "OK"] where alert.buttons[name].exists {
+                    alert.buttons[name].tap()
+                    break
+                }
+            }
+        }
+        let settled = NSPredicate { _, _ in
+            clearAlerts()
+            return verdict.exists && (verdict.label.hasPrefix("scroll:pass") || verdict.label.hasPrefix("scroll:fail"))
+        }
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 180)
+        clearAlerts()
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "history-scroll"
         shot.lifetime = .keepAlways
