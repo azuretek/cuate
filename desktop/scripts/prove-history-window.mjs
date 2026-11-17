@@ -68,11 +68,17 @@ app.whenReady().then(async () => {
     return new Response(content, { headers: { 'content-type': mime[path.extname(file)] || 'application/octet-stream' } });
   });
   win = new BrowserWindow({ show: true, width: 1000, height: 800, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
+  // The walk's live part (issue 537) asks for a message to arrive; the synthetic engine delivers it on its live stream.
+  win.webContents.on('console-message', (event, level, message) => {
+    const line = String(event?.message ?? message ?? '');
+    if (line.startsWith('history:arrive ')) server.world.incoming(1, JSON.parse(line.slice('history:arrive '.length)));
+  });
   await win.loadURL('app://bundle/core/app/index.html');
   for (const row of rows) for (const attachment of row.attachments) if (attachment.mime_type === 'video/mp4') copyFileSync(video, attachment.original_path);
   const walk = await win.webContents.executeJavaScript('globalThis.historyProof.walk()');
   assert.ok(walk.ok, 'the reader walked up past evicted pages and back down with every page loaded ahead');
-  console.log('HISTORY WALK ' + JSON.stringify({ steps: walk.steps, turn: walk.turn, end: walk.end, evicted: walk.evicted, older: walk.older, newer: walk.newer, minAhead: walk.minAhead, lead: walk.lead, minCover: walk.minCover, maxDrift: walk.maxDrift, maxRows: walk.maxRows }));
+  assert.ok(walk.live?.bothShown && !walk.live.banner, 'both live messages shown at the newest, with no old-engine banner (issue 537)');
+  console.log('HISTORY WALK ' + JSON.stringify({ steps: walk.steps, turn: walk.turn, end: walk.end, live: walk.live, evicted: walk.evicted, older: walk.older, newer: walk.newer, minAhead: walk.minAhead, lead: walk.lead, minCover: walk.minCover, maxDrift: walk.maxDrift, maxRows: walk.maxRows }));
   writeFileSync(path.join(output, 'walk.png'), (await win.capturePage()).toPNG());
   const history = await win.webContents.executeJavaScript('globalThis.historyProof.history()');
   writeFileSync(path.join(output, 'scrollback.png'), (await win.capturePage()).toPNG());

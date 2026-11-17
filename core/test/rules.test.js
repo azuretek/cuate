@@ -1102,3 +1102,22 @@ test('a group nobody named reads as its people by their contact names, an unknow
   assert.ok(contactSearchText(group).includes('grace example'));
   assert.ok(contactSearchText(group).includes('+15550100'));
 });
+
+// Issue 537 (reported live): the read receipt under our message read "Read 2026-11-17T04:07:30.121Z". It reads as a time,
+// the way the chat list does: the time alone today, and the day with the time otherwise.
+test('a read receipt says when, as a person reads a time, never the raw timestamp (issue 537)', () => {
+  const at = { now: Date.parse('2026-11-17T06:00:00Z'), locale: 'en-US', timeZone: 'America/Los_Angeles' };
+  const read = (readAt) => deliveryLabel(msg({ fromMe: true, readAt }), at);
+  assert.equal(read('2026-11-17T04:07:30.121Z'), 'Read 8:07 PM', 'today: the time alone');
+  assert.equal(read('2026-11-16T04:07:30.121Z'), 'Read Yesterday 8:07 PM');
+  assert.equal(read('2026-11-12T19:00:00.000Z'), 'Read Thursday 11:00 AM', 'this week: the day and the time');
+  assert.equal(read('2026-10-02T19:00:00.000Z'), 'Read Oct 2, 2026, 12:00 PM', 'earlier: the date and the time');
+  assert.ok(!read('2026-11-17T04:07:30.121Z').includes('2026-11-17T'), 'never the raw timestamp');
+  assert.equal(read('not a time'), 'Sent');
+  assert.ok(deliveryLabel(msg({ fromMe: true, readAt: '2026-11-17T04:07:30.121Z' })).startsWith('Read '), 'with no clock passed, still a time');
+});
+
+test('the conversation hands its clock to the read receipt (issue 537)', () => {
+  const conv = readFileSync(new URL('../app/components/app-conversation.js', import.meta.url), 'utf8');
+  assert.ok(conv.includes('deliveryLabel(m, { now, locale })'));
+});

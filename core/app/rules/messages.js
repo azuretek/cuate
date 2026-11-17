@@ -1,6 +1,7 @@
 // Pure: the conversation's rules.
 import { platformCapabilities, conversationPlatform, REACTION_GLYPHS } from './platform.js';
 import { compareHistory } from './history.js';
+import { formatReadTime } from './time.js';
 
 const GLYPHS = REACTION_GLYPHS;
 
@@ -271,14 +272,16 @@ export function groupMessages(messages, { gapMs = 3600000, runMs = 300000 } = {}
   return items;
 }
 
-export function deliveryLabel(m) {
+// The line under our own message. A read receipt says when as a person reads a time, never the raw timestamp (issue 537);
+// the clock (now, locale, time zone) is passed in, as every time rule here takes it.
+export function deliveryLabel(m, clock = {}) {
   if (!m.fromMe) return '';
   if (m.state === 'sending') return 'Sending\u2026';
   // The engine could not vouch for the send in time, but it was handed over and is never retried, so it is said as sent
   // and still on its way rather than as a failure; the confirmed message replaces it when it lands (2026-11-13).
   if (m.state === 'uncertain') return 'Sent, still going out';
   if (m.state === 'failed') return 'Not sent';
-  if (typeof m.readAt === 'string' && Number.isFinite(Date.parse(m.readAt))) return 'Read ' + m.readAt;
+  if (typeof m.readAt === 'string' && Number.isFinite(Date.parse(m.readAt))) return 'Read ' + formatReadTime(m.readAt, clock);
   return 'Sent';
 }
 

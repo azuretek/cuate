@@ -119,11 +119,17 @@ export function applyChangesToShown(messages, list, chatId) {
 
 // The held page just before a message, oldest first, for a conversation scrolled back: the store answers it without the
 // server while it holds older messages, and says whether more lie beyond.
-export function olderFromHeld(held, edgeId, size) {
+// With `cursors` (a window that pages by history cursor), the read stops at a held message with no cursor (issue 537):
+// one stored from the live stream before the server gave it one, which the server reads again with its cursor.
+export function olderFromHeld(held, edgeId, size, { cursors = false } = {}) {
   if (!held) return null;
   const i = held.messages.findIndex((m) => m.id === edgeId);
   if (i <= 0) return null;
   const from = Math.max(0, i - size);
+  if (cursors) {
+    const bare = held.messages.slice(from, i).findLastIndex((m) => !m.historyCursor);
+    if (bare >= 0) return { messages: held.messages.slice(from + bare + 1, i), hasMore: true };
+  }
   return { messages: held.messages.slice(from, i), hasMore: from > 0 || held.hasOlder };
 }
 

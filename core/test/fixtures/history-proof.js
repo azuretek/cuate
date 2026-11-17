@@ -44,7 +44,10 @@ globalThis.historyProof = {
   // every step asserting the messages coming into view were already loaded and nothing on screen moved.
   async walk() {
     await until(() => root()?.phase === 'ready', 'application ready');
-    return globalThis.historyWalk({ root: root(), chatId: '1', upTo: 400 });
+    // A live message is made to arrive by the real server's synthetic engine (issue 537): the proof's main process hears
+    // this line and has the engine deliver it, as imsg's live stream does.
+    const arrive = (k, text) => { console.log('history:arrive ' + JSON.stringify(text)); };
+    return globalThis.historyWalk({ root: root(), chatId: '1', upTo: 400, arrive });
   },
   async history() {
     await until(() => root()?.phase === 'ready', 'application ready');

@@ -91,7 +91,7 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
   // bridge's reply path, which has answered a threaded reply with the id of an existing message in the chat (issue 208),
   // so a test can prove the server does not report that message as the one it created.
   // edit: false models an engine whose bridge cannot edit a message, so status leaves message.edit out (issue 391).
-  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', edit: true, capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: tapbackEmoji ? { 'tapback.emoji': tapbackEmoji } : {} }, features, replyAnswer: 'own' };
+  const behavior = { send: 'ok', sendDelayMs: 0, afterDelayMs: 0, bridge: 'ready', edit: true, capabilities: capabilities ?? { engine: { version: 'fake-1.0', commit: 'fake', built_at: '1970-01-01T00:00:00.000Z' }, features: tapbackEmoji ? { 'tapback.emoji': tapbackEmoji } : {} }, features, replyAnswer: 'own', historyCursors: true };
   const tapbackEmojiVersion = () => {
     const v = behavior.capabilities.features ? behavior.capabilities.features['tapback.emoji'] : 0;
     return Number.isInteger(v) ? v : 0;
@@ -292,7 +292,18 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
     close() {},
   };
 
+  // The fake's stand-in for history-cursors.js (issue 537): of the row ids asked about, each one's cursor, the same string
+  // its history page gives it, since this engine's watch and messages.after carry none, as imsg's do not.
+  const historyCursors = {
+    among(rowids) {
+      const want = new Set((rowids || []).map(Number));
+      return new Map(messages.filter((m) => want.has(m.id)).map((m) => [m.id, historyCursorOf(m)]));
+    },
+    close() {},
+  };
+
   const world = {
+    historyCursors,
     sends,
     tapbacks,
     edits,
@@ -484,7 +495,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
               liveSent = true;
               setTimeout(() => { liveMessage = world.incoming(p.chat_id, liveText); }, liveDelayMs).unref();
             }
-            return reply(req.id, { messages: ms.map((m) => ({ ...withAttachments(m, p.attachments), history_cursor: cursor(m) })), has_more: hasMore });
+            // An engine older than history cursors (behavior.historyCursors false) puts none on its rows (issue 537).
+            return reply(req.id, { messages: ms.map((m) => (behavior.historyCursors ? { ...withAttachments(m, p.attachments), history_cursor: cursor(m) } : withAttachments(m, p.attachments))), has_more: hasMore });
           }
           case 'messages.after': {
             const since = Number.isFinite(p.since_rowid) ? p.since_rowid : 0;
@@ -496,7 +508,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
               if (out.length >= limit) break;
               next = m.id;
               if (m.is_reaction && !p.include_reactions) continue;
-              out.push({ ...withAttachments(m, p.attachments), history_cursor: historyCursorOf(m) });
+              // imsg's messages.after carries no history cursor (only messages.history does, issue 537), and neither does this.
+              out.push(withAttachments(m, p.attachments));
             }
             const page = { messages: out, next_rowid: next, has_more: rows.some((m) => m.id > next) };
             if (behavior.afterDelayMs > 0) { setTimeout(() => reply(req.id, page), behavior.afterDelayMs).unref(); return undefined; }
@@ -654,7 +667,8 @@ export function createFakeImsg({ attachmentsRoot, base = Date.now() - 60000, liv
           for (const [id, p] of subs) {
             if (m.is_reaction && !p.include_reactions) continue;
             if (p.chat_id && p.chat_id !== m.chat_id) continue;
-            out({ jsonrpc: '2.0', method: 'message', params: { subscription: id, message: { ...withAttachments(m, p.attachments), history_cursor: historyCursorOf(m) } } });
+            // The watch carries no history cursor in imsg either (issue 537): the server reads it from the store.
+            out({ jsonrpc: '2.0', method: 'message', params: { subscription: id, message: withAttachments(m, p.attachments) } });
           }
         },
         write(s) {

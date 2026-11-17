@@ -82,7 +82,7 @@ const omit = (o, keys) => {
 // client of ours has played, kept by the server ({ has(attachmentId) }), or null.
 // statusTimeoutMs: how long every status read waits, at start and in checkBridge. It outlasts imsg's bridge probe
 // (link.js), so a bridge that does not answer is reported as such and never keeps the engine from coming up (issue 528).
-export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, statusTimeoutMs = STATUS_TIMEOUT_MS, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null, services = null }) {
+export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs = 30000, sendTimeoutMs = 60000, statusTimeoutMs = STATUS_TIMEOUT_MS, typingIncoming = false, edits = null, backgrounds = null, richText = null, changes: changeReader = null, voices = null, heard = null, renames = null, members = null, sendEffects = null, services = null, historyCursors = null }) {
   // Every raw row becomes the model by the same step, so a payload is typed before it is mapped, whichever read it came
   // from.
   // Each group's picture is the latest group photo event the engine has read for it (issue 341), from the live stream, a
@@ -200,7 +200,32 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
   };
   // Every raw row passes the same marks before it is mapped, whichever read it came from.
-  const prepare = (rows) => markServices(markVoices(markSendEffects(markRichText(markStoreEvents(rows)))));
+  // Every message carries the history cursor a history page would give it (issue 537): imsg adds one only to a history
+  // page, so a row from the live watch or the changes lane is given its cursor from the store, in one read. A store that
+  // cannot be read leaves the rows as they came, and says so.
+  // Only an engine that pages by cursor is given them. imsg advertises no capability for it (its block names only
+  // tapback.emoji), so the engine's own history answer says: a build that pages by cursor puts history_cursor on every
+  // history row, and an older build puts none, so its client still sees no cursor and says to update the engine rather
+  // than holding one the engine would ignore. Unknown until the first history page with rows answers; probeCursors
+  // asks for one as the engine comes up.
+  let cursorPaging = null;
+  const learnCursors = (rows) => {
+    const list = Array.isArray(rows) ? rows.filter((m) => m && !m.is_reaction) : [];
+    if (list.length) cursorPaging = list.every((m) => typeof m.history_cursor === 'string' && m.history_cursor.length > 0);
+  };
+  const markCursors = (rows) => {
+    const asked = historyCursors && cursorPaging === true ? rows.filter((m) => m && !m.history_cursor && Number.isSafeInteger(m.id) && m.id > 0) : [];
+    if (!asked.length) return rows;
+    try {
+      const found = historyCursors.among(asked.map((m) => m.id));
+      if (!found.size) return rows;
+      return rows.map((m) => (m && !m.history_cursor && found.has(m.id) ? { ...m, history_cursor: found.get(m.id) } : m));
+    } catch (e) {
+      log.emit('cursor.failed', { error: failure(e) });
+      return rows;
+    }
+  };
+  const prepare = (rows) => markCursors(markServices(markVoices(markSendEffects(markRichText(markStoreEvents(rows))))));
   // Each chat's backdrop, as the engine reports it, kept against the background event it followed so a chat is asked
   // again only when its background has changed since.
   const backdrops = new Map();
@@ -429,6 +454,8 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
       const t = makeTransport();
       const rpc = createRpc({ transport: t, timeoutMs });
       const c = { transport: t, rpc, gen: my, alive: true, startedAt: Date.now() };
+      // A new engine process may be another build, so whether it pages by cursor is learned again.
+      cursorPaging = null;
       current = c;
       t.onExit((e) => { if (current === c) onExit(e, c); });
       rpc.onNotification(onNotification);
@@ -463,6 +490,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     markReady(ready);
     log.emit('engine.start', { kind, version: state.version, ready, edit: canEdit });
     if (ready) primeEdits();
+    if (ready && historyCursors && cursorPaging === null) await probeCursors().catch(() => {});
     // Present and OFF by default (issue 230): the only source of another person typing is the bridge, which the Mac care
     // opens Messages with and relaunches when it stops answering. The switch, and the engine advertising the method,
     // must both be on.
@@ -551,12 +579,23 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     return list;
   }
 
+  // One history row of the newest chat, read as the engine comes up, so the first live message already knows whether
+  // this engine pages by cursor (markCursors). A failure leaves it unknown, and the next history page decides.
+  async function probeCursors() {
+    const ms = Math.min(timeoutMs, 5000);
+    const r = await request('chats.list', { limit: 1 }, ms);
+    const chat = r && Array.isArray(r.chats) ? r.chats[0] : null;
+    if (!chat || cursorPaging !== null) return;
+    learnCursors((await request('messages.history', { chat_id: Number(chat.id), limit: 5 }, ms))?.messages);
+  }
+
   async function messages(chatId, { limit = 50, before = null, beforeCursor = null, afterCursor = null, includeTotal = false } = {}) {
     const params = { chat_id: Number(chatId), limit: limit + 2, attachments: true };
     if (before) params.end = before;
     if (beforeCursor) params.before_cursor = beforeCursor;
     if (afterCursor) params.after_cursor = afterCursor;
     const r = await request('messages.history', params, timeoutMs, ['attachments']);
+    learnCursors(r && r.messages);
     let list = prepare((r && Array.isArray(r.messages) ? r.messages : []).filter((m) => !m.is_reaction)).map((m) => toModel(m));
     if (before) list = list.filter((m) => m.sentAt < before);
     list.sort((a, b) => afterCursor ? compareHistory(a, b) : compareHistory(b, a));
@@ -708,7 +747,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
     const want = chats && chats.size ? (id) => chats.has(String(id)) : () => true;
     const r = await request('messages.after', { since_rowid: from.rowid, limit, attachments: true, include_reactions: true }, timeoutMs, ['attachments', 'include_reactions']);
-    const rows = markStoreEvents(r && Array.isArray(r.messages) ? r.messages : []);
+    const rows = markCursors(markStoreEvents(r && Array.isArray(r.messages) ? r.messages : []));
     const rowid = r && Number.isFinite(r.next_rowid) ? r.next_rowid : from.rowid;
     const taken = changeReader.unsentAmong(rows.filter((m) => !m.is_reaction).map((m) => String(m.guid)));
     const messages = markEdited(rows.filter((m) => !m.is_reaction && !taken.has(String(m.guid))).map((m) => toModel(m)).filter((m) => want(m.chatId)));
@@ -867,6 +906,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     stopping = true;
     try { edits?.close?.(); } catch { /* already closed */ }
     try { sendEffects?.close?.(); } catch { /* already closed */ }
+    try { historyCursors?.close?.(); } catch { /* already closed */ }
     try { changeReader?.close?.(); } catch { /* already closed */ }
     try { voices?.close?.(); } catch { /* already closed */ }
     try { members?.close?.(); } catch { /* already closed */ }
