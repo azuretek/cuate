@@ -18,6 +18,7 @@ const allowed = [
   { file: 'ContactEditorTests.swift', line: 'alert.buttons[label].tap()', why: 'the Contacts permission alert is SpringBoard\'s and may never come; it is answered wherever it lands while the step waits for the card, and no state follows from it for a step to wait on' },
   { file: 'ContactEditorTests.swift', line: 'if full.exists && full.isHittable { full.tap() }', why: 'the system\'s full access choice that follows that alert on newer iOS, answered the same way' },
   { file: 'LateNoticeTests.swift', line: 'alert.buttons[name].tap()', why: 'the notification permission and icon change alerts are SpringBoard\'s or the system\'s, may never come, and are answered wherever they land while the test waits for other state' },
+  { file: 'HistoryScrollTests.swift', line: 'alert.buttons[name].tap()', why: 'the notification permission alert the walk\'s sign-in raises is SpringBoard\'s and may never come; it is answered wherever it lands while the test waits for the walk\'s verdict, so it is never left open for the next test (issue 535)' },
 ];
 
 // A tap, double tap or long press made by XCTest, on an element or a coordinate. A drag (press then drag to) is a

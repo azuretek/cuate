@@ -43,6 +43,11 @@ export class KeepScroll {
     this.shape = null;
     // The scrollTop this controller last wrote, so the scroll event that write raises is never read as the person's.
     this.written = null;
+    // The scrollTop this controller last heard or wrote, and the place it held then. A view that has moved since has a
+    // scroll event still on its way, which restore() hears first (see there). A place set from outside (another
+    // conversation's, a message brought into view) is not the one that position was heard with, so it is never moved by it.
+    this.known = null;
+    this.heardAnchor = null;
     // When the person last touched the view: a wheel, a touch, a key or a press on it (its scrollbar included). A view
     // that follows its newest item leaves its end only for the person, never for a layout that moved under it.
     this.touched = 0;
@@ -97,6 +102,7 @@ export class KeepScroll {
   }
 
   detach() {
+    this.known = null;
     if (!this.el) return;
     this.el.removeEventListener('scroll', this.onScroll);
     for (const type of INPUTS) this.el.removeEventListener(type, this.onInput);
@@ -139,8 +145,17 @@ export class KeepScroll {
   // the scroll was taken for the person's. That is how a conversation at its newest message came to rest a screen or
   // more above it: the end was traded for whatever message happened to be at the top. The person scrolling always
   // moves the view off the value written here.
+  //
+  // The person's scroll moves the place by exactly how far the view scrolled since it was last heard. Anything else that
+  // changed in that moment is layout: a picture above the place that grew as it loaded, in the frame between the scroll
+  // and its event, would otherwise be read as part of the scroll, and what the person sees would jump by its height. So
+  // the place is moved by the scroll alone, the view is put where that place says, and only then is the place said
+  // again from the item now at the top.
   record() {
     if (!this.el) return;
+    const previous = this.anchor === this.heardAnchor ? this.known : null;
+    this.known = this.el.scrollTop;
+    this.heardAnchor = this.anchor;
     if (this.shape !== null && shapeOf(this.el) !== this.shape) return;
     if (this.written !== null && Math.abs(this.el.scrollTop - this.written) < 1) return;
     // A view at its end stays there until the person moves it. The browser clamps a view whose content shrank (a row
@@ -154,17 +169,41 @@ export class KeepScroll {
     this.written = null;
     const now = this.measure();
     if (this.anchor && Math.abs(scrollFor(this.anchor, now) - now.scrollTop) < 1) return;
+    const anchor = this.anchor;
+    if (anchor && anchor.key != null && previous !== null && now.items.some((it) => String(it.key) === anchor.key)) {
+      const next = scrollFor({ key: anchor.key, offset: anchor.offset - (now.scrollTop - previous) }, now);
+      if (Math.abs(next - now.scrollTop) >= 1) {
+        this.el.scrollTop = next;
+        this.written = this.el.scrollTop;
+        this.known = this.written;
+      }
+      this.anchor = anchorFrom({ ...this.measure(), follow: this.follow });
+      this.heardAnchor = this.anchor;
+      return;
+    }
     this.anchor = anchorFrom({ ...now, follow: this.follow });
+    this.heardAnchor = this.anchor;
   }
 
+  // A view the person moved since this controller last heard it has a scroll event still on its way: the browser delivers
+  // it at the next frame, and a resize (a picture growing as it loads) can be handled before it. Putting the view back
+  // to the place it had then would undo the person's scroll, so their move is heard first, as that event would have
+  // been. Only the person's: a move with no input of theirs just before, or one that left the view clamped at its end
+  // because what it holds grew shorter, is layout, and the place stays.
   restore() {
     if (!this.el || !this.el.isConnected || !this.anchor) return;
+    const el = this.el;
+    const moved = this.known !== null && this.anchor === this.heardAnchor && Math.abs(el.scrollTop - this.known) >= 1;
+    if (moved && Date.now() - this.touched <= PERSON_MS && el.scrollTop < el.scrollHeight - el.clientHeight - 1) this.record();
+    if (!this.anchor) return;
     const next = scrollFor(this.anchor, this.measure());
     if (Math.abs(next - this.el.scrollTop) >= 1) {
       this.el.scrollTop = next;
       // Where the view actually landed, which a view too short to reach the place clamps.
       this.written = this.el.scrollTop;
     }
+    this.known = this.el.scrollTop;
+    this.heardAnchor = this.anchor;
     this.shape = shapeOf(this.el);
     this.reveal();
   }

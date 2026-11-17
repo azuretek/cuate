@@ -3577,11 +3577,16 @@ async function runSmoke(w) {
   await pause(300);
   report.aboutRowGap = await js("(() => { const panel = document.querySelector('app-settings .sheet-section:not([hidden])'); const row = panel && panel.querySelector('.settings-about-row'); const prev = row && row.previousElementSibling; if (!prev) return null; return Math.round(row.getBoundingClientRect().top - prev.getBoundingClientRect().bottom); })()");
   const settingsRest = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
-  const sampleSheets = "(() => { window.__frames = []; const t0 = performance.now(); const tick = () => { const a = document.querySelector('.sheet[data-view=about]'); const s = document.querySelector('.sheet[data-view=settings]'); const ar = a && a.getBoundingClientRect(); const sr = s && s.getBoundingClientRect(); window.__frames.push({ t: Math.round(performance.now() - t0), about: ar ? Math.round(ar.top) : null, aboutH: ar ? Math.round(ar.height) : null, settings: sr ? Math.round(sr.top) : null, settingsW: sr ? Math.round(sr.width) : null }); if (performance.now() - t0 < 1600) requestAnimationFrame(tick); }; requestAnimationFrame(tick); return true; })()";
-  await js(sampleSheets);
-  await js("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()");
-  await pause(1700);
-  const riseFrames = await js('window.__frames');
+  // Each sheet motion is read on its own clock, never on whatever frames the runner happens to draw (issue 535): the press
+  // and the render it asks for run in one evaluation, before any frame, and the motions that render started (the card
+  // arriving or leaving, the card under it sliding, their dims; never a finished one an earlier arrival left, which
+  // would be sought back too) are paused and stepped from their start to their end,
+  // each step read where the cards are drawn. An Intel runner once drew no frame for 430 ms around a 350 ms motion and
+  // the check saw nothing move; stepped this way the motion is read as designed on any runner. The motions then play
+  // out, so a departure still ends on its own animationend, as it does for a person.
+  const seekSheets = (press) => '(async () => { const root = document.querySelector("app-root"); ' + press + '; await root.updateComplete; for (const el of document.querySelectorAll("app-sheet, app-about, app-settings")) await el.updateComplete; const scrims = [...document.querySelectorAll(".sheet-scrim")]; const motions = document.getAnimations().filter((m) => m.playState !== "finished" && m.effect && m.effect.target && scrims.some((s) => s.contains(m.effect.target))); for (const m of motions) m.pause(); const end = Math.max(0, ...motions.map((m) => m.effect.getComputedTiming().endTime)); const read = (t) => { const a = document.querySelector(".sheet[data-view=about]"); const s = document.querySelector(".sheet[data-view=settings]"); const ar = a && a.getBoundingClientRect(); const sr = s && s.getBoundingClientRect(); return { t: Math.round(t), about: ar ? Math.round(ar.top) : null, aboutH: ar ? Math.round(ar.height) : null, settings: sr ? Math.round(sr.top) : null, settingsW: sr ? Math.round(sr.width) : null }; }; const frames = []; for (let i = 0; i <= 24; i += 1) { const t = end * i / 24; for (const m of motions) m.currentTime = t; frames.push(read(t)); } for (const m of motions) m.play(); return frames; })()';
+  const riseFrames = await js(seekSheets("document.querySelector('app-settings .sheet-section:not([hidden]) [data-action=about]').click()"));
+  await waitFor("Boolean(document.querySelector('.sheet[data-view=about]')) && !document.getAnimations().some((m) => m.playState === 'running' && m.effect && m.effect.target && m.effect.target.closest && m.effect.target.closest('.sheet-scrim'))", 5000);
   const riseSeen = riseFrames.filter((f) => f.about !== null);
   const aboutRest = riseSeen[riseSeen.length - 1];
   const vh = await js('window.innerHeight');
@@ -3592,10 +3597,9 @@ async function runSmoke(w) {
   const settingsOut = riseFrames.filter((f) => f.settings !== null);
   report.settingsSlidesDown = settingsDown >= vh - 2 && settingsOut.every((f, i) => i === 0 || f.settings >= settingsOut[i - 1].settings - 1) && new Set(settingsOut.map((f) => f.settingsW)).size === 1;
   if (!report.aboutRises || !report.settingsSlidesDown) console.error('about rises: ' + JSON.stringify({ settingsRest, settingsDown, vh, frames: riseFrames.slice(0, 50) }));
-  await js(sampleSheets);
-  await js("document.querySelector('app-about .sheet-back').click()");
-  await pause(1700);
-  const backFrames = await js('window.__frames');
+  const backFrames = await js(seekSheets("document.querySelector('app-about .sheet-back').click()"));
+  await waitFor("!document.querySelector('.sheet[data-view=about]')", 5000);
+  const settingsBack = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
   const lastAbout = backFrames.reduce((at, f, i) => (f.about !== null ? i : at), -1);
   const back = backFrames.filter((f) => f.settings !== null);
   // One motion: Settings is already on its way up while About is still drawn, it only ever moves up, it arrives where
@@ -3603,9 +3607,9 @@ async function runSmoke(w) {
   const upEarly = backFrames.slice(0, lastAbout + 1).some((f) => f.settings !== null && f.settings < settingsDown - 20);
   const onlyUp = back.every((f, i) => i === 0 || f.settings <= back[i - 1].settings + 1);
   const stillAfter = backFrames.slice(lastAbout + 1).every((f) => f.settings === null || Math.abs(f.settings - settingsRest) <= 1);
-  report.aboutBackSmooth = lastAbout >= 0 && upEarly && onlyUp && stillAfter && new Set(back.map((f) => f.settingsW)).size === 1;
+  report.aboutBackSmooth = lastAbout >= 0 && upEarly && onlyUp && stillAfter && Math.abs(settingsBack - settingsRest) <= 1 && new Set(back.map((f) => f.settingsW)).size === 1;
   await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: motionWas }] });
-  if (!report.aboutBackSmooth) console.error('about back: ' + JSON.stringify({ settingsRest, settingsDown, lastAbout, upEarly, onlyUp, stillAfter, frames: backFrames.slice(0, 60) }));
+  if (!report.aboutBackSmooth) console.error('about back: ' + JSON.stringify({ settingsRest, settingsDown, settingsBack, lastAbout, upEarly, onlyUp, stillAfter, frames: backFrames.slice(0, 60) }));
   await waitFor("!document.querySelector('app-about')", 5000);
   await pause(300);
 
@@ -3698,16 +3702,17 @@ async function runSmoke(w) {
   await pause(300);
   const deskVh = await js('window.innerHeight');
   const deskUnder = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
-  await js(sampleSheets);
-  await js("document.querySelector('app-about .sheet-back').click()");
-  await pause(1700);
-  const deskFrames = await js('window.__frames');
+  const deskFrames = await js(seekSheets("document.querySelector('app-about .sheet-back').click()"));
+  await waitFor("!document.querySelector('.sheet[data-view=about]')", 5000);
+  // Once About has gone nothing moves: Settings reads the same on a later frame as it did when About left.
+  const deskAfter = await js("Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)");
+  const deskStill = await js("new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(Math.round(document.querySelector('.sheet[data-view=settings]').getBoundingClientRect().top)))))");
   const deskLast = deskFrames.reduce((at, f, i) => (f.about !== null ? i : at), -1);
   const deskBack = deskFrames.filter((f) => f.settings !== null);
   const deskRest = deskBack.length ? deskBack[deskBack.length - 1].settings : null;
-  report.aboutBackDesktop = deskUnder >= deskVh - 2 && deskLast >= 0 && deskFrames.slice(0, deskLast + 1).some((f) => f.settings !== null && f.settings < deskUnder - 20) && deskBack.every((f, i) => i === 0 || f.settings <= deskBack[i - 1].settings + 1) && deskFrames.slice(deskLast + 1).every((f) => f.settings === null || Math.abs(f.settings - deskRest) <= 1) && new Set(deskBack.map((f) => f.settingsW)).size === 1;
+  report.aboutBackDesktop = deskUnder >= deskVh - 2 && deskLast >= 0 && deskFrames.slice(0, deskLast + 1).some((f) => f.settings !== null && f.settings < deskUnder - 20) && deskBack.every((f, i) => i === 0 || f.settings <= deskBack[i - 1].settings + 1) && deskFrames.slice(deskLast + 1).every((f) => f.settings === null || Math.abs(f.settings - deskRest) <= 1) && Math.abs(deskStill - deskAfter) <= 1 && new Set(deskBack.map((f) => f.settingsW)).size === 1;
   await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: deskMotionWas }] });
-  if (!report.aboutBackDesktop) console.error('about back desktop: ' + JSON.stringify({ deskVh, deskUnder, deskLast, frames: deskFrames.slice(0, 60) }));
+  if (!report.aboutBackDesktop) console.error('about back desktop: ' + JSON.stringify({ deskVh, deskUnder, deskLast, deskAfter, deskStill, frames: deskFrames.slice(0, 60) }));
   report.aboutBack = await waitFor("Boolean(document.querySelector('app-settings [data-close=sheet]')) && !document.querySelector('app-about') && document.querySelectorAll('.sheet').length === 1 && document.querySelector('.sheet').getAttribute('aria-label') === 'Settings'", 10000).then(() => true, () => false);
   // Back from About lands on the About tab it was opened from, not on the first tab.
   // Back from About returns to the tab the row was on (issue 244), here the last tab.
