@@ -60,16 +60,20 @@ app.whenReady().then(async () => {
   protocol.handle('app', (request) => {
     const url = new URL(request.url);
     if (url.host !== 'bundle') return new Response('not found', { status: 404 });
-    if (url.pathname === '/proof-bridge.js') return new Response('window.bridge = { call: async (name, args) => name === "storage.get" ? (' + JSON.stringify(storage) + ')[args.key] : name === "app.info" ? ' + JSON.stringify({ platform: process.platform }) + ' : false, on: () => () => {} };', { headers: { 'content-type': 'text/javascript' } });
+    if (url.pathname === '/proof-bridge.js') return new Response('globalThis.historyWalkHosted = true; window.bridge = { call: async (name, args) => name === "storage.get" ? (' + JSON.stringify(storage) + ')[args.key] : name === "app.info" ? ' + JSON.stringify({ platform: process.platform }) + ' : false, on: () => () => {} };', { headers: { 'content-type': 'text/javascript' } });
     const file = path.resolve(root, decodeURIComponent(url.pathname).replace(/^\/+/, ''));
     if (!file.startsWith(root + path.sep) || !existsSync(file)) return new Response('not found', { status: 404 });
     let content = readFileSync(file);
-    if (url.pathname === '/core/app/index.html') content = content.toString().replace('<script type="module" src="main.js"></script>', '<script src="/proof-bridge.js"></script><script type="module" src="main.js"></script><script type="module" src="/core/test/fixtures/history-proof.js"></script>');
+    if (url.pathname === '/core/app/index.html') content = content.toString().replace('<script type="module" src="main.js"></script>', '<script src="/proof-bridge.js"></script><script src="/core/test/history-scroll-fixture.js"></script><script type="module" src="main.js"></script><script type="module" src="/core/test/fixtures/history-proof.js"></script>');
     return new Response(content, { headers: { 'content-type': mime[path.extname(file)] || 'application/octet-stream' } });
   });
   win = new BrowserWindow({ show: true, width: 1000, height: 800, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
   await win.loadURL('app://bundle/core/app/index.html');
   for (const row of rows) for (const attachment of row.attachments) if (attachment.mime_type === 'video/mp4') copyFileSync(video, attachment.original_path);
+  const walk = await win.webContents.executeJavaScript('globalThis.historyProof.walk()');
+  assert.ok(walk.ok, 'the reader walked up past evicted pages and back down with every page loaded ahead');
+  console.log('HISTORY WALK ' + JSON.stringify({ steps: walk.steps, turn: walk.turn, end: walk.end, evicted: walk.evicted, older: walk.older, newer: walk.newer, minAhead: walk.minAhead, lead: walk.lead, minCover: walk.minCover, maxDrift: walk.maxDrift, maxRows: walk.maxRows }));
+  writeFileSync(path.join(output, 'walk.png'), (await win.capturePage()).toPNG());
   const history = await win.webContents.executeJavaScript('globalThis.historyProof.history()');
   writeFileSync(path.join(output, 'scrollback.png'), (await win.capturePage()).toPNG());
   const press = { x: history.click.x, y: history.click.y };
@@ -88,7 +92,7 @@ app.whenReady().then(async () => {
   assert.ok(media.some((entry) => entry.kind === 'image'));
   assert.ok(Number(media.at(-1).messageId.split('-').at(-1)) > 500, 'viewer crosses beyond the resident message window');
   writeFileSync(path.join(output, 'media.png'), (await win.capturePage()).toPNG());
-  const result = { history, media, passed: true };
+  const result = { walk, history, media, passed: true };
   writeFileSync(path.join(output, 'report.json'), JSON.stringify(result, null, 2));
   console.log('HISTORY PROOF ' + JSON.stringify(result));
   win.destroy(); await closeServer(); removeProfile();

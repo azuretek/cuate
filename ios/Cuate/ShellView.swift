@@ -184,6 +184,13 @@ struct ShellWebView: UIViewRepresentable {
            let source = try? String(contentsOf: url, encoding: .utf8) {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
+        // The history scroll fixture (issue 535), the same seam: Debug only. It signs the real page in to a stand-in
+        // server and walks a long conversation up past evicted pages and back down, every page loaded ahead of the reader.
+        if ProcessInfo.processInfo.arguments.contains("--history-scroll-fixture"),
+           let url = Bundle.main.url(forResource: "history-scroll-fixture", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         // The audio fixture (issue 432), the same seam: Debug only, and its script and its synthetic recording are
         // copied into test builds only.
         if ProcessInfo.processInfo.arguments.contains("--audio-fixture"),

@@ -284,6 +284,7 @@ var engine = (() => {
     hasTones: () => hasTones,
     hideChats: () => hideChats,
     historyCursor: () => historyCursor,
+    historyLead: () => historyLead,
     holdable: () => holdable,
     holdsAfter: () => holdsAfter,
     holdsMedia: () => holdsMedia,
@@ -400,6 +401,7 @@ var engine = (() => {
     platformThreadUnsupported: () => platformThreadUnsupported,
     playsInPlace: () => playsInPlace,
     policy: () => policy,
+    prefetchDirection: () => prefetchDirection,
     pressOutside: () => pressOutside,
     previewKind: () => previewKind,
     progressFor: () => progressFor,
@@ -3801,6 +3803,18 @@ var engine = (() => {
   var HISTORY_PAGE_SIZE = 50;
   var HISTORY_MAX_MESSAGES = HISTORY_PAGE_SIZE * 3;
   var HISTORY_CACHED_CHATS = 3;
+  function historyLead(visibleRows = 0) {
+    const room = Math.floor((HISTORY_MAX_MESSAGES - HISTORY_PAGE_SIZE - Math.max(0, visibleRows)) / 2);
+    return Math.max(1, Math.min(HISTORY_PAGE_SIZE, room));
+  }
+  function prefetchDirection(state, { rowsAbove = 0, rowsBelow = 0, visibleRows = 0, asking = [] } = {}) {
+    if (!state) return null;
+    const lead = historyLead(visibleRows);
+    const older = Boolean(state.hasOlder) && rowsAbove < lead && !asking.includes("older");
+    const newer = Boolean(state.hasNewer) && rowsBelow < lead && !asking.includes("newer");
+    if (older && newer) return rowsAbove <= rowsBelow ? "older" : "newer";
+    return older ? "older" : newer ? "newer" : null;
+  }
   function initialWindow(messages, { totalCount = messages.length, hasMore = false, estimate = 1 } = {}) {
     const held = messages.slice(-HISTORY_MAX_MESSAGES);
     const beforeCount = Math.max(hasMore ? HISTORY_PAGE_SIZE : 0, totalCount - held.length);
