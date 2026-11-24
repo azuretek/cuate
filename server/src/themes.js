@@ -5,7 +5,7 @@
 //
 // A tweakcn theme PAGE (the editor, /editor/theme?theme=<name>, or a shared theme, /themes/<id>) is an HTML page, not
 // the theme. Its theme lives in tweakcn's registry on the same site (/r/themes/<name>.json), so a page URL is read from
-// there; that is the link people copy from the browser, and the one the owner pasted (issue 132). The theme's type is
+// there; that is the link people copy from the browser, and the one pasted in issue 132. The theme's type is
 // fetched too (theme-fonts.js), so the theme's fonts draw rather than only being named.
 import { importTheme, importSummary, addTheme } from '../../core/app/rules/theme.js';
 

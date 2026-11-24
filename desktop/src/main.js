@@ -3563,7 +3563,7 @@ async function runSmoke(w) {
   // (issues 244, 253): open it with the last tab in force, so the way back can be checked to land there.
   await showTab('device');
 
-  // The way into About and back out, at a phone's width (the owner, 2026-10-12, 2026-10-13): the About row sits apart from
+  // The way into About and back out, at a phone's width (2026-10-12, 2026-10-13): the About row sits apart from
   // the section above it, About rises from the bottom edge while the Settings card slides down out of the way, and the
   // back press slides Settings straight back up while About goes down: one travel each way, never a resize, and
   // nothing moving once About has gone. Every frame is sampled where each card is drawn.
@@ -4309,7 +4309,7 @@ async function runSmoke(w) {
   // default theme and the imported one, capturing each and probing the conversation for the ways a large size breaks
   // it: anything running past the window, a control whose target is under 36px, a header that has grown taller, and a
   // scroll area with content behind it. The findings are RECORDED per stop, never hidden by a smaller ceiling: 300 is
-  // under test and the ceiling is the owner's to choose.
+  // under test and the ceiling is the operator's to choose.
   await js("(() => { const r = document.querySelector('app-root'); if (r.sheetShowing) r.closeView(); if (r.listOpen && r.openChatId) r.listOpen = false; return true; })()");
   await waitFor("!document.querySelector('.sheet')", 8000).catch(() => {});
   await pause(300);

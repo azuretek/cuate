@@ -1,4 +1,4 @@
-/* The surface roles (issue 217, the "chart colours" direction the owner chose). Every surface the eye has to separate
+/* The surface roles (issue 217, the chosen "chart colours" direction). Every surface the eye has to separate
    reads one role here, and a role is only a pointer at a palette token the theme carries, so an imported theme
    restyles every surface and this block is the one place the direction lives. The theme's chart colours finally earn
    their place: avatars cycle through chart-1 to chart-5, notices and our own sent bubbles take a chart-2 tint, the sort,

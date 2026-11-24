@@ -36,7 +36,7 @@ test('chats order newest first and read well', () => {
   assert.equal(chatTitle(chats[1]), 'x@example.com and y@example.com');
   // A group nobody has named arrives with the chat identifier as its name, and read as a machine string in the list
   // instead of the people in it (issue #80). A named group keeps its name.
-  assert.equal(chatTitle({ id: 'x', name: 'chat323392484988469066', isGroup: true, participants: ['Carlos Doe', 'Beth Doe', 'Alice Brief'] }), 'Carlos Doe, Beth Doe and 1 other');
+  assert.equal(chatTitle({ id: 'x', name: 'chat123456789012345678', isGroup: true, participants: ['Jordan Vega', 'Riley Vega', 'Casey Lin'] }), 'Jordan Vega, Riley Vega and 1 other');
   assert.equal(chatTitle({ id: 'x', name: 'chat500000001', isGroup: true, participants: ['Avery Quinn', 'Reign'] }), 'Avery Quinn and Reign');
   assert.equal(chatTitle({ id: 'x', name: 'Weekend plans', isGroup: true, participants: ['Avery Quinn'] }), 'Weekend plans');
   assert.equal(chatTitle({ id: 'x', name: 'chat500000001', isGroup: true, participants: [] }), 'Group chat');
