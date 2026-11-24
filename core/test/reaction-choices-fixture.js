@@ -1,4 +1,4 @@
-// Injected only by native test builds, and run by the desktop smoke (issue 533, the owner 2026-11-16). React offers exactly
+// Injected only by native test builds, and run by the desktop smoke (issue 533, 2026-11-16). React offers exactly
 // what a conversation can carry, and a reaction that arrives as text shows as a reaction. The real conversation is drawn
 // in this shell's own web view for four synthetic conversations: SMS and RCS, which carry the six classic reactions, the
 // message service with an engine that sends any emoji, and the message service with an engine that sends only the six.

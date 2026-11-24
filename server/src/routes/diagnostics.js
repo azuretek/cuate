@@ -1,6 +1,6 @@
 // The status a person reads when something is wrong: the server's build stamp, the engine link and whether the
 // Messages database is readable, the sending switch, the counters for the quiet failures and the last error. It
-// answers to a reading token, because it is the server the owner already owns and the same facts a log line carries.
+// answers to a reading token, because it is a server already owned and the same facts a log line carries.
 export default {
   id: 'diagnostics',
   handle({ res, json, diagnostics, engine, contacts, naming, serverVersion, serverChannel, serverBuild, serverCommit, serverBuiltAt, platform, config, epoch }) {
