@@ -4,6 +4,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { parse, stringify } from 'yaml';
 import { classify, changedFiles } from '../../scripts/release/changes.mjs';
 import { versionOf } from '../../scripts/release/version.mjs';
@@ -32,9 +33,46 @@ test('diff includes deletions and both sides of renames, dispatch uses release r
   const calls = [];
   const git = (args) => { calls.push(args); return args[0] === 'tag' ? 'v0.1.1-dev.4.abcdef0123\n' : 'desktop/deleted.js\0docs/a.md\0'; };
   assert.deepEqual(changedFiles({ GITHUB_EVENT_NAME: 'push', GITHUB_EVENT_BEFORE: sha }, git), ['desktop/deleted.js', 'docs/a.md']);
-  assert.ok(calls[0].includes('--no-renames'));
+  assert.ok(calls.find((args) => args[0] === 'diff').includes('--no-renames'));
   changedFiles({ GITHUB_EVENT_NAME: 'workflow_dispatch' }, git);
   assert.ok(calls.at(-1).includes('v0.1.1-dev.4.abcdef0123'));
+});
+test('a push base the history rewrite removed counts every file instead of failing', () => {
+  // 2026-11-24: after a history rewrite, github.event.before named a commit the
+  // remote no longer had, git diff died with 'fatal: bad object' and the test
+  // release failed in prepare. A missing base is fetched once, then treated as no base.
+  const calls = [];
+  const git = (args) => {
+    calls.push(args);
+    if (args[0] === 'cat-file' || args[0] === 'fetch') throw new Error('fatal: bad object');
+    if (args[0] === 'diff') throw new Error('diff must not run against a missing base');
+    return 'core/app/main.js\0docs/a.md\0';
+  };
+  assert.deepEqual(changedFiles({ GITHUB_EVENT_NAME: 'push', GITHUB_EVENT_BEFORE: sha }, git), ['core/app/main.js', 'docs/a.md']);
+  assert.deepEqual(calls.map((args) => args[0]), ['cat-file', 'fetch', 'cat-file', 'ls-tree']);
+});
+test('the real git answers a missing base with every file and a present one with its diff', (t) => {
+  // Real git in a scratch repository with no remote, so the one fetch fails at
+  // once, as it does for a commit the remote dropped.
+  const repo = mkdtempSync(path.join(os.tmpdir(), 'release-rewrite-'));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  // Without git's own variables: a git hook runs this suite with GIT_DIR and
+  // GIT_INDEX_FILE set for the repository being pushed, and git here would write into it.
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
+  const env = { ...inherited, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (args) => execFileSync('git', args, { cwd: repo, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  git(['init', '-q']);
+  mkdirSync(path.join(repo, 'core'));
+  writeFileSync(path.join(repo, 'core', 'a.js'), '1\n');
+  git(['add', '.']);
+  git(['commit', '-q', '-m', 'one']);
+  const first = git(['rev-parse', 'HEAD']).trim();
+  mkdirSync(path.join(repo, 'docs'));
+  writeFileSync(path.join(repo, 'docs', 'a.md'), '1\n');
+  git(['add', '.']);
+  git(['commit', '-q', '-m', 'two']);
+  assert.deepEqual(changedFiles({ GITHUB_EVENT_NAME: 'push', GITHUB_EVENT_BEFORE: 'b'.repeat(40) }, git), ['core/a.js', 'docs/a.md']);
+  assert.deepEqual(changedFiles({ GITHUB_EVENT_NAME: 'push', GITHUB_EVENT_BEFORE: first }, git), ['docs/a.md']);
 });
 test('one version format: next patch, commit count, ten SHA characters', () => {
   assert.equal(version, '0.1.1-dev.8.abcdef0123');
