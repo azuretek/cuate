@@ -244,7 +244,7 @@ class AboutPageTest {
             evaluate(scenario, "window.fixtureScheme = '$scheme';")
             evaluate(scenario, fixture)
             val proof = awaitProof(scenario)
-            // The same slide as the desktop (Abi, 2026-10-13): the fixture held About rising and Settings going down and back
+            // The same slide as the desktop (2026-10-13): the fixture held About rising and Settings going down and back
             // up on their own timelines in this web view, and reports which it saw (a cut where the system reduces motion).
             val motion = proof.optString("motion")
             assertTrue("About and Settings moved as the desktop's do: $motion", motion.startsWith("slide ") || motion.startsWith("cut "))

@@ -288,7 +288,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
   // Whether the engine's IMCore bridge, the helper injected into Messages, answers (issue 515). Typing, read
   // receipts, reactions, threaded replies and edits all go through it, and the engine works one request at a time, so a
   // bridge that has stopped answering holds every request behind each of those for its full timeout: a send waits
-  // minutes and comes back uncertain (Abi, 2026-11-13). known is false for an engine whose status names no bridge,
+  // minutes and comes back uncertain (2026-11-13). known is false for an engine whose status names no bridge,
   // which is asked as before. The watchdog reads this through checkBridge() and has the bridge relaunched.
   let bridge = { known: false, ready: false, error: null };
   // The link's own record, so the log and the diagnostics can say what happened: the generation of the current
@@ -495,7 +495,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     // opens Messages with and relaunches when it stops answering. The switch, and the engine advertising the method,
     // must both be on.
     // Whether inbound typing is being listened for, and why not when it is not, is logged once per engine start, so a
-    // missing indicator can be told apart from a source that was never on (Abi, 2026-10-14).
+    // missing indicator can be told apart from a source that was never on (2026-10-14).
     await subscribeBridgeEvents(st);
     if (!ready && c.alive) scheduleRestart(); // a live child that will not answer is retried on the backoff
   }

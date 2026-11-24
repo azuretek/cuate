@@ -1,6 +1,6 @@
 import XCTest
 
-// Issue 533 (Abi, 2026-11-16): React offered the full emoji panel on a conversation that carries only the six classic
+// Issue 533 (2026-11-16): React offered the full emoji panel on a conversation that carries only the six classic
 // reactions, and refused the pick afterwards; and a reaction that arrived as text from Android or over SMS could show as
 // a stray message. The fixture (core/test/reaction-choices-fixture.js), the one the Android test and the desktop smoke run,
 // draws the real conversation in this shell's own web view for an SMS, an RCS and two message-service conversations, opens

@@ -30,7 +30,7 @@ export function createTyping({ publish, ttlMs = 8000, outbound = null, refreshMs
       if (!told.has(id) || typingIn(id)) return;
       told.delete(id);
     }
-    // Each hand-off to the engine is logged with its outcome (Abi, 2026-10-14), so our side of the indicator can be
+    // Each hand-off to the engine is logged with its outcome (2026-10-14), so our side of the indicator can be
     // checked from the log rather than only from the other person's screen.
     const said = (ok, error) => { if (log) log.emit('typing.outgoing', error ? { chat: id, typing: on, ok, error } : { chat: id, typing: on, ok }); };
     try { Promise.resolve(outbound(id, on)).then(() => said(true), (e) => said(false, (e && e.message) || 'refused')); } catch (e) { said(false, (e && e.message) || 'refused'); }

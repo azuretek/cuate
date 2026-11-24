@@ -153,7 +153,7 @@ test('outbound typing stays home with the switch off, or where the engine cannot
   assert.ok(normalizeConfig({}).typing.outgoing, 'on by default');
 });
 
-// Observability (Abi, 2026-10-14): each typing hand-off is logged with its outcome, so either direction can be checked
+// Observability (2026-10-14): each typing hand-off is logged with its outcome, so either direction can be checked
 // from the server's log rather than only from someone's screen.
 test('the other person typing and our typing sent to them are each logged with what happened', async () => {
   const lines = [];

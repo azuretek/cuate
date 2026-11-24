@@ -28,7 +28,7 @@
   root.openSettings();
   await until(() => document.querySelector('app-settings [data-action=about]'), 'the About row in Settings');
   await until(() => !document.querySelector('.sheet').getAnimations().some((a) => a.playState === 'running'), 'the sheet to arrive');
-  // The same slide as the desktop (Abi, 2026-10-13), and what a phone can hold without depending on its frame rate.
+  // The same slide as the desktop (2026-10-13), and what a phone can hold without depending on its frame rate.
   // This is the same page every shell draws, and the desktop smoke measures the whole slide in a real browser on all
   // three desktop platforms (settingsSlidesDown, aboutBackDesktop). Here each phone is held to: the spec's own motion
   // tokens, applied; the arrival keyframes on the incoming sheet and a transition that carries the sheet underneath;

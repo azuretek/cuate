@@ -278,7 +278,7 @@ export function deliveryLabel(m, clock = {}) {
   if (!m.fromMe) return '';
   if (m.state === 'sending') return 'Sending\u2026';
   // The engine could not vouch for the send in time, but it was handed over and is never retried, so it is said as sent
-  // and still on its way rather than as a failure; the confirmed message replaces it when it lands (Abi, 2026-11-13).
+  // and still on its way rather than as a failure; the confirmed message replaces it when it lands (2026-11-13).
   if (m.state === 'uncertain') return 'Sent, still going out';
   if (m.state === 'failed') return 'Not sent';
   if (typeof m.readAt === 'string' && Number.isFinite(Date.parse(m.readAt))) return 'Read ' + formatReadTime(m.readAt, clock);
@@ -286,7 +286,7 @@ export function deliveryLabel(m, clock = {}) {
 }
 
 // The bubbles drawn when Send was pressed that a confirmed message now stands for, so one send is one entry however its
-// message reaches the list: the live stream, a reload or a page of history (Abi, 2026-11-13). pending is the client's
+// message reaches the list: the live stream, a reload or a page of history (2026-11-13). pending is the client's
 // [key, { localId, chatId, text, messageId }] list. A send the server answered with an id is matched by that id; one
 // it could not vouch for (uncertain) is matched by its words, to our own message in the same chat sent no earlier than
 // slackMs before the bubble, and each confirmed message settles at most one bubble, so two sends of the same words stay

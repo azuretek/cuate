@@ -176,7 +176,7 @@ const defaultExec = (cmd, args, { timeoutMs = 5000 } = {}) => new Promise((resol
  * - messages: relaunched only when the caller decides to; another program managing Messages is never fought with.
  * - bridge: with bridgeBin (the imsg engine's own command), Messages is opened through `imsg launch`, which injects the
  *   bridge typing, read receipts, reactions and edits need. A plain `open -a` drops it, and nothing ever put it back:
- *   from 2026-11-05 every send queued behind bridge requests that could not answer (Abi, 2026-11-13).
+ *   from 2026-11-05 every send queued behind bridge requests that could not answer (2026-11-13).
  */
 export function createMac({
   log,

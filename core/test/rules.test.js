@@ -36,7 +36,7 @@ test('chats order newest first and read well', () => {
   assert.equal(chatTitle(chats[1]), 'x@example.com and y@example.com');
   // A group nobody has named arrives with the chat identifier as its name, and read as a machine string in the list
   // instead of the people in it (issue #80). A named group keeps its name.
-  assert.equal(chatTitle({ id: 'x', name: 'chat323392484988469066', isGroup: true, participants: ['Rafael Renhart', 'Evelyn Renhart', 'Kylie Brief'] }), 'Rafael Renhart, Evelyn Renhart and 1 other');
+  assert.equal(chatTitle({ id: 'x', name: 'chat123456789012345678', isGroup: true, participants: ['Jordan Vega', 'Riley Vega', 'Casey Lin'] }), 'Jordan Vega, Riley Vega and 1 other');
   assert.equal(chatTitle({ id: 'x', name: 'chat500000001', isGroup: true, participants: ['Avery Quinn', 'Reign'] }), 'Avery Quinn and Reign');
   assert.equal(chatTitle({ id: 'x', name: 'Weekend plans', isGroup: true, participants: ['Avery Quinn'] }), 'Weekend plans');
   assert.equal(chatTitle({ id: 'x', name: 'chat500000001', isGroup: true, participants: [] }), 'Group chat');
@@ -84,7 +84,7 @@ test('a conversation groups into sender runs, with separators after a gap', () =
   assert.deepEqual(shape, ['sep', '1F', '2L', '3FL', 'sep', '4FL']);
 });
 
-// One send is one entry (Abi, 2026-11-13): an uncertain send's bubble is replaced by its message when that lands late,
+// One send is one entry (2026-11-13): an uncertain send's bubble is replaced by its message when that lands late,
 // however it reaches the list, and never by an older message with the same words or by one in another chat.
 test('a send settles to one entry when its message lands, even after an uncertain answer', () => {
   const local = msg({ id: 'local:k1', fromMe: true, sender: null, text: 'winter break?', sentAt: '2026-11-13T23:30:24.000Z', state: 'uncertain' });

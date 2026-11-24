@@ -3563,7 +3563,7 @@ async function runSmoke(w) {
   // (issues 244, 253): open it with the last tab in force, so the way back can be checked to land there.
   await showTab('device');
 
-  // The way into About and back out, at a phone's width (Abi, 2026-10-12, 2026-10-13): the About row sits apart from
+  // The way into About and back out, at a phone's width (2026-10-12, 2026-10-13): the About row sits apart from
   // the section above it, About rises from the bottom edge while the Settings card slides down out of the way, and the
   // back press slides Settings straight back up while About goes down: one travel each way, never a resize, and
   // nothing moving once About has gone. Every frame is sampled where each card is drawn.
@@ -3694,7 +3694,7 @@ async function runSmoke(w) {
   const aboutOrder = ['product', 'version', 'channel', 'build', 'commit', 'builtAt', 'serverVersion', 'serverCommit', 'serverChannel', 'serverBuild', 'serverBuiltAt', 'platform', 'arch', 'electron', 'chromium', 'node', 'installSource', 'packaged', 'updateChannel', 'serverPlatform', 'engine.kind', 'engine.version', 'apiVersion'];
   const aboutSeen = await js("(() => ({ keys: [...document.querySelectorAll('app-about .about-row')].map((r) => r.dataset.key), copyable: [...document.querySelectorAll('app-about .about-row')].every((r) => Boolean(r.querySelector('button.about-value'))), links: [...document.querySelectorAll('app-about .about-link')].map((a) => a.dataset.link), electron: (document.querySelector('app-about .about-row[data-key=electron] .about-value-text') || {}).textContent || '', copyAll: Boolean(document.querySelector('app-about .about-copy')), unknown: [...document.querySelectorAll('app-about .about-row .about-value-text')].some((e) => e.textContent === 'Unknown') }))()");
   // Back from About returns to Settings, the page it was pushed over.
-  // The same slide on the desktop (Abi, 2026-10-13): Settings waits below the screen while About is up, and the back
+  // The same slide on the desktop (2026-10-13): Settings waits below the screen while About is up, and the back
   // press slides it straight up as About goes down, keeping its width, at rest once About has gone.
   const deskMotionWas = await js("matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'no-preference'");
   await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
@@ -3863,7 +3863,7 @@ async function runSmoke(w) {
     // Set up just above, so a drawer shut here was shut since: the report names what shut it and the step it ran in.
     console.error('phone drawer: ' + JSON.stringify(drawer) + ' ' + describeDrawer(await js(drawerState)));
   }
-  // The conversation list scrolls to the screen's bottom edge (Abi, 2026-10-12): with a home-indicator inset, the
+  // The conversation list scrolls to the screen's bottom edge (2026-10-12): with a home-indicator inset, the
   // list's scroller reaches the bottom of the drawer, and scrolled to its end the last row still clears the inset.
   await js("(() => { document.documentElement.style.setProperty('--shell-inset-bottom', '34px'); return true; })()");
   await pause(300);
@@ -4309,7 +4309,7 @@ async function runSmoke(w) {
   // default theme and the imported one, capturing each and probing the conversation for the ways a large size breaks
   // it: anything running past the window, a control whose target is under 36px, a header that has grown taller, and a
   // scroll area with content behind it. The findings are RECORDED per stop, never hidden by a smaller ceiling: 300 is
-  // under test and the ceiling is Abi's to choose.
+  // under test and the ceiling is the operator's to choose.
   await js("(() => { const r = document.querySelector('app-root'); if (r.sheetShowing) r.closeView(); if (r.listOpen && r.openChatId) r.listOpen = false; return true; })()");
   await waitFor("!document.querySelector('.sheet')", 8000).catch(() => {});
   await pause(300);

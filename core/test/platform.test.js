@@ -148,7 +148,7 @@ test('a reaction that names nothing loaded is a quiet labelled line, never the r
   assert.equal(chatPreview({ ...chat, service: 'iMessage' }), 'Liked ' + q('the plan stands'), 'a conversation whose reactions never arrive as text shows the words as typed');
 });
 
-// Abi, 2026-11-16: offer only what the conversation can carry, decided from its service and the engine.
+// Requested 2026-11-16: offer only what the conversation can carry, decided from its service and the engine.
 test('React offers exactly what the conversation can carry, decided once from its service and the engine (issue 533)', () => {
   const six = ['\u2764\ufe0f', '\u{1F44D}', '\u{1F44E}', '\u{1F602}', '\u203c\ufe0f', '\u2753'];
   const glyphs = (o) => o.choices.map((c) => c.glyph);
@@ -190,7 +190,7 @@ test('a disabled or partially known platform is refused in place with a message 
   assert.equal(platformCapabilities('unknown').fallback, false);
 });
 
-// Abi, 2026-10-12 and 2026-10-14: no second bubble colour; who is on the other end is told by an icon by the name and a
+// Requested 2026-10-12 and 2026-10-14: no second bubble colour; who is on the other end is told by an icon by the name and a
 // lock beside the time, and a platform the app does not know says nothing.
 test('a conversation says whether it is on Apple devices and encrypted, and an unknown one says nothing', () => {
   const one = serviceNote({ service: 'iMessage', isGroup: false });

@@ -1,4 +1,4 @@
-// A bridge in Messages that stops answering must not hold the sends (Abi, 2026-11-13). The engine answers one request
+// A bridge in Messages that stops answering must not hold the sends (2026-11-13). The engine answers one request
 // at a time, so typing and read receipts that wait out their timeouts on a dead bridge put every send behind them: on
 // a real server a send took minutes and came back uncertain. Once a bridge request fails that way, the adapter refuses
 // every bridge request at once until a status read finds the bridge ready again, and a plain send is never refused.

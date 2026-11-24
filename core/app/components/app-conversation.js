@@ -559,7 +559,7 @@ class AppConversation extends KitElement {
   menu(m) {
     const actions = messageActions(m, { sending: this.sending, platform: platformOf(this.chat), edit: Boolean(this.canEdit), now: Date.now() });
     // The lock sits beside the time, seen only when the menu is open, so it is there to check rather than to notice
-    // (Abi, 2026-10-14).
+    // (2026-10-14).
     const lock = Boolean(serviceNote(this.chat)?.encrypted);
     const when = formatSeparator(m.sentAt, { now: Date.now(), locale: navigator.language });
     const links = messageLinks(m);

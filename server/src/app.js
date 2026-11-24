@@ -65,7 +65,7 @@ function readJson(req, max) {
   });
 }
 
-// The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (Abi, 2026-10-14).
+// The failsafe interval for the database watch, in milliseconds: the mechanism is the watch itself (2026-10-14).
 const FAILSAFE_SYNC_MS = 5 * 60 * 1000;
 
 export async function startServer({ config, store, engine, log, dataDir, attachmentsRoot, contacts = null, dbPath = null, readSyncMs = FAILSAFE_SYNC_MS, host = '127.0.0.1', port = config.port, epoch = randomUUID(), platform = process.platform, mac = null, restarts = null, diagnostics = null, webhookOptions = {}, themeFetch = globalThis.fetch, linkFetch = globalThis.fetch, pushFetch = globalThis.fetch, updateOutcome = () => null, updatePending = () => false, authTimeoutMs = AUTH_TIMEOUT_MS }) {
@@ -275,7 +275,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
     // An arriving message from someone else raises the held count by the same rule every client raises its own
     // (applyMessageToChats in core/app/rules/chats.js), so a read on another device before the next read of the list is
     // seen as the count falling and told as chat.read. Without this the list never saw the rise, so it never saw the fall,
-    // and the message stayed unread in the app (Abi, 2026-10-14).
+    // and the message stayed unread in the app (2026-10-14).
     const unread = !m.fromMe ? (Number(chat.unread) || 0) + 1 : chat.unread;
     held.chats.splice(at, 1);
     held.chats.unshift({ ...chat, unread, lastMessageAt: m.sentAt });
@@ -566,7 +566,7 @@ export async function startServer({ config, store, engine, log, dataDir, attachm
 
   // A change to the engine's own database (a read on another device, a chat renamed or its photo changed, a message that
   // arrived while the bridge was between events) is an EVENT, and the list is read again the moment it settles, so a
-  // change made anywhere reaches every client in about DB_SETTLE_MS rather than at the next poll (Abi, 2026-10-14). The
+  // change made anywhere reaches every client in about DB_SETTLE_MS rather than at the next poll (2026-10-14). The
   // database is SQLite in WAL mode, so the change lands in chat.db-wal as often as in chat.db: the directory is watched
   // and both names are taken. The interval below is only a failsafe for a watcher that could not start or an event the
   // filesystem coalesced away, never the mechanism.

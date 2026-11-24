@@ -83,7 +83,7 @@ Threads follow Apple's behaviour and the engine's data (issue 195); the rules an
 
 A conversation carries messages over one service, and the engine reports which in a chat's `service` field (openclaw/imsg `docs/json.md`: `iMessage`, `SMS`, etc.). Cuate reads that field (the adapter maps it in `core/app/rules/engine-imsg.js`) and lets the conversation's own platform decide what a message action offers and how a reaction is sent (issue 184). This is the engine-capability rule (issue 188) applied to a message platform: the platform names what it can do, and anything else is refused in place, never substituted and never sent in a form the recipient cannot read.
 
-What React offers is one rule, `reactionChoices` and `reactionOffer` in `core/app/rules/messages.js`, decided from the conversation's platform (for a group, its most limited member, `conversationPlatform` in `core/app/rules/platform.js`) and the `tapback.emoji` version the engine advertises, which the server reports as `engine.tapbackEmoji` in `/api/v1/info`. The panel draws exactly that answer, and the server enforces the same answer, so nothing is offered that would be refused (Abi, 2026-11-16):
+What React offers is one rule, `reactionChoices` and `reactionOffer` in `core/app/rules/messages.js`, decided from the conversation's platform (for a group, its most limited member, `conversationPlatform` in `core/app/rules/platform.js`) and the `tapback.emoji` version the engine advertises, which the server reports as `engine.tapbackEmoji` in `/api/v1/info`. The panel draws exactly that answer, and the server enforces the same answer, so nothing is offered that would be refused (2026-11-16):
 
 | Conversation | React offers | Send side | Render side |
 |---|---|---|---|

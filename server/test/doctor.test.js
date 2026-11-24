@@ -329,7 +329,7 @@ test('Messages is watched and relaunched through the injected exec', async () =>
   assert.deepEqual(calls, [['pgrep', ['-x', 'Messages']], ['pgrep', ['-x', 'Messages']], ['open', ['-a', 'Messages']]]);
 });
 
-// The server owns the bridge in Messages (Abi, 2026-11-13): a plain `open -a` drops it, and nothing put it back.
+// The server owns the bridge in Messages (2026-11-13): a plain `open -a` drops it, and nothing put it back.
 test('Messages is opened through the engine with its bridge where the server owns it', async () => {
   const { log } = logger();
   const calls = [];

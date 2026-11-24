@@ -22,7 +22,7 @@ final class AboutPageTests: XCTestCase {
         // The fixture opens About and goes back before its notice (the slide, #356), which a CI simulator can take more
         // than half a minute over, so the proof has a minute.
         XCTAssertTrue(proof.waitForExistence(timeout: 60), app.debugDescription)
-        // The same slide as the desktop (Abi, 2026-10-13): the fixture held About rising and Settings going down and back up
+        // The same slide as the desktop (2026-10-13): the fixture held About rising and Settings going down and back up
         // on their own timelines in this web view, and reports which it saw (a cut where the system reduces motion).
         let motion = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'about:motion '")).firstMatch
         XCTAssertTrue(motion.waitForExistence(timeout: 5), app.debugDescription)

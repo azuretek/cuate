@@ -56,7 +56,7 @@ export function defaultDataDir({ env = process.env, platform = process.platform,
 }
 
 // The Messages database the engine reads (config.engine.db, or the default), so the server can watch it: a change to it
-// is an event rather than something to wait for (Abi, 2026-10-14).
+// is an event rather than something to wait for (2026-10-14).
 export function messagesDatabasePath(config = null, home = os.homedir()) {
   const named = config && config.engine ? config.engine.db : null;
   return named ? path.resolve(named) : path.join(home, "Library", "Messages", "chat.db");

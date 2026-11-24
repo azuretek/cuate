@@ -1,4 +1,4 @@
-// Issue 533 (Abi, 2026-11-16): React offers exactly what the conversation can carry, decided once (reactionOffer in core)
+// Issue 533 (2026-11-16): React offers exactly what the conversation can carry, decided once (reactionOffer in core)
 // from the chat's service and the engine's advertised tapback.emoji version, and drawn by the one panel every surface
 // opens: the message menu's React, reached by a right click, a long click or a long press. Where only the six classic
 // reactions can go the panel draws just those, with no search, no categories and no recents; where any emoji can go it

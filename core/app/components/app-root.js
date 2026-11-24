@@ -1388,7 +1388,7 @@ class AppRoot extends KitElement {
       if (!p) return true;
       if (r.status === 'uncertain') {
         // Still pending: the engine was handed the message and may deliver it late, and when it lands it replaces this
-        // bubble rather than drawing a second one (Abi, 2026-11-13).
+        // bubble rather than drawing a second one (2026-11-13).
         this.mark(localId, 'uncertain');
         return true;
       }

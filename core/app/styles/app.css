@@ -544,7 +544,7 @@ app-settings { width: var(--size-sheet); max-width: 100%; }
    disc so it reads as the theme-following one rather than its own artwork (issue 246). */
 .app-icon-choice[data-icon-id="theme"] .app-icon-follow { position: absolute; right: var(--space-1); bottom: var(--space-1); width: var(--space-3); height: var(--space-3); border-radius: var(--radius-pill); border: var(--size-border) solid var(--color-bg-raised); background: linear-gradient(var(--color-accent) 50%, var(--color-fg) 50%); }
 .sheet-section-title { margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-transform: uppercase; color: var(--color-fg-muted); }
-/* The About row stands apart from the group above it, the same gap the sheet's own groups keep (Abi, 2026-10-12). */
+/* The About row stands apart from the group above it, the same gap the sheet's own groups keep (2026-10-12). */
 .settings-about-row { margin-top: var(--space-4); }
 .sheet-section-desc { margin: var(--space-1) 0 var(--space-2); color: var(--color-fg-muted); font-size: var(--font-size-sm); }
 .sheet-rows { display: flex; flex-direction: column; border: var(--size-border) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-raised); overflow: hidden; min-width: 0; }
@@ -801,7 +801,7 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
    apps sees one design rather than two. Nothing here names a colour or a length of its own: the dim is the token the
    drawer's scrim already uses, and every duration and curve is a motion token. */
 @keyframes surface-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-/* A sheet travels from just past the screen's bottom edge, wherever it rests (Abi, 2026-10-13): --sheet-travel is
+/* A sheet travels from just past the screen's bottom edge, wherever it rests (2026-10-13): --sheet-travel is
    that distance, set per layout below, so the desktop's centred card and the phone's bottom card move the same way. */
 @keyframes sheet-up-in { from { transform: translateY(var(--sheet-travel)); } to { transform: translateY(0); } }
 @keyframes sheet-down-out { from { transform: translateY(0); } to { transform: translateY(var(--sheet-travel)); } }
@@ -827,7 +827,7 @@ app-chat-list, .messages, .sheet-body, .emoji-row, .emoji-grid, .composer textar
 .sheet-scrim[data-sheet="about"] { z-index: 5; }
 .sheet-scrim[data-sheet="about"] .sheet { z-index: 6; }
 /* With About stacked over it, the Settings card slides down out of the way as About rises, and slides back up as About
-   goes down (Abi, 2026-10-13): one travel each way on the sheet's own timing, never a resize. data-under holds it
+   goes down (2026-10-13): one travel each way on the sheet's own timing, never a resize. data-under holds it
    below while About is up; data-returning carries the slide back up while About leaves. */
 .sheet-scrim[data-under] > .sheet { translate: 0 var(--sheet-travel); transition: translate var(--motion-sheet-in) var(--motion-sheet-ease); }
 .sheet-scrim[data-returning] > .sheet { transition: translate var(--motion-sheet-out) var(--motion-sheet-ease); }
@@ -1088,7 +1088,7 @@ app-attachment .attachment-preview { margin: var(--space-1) 0 var(--space-2); }
 /* The stack draws above every other surface (issue 191): the chats, a conversation and its thread view, Settings,
    About and every sheet, a confirm and the media viewer, so an update notice is always seen. Its z-index is the
    highest in this file, which core/test/app-notices.test.js holds. It sits as high as the window allows without covering
-   a window control, so the height differs by platform (Abi, 2026-10-13): at the top edge on a phone, which has none;
+   a window control, so the height differs by platform (2026-10-13): at the top edge on a phone, which has none;
    below the minimise, maximise and close controls the page draws at the right on Windows and Linux, which is the side
    the stack sits on; and at the top edge on macOS, whose traffic lights are at the left, kept clear by holding the
    stack's left edge past them. The card is no-drag, so inside the Mac's drag strip a press still reaches it. An answer to a press on a sheet (About's Check for updates, issue 171) is seen while the sheet

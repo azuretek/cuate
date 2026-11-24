@@ -765,7 +765,7 @@ test('the appearance choice survives a server restart', async () => {
 });
 
 // A change to the engine's own database is an EVENT: the list is read again the moment it settles, so a read on the
-// phone reaches every client in about a fifth of a second rather than at the next poll (Abi, 2026-10-14). The failsafe
+// phone reaches every client in about a fifth of a second rather than at the next poll (2026-10-14). The failsafe
 // interval here is ten minutes, so a pass can only come from the watcher.
 const touchDb = (t, which = 'wal') => writeFileSync(path.join(t.dir, 'chat.db' + (which === 'wal' ? '-wal' : '')), String(Date.now()));
 

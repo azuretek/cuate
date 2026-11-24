@@ -97,7 +97,7 @@ export default {
       }
     };
     // The database the engine reads is watched, so a change made anywhere (a read on the phone, a chat renamed) reaches
-    // every client at once rather than at the next poll (Abi, 2026-10-14). Only the engine that has a database.
+    // every client at once rather than at the next poll (2026-10-14). Only the engine that has a database.
     const dbPath = config.engine.kind === 'imsg' ? messagesDatabasePath(config) : null;
     // The system Contacts store names and pictures a one-to-one chat (issue 393); a Mac that has not allowed
     // Contacts simply reads as no contacts, so nothing here can stop the server.
