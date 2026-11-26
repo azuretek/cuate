@@ -97,3 +97,19 @@ test('a cursor the server cannot honour answers reset, and one that is not a cur
   assert.equal(bad.status, 400);
   assert.equal(bad.body.error.code, 'bad_cursor');
 });
+
+// A consumer that trusts a sender only over iMessage reads the service from the changes lane too, so a row read there
+// carries the same marks as the same row read from a chat's history (issue 520).
+test('a message read from the changes lane carries the service its own row names', async (t) => {
+  const s = await boot();
+  t.after(() => s.close());
+  const { body: head } = await changes(s);
+  const over = s.world.incoming(1, 'Synthetic arrival over iMessage');
+  const spoofable = s.world.incoming(1, 'Synthetic arrival over SMS');
+  s.world.setService(spoofable.guid, 'SMS');
+  const { body } = await changes(s, '?since=' + encodeURIComponent(head.cursor));
+  conforms(body, 'ChangeList');
+  const byId = new Map(body.messages.map((m) => [m.id, m]));
+  assert.equal(byId.get(over.guid)?.service, 'iMessage');
+  assert.equal(byId.get(spoofable.guid)?.service, 'SMS', 'an SMS row in an iMessage chat reads as SMS here too');
+});

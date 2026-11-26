@@ -747,7 +747,7 @@ export function createEngine({ kind, makeTransport, log, attachmentId, timeoutMs
     }
     const want = chats && chats.size ? (id) => chats.has(String(id)) : () => true;
     const r = await request('messages.after', { since_rowid: from.rowid, limit, attachments: true, include_reactions: true }, timeoutMs, ['attachments', 'include_reactions']);
-    const rows = markCursors(markStoreEvents(r && Array.isArray(r.messages) ? r.messages : []));
+    const rows = prepare(r && Array.isArray(r.messages) ? r.messages : []);
     const rowid = r && Number.isFinite(r.next_rowid) ? r.next_rowid : from.rowid;
     const taken = changeReader.unsentAmong(rows.filter((m) => !m.is_reaction).map((m) => String(m.guid)));
     const messages = markEdited(rows.filter((m) => !m.is_reaction && !taken.has(String(m.guid))).map((m) => toModel(m)).filter((m) => want(m.chatId)));
